@@ -356,9 +356,10 @@ def normalize_commander_name(commanders: list[str]) -> str:
 class DataIngester:
     """Main ingestion orchestrator."""
 
-    def __init__(self, topdeck: TopDeckClient, supabase: SupabaseClient):
+    def __init__(self, topdeck: TopDeckClient, supabase: SupabaseClient, min_players: int = 16):
         self.topdeck = topdeck
         self.supabase = supabase
+        self.min_players = min_players
         self.commander_cache = {}  # name -> id
         self.player_cache = {}  # topdeck_id -> id
 
@@ -489,8 +490,8 @@ class DataIngester:
         top_cut = tournament.get("topCut", 0)
 
         # Skip if too few players
-        if player_count < 32:
-            logger.info(f"Skipping {name}: only {player_count} players")
+        if player_count < self.min_players:
+            logger.info(f"Skipping {name}: only {player_count} players (min: {self.min_players})")
             return None
 
         logger.info(f"Processing: {name} ({player_count} players, {len(rounds)} rounds)")
@@ -795,7 +796,7 @@ def main():
     parser.add_argument("--days", type=int, default=7, help="Days back to search")
     parser.add_argument("--start-date", type=str, help="Backfill start date (YYYY-MM-DD)")
     parser.add_argument("--end-date", type=str, help="Backfill end date (YYYY-MM-DD, inclusive)")
-    parser.add_argument("--min-players", type=int, default=32, help="Minimum players")
+    parser.add_argument("--min-players", type=int, default=16, help="Minimum players")
     parser.add_argument("--tournament-id", type=str, help="Process specific tournament")
     parser.add_argument("--tids-file", type=str, help="Path to file with one tournament ID per line")
     parser.add_argument("--names-file", type=str, help="Path to file with one tournament name per line")
@@ -864,7 +865,7 @@ def main():
             sys.exit(1)
         db_client = SupabaseClient(supabase_url, supabase_key)
 
-    ingester = DataIngester(topdeck, db_client) if db_client else None
+    ingester = DataIngester(topdeck, db_client, min_players=args.min_players) if db_client else None
 
     # Process tournaments
     if args.names_file:

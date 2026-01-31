@@ -155,7 +155,12 @@ async function getCommanderMeta(id: string) {
   return data as CommanderMeta;
 }
 
-async function getRecentFinishes(commanderId: string) {
+async function getRecentFinishes(commanderId: string, daysBack: number = 30) {
+  // Filter tournaments from the past N days
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - daysBack);
+  const cutoffIso = cutoffDate.toISOString();
+
   const { data, error } = await supabase
     .from("tournament_entries")
     .select(
@@ -163,6 +168,7 @@ async function getRecentFinishes(commanderId: string) {
     )
     .eq("commander_id", commanderId)
     .or("made_top_16.eq.true,made_top_cut.eq.true,final_standing.eq.1")
+    .gte("tournaments.start_date", cutoffIso)
     .order("start_date", { ascending: false, foreignTable: "tournaments" });
 
   if (error) {
@@ -204,7 +210,8 @@ async function getRecentFinishes(commanderId: string) {
     }
   }
 
-  return Array.from(grouped.values()).slice(0, 8);
+  // Show up to 20 top finishes from the past 30 days
+  return Array.from(grouped.values()).slice(0, 20);
 }
 
 async function getCardReport(commanderId: string) {
@@ -731,9 +738,9 @@ export default async function CommanderDetailPage({
             {recentFinishes.length > 0 && (
               <Card className="mt-6">
                 <CardHeader className="knd-panel-header">
-                  <CardTitle className="text-lg">Recent Top Finishes</CardTitle>
+                  <CardTitle className="text-lg">Top Finishes (Past 30 Days)</CardTitle>
                   <p className="text-sm text-muted-foreground">
-                    Most recent Top 16, Top Cut, and 1st-place finishes for this commander.
+                    Top 16, Top Cut, and 1st-place finishes from the past month.
                   </p>
                 </CardHeader>
                 <CardContent>
