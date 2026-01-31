@@ -1,0 +1,18 @@
+{
+  "name": "cedh-research",
+  "private": true,
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "web:dev": "npm --workspace apps/web run dev",
+    "web:build": "npm --workspace apps/web run build",
+    "web:start": "npm --workspace apps/web run start",
+    "web:lint": "npm --workspace apps/web run lint",
+    "web:test": "npm --workspace apps/web run test",
+    "web:test:contracts": "npm --workspace apps/web run test:contracts",
+    "web:test:e2e": "npm --workspace apps/web run test:e2e",
+    "backend:install": "python -m pip install -r packages/backend/requirements.txt",
+    "backend:ingest": "python packages/backend/src/ingest.py"
+  }
+}

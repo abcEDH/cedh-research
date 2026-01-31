@@ -1,0 +1,4 @@
+# Sample tournament names for resolver (one per line)
+# FNM Commander
+# Frenzy t/cEDH Warmup
+# Redemption Event European cEDH Championship 2025

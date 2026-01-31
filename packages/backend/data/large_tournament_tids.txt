@@ -1,0 +1,43 @@
+# Large tournaments from EDHTop16 (100+ players)
+# Extracted 2026-01-11
+# Usage: python src/ingest.py --tournament-id <TID>
+
+steel-city-spectacular-20k-cedh-main-event
+TheBoil2
+TheBoil
+roadtomunich
+the-fishbowl-san-diego-copy
+italian-cedh-championship
+cedh-uk-championships-2025
+the-invasion-2025-cedh-championship
+the-cookout-2025
+TopDeckOpen24
+TheCookout
+aglccs-10000-cedh-main-event-copy
+june-5k
+mana-masters-cedh-spring-2025
+mana-masters-cedh-spring-2025-copy
+lcq-for-the-cedh-european-championship
+redemption-event-european-cedh-championship-2025
+mbg-commanderpalooza-2-timetwister-event
+midwest-gaming-classic-cedh-mox-diamond-showdown
+mulligans-mayhem-5k-cedh-tournament-guaranteed-prizing
+salt-city-cedh-convention
+salt-city-cedh-convention-3k-redemption-event
+jeweled-lotus-lattenkamp-2025
+frenzy-at-the-falls
+solstice
+land-go-expo-redemption-event
+cradle-to-the-guild
+cedh-win-a-foil-cradle
+the-heisenberg
+the-summer-classic-ii
+pool-priority
+PuntCity
+PuntCity2
+PuntCity3
+CowtownThrowdown
+SiliconDynasty
+FestivalOfKnights
+Expo23CEDH
+tm-circuit-act-9-invigorating-encore

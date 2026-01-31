@@ -1,0 +1,243 @@
+name: Backend
+
+on:
+  schedule:
+    # Run weekly on Monday at 9 AM UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+  push:
+    paths:
+      - 'packages/backend/**'
+      - '.github/workflows/backend.yml'
+
+env:
+  TOPDECK_API_KEY: ${{ secrets.TOPDECK_API_KEY }}
+  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+  SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r packages/backend/requirements.txt
+
+      - name: Run data ingestion
+        run: python packages/backend/src/ingest.py --days 7 --min-players 32
+
+      - name: Upload logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ingest-logs
+          path: packages/backend/logs/
+          retention-days: 30
+
+  validate-views:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Validate backend views and functions
+        run: |
+          python << 'SCRIPT'
+          import requests
+          import sys
+
+          SUPABASE_URL = "${{ secrets.SUPABASE_URL }}"
+          SUPABASE_KEY = "${{ secrets.SUPABASE_SERVICE_KEY }}"
+
+          headers = {
+              "apikey": SUPABASE_KEY,
+              "Authorization": f"Bearer {SUPABASE_KEY}",
+              "Content-Type": "application/json"
+          }
+
+          # Views to validate (with minimum expected row count)
+          views = [
+              ("commander_stats", 10),
+              ("seat_position_stats", 4),
+              ("commander_seat_stats", 10),
+              ("card_frequencies_global", 100),
+              ("card_frequencies_by_commander", 100),
+              ("trap_cards_report", 1),
+              ("spice_cards_report", 1),
+              # Survival analysis views
+              ("seat_survival_by_commander", 10),
+              ("seat_survival_by_round", 4),
+              ("commander_survival_curve", 10),
+              ("commander_tournament_depth", 10),
+              ("player_survival_stats", 10),
+              ("commander_meta_monthly", 5),
+              ("commander_momentum", 1),
+              ("commander_first_appearances", 10),
+              ("survival_summary", 10),
+          ]
+
+          # RPC functions to validate
+          rpc_functions = [
+              ("get_notable_players_for_commander", {"p_commander_id": "00000000-0000-0000-0000-000000000000"}, False),
+              ("get_commander_matchups", {"p_commander_id": "00000000-0000-0000-0000-000000000000"}, False),
+              ("get_commanders_for_card", {"p_card_name": "Sol Ring"}, True),
+          ]
+
+          failed = []
+          passed = []
+
+          print("=" * 60)
+          print("VALIDATING VIEWS")
+          print("=" * 60)
+
+          for view_name, min_rows in views:
+              try:
+                  url = f"{SUPABASE_URL}/rest/v1/{view_name}?select=*&limit=100"
+                  resp = requests.get(url, headers=headers, timeout=30)
+
+                  if resp.status_code == 200:
+                      data = resp.json()
+                      row_count = len(data)
+                      if row_count >= min_rows:
+                          print(f"✓ {view_name}: {row_count} rows (expected >= {min_rows})")
+                          passed.append(view_name)
+                      else:
+                          print(f"✗ {view_name}: {row_count} rows (expected >= {min_rows})")
+                          failed.append((view_name, f"Only {row_count} rows"))
+                  else:
+                      print(f"✗ {view_name}: HTTP {resp.status_code}")
+                      failed.append((view_name, f"HTTP {resp.status_code}"))
+              except Exception as e:
+                  print(f"✗ {view_name}: {str(e)}")
+                  failed.append((view_name, str(e)))
+
+          print()
+          print("=" * 60)
+          print("VALIDATING RPC FUNCTIONS")
+          print("=" * 60)
+
+          for func_name, params, expect_data in rpc_functions:
+              try:
+                  url = f"{SUPABASE_URL}/rest/v1/rpc/{func_name}"
+                  resp = requests.post(url, headers=headers, json=params, timeout=30)
+
+                  if resp.status_code == 200:
+                      data = resp.json()
+                      row_count = len(data) if isinstance(data, list) else 1
+
+                      if expect_data and row_count == 0:
+                          print(f"✗ {func_name}: Expected data but got empty result")
+                          failed.append((func_name, "Expected data but got empty"))
+                      else:
+                          print(f"✓ {func_name}: {row_count} rows returned")
+                          passed.append(func_name)
+                  else:
+                      print(f"✗ {func_name}: HTTP {resp.status_code}")
+                      failed.append((func_name, f"HTTP {resp.status_code}"))
+              except Exception as e:
+                  print(f"✗ {func_name}: {str(e)}")
+                  failed.append((func_name, str(e)))
+
+          print()
+          print("=" * 60)
+          print("SUMMARY")
+          print("=" * 60)
+          print(f"Passed: {len(passed)}")
+          print(f"Failed: {len(failed)}")
+
+          if failed:
+              print("\nFailed items:")
+              for item, reason in failed:
+                  print(f"  - {item}: {reason}")
+              sys.exit(1)
+          else:
+              print("\nAll validations passed!")
+              sys.exit(0)
+          SCRIPT
+
+  validate-data-integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Check data integrity
+        run: |
+          python << 'SCRIPT'
+          import requests
+          import sys
+
+          SUPABASE_URL = "${{ secrets.SUPABASE_URL }}"
+          SUPABASE_KEY = "${{ secrets.SUPABASE_SERVICE_KEY }}"
+
+          headers = {
+              "apikey": SUPABASE_KEY,
+              "Authorization": f"Bearer {SUPABASE_KEY}",
+              "Content-Type": "application/json",
+              "Prefer": "count=exact"
+          }
+
+          # Tables and minimum expected counts
+          tables = [
+              ("tournaments", 50),
+              ("commanders", 100),
+              ("tournament_entries", 3000),
+              ("games", 5000),
+              ("game_participants", 15000),
+              ("players", 2000),
+          ]
+
+          failed = []
+
+          print("=" * 60)
+          print("DATA INTEGRITY CHECK")
+          print("=" * 60)
+
+          for table_name, min_count in tables:
+              try:
+                  url = f"{SUPABASE_URL}/rest/v1/{table_name}?select=count"
+                  resp = requests.head(url, headers=headers, timeout=30)
+
+                  if resp.status_code in (200, 206):
+                      count = int(resp.headers.get("content-range", "0-0/0").split("/")[1])
+                      status = "✓" if count >= min_count else "✗"
+                      print(f"{status} {table_name}: {count:,} rows (expected >= {min_count:,})")
+                      if count < min_count:
+                          failed.append((table_name, f"{count} < {min_count}"))
+                  else:
+                      print(f"✗ {table_name}: HTTP {resp.status_code}")
+                      failed.append((table_name, f"HTTP {resp.status_code}"))
+              except Exception as e:
+                  print(f"✗ {table_name}: {str(e)}")
+                  failed.append((table_name, str(e)))
+
+          print()
+          if failed:
+              print(f"Data integrity issues found: {len(failed)}")
+              for item, reason in failed:
+                  print(f"  - {item}: {reason}")
+              sys.exit(1)
+          else:
+              print("Data integrity check passed!")
+              sys.exit(0)
+          SCRIPT

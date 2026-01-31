@@ -1,0 +1,374 @@
+import Link from "next/link";
+import { supabase } from "@/lib/supabase";
+import CommanderTrendsTable from "@/components/commanders/commander-trends-table";
+import CommanderTrendsChart, {
+  CommanderTrendSeriesPoint,
+  CommanderTrendSeriesMeta,
+} from "@/components/commanders/commander-trends-chart";
+import TrendMetricCharts, {
+  TrendMetricPoint,
+  TrendMetricSeries,
+} from "@/components/commanders/trend-metric-charts";
+
+export const dynamic = "force-dynamic";
+
+interface CommanderStat {
+  commander_id: string;
+  commander_name: string;
+  total_entries: number;
+  avg_win_rate: string;
+}
+
+type WeeklyTrendRow = {
+  commander_id: string;
+  week_key?: string | null;
+  week_start_date?: string | null;
+  entries: number;
+  win_rate?: number;
+  wins?: number | null;
+  losses?: number | null;
+  draws?: number | null;
+};
+
+function normalizeDateKey(value: string | null | undefined) {
+  if (!value) return "";
+  return value.length >= 10 ? value.slice(0, 10) : value;
+}
+
+async function getCommanders() {
+  const { data, error } = await supabase
+    .from("commander_stats")
+    .select("commander_id, commander_name, total_entries, avg_win_rate")
+    .gt("total_entries", 5)
+    .order("total_entries", { ascending: false });
+
+  if (error) {
+    console.error("Error fetching commanders:", error);
+    return [];
+  }
+  return data as CommanderStat[];
+}
+
+async function getCommanderPeriodSnapshots(commanderIds: string[]) {
+  if (commanderIds.length === 0) return {};
+
+  const weeklyPrimary = await supabase
+    .from("commander_weekly_trends")
+    .select("commander_id, week_start_date, entries, wins, losses, draws, total_players")
+    .in("commander_id", commanderIds)
+    .order("week_start_date", { ascending: true });
+  const monthlyPrimary = await supabase
+    .from("commander_monthly_trends")
+    .select("commander_id, month_key, entries, wins, losses, draws, total_players")
+    .in("commander_id", commanderIds)
+    .order("month_key", { ascending: true });
+
+  let weeklyData: any[] = weeklyPrimary.data ?? [];
+  let monthlyData: any[] = monthlyPrimary.data ?? [];
+
+  if (weeklyPrimary.error) {
+    console.error("Error fetching weekly trends (with players):", weeklyPrimary.error);
+    const weeklyFallback = await supabase
+      .from("commander_weekly_trends")
+      .select("commander_id, week_start_date, entries, wins, losses, draws")
+      .in("commander_id", commanderIds)
+      .order("week_start_date", { ascending: true });
+    weeklyData = weeklyFallback.data ?? [];
+  }
+
+  if (monthlyPrimary.error) {
+    console.error("Error fetching monthly trends (with players):", monthlyPrimary.error);
+    const monthlyFallback = await supabase
+      .from("commander_monthly_trends")
+      .select("commander_id, month_key, entries, wins, losses, draws")
+      .in("commander_id", commanderIds)
+      .order("month_key", { ascending: true });
+    monthlyData = monthlyFallback.data ?? [];
+  }
+
+  if (weeklyPrimary.error) {
+    console.error("Error fetching weekly trends:", weeklyPrimary.error);
+  }
+  if (monthlyPrimary.error) {
+    console.error("Error fetching monthly trends:", monthlyPrimary.error);
+  }
+
+  const weeklyRows = (weeklyData || []) as {
+    commander_id: string;
+    week_start_date: string;
+    entries: number;
+    wins: number;
+    losses: number;
+    draws: number;
+    total_players?: number | null;
+  }[];
+  const monthlyRows = (monthlyData || []) as {
+    commander_id: string;
+    month_key: string;
+    entries: number;
+    wins: number;
+    losses: number;
+    draws: number;
+    total_players?: number | null;
+  }[];
+
+  const weeklyLatest = new Map<string, typeof weeklyRows[number]>();
+  weeklyRows.forEach((row) => {
+    weeklyLatest.set(row.commander_id, row);
+  });
+
+  const monthlyLatest = new Map<string, typeof monthlyRows[number]>();
+  monthlyRows.forEach((row) => {
+    monthlyLatest.set(row.commander_id, row);
+  });
+
+  const snapshots: Record<string, any> = {};
+  commanderIds.forEach((commanderId) => {
+    const week = weeklyLatest.get(commanderId);
+    const month = monthlyLatest.get(commanderId);
+    const weekGames = week ? week.wins + week.losses + week.draws : 0;
+    const monthGames = month ? month.wins + month.losses + month.draws : 0;
+
+    snapshots[commanderId] = {
+      weekStart: week?.week_start_date ?? null,
+      weekEntries: week?.entries ?? null,
+      weekWinRate: weekGames ? (week!.wins / weekGames) * 100 : null,
+      weekPointsPerGame: weekGames ? (week!.wins * 5 + week!.draws) / weekGames : null,
+      weekPlayers: week?.total_players ?? null,
+      monthKey: month?.month_key ?? null,
+      monthEntries: month?.entries ?? null,
+      monthWinRate: monthGames ? (month!.wins / monthGames) * 100 : null,
+      monthPointsPerGame: monthGames ? (month!.wins * 5 + month!.draws) / monthGames : null,
+      monthPlayers: month?.total_players ?? null,
+    };
+  });
+
+  return snapshots;
+}
+
+async function getWeeklyEntries(commanderIds: string[], weeks = 12) {
+  if (commanderIds.length === 0) return {};
+
+  const { data, error } = await supabase
+    .from("commander_weekly_trends")
+    .select("commander_id, week_key, week_start_date, entries")
+    .in("commander_id", commanderIds)
+    .order("week_start_date", { ascending: true });
+
+  if (error) {
+    console.error("Error fetching weekly trends:", error);
+    return {};
+  }
+
+  const rows = (data || []) as WeeklyTrendRow[];
+  const grouped = new Map<string, WeeklyTrendRow[]>();
+  rows.forEach((row) => {
+    const list = grouped.get(row.commander_id) ?? [];
+    list.push(row);
+    grouped.set(row.commander_id, list);
+  });
+
+  const result: Record<string, number[]> = {};
+  grouped.forEach((rowsForCommander, commanderId) => {
+    const sorted = rowsForCommander.sort((a, b) => {
+      const aKey = a.week_start_date || a.week_key || "";
+      const bKey = b.week_start_date || b.week_key || "";
+      return aKey.localeCompare(bKey);
+    });
+    const values = sorted.slice(-weeks).map((row) => row.entries);
+    result[commanderId] = values;
+  });
+
+  return result;
+}
+
+async function getWeeklyWinRateSeries(commanders: CommanderStat[], weeks = 13) {
+  if (commanders.length === 0) {
+    return { data: [] as CommanderTrendSeriesPoint[], series: [] as CommanderTrendSeriesMeta[] };
+  }
+
+  const commanderIds = commanders.map((commander) => commander.commander_id);
+  const { data, error } = await supabase
+    .from("commander_weekly_trends")
+    .select("commander_id, week_key, week_start_date, win_rate")
+    .in("commander_id", commanderIds)
+    .order("week_start_date", { ascending: true });
+
+  if (error) {
+    console.error("Error fetching weekly win rate trends:", error);
+    return { data: [], series: [] };
+  }
+
+  const rows = (data || []) as WeeklyTrendRow[];
+  const grouped = new Map<string, WeeklyTrendRow[]>();
+  rows.forEach((row) => {
+    const list = grouped.get(row.commander_id) ?? [];
+    list.push(row);
+    grouped.set(row.commander_id, list);
+  });
+
+  const weekKeys = Array.from(
+    new Set(rows.map((row) => normalizeDateKey(row.week_start_date) || row.week_key || ""))
+  )
+    .filter(Boolean)
+    .sort((a, b) => Date.parse(a) - Date.parse(b));
+  const slicedWeekKeys = weekKeys.slice(-weeks);
+
+  const dataPoints: CommanderTrendSeriesPoint[] = slicedWeekKeys.map((week) => ({ week }));
+  grouped.forEach((rowsForCommander, commanderId) => {
+    const map = new Map(
+      rowsForCommander.map((row) => [normalizeDateKey(row.week_start_date) || row.week_key || "", row.win_rate ?? null])
+    );
+    dataPoints.forEach((point) => {
+      const value = map.get(point.week) ?? null;
+      point[commanderId] = value !== null && value !== undefined ? Math.round(value * 1000) / 10 : null;
+    });
+  });
+
+  const series: CommanderTrendSeriesMeta[] = commanders.map((commander) => ({
+    id: commander.commander_id,
+    name: commander.commander_name,
+  }));
+
+  return { data: dataPoints, series };
+}
+
+async function getGlobalTrendSeries() {
+  const [weeklyResult, monthlyResult] = await Promise.all([
+    supabase
+      .from("commander_weekly_trends")
+      .select("week_key, week_start_date, entries, wins, losses, draws")
+      .order("week_start_date", { ascending: true }),
+    supabase
+      .from("commander_monthly_trends")
+      .select("month_key, entries, wins, losses, draws")
+      .order("month_key", { ascending: true }),
+  ]);
+
+  if (weeklyResult.error) {
+    console.error("Error fetching global weekly trends:", weeklyResult.error);
+  }
+  if (monthlyResult.error) {
+    console.error("Error fetching global monthly trends:", monthlyResult.error);
+  }
+
+  const weeklyRows = (weeklyResult.data || []) as {
+    week_key?: string | null;
+    week_start_date?: string | null;
+    entries: number;
+    wins: number;
+    losses: number;
+    draws: number;
+  }[];
+  const monthlyRows = (monthlyResult.data || []) as {
+    month_key: string;
+    entries: number;
+    wins: number;
+    losses: number;
+    draws: number;
+  }[];
+
+  const weeklyByKey = new Map<string, { entries: number; wins: number; losses: number; draws: number }>();
+  weeklyRows.forEach((row) => {
+    const key = row.week_start_date || row.week_key;
+    if (!key) return;
+    const current = weeklyByKey.get(key) ?? { entries: 0, wins: 0, losses: 0, draws: 0 };
+    current.entries += row.entries ?? 0;
+    current.wins += row.wins ?? 0;
+    current.losses += row.losses ?? 0;
+    current.draws += row.draws ?? 0;
+    weeklyByKey.set(key, current);
+  });
+
+  const monthlyByKey = new Map<string, { entries: number; wins: number; losses: number; draws: number }>();
+  monthlyRows.forEach((row) => {
+    const current = monthlyByKey.get(row.month_key) ?? { entries: 0, wins: 0, losses: 0, draws: 0 };
+    current.entries += row.entries ?? 0;
+    current.wins += row.wins ?? 0;
+    current.losses += row.losses ?? 0;
+    current.draws += row.draws ?? 0;
+    monthlyByKey.set(row.month_key, current);
+  });
+
+  const weekly: TrendMetricPoint[] = Array.from(weeklyByKey.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-26)
+    .map(([period, values]) => {
+      const games = values.wins + values.losses + values.draws;
+      const winRate = games ? (values.wins / games) * 100 : 0;
+      const pointsPerGame = games ? (values.wins * 5 + values.draws) / games : 0;
+      return { period, entries: values.entries, winRate, pointsPerGame };
+    });
+
+  const monthly: TrendMetricPoint[] = Array.from(monthlyByKey.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-18)
+    .map(([period, values]) => {
+      const games = values.wins + values.losses + values.draws;
+      const winRate = games ? (values.wins / games) * 100 : 0;
+      const pointsPerGame = games ? (values.wins * 5 + values.draws) / games : 0;
+      return { period, entries: values.entries, winRate, pointsPerGame };
+    });
+
+  return { weekly, monthly } satisfies TrendMetricSeries;
+}
+
+export default async function CommanderTrendsPage() {
+  const commanders = await getCommanders();
+  const filteredCommanders = commanders.filter(
+    (commander) => commander.commander_name?.toLowerCase() !== "unknown commander"
+  );
+  const topCommanders = [...filteredCommanders].sort((a, b) => b.total_entries - a.total_entries).slice(0, 10);
+  const snapshotsByCommanderId = await getCommanderPeriodSnapshots(
+    filteredCommanders.map((commander) => commander.commander_id)
+  );
+  const weeklyEntriesByCommanderId = await getWeeklyEntries(
+    filteredCommanders.map((commander) => commander.commander_id),
+    12
+  );
+  const { data: chartData, series: chartSeries } = await getWeeklyWinRateSeries(topCommanders, 13);
+  const globalSeries = await getGlobalTrendSeries();
+
+  return (
+    <div className="min-h-screen">
+      <main className="container mx-auto px-4 py-8">
+        <div className="relative mb-8 overflow-hidden rounded-2xl border border-border/70 bg-card/60 px-6 py-6">
+          <div className="knd-watermark absolute inset-0" />
+          <div className="relative">
+            <Link
+              href="/commanders"
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              ← Back to Commanders
+            </Link>
+            <h1 className="mt-4 text-3xl font-semibold text-foreground md:text-4xl">
+              Commander Trends
+            </h1>
+            <p className="text-muted-foreground mt-2">
+              Week-over-week and month-over-month changes based on tournament entries and win rates.
+            </p>
+          </div>
+        </div>
+
+        <TrendMetricCharts
+          series={globalSeries}
+          title="All commanders"
+          description="Aggregate trends across all commanders (entries, win rate, points per game)."
+        />
+
+        <div className="mt-8">
+          <CommanderTrendsChart data={chartData} series={chartSeries} />
+        </div>
+
+        <div className="mt-8">
+          <CommanderTrendsTable
+            commanders={filteredCommanders}
+            snapshotsByCommanderId={snapshotsByCommanderId}
+            weeklyEntriesByCommanderId={weeklyEntriesByCommanderId}
+            limit={100}
+          />
+        </div>
+      </main>
+    </div>
+  );
+}

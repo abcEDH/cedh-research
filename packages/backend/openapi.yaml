@@ -1,0 +1,659 @@
+openapi: 3.1.0
+info:
+  title: TopDeck.gg Tournaments API V2
+  description: |
+    API for retrieving competitive tournament data from TopDeck.gg.
+
+    ## Attribution Required
+    Any project using this API must include proper attribution to TopDeck.gg.
+    Example: `Data provided by <a href="https://topdeck.gg">TopDeck.gg</a>`
+
+    ## Rate Limits
+    - 200 requests per minute
+    - Contact contact@topdeck.gg for higher limits
+  version: 2.0.0
+  contact:
+    email: contact@topdeck.gg
+  license:
+    name: TopDeck.gg Terms of Service
+    url: https://topdeck.gg/terms
+
+servers:
+  - url: https://topdeck.gg/api
+    description: Production API
+
+security:
+  - ApiKeyAuth: []
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: Your TopDeck.gg API key
+
+  schemas:
+    Game:
+      type: string
+      enum:
+        - "Magic: The Gathering"
+        - "Pokemon"
+        - "Yu-Gi-Oh"
+        - "One Piece"
+        - "Gundam TCG"
+        - "Star Wars Unlimited"
+        - "Disney Lorcana"
+        - "Riftbound"
+        - "Marvel Snap"
+        - "Flesh and Blood"
+        - "Digimon"
+        - "Cardfight Vanguard"
+      description: Supported games (case sensitive)
+
+    MtgFormat:
+      type: string
+      enum:
+        - "EDH"
+        - "Pauper EDH"
+        - "Standard"
+        - "Pioneer"
+        - "Modern"
+        - "Legacy"
+        - "Pauper"
+        - "Vintage"
+        - "Premodern"
+        - "Sealed"
+        - "Limited"
+        - "Duel Commander"
+        - "Old School 93/94"
+        - "Canadian Highlander"
+        - "Tiny Leaders"
+        - "EDH Draft"
+        - "Timeless"
+        - "Historic"
+        - "Explorer"
+        - "7pt Highlander"
+        - "Oathbreaker"
+      description: Magic The Gathering formats
+
+    EventData:
+      type: object
+      properties:
+        lat:
+          type: number
+          format: float
+          description: Latitude coordinate
+        lng:
+          type: number
+          format: float
+          description: Longitude coordinate
+        city:
+          type: string
+          description: City name
+        state:
+          type: string
+          description: State/province
+        location:
+          type: string
+          description: Venue name
+        headerImage:
+          type: string
+          format: uri
+          description: URL to event header image
+
+    DeckObj:
+      type: object
+      description: Structured deck data when available
+      properties:
+        Commanders:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+                description: Unique card identifier (Scryfall ID)
+              count:
+                type: integer
+                minimum: 1
+        Mainboard:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              count:
+                type: integer
+        Sideboard:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              id:
+                type: string
+                format: uuid
+              count:
+                type: integer
+        metadata:
+          type: object
+          properties:
+            format:
+              type: string
+            game:
+              type: string
+            importedFrom:
+              type: string
+              format: uri
+
+    PlayerStanding:
+      type: object
+      properties:
+        standing:
+          type: integer
+          description: Current tournament standing (1-indexed)
+        name:
+          type: string
+          description: Player's display name
+        id:
+          type: string
+          nullable: true
+          description: Player's TopDeck.gg UID (null for anonymous)
+        discord:
+          type: string
+          nullable: true
+          description: Discord username
+        discordId:
+          type: string
+          nullable: true
+          description: Discord user ID
+        decklist:
+          type: string
+          nullable: true
+          description: Decklist as text string or URL
+        deckObj:
+          $ref: '#/components/schemas/DeckObj'
+        points:
+          type: integer
+          description: Total tournament points
+        wins:
+          type: integer
+          description: Total wins (Swiss + Bracket)
+        winsSwiss:
+          type: integer
+          description: Wins in Swiss rounds only
+        winsBracket:
+          type: integer
+          description: Wins in bracket rounds only
+        draws:
+          type: integer
+          description: Number of draws
+        losses:
+          type: integer
+          description: Total losses
+        lossesSwiss:
+          type: integer
+          description: Losses in Swiss rounds only
+        lossesBracket:
+          type: integer
+          description: Losses in bracket rounds only
+        byes:
+          type: integer
+          description: Number of byes received
+        winRate:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: Overall win rate (0.0 to 1.0)
+        winRateSwiss:
+          type: number
+          format: float
+          description: Swiss win rate
+        winRateBracket:
+          type: number
+          format: float
+          description: Bracket win rate
+        opponentWinRate:
+          type: number
+          format: float
+          description: Average opponent win rate (tiebreaker)
+
+    TablePlayer:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Player's display name
+        id:
+          type: string
+          nullable: true
+          description: Player's TopDeck.gg UID
+        discord:
+          type: string
+          nullable: true
+        discordId:
+          type: string
+          nullable: true
+        decklist:
+          type: string
+          nullable: true
+        deckObj:
+          $ref: '#/components/schemas/DeckObj'
+
+    Table:
+      type: object
+      properties:
+        table:
+          oneOf:
+            - type: integer
+              description: Table number
+            - type: string
+              enum: ["Byes"]
+              description: Special table for bye assignments
+        players:
+          type: array
+          items:
+            $ref: '#/components/schemas/TablePlayer'
+          description: |
+            Players at this table. In 4-player EDH pods, the index (0-3)
+            represents seat position (1st, 2nd, 3rd, 4th to act).
+        winner:
+          type: string
+          nullable: true
+          description: Winner's name (null for draws or unfinished)
+        winner_id:
+          oneOf:
+            - type: string
+              description: Winner's player ID
+            - type: string
+              enum: ["Draw"]
+              description: Indicates a draw
+          nullable: true
+          description: Winner's ID, "Draw" for ties, null for unfinished
+        status:
+          type: string
+          enum: ["Completed", "Active", "Pending", "Bye"]
+          description: Table/game status
+
+    Round:
+      type: object
+      properties:
+        round:
+          oneOf:
+            - type: integer
+              description: Swiss round number (1, 2, 3...)
+            - type: string
+              description: Bracket round name (e.g., "Top 8", "Top 4", "Finals")
+        tables:
+          type: array
+          items:
+            $ref: '#/components/schemas/Table'
+
+    Tournament:
+      type: object
+      properties:
+        TID:
+          type: string
+          description: Tournament identifier (slug)
+        tournamentName:
+          type: string
+          description: Name of the tournament
+        swissNum:
+          type: integer
+          description: Number of Swiss rounds
+        startDate:
+          type: integer
+          format: int64
+          description: Unix timestamp of tournament start
+        game:
+          $ref: '#/components/schemas/Game'
+        format:
+          type: string
+          description: Game format
+        topCut:
+          type: integer
+          description: Size of top cut bracket (0 if no bracket)
+        averageElo:
+          type: integer
+          description: Average player Elo rating
+        medianElo:
+          type: integer
+        topElo:
+          type: integer
+          description: Highest player Elo in tournament
+        eventData:
+          $ref: '#/components/schemas/EventData'
+        standings:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlayerStanding'
+        rounds:
+          type: array
+          items:
+            $ref: '#/components/schemas/Round'
+
+    TournamentInfo:
+      type: object
+      properties:
+        name:
+          type: string
+        game:
+          type: string
+        format:
+          type: string
+        startDate:
+          type: integer
+          format: int64
+
+    TournamentFull:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/TournamentInfo'
+        standings:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlayerStanding'
+        rounds:
+          type: array
+          items:
+            $ref: '#/components/schemas/Round'
+
+    PlayerDetails:
+      type: object
+      properties:
+        name:
+          type: string
+        standing:
+          type: integer
+        decklist:
+          type: string
+          nullable: true
+        deckObj:
+          $ref: '#/components/schemas/DeckObj'
+        winRate:
+          type: number
+          format: float
+        gamesPlayed:
+          type: integer
+        gamesWon:
+          type: integer
+        byes:
+          type: integer
+        gamesDrawn:
+          type: integer
+        gamesLost:
+          type: integer
+
+    Error:
+      type: object
+      properties:
+        status:
+          type: integer
+        error:
+          type: string
+
+paths:
+  /v2/tournaments:
+    post:
+      operationId: searchTournaments
+      summary: Search completed tournaments
+      description: |
+        Retrieve information about completed tournaments with powerful filtering options.
+
+        **Note**: When "decklist" is included in columns, the response will also include
+        deckObj fields when structured deck data is available.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                TID:
+                  oneOf:
+                    - type: string
+                    - type: array
+                      items:
+                        type: string
+                  description: Tournament ID(s) to fetch
+                game:
+                  $ref: '#/components/schemas/Game'
+                format:
+                  type: string
+                  description: Game format (case sensitive)
+                start:
+                  type: integer
+                  format: int64
+                  description: Unix timestamp - earliest start date
+                end:
+                  type: integer
+                  format: int64
+                  description: Unix timestamp - latest end date
+                last:
+                  type: integer
+                  description: Number of days back from today
+                participantMin:
+                  type: integer
+                  description: Minimum number of participants
+                participantMax:
+                  type: integer
+                  description: Maximum number of participants
+                columns:
+                  type: array
+                  items:
+                    type: string
+                    enum:
+                      - name
+                      - decklist
+                      - wins
+                      - winsSwiss
+                      - winsBracket
+                      - winRate
+                      - winRateSwiss
+                      - winRateBracket
+                      - byes
+                      - draws
+                      - losses
+                      - lossesSwiss
+                      - lossesBracket
+                      - id
+                  default: ["decklist", "wins", "draws", "losses"]
+                  description: Player columns to include
+                rounds:
+                  oneOf:
+                    - type: boolean
+                    - type: array
+                      items:
+                        type: string
+                        enum: ["round", "tables"]
+                  default: false
+                  description: Include round data
+                tables:
+                  type: array
+                  items:
+                    type: string
+                    enum: ["table", "players", "winner", "status"]
+                  default: ["table", "players", "winner", "status"]
+                players:
+                  type: array
+                  items:
+                    type: string
+                    enum: ["name", "id", "decklist"]
+                  default: ["name", "id"]
+            example:
+              game: "Magic: The Gathering"
+              format: "EDH"
+              last: 90
+              participantMin: 32
+              columns: ["name", "decklist", "wins", "draws", "losses", "id"]
+              rounds: true
+      responses:
+        '200':
+          description: Array of tournaments matching criteria
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Tournament'
+        '400':
+          description: Bad request - missing required fields
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                status: 400
+                error: 'Both "game" and "format" fields are required.'
+        '401':
+          description: Invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                status: 401
+                error: "INVALID API KEY!"
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                status: 429
+                error: "Rate limit Exceeded"
+
+  /v2/tournaments/{TID}:
+    get:
+      operationId: getTournament
+      summary: Get tournament details
+      description: Retrieve detailed information including standings and all rounds
+      parameters:
+        - name: TID
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Tournament identifier
+      responses:
+        '200':
+          description: Tournament details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TournamentFull'
+        '404':
+          description: Tournament not found
+
+  /v2/tournaments/{TID}/info:
+    get:
+      operationId: getTournamentInfo
+      summary: Get basic tournament info
+      parameters:
+        - name: TID
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Basic tournament information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TournamentInfo'
+
+  /v2/tournaments/{TID}/standings:
+    get:
+      operationId: getTournamentStandings
+      summary: Get tournament standings
+      description: |
+        Retrieve player standings with detailed stats.
+
+        **Note**: League tournaments use "successRate"/"opponentSuccessRate"
+        instead of "winRate"/"opponentWinRate"
+      parameters:
+        - name: TID
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Array of player standings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PlayerStanding'
+
+  /v2/tournaments/{TID}/players/{ID}:
+    get:
+      operationId: getPlayer
+      summary: Get player details in tournament
+      parameters:
+        - name: TID
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: ID
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Player's TopDeck.gg UID
+      responses:
+        '200':
+          description: Player details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlayerDetails'
+
+  /v2/tournaments/{TID}/rounds:
+    get:
+      operationId: getTournamentRounds
+      summary: Get all tournament rounds
+      parameters:
+        - name: TID
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Array of all rounds
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Round'
+
+  /v2/tournaments/{TID}/rounds/latest:
+    get:
+      operationId: getLatestRound
+      summary: Get current/latest round
+      parameters:
+        - name: TID
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Tables from the latest round
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Table'

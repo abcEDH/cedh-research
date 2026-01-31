@@ -1,0 +1,3 @@
+# Sample tournament IDs for backfill (one per line)
+# steel-city-spectacular-20k-cedh-main-event
+# roadtomunich
