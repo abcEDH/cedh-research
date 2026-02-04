@@ -100,8 +100,11 @@ async function fetchLatestCommanders(topdeckIds: string[]): Promise<Map<string, 
 export default async function RegionalEloPage({
   searchParams,
 }: {
-  searchParams?: { region?: string | string[] };
+  searchParams?:
+    | { region?: string | string[] }
+    | Promise<{ region?: string | string[] }>;
 }) {
+  const resolvedSearchParams = await Promise.resolve(searchParams);
   const { data: regionsData } = await supabase
     .from("regional_elo_regions")
     .select("region_type, region_key, player_count, updated_at")
@@ -109,9 +112,9 @@ export default async function RegionalEloPage({
     .order("region_key", { ascending: true });
 
   const regions = (regionsData ?? []) as RegionRow[];
-  const regionParam = Array.isArray(searchParams?.region)
-    ? searchParams?.region[0]
-    : searchParams?.region;
+  const regionParam = Array.isArray(resolvedSearchParams?.region)
+    ? resolvedSearchParams?.region[0]
+    : resolvedSearchParams?.region;
   const requestedRegion = decodeURIComponent(regionParam ?? "").trim();
   const defaultRegion = regions.find((region) => region.region_key === "CALIFORNIA")?.region_key;
   const selectedRegion =
