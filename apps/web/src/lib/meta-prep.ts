@@ -42,8 +42,7 @@ export async function getCommanderUsageRows(
     .not("commander_name", "is", null);
 
   if (error) {
-    console.error("Error fetching commander usage:", error);
-    return [];
+    throw new Error(`Error fetching commander usage: ${error.message}`);
   }
 
   return (data ?? []) as CommanderUsageRow[];
@@ -55,12 +54,16 @@ export function buildProfiles(
   topN = 3
 ): { players: PlayerCommanderProfile[]; metaShare: MetaShareRow[] } {
   const perPlayer = new Map<string, Map<string, { entries: number; weightedPoints: number; playerName: string }>>();
+  const playerNames = new Map<string, string>();
   const commanderTotals = new Map<string, number>();
 
   usageRows.forEach((row) => {
     if (!row.topdeck_id || !isKnownCommander(row.commander_name)) return;
     const commanderName = row.commander_name as string;
     const playerName = row.player_name ?? "Unknown";
+    if (row.player_name) {
+      playerNames.set(row.topdeck_id, row.player_name);
+    }
     const perCommander = perPlayer.get(row.topdeck_id) ?? new Map();
     const current = perCommander.get(commanderName) ?? {
       entries: 0,
@@ -97,7 +100,7 @@ export function buildProfiles(
 
     return {
       topdeckId,
-      playerName: rows[0]?.playerName || "Unknown",
+      playerName: playerNames.get(topdeckId) || "Unknown",
       totalEntries: total,
       commanders,
     };

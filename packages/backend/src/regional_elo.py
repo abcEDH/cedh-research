@@ -35,10 +35,10 @@ class PlayerStats:
 
 def load_credentials() -> tuple[str, str]:
     supabase_url = os.getenv("SUPABASE_URL")
-    supabase_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+    supabase_key = os.getenv("SUPABASE_SERVICE_KEY")
 
     if not supabase_url or not supabase_key:
-        raise SystemExit("Error: SUPABASE_URL and SUPABASE_SERVICE_KEY/SUPABASE_ANON_KEY must be set")
+        raise SystemExit("Error: SUPABASE_URL and SUPABASE_SERVICE_KEY must be set")
 
     return supabase_url, supabase_key
 

@@ -6,6 +6,21 @@ import { RegionSelector } from "./region-selector";
 
 export const dynamic = "force-dynamic";
 
+function readRegionParam(
+  params: Awaited<Promise<{ region?: string | string[] }> | { region?: string | string[] }> | undefined
+) {
+  const anyParams = params as
+    | Record<string, string | string[] | undefined>
+    | URLSearchParams
+    | undefined;
+  if (!anyParams) return "";
+  if (typeof (anyParams as URLSearchParams).get === "function") {
+    return (anyParams as URLSearchParams).get("region") ?? "";
+  }
+  const value = (anyParams as Record<string, string | string[] | undefined>).region;
+  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+}
+
 type RegionRow = {
   region_type: string;
   region_key: string;
@@ -113,10 +128,7 @@ export default async function RegionalEloPage({
     .order("region_key", { ascending: true });
 
   const regions = (regionsData ?? []) as RegionRow[];
-  const regionParam = Array.isArray(resolvedSearchParams?.region)
-    ? resolvedSearchParams?.region[0]
-    : resolvedSearchParams?.region;
-  const requestedRegion = decodeURIComponent(regionParam ?? "").trim();
+  const requestedRegion = decodeURIComponent(readRegionParam(resolvedSearchParams)).trim();
   const defaultRegion = regions.find((region) => region.region_key === "CALIFORNIA")?.region_key;
   const selectedRegion =
     regions.find((region) => region.region_key === requestedRegion)?.region_key ||
@@ -161,6 +173,12 @@ export default async function RegionalEloPage({
           <p className="max-w-4xl text-base text-muted-foreground">
             Elo ratings recalculated within each state using only local games. Players can rank
             differently across regions based on localized metas.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Rating model details:{" "}
+            <Link href="/methodology/elo" className="text-primary hover:text-foreground">
+              cEDH Elo methodology
+            </Link>
           </p>
         </header>
 
