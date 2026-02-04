@@ -86,7 +86,6 @@ export default async function RegionalEloPage({
                   name="region"
                   defaultValue={selectedRegion}
                   className="w-full rounded-md border border-[#2a2a2a] bg-[#0f0f0f] px-3 py-2 text-sm text-white"
-                  onChange={(event) => event.currentTarget.form?.submit()}
                 >
                   {regions.map((region) => (
                     <option key={region.region_key} value={region.region_key}>
@@ -94,6 +93,12 @@ export default async function RegionalEloPage({
                     </option>
                   ))}
                 </select>
+                <button
+                  type="submit"
+                  className="w-full rounded-md bg-[#c9a227] px-3 py-2 text-sm font-semibold text-black"
+                >
+                  Load region
+                </button>
               </form>
               <div className="text-xs text-zinc-500">
                 Updated {updatedAt ? formatDate(updatedAt) : "—"}
