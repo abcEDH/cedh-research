@@ -35,6 +35,12 @@ export default function AboutPage() {
                 cEDH Skill Rating methodology
               </Link>
             </p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Data model:{" "}
+              <Link href="/methodology/data-model" className="text-foreground hover:text-primary">
+                Supabase schema + curated views
+              </Link>
+            </p>
           </div>
         </div>
 
