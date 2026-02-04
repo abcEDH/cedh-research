@@ -11,11 +11,11 @@ This document summarizes the Supabase schema used to power cEDH Analytics, inclu
 
 ```mermaid
 flowchart LR
-  A["TopDeck.gg API"] --> B["Ingest<br/>packages/backend/src/ingest.py"]
-  B --> C["Staging tables<br/>tournaments · players · tournament_entries · games"]
-  C --> D["Transform jobs<br/>card_frequency.py · regional_elo.py · win_rate_correlation.py · turn_order_analysis.py"]
+  A["TopDeck.gg API"] --> B["Ingest: packages/backend/src/ingest.py"]
+  B --> C["Staging tables: tournaments · players · tournament_entries · games"]
+  C --> D["Transform jobs: card_frequency.py · regional_elo.py · win_rate_correlation.py · turn_order_analysis.py"]
   D --> E["Analytics views + materialized views"]
-  E --> F["Next.js frontend<br/>apps/web"]
+  E --> F["Next.js frontend: apps/web"]
 
   classDef source fill:#111827,stroke:#111827,color:#f9fafb;
   classDef process fill:#0f766e,stroke:#0f766e,color:#f8fafc;
