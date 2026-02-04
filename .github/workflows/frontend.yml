@@ -12,6 +12,11 @@ on:
       - 'apps/web/**'
       - '.github/workflows/frontend.yml'
 
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
 env:
   NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
   NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
