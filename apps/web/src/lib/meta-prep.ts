@@ -21,6 +21,11 @@ export type MetaShareRow = {
   share: number;
 };
 
+function isKnownCommander(commanderName: string | null | undefined) {
+  const normalized = (commanderName ?? "").trim().toLowerCase();
+  return normalized.length > 0 && normalized !== "unknown commander";
+}
+
 export async function getCommanderUsageRows(
   topdeckIds: string[],
   lookbackStart: string
@@ -51,15 +56,13 @@ export function buildProfiles(
   const commanderTotals = new Map<string, number>();
 
   usageRows.forEach((row) => {
-    if (!row.topdeck_id || !row.commander_name) return;
+    if (!row.topdeck_id || !isKnownCommander(row.commander_name)) return;
     const list = perPlayer.get(row.topdeck_id) ?? [];
     list.push(row);
     perPlayer.set(row.topdeck_id, list);
 
-    commanderTotals.set(
-      row.commander_name,
-      (commanderTotals.get(row.commander_name) ?? 0) + row.entries
-    );
+    const commanderName = row.commander_name as string;
+    commanderTotals.set(commanderName, (commanderTotals.get(commanderName) ?? 0) + row.entries);
   });
 
   const totalEntries = Array.from(commanderTotals.values()).reduce((a, b) => a + b, 0);

@@ -3,6 +3,7 @@ import { fetchChampionshipLeaderboard } from "@/lib/topdeck";
 import { buildProfiles, getCommanderUsageRows, lookbackStartDate } from "@/lib/meta-prep";
 import Link from "next/link";
 import type { MetaShareRow, PlayerCommanderProfile } from "@/lib/meta-prep";
+import { buildTopdeckProfileHref } from "@/lib/topdeck-profile";
 
 export const dynamic = "force-dynamic";
 
@@ -55,6 +56,10 @@ export default async function MidseasonInvitationalPage({
             </CardTitle>
           </CardHeader>
           <CardContent>
+            <div className="mb-4 text-sm text-muted-foreground">
+              Consensus snapshot for invited players based on recent known commander entries
+              (Unknown Commander omitted).
+            </div>
             <div className="grid gap-3 md:grid-cols-2">
               {profiles.metaShare.map((row) => (
                 <div key={row.commander} className="flex items-center justify-between text-sm">
@@ -88,24 +93,36 @@ export default async function MidseasonInvitationalPage({
               <table className="w-full text-sm">
                 <thead className="text-left text-xs uppercase tracking-[0.3em] text-muted-foreground">
                   <tr>
-                    <th className="py-2">Rank</th>
-                    <th>Player</th>
-                    <th>Points</th>
-                    <th>Most Common Decks</th>
+                    <th className="px-2 py-3">Rank</th>
+                    <th className="px-2 py-3">Player</th>
+                    <th className="px-2 py-3">Points</th>
+                    <th className="px-2 py-3">Most Common Decks</th>
                   </tr>
                 </thead>
                 <tbody>
                   {top100.map((entry) => {
                     const profile = profiles.players.find((p) => p.topdeckId === entry.uid);
+                    const profileHref = buildTopdeckProfileHref(entry.username || entry.uid);
                     return (
                       <tr key={entry.uid} className="border-t border-border/60">
-                        <td className="py-3 text-muted-foreground">#{entry.rank}</td>
-                        <td className="py-3">
-                          <div className="font-medium text-white">{entry.name}</div>
+                        <td className="px-2 py-4 text-muted-foreground">#{entry.rank}</td>
+                        <td className="px-2 py-4">
+                          {profileHref ? (
+                            <a
+                              className="font-medium text-foreground hover:text-primary"
+                              href={profileHref}
+                              rel="noreferrer"
+                              target="_blank"
+                            >
+                              {entry.name}
+                            </a>
+                          ) : (
+                            <div className="font-medium text-foreground">{entry.name}</div>
+                          )}
                           <div className="text-xs text-muted-foreground">{entry.username || entry.uid}</div>
                         </td>
-                        <td className="py-3 text-muted-foreground">{entry.points}</td>
-                        <td className="py-3">
+                        <td className="px-2 py-4 text-muted-foreground">{entry.points}</td>
+                        <td className="px-2 py-4">
                           <div className="flex flex-wrap gap-2">
                             {profile?.commanders?.length ? (
                               profile.commanders.map((commander) => (
