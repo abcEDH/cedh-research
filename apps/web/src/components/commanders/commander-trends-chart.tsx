@@ -38,10 +38,14 @@ export default function CommanderTrendsChart({
   data,
   series,
   yLabel = "Win Rate (%)",
+  title = "Top 10 commanders over time",
+  description = "Weekly win rate trends (last 13 weeks).",
 }: {
   data: CommanderTrendSeriesPoint[];
   series: CommanderTrendSeriesMeta[];
   yLabel?: string;
+  title?: string;
+  description?: string;
 }) {
   const colorMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -63,8 +67,8 @@ export default function CommanderTrendsChart({
     <div className="rounded-2xl border border-border/60 bg-card/60 p-4">
       <div className="mb-4">
         <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Trendline</p>
-        <p className="text-lg font-semibold text-foreground">Top 10 commanders over time</p>
-        <p className="text-sm text-muted-foreground">Weekly win rate trends (last 13 weeks).</p>
+        <p className="text-lg font-semibold text-foreground">{title}</p>
+        <p className="text-sm text-muted-foreground">{description}</p>
       </div>
       <div className="h-[320px]">
         <ResponsiveContainer width="100%" height="100%">
