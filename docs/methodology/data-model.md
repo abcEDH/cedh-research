@@ -7,6 +7,82 @@ This document summarizes the Supabase schema used to power cEDH Analytics, inclu
 - Primary schema definitions live in Supabase migrations under `packages/backend/supabase/migrations`.
 - A summarized data dictionary is maintained in `packages/backend/docs/data_dictionary.md`.
 
+## ETL Flow
+
+```mermaid
+flowchart LR
+  A[TopDeck.gg API] --> B[Ingest: packages/backend/src/ingest.py]
+  B --> C[Staging tables\n(tournaments, players, tournament_entries, games)]
+  C --> D[Transform jobs\n(card_frequency.py, regional_elo.py, win_rate_correlation.py, turn_order_analysis.py)]
+  D --> E[Analytics views + materialized views]
+  E --> F[Next.js frontend\napps/web]
+```
+
+## Data Model (ERD)
+
+```mermaid
+erDiagram
+  COMMANDERS ||--o{ TOURNAMENT_ENTRIES : has
+  PLAYERS ||--o{ TOURNAMENT_ENTRIES : has
+  TOURNAMENTS ||--o{ TOURNAMENT_ENTRIES : has
+
+  TOURNAMENTS ||--o{ GAMES : has
+  GAMES ||--o{ GAME_PARTICIPANTS : has
+  TOURNAMENT_ENTRIES ||--o{ GAME_PARTICIPANTS : has
+
+  GAMES ||--o{ COMMANDER_MATCHUPS : has
+  COMMANDERS ||--o{ COMMANDER_MATCHUPS : has
+
+  COMMANDERS {
+    uuid id PK
+    text name
+    text[] commander_names
+  }
+
+  PLAYERS {
+    uuid id PK
+    text topdeck_id
+    text name
+  }
+
+  TOURNAMENTS {
+    uuid id PK
+    text topdeck_tid
+    timestamptz start_date
+    int player_count
+  }
+
+  TOURNAMENT_ENTRIES {
+    uuid id PK
+    uuid tournament_id FK
+    uuid player_id FK
+    uuid commander_id FK
+  }
+
+  GAMES {
+    uuid id PK
+    uuid tournament_id FK
+    int round_number
+    text round_name
+    int table_number
+  }
+
+  GAME_PARTICIPANTS {
+    uuid id PK
+    uuid game_id FK
+    uuid entry_id FK
+    int seat_position
+    text result
+  }
+
+  COMMANDER_MATCHUPS {
+    uuid id PK
+    uuid game_id FK
+    uuid commander_id FK
+    uuid opponent_commander_id FK
+  }
+```
+
 ## Core Entities
 
 ### Tournaments
