@@ -21,6 +21,7 @@ type TopDeckTournamentResponse = {
   standings: Array<{
     name: string;
     id: string;
+    username?: string | null;
     standing: number;
     points: number;
     winRate: number;
@@ -47,17 +48,54 @@ export async function fetchChampionshipLeaderboard(): Promise<TopDeckLeaderboard
 
 export async function fetchTournamentBySlug(slug: string): Promise<TopDeckTournamentResponse> {
   const apiKey = process.env.TOPDECK_API_KEY;
-  if (!apiKey) {
-    throw new Error("TOPDECK_API_KEY is not set");
+  if (apiKey) {
+    const res = await fetch(`https://topdeck.gg/api/v2/tournaments/${slug}`.trim(), {
+      headers: {
+        Authorization: apiKey,
+      },
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      throw new Error(
+        `TopDeck API failed (${res.status}). TOPDECK_API_KEY is set, so fallback was skipped.`
+      );
+    }
+    return (await res.json()) as TopDeckTournamentResponse;
   }
-  const res = await fetch(`https://topdeck.gg/api/v2/tournaments/${slug}`.trim(), {
-    headers: {
-      Authorization: apiKey,
+
+  const [bracketResponse, playersResponse] = await Promise.all([
+    fetch(`https://topdeck.gg/bracket/${slug}`.trim(), { cache: "no-store" }),
+    fetch(`https://topdeck.gg/PublicPData/${slug}`.trim(), { cache: "no-store" }),
+  ]);
+
+  if (!bracketResponse.ok || !playersResponse.ok) {
+    const status = `${bracketResponse.status}/${playersResponse.status}`;
+    throw new Error(`TopDeck tournament fetch failed (${status})`);
+  }
+
+  const [html, playersJson] = await Promise.all([bracketResponse.text(), playersResponse.json()]);
+  const titleMatch = html.match(/<title>(.*?)<\/title>/i);
+  const title = (titleMatch?.[1] ?? slug).replace(/\s*-\s*Tournament Standings\s*$/i, "").trim();
+  const players = Object.values(playersJson as Record<string, any>) as Array<any>;
+
+  return {
+    data: {
+      name: title || slug,
+      game: "Magic: The Gathering",
+      format: "EDH",
+      startDate: "",
     },
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    throw new Error(`TopDeck tournament fetch failed (${res.status})`);
-  }
-  return (await res.json()) as TopDeckTournamentResponse;
+    standings: players
+      .map((player, index) => ({
+        name: player?.name ?? "Unknown",
+        id: player?.uid ?? "",
+        username: player?.username ?? null,
+        standing: index + 1,
+        points: 0,
+        winRate: 0,
+        opponentWinRate: 0,
+      }))
+      .filter((row) => row.id.length > 0),
+    rounds: [],
+  };
 }

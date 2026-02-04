@@ -5,13 +5,16 @@ export type CommanderUsageRow = {
   topdeck_id: string | null;
   player_name: string | null;
   commander_name: string | null;
+  wins: number | null;
+  draws: number | null;
+  losses: number | null;
 };
 
 export type PlayerCommanderProfile = {
   topdeckId: string;
   playerName: string;
   totalEntries: number;
-  commanders: Array<{ commander: string; entries: number; share: number }>;
+  commanders: Array<{ commander: string; entries: number; share: number; weightedShare: number }>;
 };
 
 export type MetaShareRow = {
@@ -19,6 +22,11 @@ export type MetaShareRow = {
   entries: number;
   share: number;
 };
+
+function isKnownCommander(commanderName: string | null | undefined) {
+  const normalized = (commanderName ?? "").trim().toLowerCase();
+  return normalized.length > 0 && normalized !== "unknown commander";
+}
 
 export async function getCommanderUsageRows(
   topdeckIds: string[],
@@ -28,7 +36,7 @@ export async function getCommanderUsageRows(
 
   const { data, error } = await supabase
     .from("player_commander_entries")
-    .select("topdeck_id, player_name, commander_name")
+    .select("topdeck_id, player_name, commander_name, wins, draws, losses")
     .in("topdeck_id", topdeckIds)
     .gte("start_date", lookbackStart)
     .not("commander_name", "is", null);
@@ -45,40 +53,49 @@ export function buildProfiles(
   usageRows: CommanderUsageRow[],
   topN = 3
 ): { players: PlayerCommanderProfile[]; metaShare: MetaShareRow[] } {
-  const perPlayer = new Map<string, Map<string, number>>();
+  const perPlayer = new Map<string, Map<string, { entries: number; weightedPoints: number; playerName: string }>>();
   const playerNames = new Map<string, string>();
   const commanderTotals = new Map<string, number>();
 
   usageRows.forEach((row) => {
-    if (!row.topdeck_id || !row.commander_name) return;
+    if (!row.topdeck_id || !isKnownCommander(row.commander_name)) return;
+    const commanderName = row.commander_name as string;
+    const playerName = row.player_name ?? "Unknown";
     if (row.player_name) {
       playerNames.set(row.topdeck_id, row.player_name);
     }
-
-    const perCommander = perPlayer.get(row.topdeck_id) ?? new Map<string, number>();
-    perCommander.set(row.commander_name, (perCommander.get(row.commander_name) ?? 0) + 1);
+    const perCommander = perPlayer.get(row.topdeck_id) ?? new Map();
+    const current = perCommander.get(commanderName) ?? {
+      entries: 0,
+      weightedPoints: 0,
+      playerName,
+    };
+    current.entries += 1;
+    current.weightedPoints += (row.wins ?? 0) + (row.draws ?? 0) * 0.25;
+    perCommander.set(commanderName, current);
     perPlayer.set(row.topdeck_id, perCommander);
 
-    commanderTotals.set(
-      row.commander_name,
-      (commanderTotals.get(row.commander_name) ?? 0) + 1
-    );
+    commanderTotals.set(commanderName, (commanderTotals.get(commanderName) ?? 0) + 1);
   });
 
   const totalEntries = Array.from(commanderTotals.values()).reduce((a, b) => a + b, 0);
 
   const players: PlayerCommanderProfile[] = topdeckIds.map((topdeckId) => {
-    const perCommander = perPlayer.get(topdeckId) ?? new Map<string, number>();
-    const rows = Array.from(perCommander.entries()).map(([commander, entries]) => ({
+    const perCommander = perPlayer.get(topdeckId) ?? new Map();
+    const rows = Array.from(perCommander.entries()).map(([commander, values]) => ({
       commander,
-      entries,
+      entries: values.entries,
+      weightedPoints: values.weightedPoints,
+      playerName: values.playerName,
     }));
     const total = rows.reduce((sum, row) => sum + row.entries, 0);
+    const totalWeighted = rows.reduce((sum, row) => sum + row.weightedPoints, 0);
     const sorted = rows.sort((a, b) => b.entries - a.entries);
     const commanders = sorted.slice(0, topN).map((row) => ({
       commander: row.commander,
       entries: row.entries,
       share: total ? row.entries / total : 0,
+      weightedShare: totalWeighted ? row.weightedPoints / totalWeighted : total ? row.entries / total : 0,
     }));
 
     return {

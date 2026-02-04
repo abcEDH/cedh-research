@@ -3,6 +3,7 @@ import { fetchChampionshipLeaderboard } from "@/lib/topdeck";
 import { buildProfiles, getCommanderUsageRows, lookbackStartDate } from "@/lib/meta-prep";
 import Link from "next/link";
 import type { MetaShareRow, PlayerCommanderProfile } from "@/lib/meta-prep";
+import { buildTopdeckProfileHref } from "@/lib/topdeck-profile";
 
 export const dynamic = "force-dynamic";
 
@@ -65,6 +66,24 @@ export default async function MidseasonInvitationalPage({
     .slice(0, 5)
     .reduce((sum, row) => sum + row.share, 0);
   const topCommander = profiles.metaShare[0];
+  const totalInvitedPlayers = top100.length;
+  const weightedMeta = new Map<string, number>();
+  for (const player of profiles.players) {
+    for (const commander of player.commanders) {
+      weightedMeta.set(
+        commander.commander,
+        (weightedMeta.get(commander.commander) ?? 0) + commander.weightedShare
+      );
+    }
+  }
+  const weightedMetaRows = Array.from(weightedMeta.entries())
+    .map(([commander, expectedPlayers]) => ({
+      commander,
+      fieldShare: totalInvitedPlayers ? expectedPlayers / totalInvitedPlayers : 0,
+      expectedPlayers,
+    }))
+    .sort((a, b) => b.expectedPlayers - a.expectedPlayers)
+    .slice(0, 15);
 
   return (
     <div className="min-h-screen">
@@ -86,20 +105,23 @@ export default async function MidseasonInvitationalPage({
         <Card className="knd-panel mt-8">
           <CardHeader>
             <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
-              Expected Meta Share
+              Expected Field Share (Player-Weighted)
             </CardTitle>
           </CardHeader>
           <CardContent>
+            <div className="mb-4 text-sm text-muted-foreground">
+              Consensus snapshot for invited players based on recent known commander entries
+              (Unknown Commander omitted). Percentages are weighted by player-level commander
+              usage across the 100-player invite field.
+            </div>
             <div className="grid gap-3 md:grid-cols-2">
-              {profiles.metaShare.map((row) => (
+              {weightedMetaRows.map((row) => (
                 <div key={row.commander} className="flex items-center justify-between text-sm">
                   <span className="text-foreground">{row.commander}</span>
-                  <span className="text-primary">
-                    {Math.round(row.share * 100)}% ({row.entries})
-                  </span>
+                  <span className="text-primary">{Math.round(row.fieldShare * 100)}%</span>
                 </div>
               ))}
-              {!profiles.metaShare.length && (
+              {!weightedMetaRows.length && (
                 <div className="text-sm text-muted-foreground">No commander history for leaderboard.</div>
               )}
             </div>
@@ -173,24 +195,36 @@ export default async function MidseasonInvitationalPage({
               <table className="w-full text-sm">
                 <thead className="text-left text-xs uppercase tracking-[0.3em] text-muted-foreground">
                   <tr>
-                    <th className="py-2">Rank</th>
-                    <th>Player</th>
-                    <th>Points</th>
-                    <th>Most Common Decks</th>
+                    <th className="px-2 py-3">Rank</th>
+                    <th className="px-2 py-3">Player</th>
+                    <th className="px-2 py-3">Points</th>
+                    <th className="px-2 py-3">Most Common Decks</th>
                   </tr>
                 </thead>
                 <tbody>
                   {top100.map((entry) => {
                     const profile = profiles.players.find((p) => p.topdeckId === entry.uid);
+                    const profileHref = buildTopdeckProfileHref(entry.username || entry.uid);
                     return (
                       <tr key={entry.uid} className="border-t border-border/60">
-                        <td className="py-3 text-muted-foreground">#{entry.rank}</td>
-                        <td className="py-3">
-                          <div className="font-medium text-white">{entry.name}</div>
+                        <td className="px-2 py-4 text-muted-foreground">#{entry.rank}</td>
+                        <td className="px-2 py-4">
+                          {profileHref ? (
+                            <a
+                              className="font-medium text-foreground hover:text-primary"
+                              href={profileHref}
+                              rel="noreferrer"
+                              target="_blank"
+                            >
+                              {entry.name}
+                            </a>
+                          ) : (
+                            <div className="font-medium text-foreground">{entry.name}</div>
+                          )}
                           <div className="text-xs text-muted-foreground">{entry.username || entry.uid}</div>
                         </td>
-                        <td className="py-3 text-muted-foreground">{entry.points}</td>
-                        <td className="py-3">
+                        <td className="px-2 py-4 text-muted-foreground">{entry.points}</td>
+                        <td className="px-2 py-4">
                           <div className="flex flex-wrap gap-2">
                             {profile?.commanders?.length ? (
                               profile.commanders.map((commander) => (
