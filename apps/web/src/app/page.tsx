@@ -101,6 +101,12 @@ export default async function Home() {
               <Link className="transition hover:text-foreground" href="/survival">
                 Survival
               </Link>
+              <Link className="transition hover:text-foreground" href="/tournament-likelihood">
+                Tournament Prep
+              </Link>
+              <Link className="transition hover:text-foreground" href="/regional-elo">
+                Regional Elo
+              </Link>
               <Link className="transition hover:text-foreground" href="/about">
                 Methodology
               </Link>
@@ -152,7 +158,7 @@ export default async function Home() {
                     <TableHead className="py-3">Commander</TableHead>
                     <TableHead className="py-3">Entries</TableHead>
                     <TableHead className="py-3">Win rate</TableHead>
-                    <TableHead className="py-3">Top 16%</TableHead>
+                    <TableHead className="py-3">Top Bracket%</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -206,7 +212,7 @@ export default async function Home() {
           </Card>
         </section>
 
-        <section className="mt-12 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-6">
+        <section className="mt-12 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
           <FeatureCard
             href="/commanders"
             title="Commander Rankings"
@@ -236,6 +242,24 @@ export default async function Home() {
             title="Survival Analysis"
             description="Track survival probability through tournament rounds"
             color="hsl(var(--knd-cyan))"
+          />
+          <FeatureCard
+            href="/tournament-likelihood"
+            title="Tournament Prep"
+            description="Estimate attendee commander likelihood and expected meta share"
+            color="hsl(var(--knd-amber))"
+          />
+          <FeatureCard
+            href="/midseason-invitational"
+            title="MidSeason Scout"
+            description="Top 100 invite leaderboard and most-played deck profiles"
+            color="hsl(var(--knd-cyan))"
+          />
+          <FeatureCard
+            href="/regional-elo"
+            title="Regional Elo"
+            description="State-level Elo leaderboards using localized tournament results"
+            color="hsl(var(--knd-lime))"
           />
           <FeatureCard
             href="/about"

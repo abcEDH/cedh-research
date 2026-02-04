@@ -53,8 +53,12 @@ test.describe("Commanders List Page", () => {
     // Should show total entries
     await expect(page.getByText(/Total Entries/i)).toBeVisible();
 
-    // Values should not be 0 - look for the value with font-mono class
-    const totalEntriesValue = page.locator("text=Total Entries").locator("..").locator("p.font-mono");
-    await expect(totalEntriesValue).not.toHaveText("0");
+    // Values should not be 0
+    const totalEntriesValue = page
+      .locator("p", { hasText: "Total Entries" })
+      .locator("xpath=../../p")
+      .first();
+    const text = (await totalEntriesValue.textContent()) ?? "";
+    expect(text.replace(/,/g, "")).not.toBe("0");
   });
 });

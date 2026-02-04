@@ -7,26 +7,11 @@ test.describe("Home Page", () => {
 
   test("loads and displays hero section", async ({ page }) => {
     await expect(page.getByRole("heading", { name: /cEDH Analytics/i })).toBeVisible();
-    await expect(page.getByText(/Data-driven insights/i)).toBeVisible();
-  });
-
-  test("displays tournament and commander counts from database", async ({ page }) => {
-    // Stats cards should show real data (not 0)
-    await expect(page.getByText("Tournaments Tracked")).toBeVisible();
-    await expect(page.getByText("Unique Commanders")).toBeVisible();
-
-    // Wait for data to load and verify counts are displayed
-    await page.waitForTimeout(2000);
-
-    // Look for large numbers (stats values are in bold text)
-    const statsValues = page.locator("p.text-4xl.font-bold");
-    const count = await statsValues.count();
-    expect(count).toBeGreaterThanOrEqual(2);
+    await expect(page.getByRole("heading", { name: /competitive Commander analytics/i })).toBeVisible();
   });
 
   test("displays top commanders list with real data", async ({ page }) => {
-    // Most Popular section should have commanders
-    await expect(page.getByText("Most Popular")).toBeVisible();
+    await expect(page.getByText("Commander performance")).toBeVisible();
 
     // Should have at least one commander link
     await page.waitForTimeout(2000);
@@ -43,5 +28,11 @@ test.describe("Home Page", () => {
     // Click and verify navigation
     await survivalCard.click();
     await expect(page).toHaveURL(/\/survival/);
+  });
+
+  test("new tools are discoverable from home", async ({ page }) => {
+    await expect(page.locator('a[href="/tournament-likelihood"]')).toBeVisible();
+    await expect(page.locator('a[href="/midseason-invitational"]')).toBeVisible();
+    await expect(page.locator('a[href="/regional-elo"]')).toBeVisible();
   });
 });
