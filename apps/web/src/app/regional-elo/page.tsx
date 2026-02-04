@@ -2,6 +2,7 @@ import { supabase } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
 import { buildTopdeckProfileHref } from "@/lib/topdeck-profile";
+import { RegionSelector } from "./region-selector";
 
 export const dynamic = "force-dynamic";
 
@@ -169,26 +170,7 @@ export default async function RegionalEloPage({
               <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">Region</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <form action="/regional-elo" method="get" className="space-y-3">
-                <label className="text-sm text-muted-foreground">Select a state</label>
-                <select
-                  name="region"
-                  defaultValue={selectedRegion}
-                  className="knd-input"
-                >
-                  {regions.map((region) => (
-                    <option key={region.region_key} value={region.region_key}>
-                      {region.region_key} ({region.player_count})
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="submit"
-                  className="w-full rounded-md bg-primary px-3 py-2 text-sm font-semibold text-background"
-                >
-                  Load region
-                </button>
-              </form>
+              <RegionSelector regions={regions} selectedRegion={selectedRegion} />
               <div className="text-xs text-muted-foreground">
                 Updated {updatedAt ? formatDate(updatedAt) : "—"}
               </div>
@@ -200,6 +182,7 @@ export default async function RegionalEloPage({
               <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
                 Top Players
               </CardTitle>
+              <p className="text-xs text-muted-foreground">Active region: {selectedRegion ?? "—"}</p>
             </CardHeader>
             <CardContent>
               <div className="max-h-[70vh] overflow-auto">
