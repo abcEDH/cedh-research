@@ -38,7 +38,7 @@ export async function fetchChampionshipLeaderboard(): Promise<TopDeckLeaderboard
     throw new Error(`TopDeck leaderboard fetch failed (${res.status})`);
   }
   const html = await res.text();
-  const match = html.match(/const Leaderboard = (\[.*?\]);/s);
+  const match = html.match(/const Leaderboard = (\\[[\\s\\S]*?\\]);/);
   if (!match) {
     throw new Error("TopDeck leaderboard payload not found in HTML");
   }
