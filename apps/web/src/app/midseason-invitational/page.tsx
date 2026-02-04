@@ -6,13 +6,28 @@ import type { MetaShareRow, PlayerCommanderProfile } from "@/lib/meta-prep";
 
 export const dynamic = "force-dynamic";
 
+function readMonthsParam(
+  params: Awaited<Promise<{ months?: string }> | { months?: string }> | undefined
+) {
+  const anyParams = params as
+    | Record<string, string | string[] | undefined>
+    | URLSearchParams
+    | undefined;
+  if (!anyParams) return undefined;
+  if (typeof (anyParams as URLSearchParams).get === "function") {
+    return (anyParams as URLSearchParams).get("months") ?? undefined;
+  }
+  const value = (anyParams as Record<string, string | string[] | undefined>).months;
+  return Array.isArray(value) ? value[0] : value;
+}
+
 export default async function MidseasonInvitationalPage({
   searchParams,
 }: {
   searchParams?: Promise<{ months?: string }> | { months?: string };
 }) {
   const resolvedSearchParams = await Promise.resolve(searchParams);
-  const months = Number(resolvedSearchParams?.months || "12");
+  const months = Number(readMonthsParam(resolvedSearchParams) || "12");
   const lookbackMonths = Number.isFinite(months) && months > 0 ? months : 12;
   const lookbackStart = lookbackStartDate(lookbackMonths);
 

@@ -3,6 +3,21 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const dynamic = "force-dynamic";
 
+function readRegionParam(
+  params: Awaited<Promise<{ region?: string }> | { region?: string }> | undefined
+) {
+  const anyParams = params as
+    | Record<string, string | string[] | undefined>
+    | URLSearchParams
+    | undefined;
+  if (!anyParams) return "";
+  if (typeof (anyParams as URLSearchParams).get === "function") {
+    return (anyParams as URLSearchParams).get("region") ?? "";
+  }
+  const value = (anyParams as Record<string, string | string[] | undefined>).region;
+  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+}
+
 type RegionRow = {
   region_type: string;
   region_key: string;
@@ -48,7 +63,7 @@ export default async function RegionalEloPage({
     .order("region_key", { ascending: true });
 
   const regions = (regionsData ?? []) as RegionRow[];
-  const requestedRegion = decodeURIComponent(resolvedSearchParams?.region ?? "").trim();
+  const requestedRegion = decodeURIComponent(readRegionParam(resolvedSearchParams)).trim();
   const selectedRegion =
     regions.find((region) => region.region_key === requestedRegion)?.region_key ||
     regions.find((region) => region.region_key.toUpperCase() === requestedRegion.toUpperCase())
