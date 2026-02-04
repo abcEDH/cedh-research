@@ -74,6 +74,7 @@ src/
 ```
 NEXT_PUBLIC_SUPABASE_URL=https://msjjihqbxtgjdtapywrj.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-key-in-1password>
+TOPDECK_API_KEY=<server-only>
 ```
 
 ## Design System
