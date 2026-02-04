@@ -8,13 +8,32 @@ export const dynamic = "force-dynamic";
 
 const DEFAULT_TOURNAMENT = "cardart-monthly-underground-sea";
 
+function readSearchParam(
+  params: Awaited<
+    Promise<{ tournament?: string; months?: string }> | { tournament?: string; months?: string }
+  > | undefined,
+  key: "tournament" | "months"
+) {
+  const anyParams = params as
+    | Record<string, string | string[] | undefined>
+    | URLSearchParams
+    | undefined;
+  if (!anyParams) return undefined;
+  if (typeof (anyParams as URLSearchParams).get === "function") {
+    return (anyParams as URLSearchParams).get(key) ?? undefined;
+  }
+  const value = (anyParams as Record<string, string | string[] | undefined>)[key];
+  return Array.isArray(value) ? value[0] : value;
+}
+
 export default async function TournamentLikelihoodPage({
   searchParams,
 }: {
-  searchParams?: { tournament?: string; months?: string };
+  searchParams?: Promise<{ tournament?: string; months?: string }> | { tournament?: string; months?: string };
 }) {
-  const tournamentSlug = searchParams?.tournament || "";
-  const months = Number(searchParams?.months || "12");
+  const resolvedSearchParams = await Promise.resolve(searchParams);
+  const tournamentSlug = readSearchParam(resolvedSearchParams, "tournament") || "";
+  const months = Number(readSearchParam(resolvedSearchParams, "months") || "12");
   const lookbackMonths = Number.isFinite(months) && months > 0 ? months : 12;
 
   let tournamentName = "";
@@ -41,7 +60,7 @@ export default async function TournamentLikelihoodPage({
       const usageRows = await getCommanderUsageRows(topdeckIds, lookbackStart);
       playerProfiles = buildProfiles(topdeckIds, usageRows, 3);
     } catch (error) {
-      errorMessage = (error as Error).message;
+      errorMessage = (error as Error)?.message || "Failed to load tournament data.";
     }
   }
 

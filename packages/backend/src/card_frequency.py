@@ -266,7 +266,7 @@ def print_global_report(cards: list[CardFrequencyResult], title: str = "GLOBAL C
 def load_credentials() -> tuple[str, str]:
     """Load Supabase credentials from environment or .env file."""
     supabase_url = os.getenv("SUPABASE_URL")
-    supabase_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+    supabase_key = os.getenv("SUPABASE_SERVICE_KEY")
 
     if not supabase_url or not supabase_key:
         env_path = Path(".env")
@@ -277,11 +277,11 @@ def load_credentials() -> tuple[str, str]:
                         key, value = line.strip().split("=", 1)
                         if key == "SUPABASE_URL":
                             supabase_url = value
-                        elif key in ("SUPABASE_SERVICE_KEY", "SUPABASE_ANON_KEY"):
+                        elif key == "SUPABASE_SERVICE_KEY":
                             supabase_key = value
 
     if not supabase_url or not supabase_key:
-        print("Error: SUPABASE_URL and SUPABASE_SERVICE_KEY/SUPABASE_ANON_KEY must be set")
+        print("Error: SUPABASE_URL and SUPABASE_SERVICE_KEY must be set")
         sys.exit(1)
 
     return supabase_url, supabase_key

@@ -1,7 +1,23 @@
 import { supabase } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
+
+function readRegionParam(
+  params: Awaited<Promise<{ region?: string }> | { region?: string }> | undefined
+) {
+  const anyParams = params as
+    | Record<string, string | string[] | undefined>
+    | URLSearchParams
+    | undefined;
+  if (!anyParams) return "";
+  if (typeof (anyParams as URLSearchParams).get === "function") {
+    return (anyParams as URLSearchParams).get("region") ?? "";
+  }
+  const value = (anyParams as Record<string, string | string[] | undefined>).region;
+  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+}
 
 type RegionRow = {
   region_type: string;
@@ -37,8 +53,10 @@ function formatDate(value: string | null) {
 export default async function RegionalEloPage({
   searchParams,
 }: {
-  searchParams?: { region?: string };
+  searchParams?: Promise<{ region?: string }> | { region?: string };
 }) {
+  const resolvedSearchParams = await Promise.resolve(searchParams);
+
   const { data: regionsData } = await supabase
     .from("regional_elo_regions")
     .select("region_type, region_key, player_count, updated_at")
@@ -46,7 +64,12 @@ export default async function RegionalEloPage({
     .order("region_key", { ascending: true });
 
   const regions = (regionsData ?? []) as RegionRow[];
-  const selectedRegion = searchParams?.region || regions[0]?.region_key;
+  const requestedRegion = decodeURIComponent(readRegionParam(resolvedSearchParams)).trim();
+  const selectedRegion =
+    regions.find((region) => region.region_key === requestedRegion)?.region_key ||
+    regions.find((region) => region.region_key.toUpperCase() === requestedRegion.toUpperCase())
+      ?.region_key ||
+    regions[0]?.region_key;
 
   const { data: leaderboardData } = await supabase
     .from("regional_elo_leaderboard")
@@ -71,6 +94,12 @@ export default async function RegionalEloPage({
           <p className="text-base text-zinc-300">
             Elo ratings recalculated within each state using only local games. Players can rank
             differently across regions based on localized metas.
+          </p>
+          <p className="text-sm text-zinc-400">
+            Rating model details:{" "}
+            <Link href="/methodology/elo" className="text-[#c9a227] hover:text-[#e3c24f]">
+              cEDH Elo methodology
+            </Link>
           </p>
         </div>
 
