@@ -15,10 +15,12 @@ test.describe("Commanders List Page", () => {
     await expect(rankingsTable).toBeVisible();
 
     // Should have table headers
-    await expect(page.getByRole("columnheader", { name: /Rank/i })).toBeVisible();
-    await expect(page.getByRole("columnheader", { name: /Commander/i })).toBeVisible();
-    await expect(page.getByRole("columnheader", { name: /Entries/i })).toBeVisible();
-    await expect(page.getByRole("columnheader", { name: /Win Rate/i })).toBeVisible();
+    await expect(rankingsTable.getByRole("columnheader", { name: /Rank/i })).toBeVisible();
+    await expect(
+      rankingsTable.getByRole("columnheader", { name: /Commander/i }),
+    ).toBeVisible();
+    await expect(rankingsTable.getByRole("columnheader", { name: /Entries/i })).toBeVisible();
+    await expect(rankingsTable.getByRole("columnheader", { name: /Win Rate/i })).toBeVisible();
   });
 
   test("commanders have non-zero entry counts", async ({ page }) => {
