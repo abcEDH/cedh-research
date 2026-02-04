@@ -127,6 +127,9 @@ jobs:
         run: |
           set -euo pipefail
 
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           PATTERN="^v${MINOR_RELEASE_LINE//./\\.}\\.([0-9]+)$"
           LAST_TAG="$(git tag --list "v${MINOR_RELEASE_LINE}.*" --sort=-v:refname | head -n 1)"
 
