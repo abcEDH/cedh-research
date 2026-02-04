@@ -5,6 +5,11 @@ on:
     # Run weekly on Monday at 9 AM UTC
     - cron: '0 9 * * 1'
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'packages/backend/**'
+      - '.github/workflows/backend.yml'
   push:
     paths:
       - 'packages/backend/**'
@@ -16,6 +21,30 @@ env:
   SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
 
 jobs:
+  data-dictionary:
+    name: Validate data dictionary updates
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check data dictionary updated when migrations change
+        run: |
+          set -euo pipefail
+          BASE_REF="${{ github.base_ref }}"
+          git fetch origin "$BASE_REF"
+
+          MIGRATIONS_CHANGED=$(git diff --name-only "origin/$BASE_REF"...HEAD -- packages/backend/supabase/migrations | wc -l | tr -d ' ')
+          DICT_CHANGED=$(git diff --name-only "origin/$BASE_REF"...HEAD -- packages/backend/docs/data_dictionary.md | wc -l | tr -d ' ')
+
+          if [ "$MIGRATIONS_CHANGED" -gt 0 ] && [ "$DICT_CHANGED" -eq 0 ]; then
+            echo "::error::Migrations changed but packages/backend/docs/data_dictionary.md was not updated."
+            exit 1
+          fi
+
+          echo "Data dictionary check passed."
   ingest:
     runs-on: ubuntu-latest
     steps:
