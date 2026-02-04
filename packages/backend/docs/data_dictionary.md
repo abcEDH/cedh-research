@@ -1,5 +1,8 @@
 # Data Dictionary
 
+Last reviewed: 2026-02-04
+Update policy: This file must be updated whenever migrations in `packages/backend/supabase/migrations` change.
+
 This describes the primary tables and analytical views used in the cEDH Analytics database.
 
 ## ERD (Core Tables)
