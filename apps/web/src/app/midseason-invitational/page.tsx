@@ -32,6 +32,27 @@ export default async function MidseasonInvitationalPage({
     errorMessage = (error as Error).message;
   }
 
+  const totalInvitedPlayers = top100.length;
+  const knownProfiles = profiles.players.filter((player) => player.totalEntries > 0);
+  const weightedMeta = new Map<string, number>();
+  for (const player of profiles.players) {
+    for (const commander of player.commanders) {
+      weightedMeta.set(
+        commander.commander,
+        (weightedMeta.get(commander.commander) ?? 0) + commander.share
+      );
+    }
+  }
+  const weightedMetaRows = Array.from(weightedMeta.entries())
+    .map(([commander, expectedPlayers]) => ({
+      commander,
+      expectedPlayers,
+      fieldShare: totalInvitedPlayers ? expectedPlayers / totalInvitedPlayers : 0,
+      knownShare: knownProfiles.length ? expectedPlayers / knownProfiles.length : 0,
+    }))
+    .sort((a, b) => b.expectedPlayers - a.expectedPlayers)
+    .slice(0, 15);
+
   return (
     <div className="min-h-screen">
       <main className="container mx-auto px-4 pb-24 pt-10">
@@ -52,24 +73,26 @@ export default async function MidseasonInvitationalPage({
         <Card className="knd-panel mt-8">
           <CardHeader>
             <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
-              Expected Meta Share
+              Expected Field Share (Player-Weighted)
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="mb-4 text-sm text-muted-foreground">
               Consensus snapshot for invited players based on recent known commander entries
-              (Unknown Commander omitted).
+              (Unknown Commander omitted). Percentages are weighted by player-level commander
+              usage and measured against the 100-player invite field.
             </div>
             <div className="grid gap-3 md:grid-cols-2">
-              {profiles.metaShare.map((row) => (
+              {weightedMetaRows.map((row) => (
                 <div key={row.commander} className="flex items-center justify-between text-sm">
                   <span className="text-foreground">{row.commander}</span>
                   <span className="text-primary">
-                    {Math.round(row.share * 100)}% ({row.entries})
+                    {Math.round(row.fieldShare * 100)}% field · {Math.round(row.knownShare * 100)}%
+                    known ({row.expectedPlayers.toFixed(1)})
                   </span>
                 </div>
               ))}
-              {!profiles.metaShare.length && (
+              {!weightedMetaRows.length && (
                 <div className="text-sm text-muted-foreground">No commander history for leaderboard.</div>
               )}
             </div>
