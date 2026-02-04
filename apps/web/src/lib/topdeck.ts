@@ -55,9 +55,12 @@ export async function fetchTournamentBySlug(slug: string): Promise<TopDeckTourna
       },
       cache: "no-store",
     });
-    if (res.ok) {
-      return (await res.json()) as TopDeckTournamentResponse;
+    if (!res.ok) {
+      throw new Error(
+        `TopDeck API failed (${res.status}). TOPDECK_API_KEY is set, so fallback was skipped.`
+      );
     }
+    return (await res.json()) as TopDeckTournamentResponse;
   }
 
   const [bracketResponse, playersResponse] = await Promise.all([
