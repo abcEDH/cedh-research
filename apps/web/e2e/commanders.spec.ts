@@ -38,8 +38,8 @@ test.describe("Commanders List Page", () => {
   });
 
   test("commander links navigate to detail page", async ({ page }) => {
-    // Click first commander
-    const firstCommander = page.locator('a[href^="/commanders/"]').first();
+    // Click first commander link from the primary table row
+    const firstCommander = page.locator("tbody tr").first().locator('a[href^="/commanders/"]').first();
     await firstCommander.click();
 
     // Should navigate to commander detail page
@@ -51,7 +51,7 @@ test.describe("Commanders List Page", () => {
     await expect(page.getByText(/Total Commanders/i)).toBeVisible();
 
     // Should show total entries
-    await expect(page.getByText(/Total Entries/i)).toBeVisible();
+    await expect(page.getByText("Total Entries", { exact: true })).toBeVisible();
 
     // Values should not be 0
     const totalEntriesValue = page
