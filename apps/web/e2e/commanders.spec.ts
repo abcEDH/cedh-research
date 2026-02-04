@@ -10,8 +10,9 @@ test.describe("Commanders List Page", () => {
   });
 
   test("displays commanders table with data", async ({ page }) => {
-    // Table should be visible
-    await expect(page.locator("table")).toBeVisible();
+    // Primary rankings table should be visible
+    const rankingsTable = page.locator("table").first();
+    await expect(rankingsTable).toBeVisible();
 
     // Should have table headers
     await expect(page.getByRole("columnheader", { name: /Rank/i })).toBeVisible();
@@ -38,9 +39,20 @@ test.describe("Commanders List Page", () => {
   });
 
   test("commander links navigate to detail page", async ({ page }) => {
-    // Click first commander link from the primary table row
-    const firstCommander = page.locator("tbody tr").first().locator('a[href^="/commanders/"]').first();
-    await firstCommander.click();
+    // Click first commander link whose href ends with UUID (avoid /commanders/trends)
+    const commanderLinks = page.locator('a[href^="/commanders/"]');
+    const total = await commanderLinks.count();
+    let clicked = false;
+    for (let i = 0; i < total; i++) {
+      const link = commanderLinks.nth(i);
+      const href = await link.getAttribute("href");
+      if (href && /\/commanders\/[a-f0-9-]+$/.test(href)) {
+        await link.click();
+        clicked = true;
+        break;
+      }
+    }
+    expect(clicked).toBe(true);
 
     // Should navigate to commander detail page
     await expect(page).toHaveURL(/\/commanders\/[a-f0-9-]+/);
