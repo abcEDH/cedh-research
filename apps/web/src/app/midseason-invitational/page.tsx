@@ -46,9 +46,8 @@ export default async function MidseasonInvitationalPage({
   const weightedMetaRows = Array.from(weightedMeta.entries())
     .map(([commander, expectedPlayers]) => ({
       commander,
-      expectedPlayers,
       fieldShare: totalInvitedPlayers ? expectedPlayers / totalInvitedPlayers : 0,
-      knownShare: knownProfiles.length ? expectedPlayers / knownProfiles.length : 0,
+      expectedPlayers,
     }))
     .sort((a, b) => b.expectedPlayers - a.expectedPlayers)
     .slice(0, 15);
@@ -80,16 +79,13 @@ export default async function MidseasonInvitationalPage({
             <div className="mb-4 text-sm text-muted-foreground">
               Consensus snapshot for invited players based on recent known commander entries
               (Unknown Commander omitted). Percentages are weighted by player-level commander
-              usage and measured against the 100-player invite field.
+              usage across the 100-player invite field.
             </div>
             <div className="grid gap-3 md:grid-cols-2">
               {weightedMetaRows.map((row) => (
                 <div key={row.commander} className="flex items-center justify-between text-sm">
                   <span className="text-foreground">{row.commander}</span>
-                  <span className="text-primary">
-                    {Math.round(row.fieldShare * 100)}% field · {Math.round(row.knownShare * 100)}%
-                    known ({row.expectedPlayers.toFixed(1)})
-                  </span>
+                  <span className="text-primary">{Math.round(row.fieldShare * 100)}%</span>
                 </div>
               ))}
               {!weightedMetaRows.length && (
