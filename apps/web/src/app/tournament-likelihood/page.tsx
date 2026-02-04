@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { fetchTournamentBySlug } from "@/lib/topdeck";
 import { buildProfiles, getCommanderUsageRows, lookbackStartDate } from "@/lib/meta-prep";
+import { buildTopdeckProfileHref } from "@/lib/topdeck-profile";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +21,7 @@ export default async function TournamentLikelihoodPage({
 
   let tournamentName = "";
   let tournamentDate = "";
-  let attendees: Array<{ name: string; id: string; standing: number }> = [];
+  let attendees: Array<{ name: string; id: string; username?: string | null; standing: number }> = [];
   let playerProfiles: ReturnType<typeof buildProfiles> | null = null;
   let errorMessage: string | null = null;
 
@@ -33,6 +34,7 @@ export default async function TournamentLikelihoodPage({
         .map((row) => ({
           name: row.name,
           id: row.id,
+          username: row.username ?? null,
           standing: row.standing,
         }))
         .sort((a, b) => a.standing - b.standing);
@@ -75,7 +77,7 @@ export default async function TournamentLikelihoodPage({
           </p>
         </header>
 
-        <div className="space-y-4">
+        <div className="mt-4 space-y-4">
           <p className="text-sm text-muted-foreground">
             Example slug: <code className="text-primary">{DEFAULT_TOURNAMENT}</code> from{" "}
             <a
@@ -146,13 +148,27 @@ export default async function TournamentLikelihoodPage({
                 <div className="space-y-4">
                   {attendees.map((attendee) => {
                     const profile = playerProfiles.players.find((p) => p.topdeckId === attendee.id);
+                    const profileHref = buildTopdeckProfileHref(attendee.username || attendee.id);
                     const commanders = profile?.commanders ?? [];
                     return (
                       <div key={attendee.id} className="border-b border-border/60 pb-4">
                         <div className="flex items-center justify-between">
                           <div>
-                            <div className="text-sm font-semibold text-white">{attendee.name}</div>
-                            <div className="text-xs text-muted-foreground">TopDeck ID: {attendee.id}</div>
+                            {profileHref ? (
+                              <a
+                                className="text-sm font-semibold text-foreground hover:text-primary"
+                                href={profileHref}
+                                rel="noreferrer"
+                                target="_blank"
+                              >
+                                {attendee.name}
+                              </a>
+                            ) : (
+                              <div className="text-sm font-semibold text-foreground">{attendee.name}</div>
+                            )}
+                            <div className="text-xs text-muted-foreground">
+                              {attendee.username || `ID: ${attendee.id}`}
+                            </div>
                           </div>
                           <div className="text-xs text-muted-foreground">Standing #{attendee.standing}</div>
                         </div>

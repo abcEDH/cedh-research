@@ -11,6 +11,8 @@ import {
 import { supabase } from "@/lib/supabase";
 import { normalizeDisplayString } from "@/lib/utils";
 import Link from "next/link";
+import { fetchChampionshipLeaderboard } from "@/lib/topdeck";
+import { buildTopdeckProfileHref } from "@/lib/topdeck-profile";
 
 // Force dynamic rendering - fetch fresh data on each request
 export const dynamic = "force-dynamic";
@@ -54,11 +56,19 @@ async function getStats() {
       console.error("Top commanders query error:", topCommandersResult.error);
     }
 
+    let topPlayers: Awaited<ReturnType<typeof fetchChampionshipLeaderboard>> = [];
+    try {
+      topPlayers = (await fetchChampionshipLeaderboard()).sort((a, b) => a.rank - b.rank).slice(0, 12);
+    } catch (error) {
+      console.error("Top players query error:", error);
+    }
+
     return {
       tournamentCount: tournamentResult.count ?? 0,
       commanderCount: commanderResult.count ?? 0,
       topCommanders: (topCommandersResult.data ?? []) as TopCommander[],
       topWinRate: (topWinRateResult.data ?? []) as TopCommander[],
+      topPlayers,
     };
   } catch (error) {
     console.error("Failed to fetch stats:", error);
@@ -67,12 +77,13 @@ async function getStats() {
       commanderCount: 0,
       topCommanders: [],
       topWinRate: [],
+      topPlayers: [],
     };
   }
 }
 
 export default async function Home() {
-  const { tournamentCount, commanderCount, topCommanders, topWinRate } = await getStats();
+  const { topCommanders, topWinRate, topPlayers } = await getStats();
   const filteredCommanders = topCommanders.filter(
     (commander) => commander.commander_name?.toLowerCase() !== "unknown commander"
   );
@@ -207,6 +218,48 @@ export default async function Home() {
               ))}
               <Button asChild variant="ghost" className="w-full border border-border/70">
                 <Link href="/commanders">View all commanders</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </section>
+
+        <section className="mt-12">
+          <Card>
+            <CardHeader className="knd-panel-header">
+              <CardTitle className="text-lg">MidSeason Invitational Snapshot</CardTitle>
+              <p className="text-sm text-muted-foreground">Top Championship Series players right now</p>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-3 md:grid-cols-2">
+                {topPlayers.map((player) => {
+                  const href = buildTopdeckProfileHref(player.username || player.uid);
+                  return (
+                    <div
+                      key={player.uid}
+                      className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/30 px-3 py-3"
+                    >
+                      <div className="min-w-0">
+                        <div className="text-xs text-muted-foreground">#{player.rank}</div>
+                        {href ? (
+                          <a
+                            className="truncate text-sm font-medium text-foreground hover:text-primary"
+                            href={href}
+                            rel="noreferrer"
+                            target="_blank"
+                          >
+                            {player.name}
+                          </a>
+                        ) : (
+                          <div className="truncate text-sm font-medium text-foreground">{player.name}</div>
+                        )}
+                      </div>
+                      <div className="font-mono text-sm text-primary">{player.points}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              <Button asChild variant="ghost" className="mt-4 w-full border border-border/70">
+                <Link href="/midseason-invitational">Open full top-100 breakdown</Link>
               </Button>
             </CardContent>
           </Card>
