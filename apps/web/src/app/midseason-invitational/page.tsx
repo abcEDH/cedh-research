@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { fetchChampionshipLeaderboard } from "@/lib/topdeck";
 import { buildProfiles, getCommanderUsageRows, lookbackStartDate } from "@/lib/meta-prep";
 import Link from "next/link";
+import type { MetaShareRow, PlayerCommanderProfile } from "@/lib/meta-prep";
 
 export const dynamic = "force-dynamic";
 
@@ -14,12 +15,21 @@ export default async function MidseasonInvitationalPage({
   const lookbackMonths = Number.isFinite(months) && months > 0 ? months : 12;
   const lookbackStart = lookbackStartDate(lookbackMonths);
 
-  const leaderboard = (await fetchChampionshipLeaderboard()).sort((a, b) => a.rank - b.rank);
-  const top100 = leaderboard.slice(0, 100);
-  const topdeckIds = top100.map((entry) => entry.uid);
-
-  const usageRows = await getCommanderUsageRows(topdeckIds, lookbackStart);
-  const profiles = buildProfiles(topdeckIds, usageRows, 3);
+  let errorMessage: string | null = null;
+  let top100: Awaited<ReturnType<typeof fetchChampionshipLeaderboard>> = [];
+  let profiles: { players: PlayerCommanderProfile[]; metaShare: MetaShareRow[] } = {
+    players: [],
+    metaShare: [],
+  };
+  try {
+    const leaderboard = (await fetchChampionshipLeaderboard()).sort((a, b) => a.rank - b.rank);
+    top100 = leaderboard.slice(0, 100);
+    const topdeckIds = top100.map((entry) => entry.uid);
+    const usageRows = await getCommanderUsageRows(topdeckIds, lookbackStart);
+    profiles = buildProfiles(topdeckIds, usageRows, 3);
+  } catch (error) {
+    errorMessage = (error as Error).message;
+  }
 
   return (
     <div className="min-h-screen">
@@ -60,6 +70,12 @@ export default async function MidseasonInvitationalPage({
             </div>
           </CardContent>
         </Card>
+
+        {errorMessage && (
+          <div className="mt-6 rounded-md border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-200">
+            Failed to load TopDeck leaderboard: {errorMessage}
+          </div>
+        )}
 
         <Card className="knd-panel mt-6">
           <CardHeader>
