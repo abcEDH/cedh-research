@@ -39,7 +39,7 @@ export default async function MidseasonInvitationalPage({
     for (const commander of player.commanders) {
       weightedMeta.set(
         commander.commander,
-        (weightedMeta.get(commander.commander) ?? 0) + commander.share
+        (weightedMeta.get(commander.commander) ?? 0) + commander.weightedShare
       );
     }
   }

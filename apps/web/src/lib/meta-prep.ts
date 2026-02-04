@@ -5,14 +5,16 @@ export type CommanderUsageRow = {
   topdeck_id: string | null;
   player_name: string | null;
   commander_name: string | null;
-  entries: number;
+  wins: number | null;
+  draws: number | null;
+  losses: number | null;
 };
 
 export type PlayerCommanderProfile = {
   topdeckId: string;
   playerName: string;
   totalEntries: number;
-  commanders: Array<{ commander: string; entries: number; share: number }>;
+  commanders: Array<{ commander: string; entries: number; share: number; weightedShare: number }>;
 };
 
 export type MetaShareRow = {
@@ -34,7 +36,7 @@ export async function getCommanderUsageRows(
 
   const { data, error } = await supabase
     .from("player_commander_entries")
-    .select("topdeck_id, player_name, commander_name, entries:count()")
+    .select("topdeck_id, player_name, commander_name, wins, draws, losses")
     .in("topdeck_id", topdeckIds)
     .gte("start_date", lookbackStart)
     .not("commander_name", "is", null);
@@ -52,34 +54,50 @@ export function buildProfiles(
   usageRows: CommanderUsageRow[],
   topN = 3
 ): { players: PlayerCommanderProfile[]; metaShare: MetaShareRow[] } {
-  const perPlayer = new Map<string, CommanderUsageRow[]>();
+  const perPlayer = new Map<string, Map<string, { entries: number; weightedPoints: number; playerName: string }>>();
   const commanderTotals = new Map<string, number>();
 
   usageRows.forEach((row) => {
     if (!row.topdeck_id || !isKnownCommander(row.commander_name)) return;
-    const list = perPlayer.get(row.topdeck_id) ?? [];
-    list.push(row);
-    perPlayer.set(row.topdeck_id, list);
-
     const commanderName = row.commander_name as string;
-    commanderTotals.set(commanderName, (commanderTotals.get(commanderName) ?? 0) + row.entries);
+    const playerName = row.player_name ?? "Unknown";
+    const perCommander = perPlayer.get(row.topdeck_id) ?? new Map();
+    const current = perCommander.get(commanderName) ?? {
+      entries: 0,
+      weightedPoints: 0,
+      playerName,
+    };
+    current.entries += 1;
+    current.weightedPoints += (row.wins ?? 0) + (row.draws ?? 0) * 0.25;
+    perCommander.set(commanderName, current);
+    perPlayer.set(row.topdeck_id, perCommander);
+
+    commanderTotals.set(commanderName, (commanderTotals.get(commanderName) ?? 0) + 1);
   });
 
   const totalEntries = Array.from(commanderTotals.values()).reduce((a, b) => a + b, 0);
 
   const players: PlayerCommanderProfile[] = topdeckIds.map((topdeckId) => {
-    const rows = (perPlayer.get(topdeckId) ?? []).filter((row) => row.commander_name);
+    const perCommander = perPlayer.get(topdeckId) ?? new Map();
+    const rows = Array.from(perCommander.entries()).map(([commander, values]) => ({
+      commander,
+      entries: values.entries,
+      weightedPoints: values.weightedPoints,
+      playerName: values.playerName,
+    }));
     const total = rows.reduce((sum, row) => sum + row.entries, 0);
+    const totalWeighted = rows.reduce((sum, row) => sum + row.weightedPoints, 0);
     const sorted = rows.sort((a, b) => b.entries - a.entries);
     const commanders = sorted.slice(0, topN).map((row) => ({
-      commander: row.commander_name || "Unknown",
+      commander: row.commander,
       entries: row.entries,
       share: total ? row.entries / total : 0,
+      weightedShare: totalWeighted ? row.weightedPoints / totalWeighted : total ? row.entries / total : 0,
     }));
 
     return {
       topdeckId,
-      playerName: rows[0]?.player_name || "Unknown",
+      playerName: rows[0]?.playerName || "Unknown",
       totalEntries: total,
       commanders,
     };
