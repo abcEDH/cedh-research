@@ -37,8 +37,10 @@ function formatDate(value: string | null) {
 export default async function RegionalEloPage({
   searchParams,
 }: {
-  searchParams?: { region?: string };
+  searchParams?: Promise<{ region?: string }> | { region?: string };
 }) {
+  const resolvedSearchParams = await Promise.resolve(searchParams);
+
   const { data: regionsData } = await supabase
     .from("regional_elo_regions")
     .select("region_type, region_key, player_count, updated_at")
@@ -46,7 +48,12 @@ export default async function RegionalEloPage({
     .order("region_key", { ascending: true });
 
   const regions = (regionsData ?? []) as RegionRow[];
-  const selectedRegion = searchParams?.region || regions[0]?.region_key;
+  const requestedRegion = decodeURIComponent(resolvedSearchParams?.region ?? "").trim();
+  const selectedRegion =
+    regions.find((region) => region.region_key === requestedRegion)?.region_key ||
+    regions.find((region) => region.region_key.toUpperCase() === requestedRegion.toUpperCase())
+      ?.region_key ||
+    regions[0]?.region_key;
 
   const { data: leaderboardData } = await supabase
     .from("regional_elo_leaderboard")
