@@ -113,10 +113,12 @@ export default async function RegionalEloPage({
     ? searchParams?.region[0]
     : searchParams?.region;
   const requestedRegion = decodeURIComponent(regionParam ?? "").trim();
+  const defaultRegion = regions.find((region) => region.region_key === "CALIFORNIA")?.region_key;
   const selectedRegion =
     regions.find((region) => region.region_key === requestedRegion)?.region_key ||
     regions.find((region) => region.region_key.toUpperCase() === requestedRegion.toUpperCase())
       ?.region_key ||
+    defaultRegion ||
     regions[0]?.region_key;
 
   const leaderboard = selectedRegion ? await fetchAllRegionalRows(selectedRegion) : [];
@@ -197,7 +199,7 @@ export default async function RegionalEloPage({
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
+              <div className="max-h-[70vh] overflow-auto">
                 <table className="w-full text-sm">
                   <thead className="text-left text-xs uppercase tracking-[0.2em] text-muted-foreground">
                     <tr>
@@ -231,9 +233,6 @@ export default async function RegionalEloPage({
                             ) : (
                               <div className="font-medium text-foreground">{row.player_name}</div>
                             )}
-                            <div className="text-xs text-muted-foreground">
-                              {row.topdeck_id ? "TopDeck profile" : "No TopDeck ID"}
-                            </div>
                           </td>
                           <td className="px-2 py-3 font-semibold text-primary">{Math.round(row.rating)}</td>
                           <td className="px-2 py-3 text-muted-foreground">{row.games_played}</td>
