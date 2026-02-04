@@ -33,6 +33,11 @@ type LatestCommanderRow = {
   start_date: string | null;
 };
 
+function isKnownCommander(commanderName: string | null | undefined) {
+  const normalized = (commanderName ?? "").trim().toLowerCase();
+  return normalized.length > 0 && normalized !== "unknown commander";
+}
+
 function formatDate(value: string | null) {
   if (!value) return "—";
   return new Date(value).toLocaleDateString("en-US", {
@@ -65,10 +70,37 @@ async function fetchAllRegionalRows(regionKey: string): Promise<LeaderboardRow[]
   return rows;
 }
 
+async function fetchLatestCommanders(topdeckIds: string[]): Promise<Map<string, LatestCommanderRow>> {
+  if (topdeckIds.length === 0) return new Map();
+
+  const pageSize = 1000;
+  const rows: LatestCommanderRow[] = [];
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await supabase
+      .from("player_commander_entries")
+      .select("topdeck_id, commander_name, start_date")
+      .in("topdeck_id", topdeckIds)
+      .order("start_date", { ascending: false })
+      .range(offset, offset + pageSize - 1);
+
+    if (error || !data?.length) break;
+    rows.push(...(data as LatestCommanderRow[]));
+    if (data.length < pageSize) break;
+  }
+
+  const latestByPlayer = new Map<string, LatestCommanderRow>();
+  for (const row of rows) {
+    if (!row.topdeck_id || latestByPlayer.has(row.topdeck_id)) continue;
+    if (!isKnownCommander(row.commander_name)) continue;
+    latestByPlayer.set(row.topdeck_id, row);
+  }
+  return latestByPlayer;
+}
+
 export default async function RegionalEloPage({
   searchParams,
 }: {
-  searchParams?: { region?: string };
+  searchParams?: { region?: string | string[] };
 }) {
   const { data: regionsData } = await supabase
     .from("regional_elo_regions")
@@ -77,26 +109,22 @@ export default async function RegionalEloPage({
     .order("region_key", { ascending: true });
 
   const regions = (regionsData ?? []) as RegionRow[];
-  const selectedRegion = searchParams?.region || regions[0]?.region_key;
+  const regionParam = Array.isArray(searchParams?.region)
+    ? searchParams?.region[0]
+    : searchParams?.region;
+  const requestedRegion = decodeURIComponent(regionParam ?? "").trim();
+  const selectedRegion =
+    regions.find((region) => region.region_key === requestedRegion)?.region_key ||
+    regions.find((region) => region.region_key.toUpperCase() === requestedRegion.toUpperCase())
+      ?.region_key ||
+    regions[0]?.region_key;
 
   const leaderboard = selectedRegion ? await fetchAllRegionalRows(selectedRegion) : [];
 
   const topdeckIds = leaderboard
     .map((row) => row.topdeck_id)
     .filter((value): value is string => Boolean(value));
-  const { data: latestCommanderData } =
-    topdeckIds.length === 0
-      ? { data: [] as LatestCommanderRow[] | null }
-      : await supabase
-          .from("player_commander_entries")
-          .select("topdeck_id, commander_name, start_date")
-          .in("topdeck_id", topdeckIds)
-          .order("start_date", { ascending: false });
-  const latestByPlayer = new Map<string, LatestCommanderRow>();
-  (latestCommanderData ?? []).forEach((row) => {
-    if (!row.topdeck_id || latestByPlayer.has(row.topdeck_id)) return;
-    latestByPlayer.set(row.topdeck_id, row as LatestCommanderRow);
-  });
+  const latestByPlayer = await fetchLatestCommanders(topdeckIds);
 
   const updatedAt = regions.find((r) => r.region_key === selectedRegion)?.updated_at ?? null;
 
@@ -136,7 +164,7 @@ export default async function RegionalEloPage({
               <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">Region</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <form className="space-y-3">
+              <form action="/regional-elo" method="get" className="space-y-3">
                 <label className="text-sm text-muted-foreground">Select a state</label>
                 <select
                   name="region"
