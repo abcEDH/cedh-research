@@ -54,6 +54,18 @@ export default async function MidseasonInvitationalPage({
     }
   }
 
+  const playersWithData = profiles.players.filter((player) => player.totalEntries > 0).length;
+  const topDeckShares = profiles.players
+    .filter((player) => player.commanders.length > 0)
+    .map((player) => player.commanders[0]?.share ?? 0);
+  const avgTopDeckShare = topDeckShares.length
+    ? topDeckShares.reduce((sum, share) => sum + share, 0) / topDeckShares.length
+    : 0;
+  const topFiveCombinedShare = profiles.metaShare
+    .slice(0, 5)
+    .reduce((sum, row) => sum + row.share, 0);
+  const topCommander = profiles.metaShare[0];
+
   return (
     <div className="min-h-screen">
       <main className="container mx-auto px-4 pb-24 pt-10">
@@ -90,6 +102,56 @@ export default async function MidseasonInvitationalPage({
               {!profiles.metaShare.length && (
                 <div className="text-sm text-muted-foreground">No commander history for leaderboard.</div>
               )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="knd-panel mt-6">
+          <CardHeader>
+            <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
+              Consensus Snapshot
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-md border border-border/60 bg-muted/20 p-4">
+              <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">
+                Coverage
+              </p>
+              <p className="mt-2 text-lg font-semibold text-foreground">
+                {playersWithData}/{top100.length} invited players have recent deck data
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {top100.length
+                  ? `${Math.round((playersWithData / top100.length) * 100)}% profile coverage`
+                  : "No leaderboard data"}
+              </p>
+            </div>
+            <div className="rounded-md border border-border/60 bg-muted/20 p-4">
+              <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">
+                Most Likely Deck
+              </p>
+              <p className="mt-2 text-lg font-semibold text-foreground">
+                {topCommander
+                  ? `${topCommander.commander} (${Math.round(topCommander.share * 100)}%)`
+                  : "No deck consensus yet"}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Top 5 commanders represent {Math.round(topFiveCombinedShare * 100)}% of expected
+                field usage
+              </p>
+            </div>
+            <div className="rounded-md border border-border/60 bg-muted/20 p-4 md:col-span-2">
+              <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">
+                Prep Read
+              </p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Average invited player top-deck concentration:{" "}
+                <span className="text-foreground font-medium">
+                  {Math.round(avgTopDeckShare * 100)}%
+                </span>
+                . Higher values suggest more stable pilot/deck pairings; lower values suggest more
+                switching and broader prep targets.
+              </p>
             </div>
           </CardContent>
         </Card>

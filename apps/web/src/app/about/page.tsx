@@ -29,6 +29,12 @@ export default function AboutPage() {
             <p className="text-sm text-muted-foreground mt-2">
               See <Link href="/limitations" className="text-foreground hover:text-primary">data limitations</Link> for known caveats.
             </p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Elo details:{" "}
+              <Link href="/methodology/elo" className="text-foreground hover:text-primary">
+                cEDH Skill Rating methodology
+              </Link>
+            </p>
           </div>
         </div>
 

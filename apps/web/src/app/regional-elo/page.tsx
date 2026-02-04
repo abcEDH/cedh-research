@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -93,6 +94,12 @@ export default async function RegionalEloPage({
           <p className="text-base text-zinc-300">
             Elo ratings recalculated within each state using only local games. Players can rank
             differently across regions based on localized metas.
+          </p>
+          <p className="text-sm text-zinc-400">
+            Rating model details:{" "}
+            <Link href="/methodology/elo" className="text-[#c9a227] hover:text-[#e3c24f]">
+              cEDH Elo methodology
+            </Link>
           </p>
         </div>
 
