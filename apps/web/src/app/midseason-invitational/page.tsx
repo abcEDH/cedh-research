@@ -9,9 +9,10 @@ export const dynamic = "force-dynamic";
 export default async function MidseasonInvitationalPage({
   searchParams,
 }: {
-  searchParams?: { months?: string };
+  searchParams?: Promise<{ months?: string }> | { months?: string };
 }) {
-  const months = Number(searchParams?.months || "12");
+  const resolvedSearchParams = await Promise.resolve(searchParams);
+  const months = Number(resolvedSearchParams?.months || "12");
   const lookbackMonths = Number.isFinite(months) && months > 0 ? months : 12;
   const lookbackStart = lookbackStartDate(lookbackMonths);
 
@@ -24,11 +25,18 @@ export default async function MidseasonInvitationalPage({
   try {
     const leaderboard = (await fetchChampionshipLeaderboard()).sort((a, b) => a.rank - b.rank);
     top100 = leaderboard.slice(0, 100);
-    const topdeckIds = top100.map((entry) => entry.uid);
-    const usageRows = await getCommanderUsageRows(topdeckIds, lookbackStart);
-    profiles = buildProfiles(topdeckIds, usageRows, 3);
   } catch (error) {
     errorMessage = (error as Error).message;
+  }
+
+  if (top100.length > 0) {
+    try {
+      const topdeckIds = top100.map((entry) => entry.uid);
+      const usageRows = await getCommanderUsageRows(topdeckIds, lookbackStart);
+      profiles = buildProfiles(topdeckIds, usageRows, 3);
+    } catch (error) {
+      errorMessage = (error as Error).message;
+    }
   }
 
   return (
@@ -113,7 +121,8 @@ export default async function MidseasonInvitationalPage({
                                   key={`${entry.uid}-${commander.commander}`}
                                   className="knd-chip"
                                 >
-                                  {commander.commander} · {Math.round(commander.share * 100)}%
+                                  {commander.commander} · {Math.round(commander.share * 100)}% (
+                                  {commander.entries})
                                 </span>
                               ))
                             ) : (

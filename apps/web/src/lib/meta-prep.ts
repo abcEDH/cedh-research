@@ -5,7 +5,6 @@ export type CommanderUsageRow = {
   topdeck_id: string | null;
   player_name: string | null;
   commander_name: string | null;
-  entries: number;
 };
 
 export type PlayerCommanderProfile = {
@@ -29,14 +28,13 @@ export async function getCommanderUsageRows(
 
   const { data, error } = await supabase
     .from("player_commander_entries")
-    .select("topdeck_id, player_name, commander_name, entries:count()")
+    .select("topdeck_id, player_name, commander_name")
     .in("topdeck_id", topdeckIds)
     .gte("start_date", lookbackStart)
     .not("commander_name", "is", null);
 
   if (error) {
-    console.error("Error fetching commander usage:", error);
-    return [];
+    throw new Error(`Error fetching commander usage: ${error.message}`);
   }
 
   return (data ?? []) as CommanderUsageRow[];
@@ -47,36 +45,45 @@ export function buildProfiles(
   usageRows: CommanderUsageRow[],
   topN = 3
 ): { players: PlayerCommanderProfile[]; metaShare: MetaShareRow[] } {
-  const perPlayer = new Map<string, CommanderUsageRow[]>();
+  const perPlayer = new Map<string, Map<string, number>>();
+  const playerNames = new Map<string, string>();
   const commanderTotals = new Map<string, number>();
 
   usageRows.forEach((row) => {
     if (!row.topdeck_id || !row.commander_name) return;
-    const list = perPlayer.get(row.topdeck_id) ?? [];
-    list.push(row);
-    perPlayer.set(row.topdeck_id, list);
+    if (row.player_name) {
+      playerNames.set(row.topdeck_id, row.player_name);
+    }
+
+    const perCommander = perPlayer.get(row.topdeck_id) ?? new Map<string, number>();
+    perCommander.set(row.commander_name, (perCommander.get(row.commander_name) ?? 0) + 1);
+    perPlayer.set(row.topdeck_id, perCommander);
 
     commanderTotals.set(
       row.commander_name,
-      (commanderTotals.get(row.commander_name) ?? 0) + row.entries
+      (commanderTotals.get(row.commander_name) ?? 0) + 1
     );
   });
 
   const totalEntries = Array.from(commanderTotals.values()).reduce((a, b) => a + b, 0);
 
   const players: PlayerCommanderProfile[] = topdeckIds.map((topdeckId) => {
-    const rows = (perPlayer.get(topdeckId) ?? []).filter((row) => row.commander_name);
+    const perCommander = perPlayer.get(topdeckId) ?? new Map<string, number>();
+    const rows = Array.from(perCommander.entries()).map(([commander, entries]) => ({
+      commander,
+      entries,
+    }));
     const total = rows.reduce((sum, row) => sum + row.entries, 0);
     const sorted = rows.sort((a, b) => b.entries - a.entries);
     const commanders = sorted.slice(0, topN).map((row) => ({
-      commander: row.commander_name || "Unknown",
+      commander: row.commander,
       entries: row.entries,
       share: total ? row.entries / total : 0,
     }));
 
     return {
       topdeckId,
-      playerName: rows[0]?.player_name || "Unknown",
+      playerName: playerNames.get(topdeckId) || "Unknown",
       totalEntries: total,
       commanders,
     };

@@ -11,10 +11,11 @@ const DEFAULT_TOURNAMENT = "cardart-monthly-underground-sea";
 export default async function TournamentLikelihoodPage({
   searchParams,
 }: {
-  searchParams?: { tournament?: string; months?: string };
+  searchParams?: Promise<{ tournament?: string; months?: string }> | { tournament?: string; months?: string };
 }) {
-  const tournamentSlug = searchParams?.tournament || "";
-  const months = Number(searchParams?.months || "12");
+  const resolvedSearchParams = await Promise.resolve(searchParams);
+  const tournamentSlug = resolvedSearchParams?.tournament || "";
+  const months = Number(resolvedSearchParams?.months || "12");
   const lookbackMonths = Number.isFinite(months) && months > 0 ? months : 12;
 
   let tournamentName = "";
