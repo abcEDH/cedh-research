@@ -12,6 +12,16 @@ import TrendMetricCharts, {
 
 export const dynamic = "force-dynamic";
 
+type SizeFilter = "all" | "large";
+
+function getTrendViews(sizeFilter: SizeFilter) {
+  return {
+    weekly: sizeFilter === "large" ? "commander_weekly_trends_large" : "commander_weekly_trends",
+    monthly: sizeFilter === "large" ? "commander_monthly_trends_large" : "commander_monthly_trends",
+    stats: sizeFilter === "large" ? "commander_stats_large" : "commander_stats",
+  };
+}
+
 interface CommanderStat {
   commander_id: string;
   commander_name: string;
@@ -35,9 +45,10 @@ function normalizeDateKey(value: string | null | undefined) {
   return value.length >= 10 ? value.slice(0, 10) : value;
 }
 
-async function getCommanders() {
+async function getCommanders(sizeFilter: SizeFilter) {
+  const { stats } = getTrendViews(sizeFilter);
   const { data, error } = await supabase
-    .from("commander_stats")
+    .from(stats)
     .select("commander_id, commander_name, total_entries, avg_win_rate")
     .gt("total_entries", 5)
     .order("total_entries", { ascending: false });
@@ -49,16 +60,17 @@ async function getCommanders() {
   return data as CommanderStat[];
 }
 
-async function getCommanderPeriodSnapshots(commanderIds: string[]) {
+async function getCommanderPeriodSnapshots(commanderIds: string[], sizeFilter: SizeFilter) {
   if (commanderIds.length === 0) return {};
 
+  const { weekly, monthly } = getTrendViews(sizeFilter);
   const weeklyPrimary = await supabase
-    .from("commander_weekly_trends")
+    .from(weekly)
     .select("commander_id, week_start_date, entries, wins, losses, draws, total_players")
     .in("commander_id", commanderIds)
     .order("week_start_date", { ascending: true });
   const monthlyPrimary = await supabase
-    .from("commander_monthly_trends")
+    .from(monthly)
     .select("commander_id, month_key, entries, wins, losses, draws, total_players")
     .in("commander_id", commanderIds)
     .order("month_key", { ascending: true });
@@ -69,7 +81,7 @@ async function getCommanderPeriodSnapshots(commanderIds: string[]) {
   if (weeklyPrimary.error) {
     console.error("Error fetching weekly trends (with players):", weeklyPrimary.error);
     const weeklyFallback = await supabase
-      .from("commander_weekly_trends")
+      .from(weekly)
       .select("commander_id, week_start_date, entries, wins, losses, draws")
       .in("commander_id", commanderIds)
       .order("week_start_date", { ascending: true });
@@ -79,7 +91,7 @@ async function getCommanderPeriodSnapshots(commanderIds: string[]) {
   if (monthlyPrimary.error) {
     console.error("Error fetching monthly trends (with players):", monthlyPrimary.error);
     const monthlyFallback = await supabase
-      .from("commander_monthly_trends")
+      .from(monthly)
       .select("commander_id, month_key, entries, wins, losses, draws")
       .in("commander_id", commanderIds)
       .order("month_key", { ascending: true });
@@ -146,11 +158,12 @@ async function getCommanderPeriodSnapshots(commanderIds: string[]) {
   return snapshots;
 }
 
-async function getWeeklyEntries(commanderIds: string[], weeks = 12) {
+async function getWeeklyEntries(commanderIds: string[], sizeFilter: SizeFilter, weeks = 12) {
   if (commanderIds.length === 0) return {};
 
+  const { weekly } = getTrendViews(sizeFilter);
   const { data, error } = await supabase
-    .from("commander_weekly_trends")
+    .from(weekly)
     .select("commander_id, week_key, week_start_date, entries")
     .in("commander_id", commanderIds)
     .order("week_start_date", { ascending: true });
@@ -182,14 +195,15 @@ async function getWeeklyEntries(commanderIds: string[], weeks = 12) {
   return result;
 }
 
-async function getWeeklyWinRateSeries(commanders: CommanderStat[], weeks = 13) {
+async function getWeeklyWinRateSeries(commanders: CommanderStat[], sizeFilter: SizeFilter, weeks = 13) {
   if (commanders.length === 0) {
     return { data: [] as CommanderTrendSeriesPoint[], series: [] as CommanderTrendSeriesMeta[] };
   }
 
+  const { weekly } = getTrendViews(sizeFilter);
   const commanderIds = commanders.map((commander) => commander.commander_id);
   const { data, error } = await supabase
-    .from("commander_weekly_trends")
+    .from(weekly)
     .select("commander_id, week_key, week_start_date, win_rate")
     .in("commander_id", commanderIds)
     .order("week_start_date", { ascending: true });
@@ -233,14 +247,15 @@ async function getWeeklyWinRateSeries(commanders: CommanderStat[], weeks = 13) {
   return { data: dataPoints, series };
 }
 
-async function getGlobalTrendSeries() {
+async function getGlobalTrendSeries(sizeFilter: SizeFilter) {
+  const { weekly: weeklyView, monthly: monthlyView } = getTrendViews(sizeFilter);
   const [weeklyResult, monthlyResult] = await Promise.all([
     supabase
-      .from("commander_weekly_trends")
+      .from(weeklyView)
       .select("week_key, week_start_date, entries, wins, losses, draws")
       .order("week_start_date", { ascending: true }),
     supabase
-      .from("commander_monthly_trends")
+      .from(monthlyView)
       .select("month_key, entries, wins, losses, draws")
       .order("month_key", { ascending: true }),
   ]);
@@ -313,21 +328,34 @@ async function getGlobalTrendSeries() {
   return { weekly, monthly } satisfies TrendMetricSeries;
 }
 
-export default async function CommanderTrendsPage() {
-  const commanders = await getCommanders();
+export default async function CommanderTrendsPage({
+  searchParams,
+}: {
+  searchParams?: { size?: string };
+}) {
+  const sizeFilter: SizeFilter = searchParams?.size === "large" ? "large" : "all";
+  const sizeLabel = sizeFilter === "large" ? "65+ players" : "32+ players";
+
+  const commanders = await getCommanders(sizeFilter);
   const filteredCommanders = commanders.filter(
     (commander) => commander.commander_name?.toLowerCase() !== "unknown commander"
   );
   const topCommanders = [...filteredCommanders].sort((a, b) => b.total_entries - a.total_entries).slice(0, 10);
   const snapshotsByCommanderId = await getCommanderPeriodSnapshots(
-    filteredCommanders.map((commander) => commander.commander_id)
+    filteredCommanders.map((commander) => commander.commander_id),
+    sizeFilter
   );
   const weeklyEntriesByCommanderId = await getWeeklyEntries(
     filteredCommanders.map((commander) => commander.commander_id),
+    sizeFilter,
     12
   );
-  const { data: chartData, series: chartSeries } = await getWeeklyWinRateSeries(topCommanders, 13);
-  const globalSeries = await getGlobalTrendSeries();
+  const { data: chartData, series: chartSeries } = await getWeeklyWinRateSeries(
+    topCommanders,
+    sizeFilter,
+    13
+  );
+  const globalSeries = await getGlobalTrendSeries(sizeFilter);
 
   return (
     <div className="min-h-screen">
@@ -347,17 +375,44 @@ export default async function CommanderTrendsPage() {
             <p className="text-muted-foreground mt-2">
               Week-over-week and month-over-month changes based on tournament entries and win rates.
             </p>
+            <div className="mt-4 flex flex-wrap gap-2 text-xs">
+              <Link
+                href="/commanders/trends"
+                className={`rounded-full border px-3 py-1 ${
+                  sizeFilter === "all"
+                    ? "border-primary/50 text-foreground"
+                    : "border-border/60 text-muted-foreground"
+                }`}
+              >
+                32+ Players
+              </Link>
+              <Link
+                href="/commanders/trends?size=large"
+                className={`rounded-full border px-3 py-1 ${
+                  sizeFilter === "large"
+                    ? "border-primary/50 text-foreground"
+                    : "border-border/60 text-muted-foreground"
+                }`}
+              >
+                65+ Players
+              </Link>
+            </div>
           </div>
         </div>
 
         <TrendMetricCharts
           series={globalSeries}
-          title="All commanders"
+          title={`All commanders (${sizeLabel})`}
           description="Aggregate trends across all commanders (entries, win rate, points per game)."
         />
 
         <div className="mt-8">
-          <CommanderTrendsChart data={chartData} series={chartSeries} />
+          <CommanderTrendsChart
+            data={chartData}
+            series={chartSeries}
+            title={`Top 10 commanders over time (${sizeLabel})`}
+            description="Weekly win rate trends (last 13 weeks)."
+          />
         </div>
 
         <div className="mt-8">
@@ -366,6 +421,7 @@ export default async function CommanderTrendsPage() {
             snapshotsByCommanderId={snapshotsByCommanderId}
             weeklyEntriesByCommanderId={weeklyEntriesByCommanderId}
             limit={100}
+            title={`Commander Performance Trends (${sizeLabel})`}
           />
         </div>
       </main>
