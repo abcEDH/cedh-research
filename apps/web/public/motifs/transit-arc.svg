@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" fill="none">
+  <defs>
+    <linearGradient id="g" x1="80" y1="420" x2="1120" y2="160" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="hsl(var(--knd-cyan) / 0.32)"/>
+      <stop offset="0.5" stop-color="hsl(var(--knd-magenta) / 0.22)"/>
+      <stop offset="1" stop-color="hsl(var(--knd-cyan) / 0.18)"/>
+    </linearGradient>
+  </defs>
+
+  <g stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke">
+    <!-- main rail -->
+    <path d="M 60 440 C 260 360, 420 380, 620 300 S 980 160, 1140 120"
+          stroke="url(#g)" stroke-width="2.25"/>
+
+    <!-- parallel ghost rail -->
+    <path d="M 80 470 C 280 390, 450 410, 640 330 S 980 210, 1120 160"
+          stroke="hsl(var(--knd-line) / 0.18)" stroke-width="1.5"/>
+
+    <!-- dashed accents -->
+    <path d="M 60 440 C 260 360, 420 380, 620 300 S 980 160, 1140 120"
+          stroke="hsl(var(--knd-cyan) / 0.20)" stroke-width="1.5" stroke-dasharray="10 14"/>
+
+    <!-- nodes -->
+    <g>
+      <circle cx="220" cy="385" r="5" fill="hsl(var(--knd-cyan) / 0.22)"/>
+      <circle cx="520" cy="330" r="4" fill="hsl(var(--knd-magenta) / 0.18)"/>
+      <circle cx="780" cy="240" r="5" fill="hsl(var(--knd-cyan) / 0.20)"/>
+      <circle cx="1000" cy="165" r="4" fill="hsl(var(--knd-magenta) / 0.16)"/>
+    </g>
+
+    <!-- tiny ticks -->
+    <g stroke="hsl(var(--knd-line) / 0.22)" stroke-width="1.25">
+      <path d="M 214 372 l 0 -10"/>
+      <path d="M 514 317 l 0 -10"/>
+      <path d="M 774 227 l 0 -10"/>
+      <path d="M 994 152 l 0 -10"/>
+    </g>
+  </g>
+</svg>

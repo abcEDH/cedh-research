@@ -100,11 +100,11 @@
   --border: oklch(0.34 0.02 255 / 0.6);
   --input: oklch(0.28 0.02 255 / 0.8);
   --ring: oklch(0.7 0.08 200);
-  --chart-1: oklch(0.76 0.17 200);
+  --chart-1: oklch(0.78 0.17 200);
   --chart-2: oklch(0.72 0.19 320);
-  --chart-3: oklch(0.74 0.12 150);
-  --chart-4: oklch(0.75 0.12 70);
-  --chart-5: oklch(0.6 0.1 265);
+  --chart-3: oklch(0.68 0.12 265);
+  --chart-4: oklch(0.74 0.12 150);
+  --chart-5: oklch(0.7 0.08 230);
   --sidebar: oklch(0.18 0.03 258);
   --sidebar-foreground: oklch(0.94 0.02 250);
   --sidebar-primary: oklch(0.78 0.17 200);
@@ -120,6 +120,15 @@
   --knd-surface: 228 28% 11%;
   --knd-surface-2: 228 22% 15%;
   --knd-line: 210 18% 32%;
+  --motif-cyan: var(--knd-cyan);
+  --motif-magenta: var(--knd-magenta);
+  --motif-violet: 265 85% 70%;
+  --motif-ink: 228 30% 8%;
+  --motif-o-faint: 0.10;
+  --motif-o-soft: 0.18;
+  --motif-o-strong: 0.28;
+  --motif-stroke-1: 1.25;
+  --motif-stroke-2: 2;
 }
 
 @layer base {

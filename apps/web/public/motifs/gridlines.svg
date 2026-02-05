@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" fill="none">
+  <defs>
+    <radialGradient id="fade" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(600 380) rotate(90) scale(520 820)">
+      <stop offset="0" stop-color="hsl(var(--knd-cyan) / 0.22)"/>
+      <stop offset="0.55" stop-color="hsl(var(--knd-line) / 0.10)"/>
+      <stop offset="1" stop-color="transparent"/>
+    </radialGradient>
+    <mask id="m">
+      <rect width="1200" height="800" fill="url(#fade)"/>
+    </mask>
+  </defs>
+
+  <g mask="url(#m)" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke">
+    <!-- major grid -->
+    <g stroke="hsl(var(--knd-line) / 0.26)" stroke-width="1.25">
+      <!-- vertical -->
+      <path d="M 0 0 V 800"/>
+<path d="M 120 0 V 800"/>
+<path d="M 240 0 V 800"/>
+<path d="M 360 0 V 800"/>
+<path d="M 480 0 V 800"/>
+<path d="M 600 0 V 800"/>
+<path d="M 720 0 V 800"/>
+<path d="M 840 0 V 800"/>
+<path d="M 960 0 V 800"/>
+<path d="M 1080 0 V 800"/>
+<path d="M 1200 0 V 800"/>
+      <!-- horizontal -->
+      <path d="M 0 0 H 1200"/>
+<path d="M 0 120 H 1200"/>
+<path d="M 0 240 H 1200"/>
+<path d="M 0 360 H 1200"/>
+<path d="M 0 480 H 1200"/>
+<path d="M 0 600 H 1200"/>
+<path d="M 0 720 H 1200"/>
+    </g>
+
+    <!-- minor grid -->
+    <g stroke="hsl(var(--knd-line) / 0.14)" stroke-width="1">
+      <path d="M 60 0 V 800"/>
+<path d="M 180 0 V 800"/>
+<path d="M 300 0 V 800"/>
+<path d="M 420 0 V 800"/>
+<path d="M 540 0 V 800"/>
+<path d="M 660 0 V 800"/>
+<path d="M 780 0 V 800"/>
+<path d="M 900 0 V 800"/>
+<path d="M 1020 0 V 800"/>
+<path d="M 1140 0 V 800"/>
+      <path d="M 0 60 H 1200"/>
+<path d="M 0 180 H 1200"/>
+<path d="M 0 300 H 1200"/>
+<path d="M 0 420 H 1200"/>
+<path d="M 0 540 H 1200"/>
+<path d="M 0 660 H 1200"/>
+<path d="M 0 780 H 1200"/>
+    </g>
+
+    <!-- emphasized axes -->
+    <g stroke-width="2">
+      <path d="M 80 640 C 280 520, 520 520, 760 440 S 1040 300, 1120 180"
+            stroke="hsl(var(--knd-cyan) / 0.22)"/>
+      <path d="M 120 120 L 1080 120" stroke="hsl(var(--knd-magenta) / 0.16)"/>
+      <path d="M 220 80 L 220 740" stroke="hsl(var(--knd-cyan) / 0.14)"/>
+    </g>
+
+    <!-- nodes -->
+    <g>
+      <circle cx="220" cy="120" r="2.5" fill="hsl(var(--knd-cyan) / 0.25)"/>
+<circle cx="220" cy="360" r="2.5" fill="hsl(var(--knd-cyan) / 0.25)"/>
+<circle cx="220" cy="600" r="2.5" fill="hsl(var(--knd-cyan) / 0.25)"/>
+<circle cx="520" cy="520" r="2.5" fill="hsl(var(--knd-cyan) / 0.25)"/>
+<circle cx="760" cy="440" r="2.5" fill="hsl(var(--knd-cyan) / 0.25)"/>
+<circle cx="980" cy="320" r="2.5" fill="hsl(var(--knd-cyan) / 0.25)"/>
+<circle cx="1120" cy="180" r="2.5" fill="hsl(var(--knd-cyan) / 0.25)"/>
+      <circle cx="120" cy="120" r="1.7" fill="hsl(var(--knd-magenta) / 0.18)"/>
+<circle cx="360" cy="120" r="1.7" fill="hsl(var(--knd-magenta) / 0.18)"/>
+<circle cx="600" cy="120" r="1.7" fill="hsl(var(--knd-magenta) / 0.18)"/>
+<circle cx="840" cy="120" r="1.7" fill="hsl(var(--knd-magenta) / 0.18)"/>
+<circle cx="1080" cy="120" r="1.7" fill="hsl(var(--knd-magenta) / 0.18)"/>
+    </g>
+  </g>
+</svg>
