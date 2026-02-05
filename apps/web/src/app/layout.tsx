@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { MotifLayer } from "@/components/motifs/MotifLayer";
 
 export const metadata: Metadata = {
   title: "cEDH Analytics",
@@ -24,6 +25,7 @@ export default function RootLayout({
       <body
         className="knd-body"
       >
+        <MotifLayer variant="B" intensity={0.9} />
         {children}
       </body>
     </html>

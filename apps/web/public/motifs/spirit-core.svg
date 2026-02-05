@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" fill="none">
+  <defs>
+    <radialGradient id="core" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(620 360) rotate(90) scale(220 220)">
+      <stop offset="0" stop-color="hsl(var(--knd-cyan) / 0.30)"/>
+      <stop offset="0.55" stop-color="hsl(var(--knd-magenta) / 0.20)"/>
+      <stop offset="1" stop-color="transparent"/>
+    </radialGradient>
+  </defs>
+
+  <g stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke">
+    <!-- city silhouettes -->
+    <g stroke="hsl(var(--knd-line) / 0.18)" stroke-width="2">
+      <path d="M 0 700 H 1200" />
+      <path d="M 120 700 V 620 H 170 V 700" />
+      <path d="M 210 700 V 590 H 260 V 700" />
+      <path d="M 300 700 V 640 H 340 V 700" />
+      <path d="M 860 700 V 610 H 910 V 700" />
+      <path d="M 940 700 V 580 H 1000 V 700" />
+      <path d="M 1040 700 V 650 H 1080 V 700" />
+    </g>
+
+    <!-- core -->
+    <circle cx="620" cy="360" r="160" fill="url(#core)" stroke="hsl(var(--knd-cyan) / 0.18)" stroke-width="2"/>
+
+    <!-- energy strands (roots reversed) -->
+    <g stroke-width="1.75">
+      <path d="M 620 360 C 560 280, 470 230, 360 210"
+            stroke="hsl(var(--knd-cyan) / 0.20)"/>
+      <path d="M 620 360 C 660 260, 760 210, 900 190"
+            stroke="hsl(var(--knd-magenta) / 0.16)"/>
+      <path d="M 620 360 C 585 450, 520 520, 420 600"
+            stroke="hsl(var(--knd-cyan) / 0.16)"/>
+      <path d="M 620 360 C 700 450, 780 520, 880 610"
+            stroke="hsl(var(--knd-magenta) / 0.12)"/>
+    </g>
+
+    <!-- inner sigil -->
+    <g stroke="hsl(var(--knd-line) / 0.20)" stroke-width="1.5">
+      <path d="M 620 250 V 470"/>
+      <path d="M 540 360 H 700"/>
+      <path d="M 580 300 L 660 420"/>
+      <path d="M 660 300 L 580 420"/>
+    </g>
+
+    <!-- nodes -->
+    <g>
+      <circle cx="620" cy="360" r="5" fill="hsl(var(--knd-cyan) / 0.22)"/>
+      <circle cx="360" cy="210" r="3" fill="hsl(var(--knd-magenta) / 0.12)"/>
+      <circle cx="900" cy="190" r="3" fill="hsl(var(--knd-cyan) / 0.12)"/>
+      <circle cx="420" cy="600" r="3" fill="hsl(var(--knd-cyan) / 0.12)"/>
+      <circle cx="880" cy="610" r="3" fill="hsl(var(--knd-magenta) / 0.10)"/>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" fill="none">
+  <defs>
+    <radialGradient id="leafGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(260 220) rotate(90) scale(360 520)">
+      <stop offset="0" stop-color="hsl(var(--knd-cyan) / 0.28)"/>
+      <stop offset="0.55" stop-color="hsl(var(--knd-magenta) / 0.14)"/>
+      <stop offset="1" stop-color="transparent"/>
+    </radialGradient>
+  </defs>
+
+  <g stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke">
+    <!-- canopy arc -->
+    <path d="M 40 280 C 180 120, 420 70, 680 110 S 1080 260, 1180 460"
+          stroke="hsl(var(--knd-line) / 0.18)" stroke-width="2"/>
+
+    <!-- leaf / circuit clusters -->
+    <g>
+      <path d="M 180 260 C 240 210, 310 210, 360 260 C 310 300, 240 300, 180 260 Z"
+            stroke="hsl(var(--knd-cyan) / 0.22)" stroke-width="1.5" fill="url(#leafGlow)"/>
+      <path d="M 240 260 C 250 235, 275 220, 305 220"
+            stroke="hsl(var(--knd-line) / 0.22)" stroke-width="1.25"/>
+      <path d="M 240 260 C 250 285, 275 300, 305 300"
+            stroke="hsl(var(--knd-line) / 0.22)" stroke-width="1.25"/>
+
+      <path d="M 360 320 C 420 270, 490 270, 540 320 C 490 360, 420 360, 360 320 Z"
+            stroke="hsl(var(--knd-magenta) / 0.14)" stroke-width="1.5" fill="transparent"/>
+      <path d="M 420 320 C 430 298, 455 285, 485 285"
+            stroke="hsl(var(--knd-line) / 0.18)" stroke-width="1.25"/>
+      <path d="M 420 320 C 430 342, 455 355, 485 355"
+            stroke="hsl(var(--knd-line) / 0.18)" stroke-width="1.25"/>
+    </g>
+
+    <!-- trunk hint -->
+    <path d="M 600 760 C 590 610, 580 520, 600 420 C 620 330, 660 280, 720 220"
+          stroke="hsl(var(--knd-cyan) / 0.16)" stroke-width="2.25"/>
+
+    <!-- nodes -->
+    <g>
+      <circle cx="240" cy="260" r="3" fill="hsl(var(--knd-cyan) / 0.20)"/>
+      <circle cx="305" cy="220" r="2.5" fill="hsl(var(--knd-magenta) / 0.12)"/>
+      <circle cx="305" cy="300" r="2.5" fill="hsl(var(--knd-cyan) / 0.14)"/>
+      <circle cx="420" cy="320" r="3" fill="hsl(var(--knd-magenta) / 0.12)"/>
+      <circle cx="485" cy="285" r="2.5" fill="hsl(var(--knd-cyan) / 0.12)"/>
+      <circle cx="485" cy="355" r="2.5" fill="hsl(var(--knd-magenta) / 0.10)"/>
+      <circle cx="720" cy="220" r="3.5" fill="hsl(var(--knd-cyan) / 0.16)"/>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 120" fill="none">
+  <g stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke">
+    <path d="M 40 60 H 520" stroke="hsl(var(--knd-line) / 0.22)" stroke-width="2"/>
+    <path d="M 680 60 H 1160" stroke="hsl(var(--knd-line) / 0.22)" stroke-width="2"/>
+
+    <g>
+      <path d="M 600 28 L 626 60 L 600 92 L 574 60 Z" stroke="hsl(var(--knd-cyan) / 0.20)" stroke-width="2" fill="transparent"/>
+      <path d="M 600 42 V 78" stroke="hsl(var(--knd-magenta) / 0.14)" stroke-width="2"/>
+      <path d="M 586 60 H 614" stroke="hsl(var(--knd-line) / 0.20)" stroke-width="1.5"/>
+      <circle cx="600" cy="60" r="4" fill="hsl(var(--knd-cyan) / 0.20)"/>
+    </g>
+
+    <g stroke="hsl(var(--knd-line) / 0.18)" stroke-width="1.5">
+      <path d="M 520 60 l 18 -10"/>
+      <path d="M 520 60 l 18 10"/>
+      <path d="M 680 60 l -18 -10"/>
+      <path d="M 680 60 l -18 10"/>
+    </g>
+  </g>
+</svg>
