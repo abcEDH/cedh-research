@@ -328,31 +328,11 @@ def castable(card: dict, colors: set, colorless: int, available_mana: int, deck_
     return available_mana >= needed
 
 
-def evaluate_hand(hand: List[dict], labels: dict, cache: dict, seat: int) -> dict:
-    sources = parse_sources(hand)
-    hand_names = [c['name'] for c in hand]
-
-    def land_mana_value(land):
-        name = land['name']
-        if name in ['Ancient Tomb', 'City of Traitors']:
-            return 2
-        return 1
-
-    def land_colors_set(land, deck_colors):
-        name = land['name']
-        if name in ['City of Brass', 'Mana Confluence', 'Command Tower', 'Exotic Orchard', 'Forbidden Orchard']:
-            return set(deck_colors)
-        # Treat fetchlands as any deck color (heuristic)
-        if name in [
-            'Arid Mesa', 'Bloodstained Mire', 'Flooded Strand', 'Marsh Flats', 'Misty Rainforest',
-            'Polluted Delta', 'Scalding Tarn', 'Verdant Catacombs', 'Wooded Foothills'
-        ]:
-            return set(deck_colors)
-        return land_colors(land.get('oracle_text') or '')
-
+def get_commander_profile(labels: dict, cache: dict) -> dict:
+    names = labels.get('commander_names', [])
     commander_total_cost = labels.get('commander_cost')
     commander_colors = set(labels.get('commander_colors', []))
-    # normalize string cost if present (e.g., "UBR2")
+
     if isinstance(commander_total_cost, str) and commander_total_cost != '':
         numeric = 0
         colors_from_str = set()
@@ -367,33 +347,66 @@ def evaluate_hand(hand: List[dict], labels: dict, cache: dict, seat: int) -> dic
 
     if commander_total_cost is None or commander_total_cost == '' or not commander_colors:
         commander_total_cost, commander_colors = infer_commander_cost(labels, cache)
+
     deck_colors = set(commander_colors) if commander_colors else set(DEFAULT_DECK_COLORS)
+    return {
+        'names': names,
+        'cost': commander_total_cost,
+        'colors': deck_colors,
+        'is_kinnan': 'Kinnan, Bonder Prodigy' in names,
+    }
+
+
+def land_mana_value(land: dict) -> int:
+    name = land['name']
+    if name in ['Ancient Tomb', 'City of Traitors']:
+        return 2
+    return 1
+
+
+def land_colors_set(land: dict, deck_colors: set) -> set:
+    name = land['name']
+    if name in ['City of Brass', 'Mana Confluence', 'Command Tower', 'Exotic Orchard', 'Forbidden Orchard']:
+        return set(deck_colors)
+    if name in [
+        'Arid Mesa', 'Bloodstained Mire', 'Flooded Strand', 'Marsh Flats', 'Misty Rainforest',
+        'Polluted Delta', 'Scalding Tarn', 'Verdant Catacombs', 'Wooded Foothills'
+    ]:
+        return set(deck_colors)
+    return land_colors(land.get('oracle_text') or '')
+
+
+def evaluate_hand(hand: List[dict], labels: dict, cache: dict, seat: int) -> dict:
+    sources = parse_sources(hand)
+    hand_names = [c['name'] for c in hand]
+    commander = get_commander_profile(labels, cache)
+    deck_colors = commander['colors']
+
+    lands = sources['lands'][:]
+    lands_sorted = sorted(lands, key=lambda l: (land_mana_value(l), len(land_colors_set(l, deck_colors))), reverse=True)
+    artifacts_in_hand = sum(1 for c in hand if is_artifact(c))
+    has_birds = any(c['name'] == 'Birds of Paradise' for c in sources['dorks'])
+    dork_colors = set(deck_colors) if has_birds else set(['G'])
+
+    ritual_net = {
+        'Dark Ritual': 2,
+        'Cabal Ritual': 2,
+        'Rite of Flame': 1,
+        "Jeska's Will": 2,
+        'Culling the Weak': 3,
+    }
+
+    deferred_rocks = set([
+        'Arcane Signet', 'Fellwar Stone',
+        'Talisman of Creativity', 'Talisman of Dominance', 'Talisman of Indulgence', 'Talisman of Curiosity'
+    ])
 
     def sequencing(turns: int):
-        # choose best lands by mana value, then by color coverage
-        lands = sources['lands'][:]
-        lands_sorted = sorted(lands, key=lambda l: (land_mana_value(l), len(land_colors_set(l, deck_colors))), reverse=True)
-
-        # ritual net values (explicit)
-        ritual_net = {
-            'Dark Ritual': 2,
-            'Cabal Ritual': 2,
-            'Rite of Flame': 1,
-            "Jeska's Will": 2,
-            'Culling the Weak': 3,  # conservative net +3
-        }
-
-        deferred_rocks = set([
-            'Arcane Signet', 'Fellwar Stone',
-            'Talisman of Creativity', 'Talisman of Dominance', 'Talisman of Indulgence'
-        ])
-
         carry = 0
-        last_colors = set()
-        last_total = 0
         dork_carry = 0
         kinnan_active = False
-        is_kinnan = 'Kinnan, Bonder Prodigy' in labels.get('commander_names', [])
+        last_colors = set()
+        last_total = 0
 
         for turn in range(1, turns + 1):
             played_lands = lands_sorted[:turn]
@@ -404,101 +417,87 @@ def evaluate_hand(hand: List[dict], labels: dict, cache: dict, seat: int) -> dic
                 colors |= land_colors_set(land, deck_colors)
                 mana += land_mana_value(land)
 
-            # Gemstone Caverns pre-game (seat 2-4)
+            if dork_carry:
+                colors |= dork_colors
+
             if seat > 1 and any(l['name'] == 'Gemstone Caverns' for l in lands):
-                # assume we can exile a card; cavern taps for any color
                 colors |= deck_colors
                 mana += 1
 
-            # 0-cost sources / conditions
+            nonland_producers = dork_carry + carry
+            in_play = {
+                'sol_ring': False,
+                'mana_vault': False,
+                'grim_monolith': False,
+            }
+
             if sources['mox_diamond'] and len(lands) >= 2:
                 colors |= deck_colors
                 mana += 1
+                nonland_producers += 1
             if sources['chrome_mox']:
                 imprintable = any(not is_land(c) and not is_artifact(c) for c in hand)
                 if imprintable:
                     colors |= deck_colors
                     mana += 1
-            if sources['mox_opal']:
-                artifacts = sum(1 for c in hand if is_artifact(c))
-                if artifacts >= 3:
-                    colors |= deck_colors
-                    mana += 1
-            if sources['mox_amber'] and (commander_total_cost == 0 or any(is_legendary(c) for c in hand)):
+                    nonland_producers += 1
+            if sources['mox_opal'] and artifacts_in_hand >= 3:
                 colors |= deck_colors
                 mana += 1
+                nonland_producers += 1
+            if sources['mox_amber'] and (commander['cost'] == 0 or any(is_legendary(c) for c in hand)):
+                colors |= deck_colors
+                mana += 1
+                nonland_producers += 1
             if sources['petal']:
                 colors |= deck_colors
                 mana += 1
+                nonland_producers += 1
             if any(c['name'] == 'Simian Spirit Guide' for c in hand):
                 colors.add('R')
                 mana += 1
 
-            # Mana-positive artifacts (net immediate)
             if sources['sol_ring'] and mana >= 1:
-                mana += 1  # pay 1, get 2
+                mana += 1
+                in_play['sol_ring'] = True
             if sources['mana_vault'] and mana >= 1:
-                mana += 2  # pay 1, get 3
+                mana += 2
+                in_play['mana_vault'] = True
             if any(r['name'] == 'Grim Monolith' for r in sources['rocks']) and mana >= 2:
                 mana += 1
+                in_play['grim_monolith'] = True
 
-            # Deferred rocks (talismans/signets) are -1 now, +1 next turn
             carry_next = 0
             rocks_2 = [r for r in sources['rocks'] if r['name'] in labels.get('ramp_rocks', [])]
             if mana >= 2 and rocks_2:
-                # assume we cast one deferred rock per turn
                 if any(r['name'] in deferred_rocks for r in rocks_2):
                     colors |= deck_colors
                     mana -= 1
                     carry_next += 1
+                    nonland_producers += 1
                 else:
-                    # non-deferred 2cmc rock (rare) treated as neutral
                     colors |= deck_colors
-                    mana += 0
 
-            # Dorks: assume we can cast one on T1 if we have G, then it adds +1 from next turn
             dork_next = dork_carry
             if dork_carry == 0 and sources['dorks']:
-                # check if any dork is castable now
                 if 'G' in colors and mana >= 1:
                     mana -= 1
                     dork_next = 1
+                    nonland_producers += 1
 
-            # Kinnan bonus: double nonland mana sources in play
-            # Two-pass: if Kinnan is castable this turn from base mana, assume active for the rest of the turn
-            if is_kinnan:
-                if not kinnan_active and 'G' in colors and 'U' in colors and mana >= 2:
-                    # pay to cast Kinnan this turn
-                    mana -= 2
-                    kinnan_active = True
-                if kinnan_active:
-                    bonus = 0
-                    # dorks and deferred rocks already in play
-                    bonus += dork_carry
-                    bonus += carry
-                    # moxen and fast rocks
-                    if sources['mox_diamond'] and len(lands) >= 2:
-                        bonus += 1
-                    if sources['chrome_mox']:
-                        imprintable = any(not is_land(c) and not is_artifact(c) for c in hand)
-                        if imprintable:
-                            bonus += 1
-                    if sources['mox_opal']:
-                        artifacts = sum(1 for c in hand if is_artifact(c))
-                        if artifacts >= 3:
-                            bonus += 1
-                    if sources['mox_amber'] and (commander_total_cost == 0 or any(is_legendary(c) for c in hand)):
-                        bonus += 1
-                    if sources['sol_ring']:
-                        bonus += 1
-                    if sources['mana_vault']:
-                        bonus += 1
-                    if any(r['name'] == 'Grim Monolith' for r in sources['rocks']) and mana >= 2:
-                        bonus += 1
-                    # deferred rock cast previous turn contributes via carry already
-                    mana += bonus
+            if commander['is_kinnan'] and not kinnan_active and 'G' in colors and 'U' in colors and mana >= 2:
+                mana -= 2
+                kinnan_active = True
+            if kinnan_active:
+                bonus = nonland_producers
+                if in_play['sol_ring']:
+                    bonus += 1
+                if in_play['mana_vault']:
+                    bonus += 1
+                if in_play['grim_monolith']:
+                    bonus += 1
+                mana += bonus
 
-            # Rituals (explicit net)
             for name, net in ritual_net.items():
                 if name in hand_names:
                     if name in ['Dark Ritual', 'Cabal Ritual', 'Culling the Weak'] and 'B' not in colors:
@@ -520,9 +519,6 @@ def evaluate_hand(hand: List[dict], labels: dict, cache: dict, seat: int) -> dic
     colors_t2, t2_total = sequencing(2)
     colors_t3, t3_total = sequencing(3)
 
-    # use best colors available by turn
-    colors = colors_t2 | colors_t1
-
     castable_t1 = []
     castable_t2 = []
     castable_t3 = []
@@ -538,10 +534,9 @@ def evaluate_hand(hand: List[dict], labels: dict, cache: dict, seat: int) -> dic
             castable_t3.append(c['name'])
 
     def can_cast_commander(total, cols):
-        # 0-cost commander (e.g., Rograkh) always castable
-        if commander_total_cost == 0:
+        if commander['cost'] == 0:
             return True
-        return all(c in cols for c in commander_colors) and total >= commander_total_cost
+        return all(c in cols for c in commander['colors']) and total >= commander['cost']
 
     if can_cast_commander(t1_total, colors_t1):
         commander_turn = 'T1'
