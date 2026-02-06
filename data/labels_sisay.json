@@ -1,0 +1,44 @@
+{
+  "fast_rocks": [
+    "Chrome Mox",
+    "Lotus Petal",
+    "Mox Amber",
+    "Mox Diamond"
+  ],
+  "rituals": [],
+  "ramp_rocks": [
+    "Arcane Signet",
+    "Mana Vault",
+    "Relic of Legends",
+    "Sol Ring"
+  ],
+  "engines": [
+    "Esper Sentinel",
+    "Faerie Mastermind",
+    "Gran-Gran",
+    "Kutzil, Malamet Exemplar",
+    "Mystic Remora",
+    "Rhystic Study",
+    "Selvala, Heart of the Wilds",
+    "Wan Shi Tong, Librarian"
+  ],
+  "tutors": [
+    "Chord of Calling",
+    "Crop Rotation",
+    "Demonic Tutor",
+    "Enlightened Tutor",
+    "Flooded Strand",
+    "Misty Rainforest",
+    "Neoform",
+    "Polluted Delta",
+    "Saheeli Rai",
+    "Scalding Tarn",
+    "Sisay, Weatherlight Captain",
+    "Vampiric Tutor",
+    "Verdant Catacombs",
+    "Windswept Heath",
+    "Wooded Foothills"
+  ],
+  "threats": [],
+  "wins": []
+}

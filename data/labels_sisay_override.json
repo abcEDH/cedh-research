@@ -1,0 +1,16 @@
+{
+  "engines": ["Mystic Remora", "Rhystic Study", "Esper Sentinel", "Smothering Tithe", "Faerie Mastermind"],
+  "tutors": ["Demonic Tutor", "Vampiric Tutor", "Enlightened Tutor", "Chord of Calling", "Crop Rotation", "Neoform"],
+  "wins": [
+    "Oath of Teferi",
+    "Nicol Bolas, Dragon-God",
+    "Aminatou, the Fateshifter",
+    "Emiel the Blessed",
+    "Derevi, Empyrial Tactician",
+    "Mount Doom",
+    "Orcish Bowmasters"
+  ],
+  "fast_rocks": ["Chrome Mox", "Mox Diamond", "Mox Amber", "Lotus Petal", "Sol Ring", "Mana Vault"],
+  "ramp_rocks": ["Arcane Signet", "Relic of Legends"],
+  "rituals": ["Elvish Spirit Guide", "Simian Spirit Guide", "Tinder Wall"]
+}
