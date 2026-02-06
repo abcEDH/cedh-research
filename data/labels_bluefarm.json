@@ -1,0 +1,84 @@
+{
+  "commander_colors": [
+    "B",
+    "W"
+  ],
+  "commander_cost": "BW1",
+  "commander_names": [
+    "Kraum, Ludevic's Opus",
+    "Tymna the Weaver"
+  ],
+  "engines": [
+    "Esper Sentinel",
+    "Faerie Mastermind",
+    "Kraum, Ludevic's Opus",
+    "Mystic Remora",
+    "Rhystic Study",
+    "Tataru Taru",
+    "Wheel of Fortune"
+  ],
+  "fast_rocks": [
+    "Chrome Mox",
+    "Lotus Petal",
+    "Mox Amber",
+    "Mox Diamond",
+    "Mox Opal"
+  ],
+  "ramp_rocks": [
+    "Arcane Signet",
+    "Fellwar Stone",
+    "Lion's Eye Diamond",
+    "Mana Vault",
+    "Sol Ring"
+  ],
+  "rituals": [
+    "An Offer You Can't Refuse",
+    "Cabal Ritual",
+    "Culling the Weak",
+    "Dark Ritual",
+    "Jeska's Will",
+    "Rite of Flame"
+  ],
+  "threats": [
+    "Ad Nauseam",
+    "Brain Freeze",
+    "Demonic Consultation",
+    "Necropotence",
+    "Tainted Pact",
+    "Thassa's Oracle",
+    "Underworld Breach"
+  ],
+  "tutors": [
+    "Arid Mesa",
+    "Beseech the Mirror",
+    "Bloodstained Mire",
+    "Demonic Consultation",
+    "Demonic Tutor",
+    "Diabolic Intent",
+    "Enlightened Tutor",
+    "Flooded Strand",
+    "Gamble",
+    "Imperial Seal",
+    "Intuition",
+    "Marsh Flats",
+    "Misty Rainforest",
+    "Mystical Tutor",
+    "Polluted Delta",
+    "Ranger-Captain of Eos",
+    "Scalding Tarn",
+    "Tainted Pact",
+    "Vampiric Tutor",
+    "Verdant Catacombs",
+    "Windswept Heath",
+    "Wishclaw Talisman"
+  ],
+  "wins": [
+    "Ad Nauseam",
+    "Brain Freeze",
+    "Demonic Consultation",
+    "Necropotence",
+    "Tainted Pact",
+    "Thassa's Oracle",
+    "Underworld Breach"
+  ]
+}
