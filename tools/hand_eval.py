@@ -590,10 +590,20 @@ def keep_or_mull(hand_eval: dict, pod: str, seat: int, labels: dict) -> Tuple[st
 
     is_kinnan = 'Kinnan, Bonder Prodigy' in labels.get('commander_names', [])
     early_7 = hand_eval.get('t1_total', 0) >= 7 or hand_eval.get('t2_total', 0) >= 7
+    is_sisay = 'Sisay, Weatherlight Captain' in labels.get('commander_names', [])
+    sisay_rainbow = {
+        'Bloom Tender', 'Faeburrow Elder', 'Selvala, Heart of the Wilds',
+        'Relic of Legends', 'The Cabbage Merchant', 'Lotho, Corrupt Shirriff',
+        'Kinnan, Bonder Prodigy'
+    }
+    has_rainbow_line = bool(sisay_rainbow & (castable_t1 | castable_t2))
+    wubrg_ready = hand_eval.get('colors', '') == 'BGRUW'
 
     if pod == 'fast':
         if is_kinnan and early_7:
             return 'keep', 'fast: kinnan early 7-mana line'
+        if is_sisay and (wubrg_ready or has_rainbow_line) and not strict:
+            return 'keep', 'fast: sisay wubrg/rainbow line'
         if has_interaction and (has_tutor or has_win or commander_fast):
             return 'keep', 'fast: interaction + line'
         if middle and has_interaction and (has_engine or has_tutor):
@@ -605,6 +615,8 @@ def keep_or_mull(hand_eval: dict, pod: str, seat: int, labels: dict) -> Tuple[st
     if pod == 'mixed':
         if is_kinnan and early_7:
             return 'keep', 'mixed: kinnan early 7-mana line'
+        if is_sisay and (wubrg_ready or has_rainbow_line):
+            return 'keep', 'mixed: sisay wubrg/rainbow line'
         if has_interaction and (has_tutor or has_engine):
             return 'keep', 'mixed: interaction + engine/tutor'
         if middle and (has_engine or has_tutor) and t3_or_better:
@@ -617,6 +629,8 @@ def keep_or_mull(hand_eval: dict, pod: str, seat: int, labels: dict) -> Tuple[st
 
     if is_kinnan and early_7:
         return 'keep', 'midrange: kinnan early 7-mana line'
+    if is_sisay and (wubrg_ready or has_rainbow_line):
+        return 'keep', 'midrange: sisay wubrg/rainbow line'
     if has_engine and (has_interaction or has_tutor):
         return 'keep', 'midrange: engine + protection/tutor'
     if middle and (has_tutor or has_engine) and t3_or_better:
