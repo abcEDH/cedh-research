@@ -6,6 +6,7 @@
   ],
   "scripts": {
     "docs:check": "node scripts/check-mermaid.mjs",
+    "vercel-build": "npm --workspace apps/web run build",
     "web:dev": "npm --workspace apps/web run dev",
     "web:build": "npm --workspace apps/web run build",
     "web:start": "npm --workspace apps/web run start",
