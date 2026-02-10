@@ -1,7 +1,8 @@
 {
-  "framework": "nextjs",
-  "installCommand": "npm install",
-  "buildCommand": "cd apps/web && npm run build",
-  "devCommand": "cd apps/web && npm run dev --port $PORT",
-  "outputDirectory": "apps/web/.next"
+  "builds": [
+    {
+      "src": "apps/web/package.json",
+      "use": "@vercel/next"
+    }
+  ]
 }
