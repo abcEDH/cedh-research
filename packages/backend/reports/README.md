@@ -13,7 +13,7 @@ Monthly snapshots of the cEDH competitive meta including:
 
 ### Methodology
 - **Win Rate**: Games won / (Games won + Games lost)
-- **Top 16 Rate**: Entries finishing in top 16 / Total entries
+- **Top 16 Rate**: Entries finishing in top 16 (Top 4 for 34-player events) / Total entries
 - **Seat Spread**: Seat 0 win rate minus Seat 3 win rate (measures turn order dependency)
 - **Variance**: Based on distribution of entry win rates
   - High: >40% of entries below 15% win rate

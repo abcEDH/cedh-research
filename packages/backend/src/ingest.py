@@ -487,7 +487,10 @@ class DataIngester:
         rounds = rounds or []
         player_count = len(standings)
         swiss_rounds = tournament.get("swissNum", 0)
-        top_cut = tournament.get("topCut", 0)
+        reported_top_cut = tournament.get("topCut", 0)
+        effective_top_cut = reported_top_cut
+        if player_count <= 34:
+            effective_top_cut = 4
 
         # Skip if too few players
         if player_count < self.min_players:
@@ -510,7 +513,7 @@ class DataIngester:
             "start_date": start_date,
             "player_count": player_count,
             "swiss_rounds": swiss_rounds,
-            "top_cut": top_cut,
+            "top_cut": effective_top_cut,
             "average_elo": int(tournament.get("averageElo")) if tournament.get("averageElo") else None,
             "median_elo": int(tournament.get("medianElo")) if tournament.get("medianElo") else None,
             "top_elo": int(tournament.get("topElo")) if tournament.get("topElo") else None,
@@ -584,6 +587,7 @@ class DataIngester:
             final_standing = info["idx"] + 1
             decklist = info["decklist"]
 
+            top_16_cutoff = 4 if player_count <= 34 else 16
             entries.append({
                 "tournament_id": tournament_id,
                 "player_id": player_id,
@@ -597,8 +601,8 @@ class DataIngester:
                 "opponent_win_rate": standing.get("opponentWinRate"),
                 "decklist_url": decklist if decklist and "http" in decklist else None,
                 "decklist_text": decklist if decklist and "http" not in decklist else None,
-                "made_top_cut": final_standing <= top_cut if top_cut > 0 else False,
-                "made_top_16": final_standing <= 16,
+                "made_top_cut": final_standing <= effective_top_cut if effective_top_cut > 0 else False,
+                "made_top_16": final_standing <= top_16_cutoff,
             })
 
         # Step 5: Batch upsert all entries (1 API call)

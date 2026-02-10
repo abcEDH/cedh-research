@@ -25,16 +25,16 @@ export default function LimitationsPage() {
         <div className="space-y-6">
           <Card>
             <CardHeader className="knd-panel-header">
-              <CardTitle className="text-lg">Top 16 vs Top 10 Cutoffs</CardTitle>
+              <CardTitle className="text-lg">Top 16 vs Top 10/Top 4 Cutoffs</CardTitle>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground space-y-3">
               <p>
-                Some events use a Top 10 cutoff when attendance is under 64 players. Our "Top 16" conversion
-                metric can include those Top 10 results, which may inflate the apparent rate.
+                Some events use a Top 10 cutoff when attendance is under 64 players. For very small events
+                (34 players or fewer), we only count Top 4 finishes to avoid inflating conversion rates.
               </p>
               <p>
-                When comparing commanders across events of different sizes, treat the Top 16/Top 10 rate as a
-                directional signal rather than a precise probability.
+                When comparing commanders across events of different sizes, treat the Top 16/Top 10/Top 4
+                rates as directional signals rather than precise probabilities.
               </p>
             </CardContent>
           </Card>

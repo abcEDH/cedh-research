@@ -117,6 +117,7 @@ interface RecentFinish {
   made_top_cut: boolean;
   made_top_16: boolean;
   decklist_url: string | null;
+  player_name: string | null;
   player_handle: string | null;
   player_id: string | null;
   tournament: {
@@ -164,7 +165,7 @@ async function getRecentFinishes(commanderId: string, daysBack: number = 30) {
   const { data, error } = await supabase
     .from("tournament_entries")
     .select(
-      "id, final_standing, made_top_cut, made_top_16, decklist_url, tournaments ( id, name, start_date, player_count, top_cut, topdeck_tid ), players ( topdeck_handle, topdeck_id )"
+      "id, final_standing, made_top_cut, made_top_16, decklist_url, tournaments ( id, name, start_date, player_count, top_cut, topdeck_tid ), players ( name, topdeck_handle, topdeck_id )"
     )
     .eq("commander_id", commanderId)
     .or("made_top_16.eq.true,made_top_cut.eq.true,final_standing.eq.1")
@@ -189,6 +190,7 @@ async function getRecentFinishes(commanderId: string, daysBack: number = 30) {
         made_top_cut: row.made_top_cut,
         made_top_16: row.made_top_16,
         decklist_url: row.decklist_url,
+        player_name: player?.name ?? null,
         player_handle: player?.topdeck_handle ?? null,
         player_id: player?.topdeck_id ?? null,
         tournament,
@@ -515,10 +517,10 @@ export default async function CommanderDetailPage({
             tooltip="Weighted average points per game: win=5, draw=1, loss=0."
           />
           <StatCard
-            label="Top 16 / Top 10 Rate"
+            label="Top 16 / Top 10 / Top 4 Rate"
             value={`${(parseFloat(commander.conversion_rate_top_16) * 100).toFixed(1)}%`}
             tone="neutral"
-            tooltip="Share of entries reaching the top bracket. Note: under 64 players, events may have a Top 10 instead of Top 16."
+            tooltip="Share of entries reaching the top bracket. Under 64 players, events may have a Top 10, and for 34 players or fewer we only count Top 4 finishes."
           />
           <StatCard
             label="Top Cut Conversion"
@@ -646,7 +648,7 @@ export default async function CommanderDetailPage({
                   </div>
                   <hr className="border-border/60" />
                   <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">Top 16 Finishes</span>
+                    <span className="text-muted-foreground">Top 16/Top 4 Finishes</span>
                     <span className="font-mono text-muted-foreground">
                       {commander.top_16_count}
                     </span>
@@ -740,7 +742,7 @@ export default async function CommanderDetailPage({
                 <CardHeader className="knd-panel-header">
                   <CardTitle className="text-lg">Top Finishes (Past 30 Days)</CardTitle>
                   <p className="text-sm text-muted-foreground">
-                    Top 16, Top Cut, and 1st-place finishes from the past month.
+                    Top 16, Top Cut, and 1st-place finishes from the past month (Top 4 for 34-player events).
                   </p>
                 </CardHeader>
                 <CardContent>
@@ -830,7 +832,7 @@ export default async function CommanderDetailPage({
                         <TableHead className="text-right">Entries</TableHead>
                         <TableHead className="text-right">Games</TableHead>
                         <TableHead className="text-right">Win Rate</TableHead>
-                        <TableHead className="text-right">Top 16s</TableHead>
+                        <TableHead className="text-right">Top 16/Top 4s</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1174,6 +1176,8 @@ function RecentFinishRow({
   const tournamentUrl = finish.tournament.topdeck_tid
     ? `https://topdeck.gg/event/${finish.tournament.topdeck_tid}`
     : null;
+  const playerDisplay = finish.player_name || finish.player_handle;
+  const playerProfileUrl = finish.player_id ? `https://topdeck.gg/profile/${finish.player_id}` : null;
   const topdeckDeckUrl =
     finish.tournament.topdeck_tid && (finish.player_id || finish.player_handle)
       ? `https://topdeck.gg/deck/${finish.tournament.topdeck_tid}/${finish.player_id || finish.player_handle}`
@@ -1185,7 +1189,7 @@ function RecentFinishRow({
     { month: "short", day: "numeric", year: "numeric" }
   );
 
-  let medalLabel = "Top 16";
+  let medalLabel = finish.tournament.player_count <= 34 ? "Top 4" : "Top 16";
   let medalClass = "border-[hsl(var(--knd-amber))]/40 text-[hsl(var(--knd-amber))]";
   if (finish.final_standing === 1) {
     medalLabel = "1st";
@@ -1221,6 +1225,23 @@ function RecentFinishRow({
           {dateLabel} · {finish.tournament.player_count} players
           {finish.final_standing ? ` · Standing ${finish.final_standing}` : ""}
         </p>
+        {playerDisplay ? (
+          <p className="text-xs text-muted-foreground mt-1">
+            Player{" "}
+            {playerProfileUrl ? (
+              <a
+                href={playerProfileUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-foreground hover:text-primary"
+              >
+                {playerDisplay}
+              </a>
+            ) : (
+              <span className="text-foreground">{playerDisplay}</span>
+            )}
+          </p>
+        ) : null}
       </div>
       <div className="flex flex-wrap gap-2 text-xs">
         {decklistHref ? (
