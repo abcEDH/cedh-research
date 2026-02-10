@@ -341,10 +341,10 @@ export default async function CommandersPage() {
             tooltip="Average commander win rate. Baseline in 4-player pods is 25%."
           />
           <StatCard
-            label="Avg Top 16/Top 10"
+            label="Avg Top 16/Top 10/Top 4"
             value={`${(avgTop16 * 100).toFixed(1)}%`}
             tone="neutral"
-            tooltip="Average conversion into top bracket. Under 64 players, events may use Top 10 instead of Top 16."
+            tooltip="Average conversion into top bracket. Under 64 players, events may use Top 10, and for 34 players or fewer we only count Top 4 finishes."
           />
         </div>
 
