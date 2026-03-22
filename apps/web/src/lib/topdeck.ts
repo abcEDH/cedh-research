@@ -27,11 +27,33 @@ type TopDeckTournamentResponse = {
     winRate: number;
     opponentWinRate: number;
   }>;
-  rounds: any[];
+  rounds: unknown[];
 };
 
 const CHAMPIONSHIP_LEADERBOARD_URL =
   "https://topdeck.gg/championship-series-2026/leaderboard";
+
+export function extractTournamentSlug(input: string): string {
+  const value = input.trim();
+  if (!value) return "";
+
+  try {
+    const normalized = value.startsWith("http://") || value.startsWith("https://")
+      ? value
+      : `https://${value}`;
+    const url = new URL(normalized);
+    const segments = url.pathname.split("/").filter(Boolean);
+    const knownPrefixes = new Set(["event", "bracket", "tournament", "tournaments"]);
+    const slug = segments.length >= 2 && knownPrefixes.has(segments[0]) ? segments[1] : segments.at(-1);
+    return slug?.trim() ?? "";
+  } catch {
+    const compact = value.replace(/^https?:\/\//, "").replace(/^topdeck\.gg\//, "");
+    const segments = compact.split("/").filter(Boolean);
+    if (segments.length === 0) return "";
+    const knownPrefixes = new Set(["event", "bracket", "tournament", "tournaments"]);
+    return segments.length >= 2 && knownPrefixes.has(segments[0]) ? segments[1] : segments.at(-1) ?? "";
+  }
+}
 
 export async function fetchChampionshipLeaderboard(): Promise<TopDeckLeaderboardEntry[]> {
   const res = await fetch(CHAMPIONSHIP_LEADERBOARD_URL, { cache: "no-store" });
@@ -76,7 +98,11 @@ export async function fetchTournamentBySlug(slug: string): Promise<TopDeckTourna
   const [html, playersJson] = await Promise.all([bracketResponse.text(), playersResponse.json()]);
   const titleMatch = html.match(/<title>(.*?)<\/title>/i);
   const title = (titleMatch?.[1] ?? slug).replace(/\s*-\s*Tournament Standings\s*$/i, "").trim();
-  const players = Object.values(playersJson as Record<string, any>) as Array<any>;
+  const players = Object.values(playersJson as Record<string, {
+    name?: string | null;
+    uid?: string | null;
+    username?: string | null;
+  }>);
 
   return {
     data: {
