@@ -1,4 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { supabase } from "@/lib/supabase";
 import { buildProfiles, getCommanderUsageRows, lookbackStartDate } from "@/lib/meta-prep";
 import type { MetaShareRow, PlayerCommanderProfile } from "@/lib/meta-prep";
 import { buildTopdeckProfileHref } from "@/lib/topdeck-profile";
@@ -6,6 +7,7 @@ import { extractTournamentSlug, fetchTournamentBySlug } from "@/lib/topdeck";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
+const DEFAULT_LOOKBACK_MONTHS = 6;
 
 type TournamentStanding = {
   name: string;
@@ -15,6 +17,15 @@ type TournamentStanding = {
   points: number;
   winRate: number;
   opponentWinRate: number;
+};
+
+type EloRow = {
+  topdeck_id: string | null;
+  player_name: string;
+  rating: number;
+  games_played: number;
+  region_key: string;
+  rank: number;
 };
 
 function readStringParam(
@@ -51,15 +62,13 @@ export default async function TournamentLikelihoodPage({
   searchParams,
 }: {
   searchParams?:
-    | Promise<{ tournament?: string; months?: string }>
-    | { tournament?: string; months?: string };
+    | Promise<{ tournament?: string }>
+    | { tournament?: string };
 }) {
   const resolvedSearchParams = await Promise.resolve(searchParams);
   const tournamentInput = readStringParam(resolvedSearchParams, "tournament").trim();
-  const monthsInput = readStringParam(resolvedSearchParams, "months").trim();
   const slug = extractTournamentSlug(tournamentInput);
-  const months = Number(monthsInput || "12");
-  const lookbackMonths = Number.isFinite(months) && months > 0 ? months : 12;
+  const lookbackMonths = DEFAULT_LOOKBACK_MONTHS;
   const lookbackStart = lookbackStartDate(lookbackMonths);
 
   let tournament:
@@ -75,6 +84,7 @@ export default async function TournamentLikelihoodPage({
     players: [],
     metaShare: [],
   };
+  let eloRows: EloRow[] = [];
   let errorMessage: string | null = null;
 
   if (slug) {
@@ -83,21 +93,37 @@ export default async function TournamentLikelihoodPage({
       tournament = response.data;
       standings = (response.standings ?? []) as TournamentStanding[];
       const topdeckIds = standings.map((row) => row.id).filter(Boolean);
-      const usageRows = await getCommanderUsageRows(topdeckIds, lookbackStart);
+      const [usageRows, eloResult] = await Promise.all([
+        getCommanderUsageRows(topdeckIds, lookbackStart),
+        topdeckIds.length
+          ? supabase
+              .from("regional_elo_leaderboard")
+              .select("topdeck_id, player_name, rating, games_played, region_key, rank")
+              .in("topdeck_id", topdeckIds)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
       profiles = buildProfiles(topdeckIds, usageRows, 3);
+      if (eloResult.error) {
+        throw new Error(`Error fetching Elo rows: ${eloResult.error.message}`);
+      }
+      const bestEloByPlayer = new Map<string, EloRow>();
+      for (const row of (eloResult.data ?? []) as EloRow[]) {
+        if (!row.topdeck_id) continue;
+        const current = bestEloByPlayer.get(row.topdeck_id);
+        if (!current || row.rating > current.rating) {
+          bestEloByPlayer.set(row.topdeck_id, row);
+        }
+      }
+      eloRows = Array.from(bestEloByPlayer.values()).sort((a, b) => b.rating - a.rating);
     } catch (error) {
       errorMessage = (error as Error).message;
     }
   }
 
   const playersWithData = profiles.players.filter((player) => player.totalEntries > 0).length;
-  const topCommander = profiles.metaShare[0];
-  const topFiveCombinedShare = profiles.metaShare
-    .slice(0, 5)
-    .reduce((sum, row) => sum + row.share, 0);
   const topDeckShares = profiles.players
     .filter((player) => player.commanders.length > 0)
-    .map((player) => player.commanders[0]?.share ?? 0);
+    .map((player) => player.commanders[0]?.predictionShare ?? 0);
   const avgTopDeckShare = topDeckShares.length
     ? topDeckShares.reduce((sum, share) => sum + share, 0) / topDeckShares.length
     : 0;
@@ -107,7 +133,7 @@ export default async function TournamentLikelihoodPage({
     for (const commander of player.commanders) {
       weightedMeta.set(
         commander.commander,
-        (weightedMeta.get(commander.commander) ?? 0) + commander.weightedShare
+        (weightedMeta.get(commander.commander) ?? 0) + commander.predictionShare
       );
     }
   }
@@ -119,8 +145,20 @@ export default async function TournamentLikelihoodPage({
     }))
     .sort((a, b) => b.expectedPlayers - a.expectedPlayers)
     .slice(0, 15);
+  const topCommander = weightedMetaRows[0];
+  const topFiveCombinedShare = weightedMetaRows
+    .slice(0, 5)
+    .reduce((sum, row) => sum + row.fieldShare, 0);
 
   const profileByPlayer = new Map(profiles.players.map((player) => [player.topdeckId, player]));
+  const standingByPlayer = new Map(standings.map((player) => [player.id, player]));
+  const topEloAttendees = eloRows
+    .map((row) => ({
+      ...row,
+      standing: row.topdeck_id ? standingByPlayer.get(row.topdeck_id) : undefined,
+      profile: row.topdeck_id ? profileByPlayer.get(row.topdeck_id) : undefined,
+    }))
+    .slice(0, 12);
 
   return (
     <div className="min-h-screen">
@@ -158,7 +196,7 @@ export default async function TournamentLikelihoodPage({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <form className="grid gap-4 lg:grid-cols-[1fr_180px_auto]" method="get">
+            <form className="grid gap-4 lg:grid-cols-[1fr_auto]" method="get">
               <label className="flex flex-col gap-2 text-sm text-muted-foreground">
                 TopDeck tournament link or slug
                 <input
@@ -169,15 +207,6 @@ export default async function TournamentLikelihoodPage({
                   type="text"
                 />
               </label>
-              <label className="flex flex-col gap-2 text-sm text-muted-foreground">
-                Lookback window
-                <select className="knd-input" defaultValue={String(lookbackMonths)} name="months">
-                  <option value="3">Last 3 months</option>
-                  <option value="6">Last 6 months</option>
-                  <option value="12">Last 12 months</option>
-                  <option value="18">Last 18 months</option>
-                </select>
-              </label>
               <div className="flex items-end">
                 <button className="knd-chip border border-border/70 px-4 py-3 text-sm text-foreground" type="submit">
                   Analyze Tournament
@@ -187,6 +216,7 @@ export default async function TournamentLikelihoodPage({
             <p className="mt-4 text-sm text-muted-foreground">
               The model uses players in the selected event, looks up their known commander entries
               since {lookbackStart}, then estimates likely deck choice from their recent history.
+              A fixed {lookbackMonths}-month window is used to balance recency against enough sample size.
             </p>
           </CardContent>
         </Card>
@@ -249,7 +279,7 @@ export default async function TournamentLikelihoodPage({
                 <div className="rounded-md border border-border/60 bg-muted/20 p-4">
                   <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Most Likely Deck</p>
                   <p className="mt-2 text-lg font-semibold text-foreground">
-                    {topCommander ? `${topCommander.commander} (${formatPercent(topCommander.share)})` : "No consensus yet"}
+                    {topCommander ? `${topCommander.commander} (${formatPercent(topCommander.fieldShare)})` : "No consensus yet"}
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
                     Top 5 commanders represent {formatPercent(topFiveCombinedShare)} of known field history
@@ -284,6 +314,95 @@ export default async function TournamentLikelihoodPage({
                       No known commander history for the players in this event.
                     </div>
                   )}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="knd-panel mt-6">
+              <CardHeader>
+                <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
+                  Top Elo Attendees
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="mb-4 text-sm text-muted-foreground">
+                  Highest-rated players in the field using the regional leaderboard&apos;s all-games Elo,
+                  paired with the deck forecast from recent commander history.
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="text-left text-xs uppercase tracking-[0.3em] text-muted-foreground">
+                      <tr>
+                        <th className="px-2 py-3">Player</th>
+                        <th className="px-2 py-3">Elo</th>
+                        <th className="px-2 py-3">Home Region</th>
+                        <th className="px-2 py-3">Most Likely Bring</th>
+                        <th className="px-2 py-3">Alternatives</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {topEloAttendees.map((row) => {
+                        const topdeckHref = buildTopdeckProfileHref(row.topdeck_id);
+                        const primary = row.profile?.commanders[0];
+                        const alternatives = row.profile?.commanders.slice(1, 3) ?? [];
+                        return (
+                          <tr key={row.topdeck_id ?? row.player_name} className="border-t border-border/60">
+                            <td className="px-2 py-4">
+                              {topdeckHref ? (
+                                <a
+                                  className="font-medium text-foreground hover:text-primary"
+                                  href={topdeckHref}
+                                  rel="noreferrer"
+                                  target="_blank"
+                                >
+                                  {row.player_name}
+                                </a>
+                              ) : (
+                                <div className="font-medium text-foreground">{row.player_name}</div>
+                              )}
+                              <div className="text-xs text-muted-foreground">
+                                {row.standing ? `Tournament standing #${row.standing.standing}` : "Attendee"}
+                              </div>
+                            </td>
+                            <td className="px-2 py-4 font-semibold text-primary">{Math.round(row.rating)}</td>
+                            <td className="px-2 py-4 text-muted-foreground">{row.region_key}</td>
+                            <td className="px-2 py-4">
+                              {primary ? (
+                                <div>
+                                  <div className="font-medium text-foreground">{primary.commander}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    Forecast confidence {formatPercent(primary.predictionShare)} · {primary.entries} recent entries
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-muted-foreground">No recent deck data</span>
+                              )}
+                            </td>
+                            <td className="px-2 py-4">
+                              <div className="flex flex-wrap gap-2">
+                                {alternatives.length ? (
+                                  alternatives.map((commander) => (
+                                    <span key={`${row.topdeck_id}-${commander.commander}`} className="knd-chip">
+                                      {commander.commander} · {formatPercent(commander.predictionShare)}
+                                    </span>
+                                  ))
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">No strong alternatives</span>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {topEloAttendees.length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="py-6 text-center text-sm text-muted-foreground">
+                            No Elo rows matched the current attendee list.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </CardContent>
             </Card>
@@ -335,7 +454,7 @@ export default async function TournamentLikelihoodPage({
                                 {profile?.commanders?.length ? (
                                   profile.commanders.map((commander) => (
                                     <span key={`${entry.id}-${commander.commander}`} className="knd-chip">
-                                      {commander.commander} · {formatPercent(commander.share)} ({commander.entries})
+                                      {commander.commander} · {formatPercent(commander.predictionShare)} ({commander.entries})
                                     </span>
                                   ))
                                 ) : (
