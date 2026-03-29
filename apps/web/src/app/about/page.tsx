@@ -84,9 +84,9 @@ export default function AboutPage() {
             />
 
             <StatisticSection
-              title="Conversion Rate (Top 16 / Top 10)"
+              title="Conversion Rate (Top 16 / Top 10 / Top 4)"
               formula="Conversion Rate = Top Bracket Finishes / Total Entries"
-              description="The percentage of tournament entries that result in a top-bracket finish. Under 64 players, some events use a Top 10 cutoff instead of Top 16."
+              description="The percentage of tournament entries that result in a top-bracket finish. Under 64 players, some events use a Top 10 cutoff, and for 34 players or fewer we only count Top 4 finishes."
               example="A commander with 25 top-bracket finishes from 100 entries has a 25% conversion rate."
             />
 

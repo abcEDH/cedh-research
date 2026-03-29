@@ -26,6 +26,7 @@ apps/web/playwright/.cache/
 # next.js
 /.next/
 /out/
+/public/
 apps/web/.next/
 apps/web/out/
 
@@ -62,3 +63,4 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+.env*.local

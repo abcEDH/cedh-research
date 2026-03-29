@@ -1,0 +1,9 @@
+{
+  "fast_rocks": ["Chrome Mox", "Mox Diamond", "Mox Opal", "Mox Amber", "Lotus Petal"],
+  "rituals": ["Dark Ritual", "Cabal Ritual", "Rite of Flame", "Culling the Weak", "Jeska's Will"],
+  "ramp_rocks": ["Mana Vault", "Sol Ring", "Fellwar Stone", "Arcane Signet", "Talisman of Creativity", "Talisman of Dominance", "Talisman of Indulgence"],
+  "engines": ["Mystic Remora", "Rhystic Study", "Wheel of Fortune"],
+  "tutors": ["Demonic Tutor", "Vampiric Tutor", "Imperial Seal", "Gamble", "Mystical Tutor", "Wishclaw Talisman", "Demonic Consultation", "Tainted Pact", "Beseech the Mirror", "Diabolic Intent", "Enlightened Tutor", "Intuition"],
+  "threats": ["Ad Nauseam", "Necropotence", "Underworld Breach", "Thassa's Oracle"],
+  "wins": ["Ad Nauseam", "Necropotence", "Underworld Breach", "Thassa's Oracle", "Brain Freeze", "Tainted Pact", "Demonic Consultation"]
+}

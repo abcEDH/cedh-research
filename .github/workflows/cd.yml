@@ -1,0 +1,51 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  alias-production:
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_TEAM_ID: vem-3506s-projects
+      VERCEL_PROJECT_NAME: cedh-research
+    steps:
+      - name: Alias production domain to latest deploy
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "VERCEL_TOKEN is not set; skipping alias step."
+            exit 0
+          fi
+
+          PROJECT_JSON=$(curl -s -H "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v9/projects/$VERCEL_PROJECT_NAME?teamId=$VERCEL_TEAM_ID")
+          PROJECT_ID=$(echo "$PROJECT_JSON" | node -e "const fs=require('fs');const d=JSON.parse(fs.readFileSync(0,'utf8'));console.log(d.id||'')")
+          if [ -z "$PROJECT_ID" ]; then
+            echo "Could not resolve Vercel project id for $VERCEL_PROJECT_NAME"
+            exit 1
+          fi
+
+          echo "Looking for production deployment for commit $GITHUB_SHA..."
+          DEPLOY_URL=""
+          for i in $(seq 1 12); do
+            DEPLOY_JSON=$(curl -s -H "Authorization: Bearer $VERCEL_TOKEN" \
+              "https://api.vercel.com/v6/deployments?projectId=$PROJECT_ID&target=production&limit=20&teamId=$VERCEL_TEAM_ID")
+            DEPLOY_URL=$(echo "$DEPLOY_JSON" | node -e "const fs=require('fs');const d=JSON.parse(fs.readFileSync(0,'utf8'));const sha=process.env.GITHUB_SHA;const list=d.deployments||[];const match=list.find(dep=>dep.meta&&dep.meta.githubCommitSha===sha);console.log(match?match.url:'')")
+            if [ -n "$DEPLOY_URL" ]; then
+              echo "Found deployment: $DEPLOY_URL"
+              break
+            fi
+            echo "Deployment not found yet, waiting... ($i/12)"
+            sleep 15
+          done
+
+          if [ -z "$DEPLOY_URL" ]; then
+            echo "Could not resolve production deployment for commit $GITHUB_SHA"
+            exit 1
+          fi
+
+          npx vercel@latest alias set "https://$DEPLOY_URL" cedh-research.vercel.app \
+            --scope "$VERCEL_TEAM_ID" --token "$VERCEL_TOKEN"

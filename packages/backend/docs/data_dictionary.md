@@ -112,7 +112,7 @@ erDiagram
   - `wins_swiss`, `losses_swiss`, `wins_bracket`, `losses_bracket`
   - `win_rate`, `opponent_win_rate`
   - `decklist_url`, `decklist_text`, `decklist_obj`
-  - `made_top_cut`, `made_top_16`
+  - `made_top_cut`, `made_top_16` (Top 4 for tournaments with 34 or fewer players)
 
 ### `games`
 - **Purpose**: individual pod games within a round.
