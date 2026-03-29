@@ -1,6 +1,6 @@
 # Data Dictionary
 
-Last reviewed: 2026-02-04
+Last reviewed: 2026-03-29
 Update policy: This file must be updated whenever migrations in `packages/backend/supabase/migrations` change.
 
 This describes the primary tables and analytical views used in the cEDH Analytics database.
@@ -135,6 +135,16 @@ erDiagram
   - `won_against`, `commander_seat`, `opponent_seat`
   - `tournament_id`, `round_number`
 
+### `regional_elo_ratings`
+- **Purpose**: persisted Elo-style ratings by region for players, currently keyed by state.
+- **Key fields**:
+  - `region_type`, `region_key`, `player_id`
+  - `rating`, `games_played`, `wins`, `draws`, `losses`
+  - `last_game_date`, `updated_at`
+- **Security**:
+  - row level security is enabled
+  - public read access is allowed through a SELECT policy
+
 ## Analytical Views
 
 ### `commander_stats` (view)
@@ -161,6 +171,11 @@ erDiagram
 - **`commander_monthly_trends`**: per-commander monthly aggregates. Includes `month_start_date` and `month_key`.
 - **`commander_wow_mom`** (view): latest week/month deltas in entries (%) and win rate (percentage points).
 
+### Regional Elo Views
+- **`regional_elo_game_results`**: denormalized game-level input rows used to compute regional Elo ratings from games, entries, players, and tournaments with location data.
+- **`regional_elo_leaderboard`**: ranked leaderboard by `region_type` and `region_key`, enriched with player names and TopDeck IDs.
+- **`regional_elo_regions`**: region summary with player counts and latest `updated_at` timestamp.
+
 ### Card Analytics (materialized views)
 - **`card_frequencies_by_commander`**: per-commander card inclusion frequencies.
 - **`card_frequencies_global`**: overall card inclusion frequencies.
@@ -172,3 +187,4 @@ erDiagram
 - **Competitive filter**: most analytics use tournaments with `player_count >= 32`.
 - **Unknown commanders**: some queries exclude `commander_name = 'Unknown Commander'`.
 - **Win rate**: computed as `wins / (wins + losses + draws)`; if total results are 0, win rate is `NULL`.
+- **Security hardening (2026-03-29)**: exposed `public` views are configured to run with `security_invoker`, and `public` functions pin `search_path` to `public, extensions` to satisfy Supabase Advisor requirements.
