@@ -1,0 +1,2 @@
+-- Remote-only migration placeholder.
+-- Added locally to align Supabase migration history with the linked project.
