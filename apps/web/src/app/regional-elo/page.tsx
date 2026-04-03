@@ -255,8 +255,8 @@ export default async function RegionalEloPage({
             </nav>
           </div>
           <p className="max-w-4xl text-base text-muted-foreground">
-            Elo ratings recalculated within each state using only local games. Players can rank
-            differently across regions based on localized metas.
+            Elo ratings recalculated within each state using only games played in that state.
+            Players can rank differently across regions based on localized metas.
           </p>
           <p className="text-sm text-muted-foreground">
             Rating model details:{" "}
@@ -285,7 +285,7 @@ export default async function RegionalEloPage({
                 Data Validity
               </CardTitle>
               <p className="text-xs text-muted-foreground">
-                Regional Elo only counts games from tournaments with a populated state and excludes pods with byes.
+                Regional Elo only counts games from tournaments in the selected state with populated location metadata and excludes pods with byes.
               </p>
             </CardHeader>
             <CardContent className="space-y-5 text-sm">
@@ -395,15 +395,25 @@ export default async function RegionalEloPage({
                         <tr key={row.player_id} className="border-t border-border/60">
                           <td className="px-2 py-3 text-muted-foreground">#{row.rank}</td>
                           <td className="px-2 py-3">
-                            {topdeckHref ? (
-                              <a
-                                className="font-medium text-foreground hover:text-primary"
-                                href={topdeckHref}
-                                rel="noreferrer"
-                                target="_blank"
-                              >
-                                {row.player_name}
-                              </a>
+                            {row.topdeck_id ? (
+                              <div className="space-y-1">
+                                <Link
+                                  className="font-medium text-foreground hover:text-primary"
+                                  href={`/regional-elo/player/${row.topdeck_id}?region=${encodeURIComponent(selectedRegion ?? "")}`}
+                                >
+                                  {row.player_name}
+                                </Link>
+                                {topdeckHref ? (
+                                  <a
+                                    className="text-[11px] text-muted-foreground hover:text-foreground"
+                                    href={topdeckHref}
+                                    rel="noreferrer"
+                                    target="_blank"
+                                  >
+                                    TopDeck profile
+                                  </a>
+                                ) : null}
+                              </div>
                             ) : (
                               <div className="font-medium text-foreground">{row.player_name}</div>
                             )}
