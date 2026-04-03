@@ -1,0 +1,143 @@
+// Leonardo + Michelangelo (TMNT) — cEDH Control/Midrange
+// Primary win: Thassa's Oracle + Demonic Consultation / Tainted Pact
+// Secondary win: Finale of Devastation (X=2 into Oracle after library exiled)
+// Engine: token/counter synergy via Leo's ETB trigger + Kambal + Chatterfang
+
+1 Leonardo, the Balance (TMC) 83
+1 Michelangelo, the Heart (TMC) 92
+1 An Offer You Can't Refuse (FIC) 267
+1 Ancient Tomb (EOS) 46
+1 Badgermole Cub (TLA) 326
+1 Badlands (3ED) 282
+1 Bayou (3ED) 283
+1 Beseech the Mirror (PWOE) 82p
+1 Bloodstained Mire (MH3) 352
+1 Borne Upon a Wind (LTR) 44
+1 Boseiju, Who Endures (NEO) 412
+1 Chain of Vapor (SLD) 2295
+1 Chaos Emerald (SLD) 7031
+1 Chatterfang, Squirrel General (BLC) 95
+1 Chrome Mox (SPG) 102
+1 City of Brass (TMC) 62
+1 City of Traitors (WC99) kb143a
+1 Command Tower (TMC) 63
+1 Dark Ritual (TMC) 131
+1 Deadly Rollick (TLE) 309
+1 Deathrite Shaman (SLC) 2012
+1 Deflecting Swat (TLE) 311
+1 Demonic Consultation (SLC) 4
+1 Demonic Tutor (SLD) 1856
+1 Elves of Deep Shadow (F06) 1
+1 Elvish Spirit Guide (SLD) 423
+1 Enlightened Tutor (TLE) 305
+1 Esper Sentinel (MH2) 328
+1 Faerie Mastermind (MOM) 352
+1 Fierce Guardianship (TLE) 307
+1 Finale of Devastation (CMM) 700
+1 Flash Photography (FIC) 463
+1 Flooded Strand (MH3) 353
+1 Flusterstorm (MH3) 496
+1 Forbidden Orchard (PLST) CHK-276
+1 Force of Negation (TLE) 13
+1 Force of Will (SOA) 149
+1 Gamble (TLE) 312
+1 Gemstone Caverns (TSP) 274
+1 Ignoble Hierarch (SLD) 906
+1 Imperial Seal (PTK) 78
+1 Kambal, Profiteering Mayor (POTJ) 211p
+1 Knights of San d'Oria (FCA) 2
+1 Lotho, Corrupt Shirriff (LTR) 664
+1 Mana Confluence (SLD) 1012a
+1 Mana Vault (SLD) 796★
+1 Marsh Flats (SPG) 115
+1 Mental Misstep (SLD) 2373
+1 Mindbreak Trap (MAR) 11
+1 Misty Rainforest (SPG) 116
+1 Mnemonic Betrayal (GRN) 189
+1 Mockingbird (BLB) 305
+1 Mox Amber (BRR) 98
+1 Mox Diamond (V10) 10
+1 Mox Opal (SLD) 1072
+1 Mystic Remora (TLE) 16
+1 Mystical Tutor (TLE) 308
+1 Necropotence (WOT) 94
+1 Noble Hierarch (2XM) 352
+1 Noxious Revival (SLD) 1416
+1 Opposition Agent (CMR) 141
+1 Orcish Bowmasters (LTR) 554
+1 Orim's Chant (MH3) 323
+1 Ororo Borealis (SLD) 1746
+1 Otawara, Soaring City (NEO) 414
+1 Pact of Negation (LTC) 523
+1 Paradise Chocobo (FIC) 483
+1 Polluted Delta (MH3) 356
+1 Pollywog Prodigy (BLC) 15
+1 Professional Face-Breaker (FIC) 296
+1 Savannah (3ED) 285
+1 Scalding Tarn (SPG) 117
+1 Scrubland (3ED) 286
+1 Silence (SLD) 2300
+1 Simian Spirit Guide (SLD) 1548★
+1 Smothering Tithe (SLD) 7009
+1 Sol Ring (TMC) 59
+1 Stay with Me (FCA) 31
+1 Swan Song (LTC) 197
+1 Tainted Pact (STA) 96
+1 Talon Gates of Madara (M3C) 134
+1 Tarnished Citadel (TLE) 59
+1 Tataru Taru (FIC) 466
+1 Thassa's Oracle (SLD) 1280
+1 The Cabbage Merchant (TLE) 203
+1 Tropical Island (3ED) 288
+1 Tundra (3ED) 289
+1 Underground Sea (3ED) 290
+1 Unseat the Usurper (SLD) 1861
+1 Valley Floodcaller (BLB) 308
+1 Vampiric Tutor (SOA) 100
+1 Veil of Summer (SLD) 1024
+1 Verdant Catacombs (SPG) 118
+1 Vexing Bauble (MH3) 212
+1 Volcanic Island (3ED) 291
+1 Warren Soultrader (MH3) 110
+1 Windswept Heath (MH3) 360
+1 Wooded Foothills (MH3) 361
+1 Worldly Tutor (TLE) 314
+1 Zidane Tribal (FCA) 43
+
+SIDEBOARD:
+1 Arcane Signet (LTC) 273
+1 Arid Mesa (SPG) 114
+1 Birgi, God of Storytelling / Harnfel, Horn of Bounty (KHM) 123
+1 Braids, Arisen Nightmare (EOC) 82
+1 Brain Freeze (MB2) 24
+1 Colossal Skyturtle (NEO) 216
+1 Commandeer (OTP) 9
+1 Crop Rotation (SLC) 30
+1 Dispel (RTR) 36
+1 Disrupting Shoal (UMA) 51
+1 Exotic Orchard (TMC) 66
+1 Fellwar Stone (DMC) 182
+1 Gaea's Cradle (USG) 321
+1 Gitaxian Probe (NPH) 35
+1 Gran-Gran (TLA) 54
+1 Intuition (TMP) 70
+1 Jeska's Will (CMR) 187
+1 Kutzil, Malamet Exemplar (LCI) 304
+1 Lion's Eye Diamond (MIR) 307
+1 Mikey & Leo, Chaos & Order (TMT) 158
+1 Mirrormade (DSC) 120
+1 Misdirection (DDT) 15
+1 Necrodominance (MH3) 102
+1 Ray Fillet, Wave Warrior (TMC) 14
+1 Redirect Lightning (TLA) 151
+1 Sevinne's Reclamation (CMM) 55
+1 Snapback (TSR) 87
+1 Snuff Out (FIC) 285
+1 Starting Town (FIN) 289
+1 Step Through (MH2) 66
+1 Subtlety (MH2) 67
+1 Talion, the Kindly Lord (WOE) 215
+1 Trouble in Pairs (PZA) 3
+1 Underworld Breach (PZA) 10
+1 Wan Shi Tong, Librarian (TLA) 78
+1 Yuriko, the Tiger's Shadow (PLST) C18-52
