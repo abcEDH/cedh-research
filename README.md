@@ -12,6 +12,7 @@ Unified backend ingestion + frontend dashboard for cEDH analytics.
 
 ## Environment
 Use separate env files for frontend and backend. Do not put server-only keys in frontend env files.
+The repo-root `.env` may still be used for local admin/debug scripts, but the Next app only reads `NEXT_PUBLIC_*` variables.
 
 Frontend (`apps/web/.env.local`):
 - `NEXT_PUBLIC_SUPABASE_URL`

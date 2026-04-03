@@ -775,7 +775,7 @@ def build_game_key(
         str(round_number) if round_number is not None else "RNULL",
         round_name or "RNNULL",
         str(table_number) if table_number is not None else "TNULL",
-        str(is_bracket) if is_bracket is not None else "BNULL",
+        str(is_bracket).lower() if is_bracket is not None else "BNULL",
     ])
 
 

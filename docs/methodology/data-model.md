@@ -12,7 +12,7 @@ This document summarizes the Supabase schema used to power cEDH Analytics, inclu
 ```mermaid
 flowchart LR
   A["TopDeck.gg API"] --> B["Ingest: packages/backend/src/ingest.py"]
-  B --> C["Staging tables: tournaments · players · tournament_entries · games"]
+  B --> C["Base tables: tournaments · players · tournament_entries · games · game_participants"]
   C --> D["Transform jobs: card_frequency.py · regional_elo.py · win_rate_correlation.py · turn_order_analysis.py"]
   D --> E["Analytics views + materialized views"]
   E --> F["Next.js frontend: apps/web"]
@@ -74,6 +74,7 @@ erDiagram
   GAMES {
     uuid id PK
     uuid tournament_id FK
+    text game_key UK
     int round_number
     text round_name
     int table_number
@@ -96,6 +97,13 @@ erDiagram
 ```
 
 ## Core Entities
+
+## Identity And Idempotency
+
+- Every major base row has its own UUID primary key: `players.id`, `tournaments.id`, `tournament_entries.id`, `games.id`, and `game_participants.id`.
+- UUIDs identify stored rows, not logical dedupe boundaries.
+- Logical game idempotency is enforced by `games.game_key`, a deterministic key built from `tournament_id`, round identity, table number, and bracket flag.
+- `game_participants` hangs off `games.id`, so duplicate logical games will fan out directly into duplicated participant rows and downstream analytics unless `game_key` is canonical and unique.
 
 ### Tournaments
 
