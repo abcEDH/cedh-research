@@ -36,6 +36,23 @@ python src/snapshot_analysis.py --period 2025-01 --export-md
 python src/snapshot_analysis.py --commander "Kinnan, Bonder Prodigy"
 ```
 
+### EV Simulations
+
+```bash
+# Cohort simulations (working vs struggling decks by EV score)
+python src/commander_ev_simulations.py --min-entries 200 --top-n 6 --bottom-n 6
+
+# Specific shortlist with matchup/seat diagnostics
+python src/commander_ev_simulations.py \
+  --min-entries 100 \
+  --commander "Ral, Monsoon Mage // Ral, Leyline Prodigy" \
+  --commander "Kraum, Ludevic's Opus / Tymna the Weaver" \
+  --commander "Kinnan, Bonder Prodigy" \
+  --commander "Tivit, Seller of Secrets" \
+  --output-json reports/ev-simulations-shortlist.json \
+  --output-md reports/ev-simulations-shortlist.md
+```
+
 ## Data Sources
 
 Reports are generated from tournament data ingested from [TopDeck.gg](https://topdeck.gg).
