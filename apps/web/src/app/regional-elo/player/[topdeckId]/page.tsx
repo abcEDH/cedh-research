@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/lib/supabase";
+import { fetchChampionshipLeaderboard } from "@/lib/topdeck";
 import { buildTopdeckProfileHref } from "@/lib/topdeck-profile";
 import { normalizeDisplayString } from "@/lib/utils";
 
@@ -87,6 +88,11 @@ type PlayerGameLog = {
   }>;
 };
 
+type GlobalSnapshotRow = {
+  rank: number;
+  points: number;
+};
+
 function readRegionParam(
   params:
     | Record<string, string | string[] | undefined>
@@ -164,6 +170,20 @@ async function fetchRegionalRanks(playerId: string): Promise<LeaderboardRankRow[
     if (a.rank !== b.rank) return a.rank - b.rank;
     return (a.region_key ?? "").localeCompare(b.region_key ?? "");
   });
+}
+
+async function fetchGlobalSnapshot(topdeckId: string): Promise<GlobalSnapshotRow | null> {
+  try {
+    const leaderboard = await fetchChampionshipLeaderboard();
+    const entry = leaderboard.find((row) => row.uid === topdeckId);
+    if (!entry) return null;
+    return {
+      rank: entry.rank,
+      points: entry.points,
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function fetchGamesAndParticipants(entryIds: string[]) {
@@ -304,9 +324,10 @@ export default async function RegionalPlayerPage({
     );
   }
 
-  const [regionalRank, regionalRanks, entries] = await Promise.all([
+  const [regionalRank, regionalRanks, globalSnapshot, entries] = await Promise.all([
     fetchRegionalRank(player.id, regionFilter),
     fetchRegionalRanks(player.id),
+    fetchGlobalSnapshot(topdeckId),
     fetchEntries(player.id),
   ]);
   const entryIds = entries.map((row) => row.id);
@@ -442,7 +463,7 @@ export default async function RegionalPlayerPage({
             </div>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
             <Card className="knd-panel">
               <CardHeader>
                 <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
@@ -461,6 +482,21 @@ export default async function RegionalPlayerPage({
               </CardHeader>
               <CardContent className="text-2xl font-semibold text-foreground">
                 {regionalRank ? `#${regionalRank.rank}` : "—"}
+              </CardContent>
+            </Card>
+            <Card className="knd-panel">
+              <CardHeader>
+                <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                  TopDeck Global
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-1">
+                <div className="text-2xl font-semibold text-foreground">
+                  {globalSnapshot ? `#${globalSnapshot.rank}` : "—"}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  {globalSnapshot ? `${globalSnapshot.points} points` : "No global snapshot"}
+                </div>
               </CardContent>
             </Card>
             <Card className="knd-panel">
@@ -514,7 +550,6 @@ export default async function RegionalPlayerPage({
                       <th className="px-2 py-3 text-right">Elo</th>
                       <th className="px-2 py-3 text-right">Games</th>
                       <th className="px-2 py-3 text-right">W-L-D</th>
-                      <th className="px-2 py-3 text-right">View</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -524,9 +559,16 @@ export default async function RegionalPlayerPage({
                       return (
                         <tr key={regionKey} className="border-t border-border/60">
                           <td className="px-2 py-3">
-                            <div className={isActive ? "font-semibold text-foreground" : "text-foreground"}>
+                            <Link
+                              href={`/regional-elo/player/${topdeckId}?region=${encodeURIComponent(regionKey)}`}
+                              className={
+                                isActive
+                                  ? "font-semibold text-foreground hover:text-primary"
+                                  : "text-foreground hover:text-primary"
+                              }
+                            >
                               {regionKey}
-                            </div>
+                            </Link>
                             {isActive ? (
                               <div className="text-[11px] text-primary">Active region</div>
                             ) : null}
@@ -541,20 +583,12 @@ export default async function RegionalPlayerPage({
                           <td className="px-2 py-3 text-right font-mono text-muted-foreground">
                             {row.wins}-{row.losses}-{row.draws}
                           </td>
-                          <td className="px-2 py-3 text-right">
-                            <Link
-                              href={`/regional-elo/player/${topdeckId}?region=${encodeURIComponent(regionKey)}`}
-                              className="text-primary hover:text-foreground"
-                            >
-                              Open
-                            </Link>
-                          </td>
                         </tr>
                       );
                     })}
                     {regionalRanks.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="px-2 py-6 text-center text-sm text-muted-foreground">
+                        <td colSpan={5} className="px-2 py-6 text-center text-sm text-muted-foreground">
                           No regional rankings found for this player.
                         </td>
                       </tr>
