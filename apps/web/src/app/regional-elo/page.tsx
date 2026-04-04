@@ -221,6 +221,7 @@ export default async function RegionalEloPage({
   const selectedRegionValidity = validityRows.find(
     (row) => row.scope === "region" && row.region_key === selectedRegion
   );
+  const hasValidityData = validityRows.length > 0;
   const includedCoverage =
     globalValidity && globalValidity.total_games > 0
       ? globalValidity.included_games / globalValidity.total_games
@@ -290,6 +291,13 @@ export default async function RegionalEloPage({
                 </p>
               </CardHeader>
               <CardContent className="space-y-3 text-sm">
+                {!hasValidityData ? (
+                  <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
+                    Validity stats are unavailable in this deployment. The backend view
+                    <span className="mx-1 font-mono text-foreground">regional_elo_data_validity</span>
+                    likely has not been applied yet.
+                  </div>
+                ) : null}
                 <div className="flex items-center justify-between gap-4">
                   <span className="text-muted-foreground">Included games</span>
                   <span className="font-mono text-foreground">
@@ -362,7 +370,9 @@ export default async function RegionalEloPage({
                   </span>
                 </div>
                 <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
-                  {selectedRegionValidity
+                  {!hasValidityData
+                    ? "This panel will populate after the regional validity migration is applied to the deployed database."
+                    : selectedRegionValidity
                     ? `${formatPercent(selectedRegionCoverage)} of tracked ${selectedRegion} games currently qualify for regional Elo.`
                     : "No validity summary available for this region yet."}
                 </div>
@@ -406,16 +416,16 @@ export default async function RegionalEloPage({
                                   className="font-medium text-foreground hover:text-primary"
                                   href={`/regional-elo/player/${row.topdeck_id}?region=${encodeURIComponent(selectedRegion ?? "")}`}
                                 >
-                                  {row.player_name}
+                                {row.player_name}
                                 </Link>
                                 {topdeckHref ? (
                                   <a
-                                    className="text-[11px] text-muted-foreground hover:text-foreground"
+                                    className="inline-flex items-center rounded-md border border-border/60 px-2 py-1 text-[11px] font-medium text-muted-foreground hover:border-primary/40 hover:text-foreground"
                                     href={topdeckHref}
                                     rel="noreferrer"
                                     target="_blank"
                                   >
-                                    TopDeck profile
+                                    TopDeck
                                   </a>
                                 ) : null}
                               </div>

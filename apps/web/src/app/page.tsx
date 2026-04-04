@@ -226,8 +226,8 @@ export default async function Home() {
         <section className="mt-12">
           <Card>
             <CardHeader className="knd-panel-header">
-              <CardTitle className="text-lg">MidSeason Invitational Snapshot</CardTitle>
-              <p className="text-sm text-muted-foreground">Top Championship Series players right now</p>
+              <CardTitle className="text-lg">TopDeck Championship Snapshot</CardTitle>
+              <p className="text-sm text-muted-foreground">Current TopDeck Championship Series top 100 leaders</p>
             </CardHeader>
             <CardContent>
               <div className="grid gap-3 md:grid-cols-2">
@@ -259,7 +259,7 @@ export default async function Home() {
                 })}
               </div>
               <Button asChild variant="ghost" className="mt-4 w-full border border-border/70">
-                <Link href="/midseason-invitational">Open full top-100 breakdown</Link>
+                <Link href="/midseason-invitational">Open current top-100 breakdown</Link>
               </Button>
             </CardContent>
           </Card>
@@ -304,8 +304,8 @@ export default async function Home() {
           />
           <FeatureCard
             href="/midseason-invitational"
-            title="MidSeason Scout"
-            description="Top 100 invite leaderboard and most-played deck profiles"
+            title="TopDeck Top 100"
+            description="Current TopDeck leaderboard and most-played deck profiles"
             color="hsl(var(--knd-cyan))"
           />
           <FeatureCard
