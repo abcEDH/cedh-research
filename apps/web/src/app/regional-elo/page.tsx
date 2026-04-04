@@ -266,32 +266,32 @@ export default async function RegionalEloPage({
           </p>
         </header>
 
-        <div className="mt-8 grid gap-6 lg:grid-cols-[280px_1fr]">
-          <Card className="knd-panel">
-            <CardHeader>
-              <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">Region</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <RegionSelector regions={regions} selectedRegion={selectedRegion} />
-              <div className="text-xs text-muted-foreground">
-                Updated {updatedAt ? formatDate(updatedAt) : "—"}
-              </div>
-            </CardContent>
-          </Card>
+        <div className="mt-8 space-y-6">
+          <div className="grid gap-6 xl:grid-cols-[300px_minmax(0,1fr)_minmax(0,1fr)]">
+            <Card className="knd-panel">
+              <CardHeader>
+                <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">Region</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <RegionSelector regions={regions} selectedRegion={selectedRegion} />
+                <div className="text-xs text-muted-foreground">
+                  Updated {updatedAt ? formatDate(updatedAt) : "—"}
+                </div>
+              </CardContent>
+            </Card>
 
-          <Card className="knd-panel">
-            <CardHeader>
-              <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
-                Data Validity
-              </CardTitle>
-              <p className="text-xs text-muted-foreground">
-                Regional Elo only counts games from tournaments in the selected state with populated location metadata and excludes pods with byes.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-5 text-sm">
-              <div className="space-y-2">
+            <Card className="knd-panel">
+              <CardHeader>
+                <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
+                  Global Validity
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Regional Elo only counts games from tournaments with populated state metadata and excludes pods with byes.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
                 <div className="flex items-center justify-between gap-4">
-                  <span className="text-muted-foreground">Global game coverage</span>
+                  <span className="text-muted-foreground">Included games</span>
                   <span className="font-mono text-foreground">
                     {globalValidity
                       ? `${globalValidity.included_games.toLocaleString()} / ${globalValidity.total_games.toLocaleString()}`
@@ -316,54 +316,59 @@ export default async function RegionalEloPage({
                     {globalValidity ? globalValidity.excluded_games_with_byes.toLocaleString() : "—"}
                   </span>
                 </div>
-              </div>
+              </CardContent>
+            </Card>
 
-              <div className="border-t border-border/60 pt-5">
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  {selectedRegion ?? "Selected region"}
+            <Card className="knd-panel">
+              <CardHeader>
+                <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
+                  {selectedRegion ?? "Selected Region"}
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Region-specific sample quality for the active leaderboard.
                 </p>
-                <div className="mt-3 space-y-2">
-                  <div className="flex items-center justify-between gap-4">
-                    <span className="text-muted-foreground">Ranked players</span>
-                    <span className="font-mono text-foreground">
-                      {(regions.find((row) => row.region_key === selectedRegion)?.player_count ?? 0).toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between gap-4">
-                    <span className="text-muted-foreground">Tracked tournaments</span>
-                    <span className="font-mono text-foreground">
-                      {selectedRegionValidity ? selectedRegionValidity.total_tournaments.toLocaleString() : "—"}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between gap-4">
-                    <span className="text-muted-foreground">Included games</span>
-                    <span className="font-mono text-foreground">
-                      {selectedRegionValidity ? selectedRegionValidity.included_games.toLocaleString() : "—"}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between gap-4">
-                    <span className="text-muted-foreground">Games dropped for byes</span>
-                    <span className="font-mono text-foreground">
-                      {selectedRegionValidity
-                        ? selectedRegionValidity.excluded_games_with_byes.toLocaleString()
-                        : "—"}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between gap-4">
-                    <span className="text-muted-foreground">Sample freshness</span>
-                    <span className="font-mono text-foreground">
-                      {selectedRegionValidity ? formatDate(selectedRegionValidity.latest_game_date) : "—"}
-                    </span>
-                  </div>
-                  <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
-                    {selectedRegionValidity
-                      ? `${formatPercent(selectedRegionCoverage)} of tracked ${selectedRegion} games currently qualify for regional Elo.`
-                      : "No validity summary available for this region yet."}
-                  </div>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-muted-foreground">Ranked players</span>
+                  <span className="font-mono text-foreground">
+                    {(regions.find((row) => row.region_key === selectedRegion)?.player_count ?? 0).toLocaleString()}
+                  </span>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-muted-foreground">Tracked tournaments</span>
+                  <span className="font-mono text-foreground">
+                    {selectedRegionValidity ? selectedRegionValidity.total_tournaments.toLocaleString() : "—"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-muted-foreground">Included games</span>
+                  <span className="font-mono text-foreground">
+                    {selectedRegionValidity ? selectedRegionValidity.included_games.toLocaleString() : "—"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-muted-foreground">Games dropped for byes</span>
+                  <span className="font-mono text-foreground">
+                    {selectedRegionValidity
+                      ? selectedRegionValidity.excluded_games_with_byes.toLocaleString()
+                      : "—"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-muted-foreground">Sample freshness</span>
+                  <span className="font-mono text-foreground">
+                    {selectedRegionValidity ? formatDate(selectedRegionValidity.latest_game_date) : "—"}
+                  </span>
+                </div>
+                <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
+                  {selectedRegionValidity
+                    ? `${formatPercent(selectedRegionCoverage)} of tracked ${selectedRegion} games currently qualify for regional Elo.`
+                    : "No validity summary available for this region yet."}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
 
           <Card className="knd-panel">
             <CardHeader>
@@ -381,7 +386,7 @@ export default async function RegionalEloPage({
                       <th className="px-2 py-3">Player</th>
                       <th className="px-2 py-3">Elo</th>
                       <th className="px-2 py-3">Games</th>
-                      <th className="px-2 py-3">W-D-L</th>
+                      <th className="px-2 py-3">W-L-D</th>
                       <th className="px-2 py-3">Latest</th>
                     </tr>
                   </thead>
@@ -421,7 +426,7 @@ export default async function RegionalEloPage({
                           <td className="px-2 py-3 font-semibold text-primary">{Math.round(row.rating)}</td>
                           <td className="px-2 py-3 text-muted-foreground">{row.games_played}</td>
                           <td className="px-2 py-3 text-muted-foreground">
-                            {row.wins}-{row.draws}-{row.losses}
+                            {row.wins}-{row.losses}-{row.draws}
                           </td>
                           <td className="px-2 py-3 text-xs text-muted-foreground">
                             <div>{formatDate(row.last_game_date)}</div>

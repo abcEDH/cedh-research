@@ -49,6 +49,16 @@ type TournamentRow = {
   state: string | null;
 };
 
+type LeaderboardRankRow = {
+  region_key?: string;
+  rank: number;
+  rating: number;
+  games_played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+};
+
 type OpponentRecord = {
   opponentTopdeckId: string | null;
   opponentName: string;
@@ -126,6 +136,34 @@ async function fetchEntries(playerId: string): Promise<EntryRow[]> {
     .eq("player_id", playerId);
 
   return (data as EntryRow[]) ?? [];
+}
+
+async function fetchRegionalRank(playerId: string, regionKey: string): Promise<LeaderboardRankRow | null> {
+  if (!regionKey) return null;
+
+  const { data } = await supabase
+    .from("regional_elo_leaderboard")
+    .select("rank, rating, games_played, wins, draws, losses")
+    .eq("region_type", "state")
+    .eq("region_key", regionKey)
+    .eq("player_id", playerId)
+    .maybeSingle();
+
+  return (data as LeaderboardRankRow | null) ?? null;
+}
+
+async function fetchRegionalRanks(playerId: string): Promise<LeaderboardRankRow[]> {
+  const { data } = await supabase
+    .from("regional_elo_leaderboard")
+    .select("region_key, rank, rating, games_played, wins, draws, losses")
+    .eq("region_type", "state")
+    .eq("player_id", playerId)
+    .order("rank", { ascending: true });
+
+  return ((data as LeaderboardRankRow[]) ?? []).sort((a, b) => {
+    if (a.rank !== b.rank) return a.rank - b.rank;
+    return (a.region_key ?? "").localeCompare(b.region_key ?? "");
+  });
 }
 
 async function fetchGamesAndParticipants(entryIds: string[]) {
@@ -206,10 +244,7 @@ async function fetchCommandersById(commanderIds: string[]): Promise<Map<string, 
   return new Map(((data as CommanderRow[]) ?? []).map((row) => [row.id, row]));
 }
 
-function buildOpponentRecords(
-  logs: PlayerGameLog[],
-  winnerNameByGame: Map<string, string | null>
-): OpponentRecord[] {
+function buildOpponentRecords(logs: PlayerGameLog[]): OpponentRecord[] {
   const records = new Map<string, OpponentRecord>();
 
   for (const log of logs) {
@@ -226,15 +261,14 @@ function buildOpponentRecords(
           games: 0,
         };
 
+      existing.games += 1;
+
       if (log.result === "win") {
         existing.wins += 1;
-        existing.games += 1;
+      } else if (log.result === "loss") {
+        existing.losses += 1;
       } else if (log.result === "draw") {
         existing.draws += 1;
-        existing.games += 1;
-      } else if (winnerNameByGame.get(log.gameId) === opponent.playerName) {
-        existing.losses += 1;
-        existing.games += 1;
       }
 
       records.set(key, existing);
@@ -270,7 +304,11 @@ export default async function RegionalPlayerPage({
     );
   }
 
-  const entries = await fetchEntries(player.id);
+  const [regionalRank, regionalRanks, entries] = await Promise.all([
+    fetchRegionalRank(player.id, regionFilter),
+    fetchRegionalRanks(player.id),
+    fetchEntries(player.id),
+  ]);
   const entryIds = entries.map((row) => row.id);
   const { participants, games, allParticipants } = await fetchGamesAndParticipants(entryIds);
 
@@ -348,12 +386,6 @@ export default async function RegionalPlayerPage({
     .filter((value): value is PlayerGameLog => Boolean(value))
     .sort((a, b) => b.startDate.localeCompare(a.startDate));
 
-  const winnerNameByGame = new Map<string, string | null>();
-  for (const log of playerLogs) {
-    const winner = log.opponents.find((opponent) => opponent.result === "win");
-    winnerNameByGame.set(log.gameId, winner?.playerName ?? null);
-  }
-
   const totalGames = playerLogs.length;
   const totalWins = playerLogs.filter((row) => row.result === "win").length;
   const totalDraws = playerLogs.filter((row) => row.result === "draw").length;
@@ -373,7 +405,7 @@ export default async function RegionalPlayerPage({
     };
   });
 
-  const opponentRecords = buildOpponentRecords(playerLogs, winnerNameByGame);
+  const opponentRecords = buildOpponentRecords(playerLogs);
   const topdeckProfileHref = buildTopdeckProfileHref(topdeckId);
   const backHref = regionFilter
     ? `/regional-elo?region=${encodeURIComponent(regionFilter)}`
@@ -410,7 +442,7 @@ export default async function RegionalPlayerPage({
             </div>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
             <Card className="knd-panel">
               <CardHeader>
                 <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
@@ -419,6 +451,16 @@ export default async function RegionalPlayerPage({
               </CardHeader>
               <CardContent className="text-2xl font-semibold text-foreground">
                 {regionFilter || "All states"}
+              </CardContent>
+            </Card>
+            <Card className="knd-panel">
+              <CardHeader>
+                <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                  Current Rank
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-2xl font-semibold text-foreground">
+                {regionalRank ? `#${regionalRank.rank}` : "—"}
               </CardContent>
             </Card>
             <Card className="knd-panel">
@@ -438,7 +480,7 @@ export default async function RegionalPlayerPage({
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-2xl font-semibold text-foreground">
-                {totalWins}-{totalDraws}-{totalLosses}
+                {totalWins}-{totalLosses}-{totalDraws}
               </CardContent>
             </Card>
             <Card className="knd-panel">
@@ -452,6 +494,76 @@ export default async function RegionalPlayerPage({
               </CardContent>
             </Card>
           </div>
+
+          <Card className="knd-panel">
+            <CardHeader>
+              <CardTitle className="text-sm uppercase tracking-[0.2em] text-muted-foreground">
+                Regional Rankings
+              </CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Compare this player across states and jump directly into a different regional drilldown.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-auto">
+                <table className="w-full text-sm">
+                  <thead className="text-left text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                    <tr>
+                      <th className="px-2 py-3">Region</th>
+                      <th className="px-2 py-3 text-right">Rank</th>
+                      <th className="px-2 py-3 text-right">Elo</th>
+                      <th className="px-2 py-3 text-right">Games</th>
+                      <th className="px-2 py-3 text-right">W-L-D</th>
+                      <th className="px-2 py-3 text-right">View</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {regionalRanks.map((row) => {
+                      const regionKey = row.region_key ?? "";
+                      const isActive = regionKey === regionFilter;
+                      return (
+                        <tr key={regionKey} className="border-t border-border/60">
+                          <td className="px-2 py-3">
+                            <div className={isActive ? "font-semibold text-foreground" : "text-foreground"}>
+                              {regionKey}
+                            </div>
+                            {isActive ? (
+                              <div className="text-[11px] text-primary">Active region</div>
+                            ) : null}
+                          </td>
+                          <td className="px-2 py-3 text-right font-mono text-foreground">#{row.rank}</td>
+                          <td className="px-2 py-3 text-right font-mono text-foreground">
+                            {Math.round(row.rating)}
+                          </td>
+                          <td className="px-2 py-3 text-right font-mono text-muted-foreground">
+                            {row.games_played}
+                          </td>
+                          <td className="px-2 py-3 text-right font-mono text-muted-foreground">
+                            {row.wins}-{row.losses}-{row.draws}
+                          </td>
+                          <td className="px-2 py-3 text-right">
+                            <Link
+                              href={`/regional-elo/player/${topdeckId}?region=${encodeURIComponent(regionKey)}`}
+                              className="text-primary hover:text-foreground"
+                            >
+                              Open
+                            </Link>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {regionalRanks.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="px-2 py-6 text-center text-sm text-muted-foreground">
+                          No regional rankings found for this player.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
 
           <div className="grid gap-6 xl:grid-cols-[360px_1fr]">
             <Card className="knd-panel">
@@ -468,7 +580,7 @@ export default async function RegionalPlayerPage({
                       <span className="font-mono text-sm text-muted-foreground">{row.games} games</span>
                     </div>
                     <div className="mt-2 text-sm text-muted-foreground">
-                      {row.wins}-{row.draws}-{row.losses}
+                      {row.wins}-{row.losses}-{row.draws}
                     </div>
                   </div>
                 ))}
@@ -488,7 +600,7 @@ export default async function RegionalPlayerPage({
                       <tr>
                         <th className="px-2 py-3">Opponent</th>
                         <th className="px-2 py-3 text-right">Games</th>
-                        <th className="px-2 py-3 text-right">W-D-L</th>
+                        <th className="px-2 py-3 text-right">W-L-D</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -510,7 +622,7 @@ export default async function RegionalPlayerPage({
                             {record.games}
                           </td>
                           <td className="px-2 py-3 text-right font-mono text-muted-foreground">
-                            {record.wins}-{record.draws}-{record.losses}
+                            {record.wins}-{record.losses}-{record.draws}
                           </td>
                         </tr>
                       ))}
