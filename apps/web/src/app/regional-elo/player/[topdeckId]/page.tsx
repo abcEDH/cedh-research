@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { fetchChampionshipLeaderboard } from "@/lib/topdeck";
 import { buildTopdeckProfileHref } from "@/lib/topdeck-profile";
 import { normalizeDisplayString } from "@/lib/utils";
+import { summarizePlayerLogs, type PlayerGameLog } from "./player-stats";
 
 export const dynamic = "force-dynamic";
 
@@ -58,34 +59,6 @@ type LeaderboardRankRow = {
   wins: number;
   draws: number;
   losses: number;
-};
-
-type OpponentRecord = {
-  opponentTopdeckId: string | null;
-  opponentName: string;
-  wins: number;
-  draws: number;
-  losses: number;
-  games: number;
-};
-
-type PlayerGameLog = {
-  gameId: string;
-  startDate: string;
-  tournamentName: string;
-  state: string | null;
-  roundLabel: string;
-  tableLabel: string;
-  seat: number;
-  result: string;
-  commanderName: string | null;
-  opponents: Array<{
-    topdeckId: string | null;
-    playerName: string;
-    commanderName: string | null;
-    seat: number;
-    result: string;
-  }>;
 };
 
 type GlobalSnapshotRow = {
@@ -264,43 +237,6 @@ async function fetchCommandersById(commanderIds: string[]): Promise<Map<string, 
   return new Map(((data as CommanderRow[]) ?? []).map((row) => [row.id, row]));
 }
 
-function buildOpponentRecords(logs: PlayerGameLog[]): OpponentRecord[] {
-  const records = new Map<string, OpponentRecord>();
-
-  for (const log of logs) {
-    for (const opponent of log.opponents) {
-      const key = opponent.topdeckId ?? `${opponent.playerName}:${opponent.seat}`;
-      const existing =
-        records.get(key) ??
-        {
-          opponentTopdeckId: opponent.topdeckId,
-          opponentName: opponent.playerName,
-          wins: 0,
-          draws: 0,
-          losses: 0,
-          games: 0,
-        };
-
-      existing.games += 1;
-
-      if (log.result === "win") {
-        existing.wins += 1;
-      } else if (log.result === "loss") {
-        existing.losses += 1;
-      } else if (log.result === "draw") {
-        existing.draws += 1;
-      }
-
-      records.set(key, existing);
-    }
-  }
-
-  return Array.from(records.values()).sort((a, b) => {
-    if (b.games !== a.games) return b.games - a.games;
-    return a.opponentName.localeCompare(b.opponentName);
-  });
-}
-
 export default async function RegionalPlayerPage({
   params,
   searchParams,
@@ -407,26 +343,12 @@ export default async function RegionalPlayerPage({
     .filter((value): value is PlayerGameLog => Boolean(value))
     .sort((a, b) => b.startDate.localeCompare(a.startDate));
 
-  const totalGames = playerLogs.length;
-  const totalWins = playerLogs.filter((row) => row.result === "win").length;
-  const totalDraws = playerLogs.filter((row) => row.result === "draw").length;
-  const totalLosses = playerLogs.filter((row) => row.result === "loss").length;
-
-  const seatRows = [1, 2, 3, 4].map((seat) => {
-    const seatGames = playerLogs.filter((row) => row.seat === seat);
-    const wins = seatGames.filter((row) => row.result === "win").length;
-    const draws = seatGames.filter((row) => row.result === "draw").length;
-    const losses = seatGames.filter((row) => row.result === "loss").length;
-    return {
-      seat,
-      games: seatGames.length,
-      wins,
-      draws,
-      losses,
-    };
-  });
-
-  const opponentRecords = buildOpponentRecords(playerLogs);
+  const { totalGames, totalWins, totalDraws, totalLosses, seatRows, opponentRecords } =
+    summarizePlayerLogs(playerLogs);
+  const canonicalGames = regionalRank?.games_played ?? totalGames;
+  const canonicalWins = regionalRank?.wins ?? totalWins;
+  const canonicalDraws = regionalRank?.draws ?? totalDraws;
+  const canonicalLosses = regionalRank?.losses ?? totalLosses;
   const topdeckProfileHref = buildTopdeckProfileHref(topdeckId);
   const backHref = regionFilter
     ? `/regional-elo?region=${encodeURIComponent(regionFilter)}`
@@ -447,7 +369,7 @@ export default async function RegionalPlayerPage({
                   {player.name}
                 </h1>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  Counted {totalGames} games from tournaments played in {regionFilter || "the selected region"}.
+                  Counted {canonicalGames} games from tournaments played in {regionFilter || "the selected region"}.
                 </p>
               </div>
               {topdeckProfileHref ? (
@@ -506,7 +428,7 @@ export default async function RegionalPlayerPage({
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-2xl font-semibold text-foreground">
-                {totalGames}
+                {canonicalGames}
               </CardContent>
             </Card>
             <Card className="knd-panel">
@@ -516,7 +438,7 @@ export default async function RegionalPlayerPage({
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-2xl font-semibold text-foreground">
-                {totalWins}-{totalLosses}-{totalDraws}
+                {canonicalWins}-{canonicalLosses}-{canonicalDraws}
               </CardContent>
             </Card>
             <Card className="knd-panel">
@@ -530,6 +452,11 @@ export default async function RegionalPlayerPage({
               </CardContent>
             </Card>
           </div>
+
+          <p className="text-sm text-muted-foreground">
+            Rank, counted games, and record come from the same canonical regional aggregate that powers the leaderboard.
+            The detailed log below reconstructs those same included state-scoped games.
+          </p>
 
           <Card className="knd-panel">
             <CardHeader>
@@ -674,6 +601,7 @@ export default async function RegionalPlayerPage({
               </CardTitle>
               <p className="text-xs text-muted-foreground">
                 These are the exact state-scoped games currently counted by the regional Elo pipeline for this player.
+                If this list ever disagrees with the summary cards above, the aggregate pipeline is stale.
               </p>
             </CardHeader>
             <CardContent>

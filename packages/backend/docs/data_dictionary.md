@@ -173,7 +173,8 @@ erDiagram
 
 ### Regional Elo Views
 - **`regional_elo_game_results`**: denormalized game-level input rows used to compute regional Elo ratings from games, entries, players, and tournaments with location data.
-- **`regional_elo_leaderboard`**: ranked leaderboard by `region_type` and `region_key`, enriched with player names and TopDeck IDs.
+- **`regional_elo_player_stats`**: canonical per-region included-game counts and W/L/D totals derived directly from `regional_elo_game_results`, excluding byes.
+- **`regional_elo_leaderboard`**: ranked leaderboard by `region_type` and `region_key`, enriched with player names and TopDeck IDs. Games/record fields are sourced from `regional_elo_player_stats` so they stay aligned with reconstructible drilldowns.
 - **`regional_elo_regions`**: region summary with player counts and latest `updated_at` timestamp.
 
 ### Card Analytics (materialized views)

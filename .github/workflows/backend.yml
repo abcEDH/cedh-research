@@ -116,6 +116,8 @@ jobs:
               ("commander_momentum", 1),
               ("commander_first_appearances", 10),
               ("survival_summary", 10),
+              ("regional_elo_player_stats", 10),
+              ("regional_elo_leaderboard", 10),
           ]
 
           # RPC functions to validate
@@ -269,4 +271,78 @@ jobs:
           else:
               print("Data integrity check passed!")
               sys.exit(0)
+          SCRIPT
+
+  validate-regional-elo-consistency:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Check regional Elo aggregate consistency
+        run: |
+          python << 'SCRIPT'
+          import requests
+          import sys
+
+          SUPABASE_URL = "${{ secrets.SUPABASE_URL }}"
+          SUPABASE_KEY = "${{ secrets.SUPABASE_SERVICE_KEY }}"
+
+          headers = {
+              "apikey": SUPABASE_KEY,
+              "Authorization": f"Bearer {SUPABASE_KEY}",
+              "Content-Type": "application/json"
+          }
+
+          leaderboard_url = (
+              f"{SUPABASE_URL}/rest/v1/regional_elo_leaderboard"
+              "?select=region_type,region_key,player_id,games_played,wins,draws,losses"
+              "&region_type=eq.state&games_played=gt.0&limit=25"
+          )
+          leaderboard_resp = requests.get(leaderboard_url, headers=headers, timeout=30)
+          leaderboard_resp.raise_for_status()
+          leaderboard_rows = leaderboard_resp.json()
+
+          if not leaderboard_rows:
+              print("No regional Elo leaderboard rows found to validate.")
+              sys.exit(1)
+
+          failures = []
+          for row in leaderboard_rows:
+              stats_url = (
+                  f"{SUPABASE_URL}/rest/v1/regional_elo_player_stats"
+                  f"?select=games_played,wins,draws,losses"
+                  f"&region_type=eq.{row['region_type']}"
+                  f"&region_key=eq.{row['region_key']}"
+                  f"&player_id=eq.{row['player_id']}"
+              )
+              stats_resp = requests.get(stats_url, headers=headers, timeout=30)
+              stats_resp.raise_for_status()
+              stats_rows = stats_resp.json()
+              if not stats_rows:
+                  failures.append((row, "missing canonical stats row"))
+                  continue
+
+              stats = stats_rows[0]
+              for field in ("games_played", "wins", "draws", "losses"):
+                  if row[field] != stats[field]:
+                      failures.append((row, f"{field}: leaderboard={row[field]} canonical={stats[field]}"))
+                      break
+
+          if failures:
+              print("Regional Elo aggregate consistency check failed:")
+              for row, reason in failures:
+                  print(
+                      f"  - {row['region_key']} / {row['player_id']}: {reason}"
+                  )
+              sys.exit(1)
+
+          print(f"Validated {len(leaderboard_rows)} regional Elo rows against canonical stats.")
           SCRIPT
