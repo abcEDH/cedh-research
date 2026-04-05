@@ -1,3 +1,10 @@
+## [1.4.2](https://github.com/victoremnm/cedh-research/compare/v1.4.1...v1.4.2) (2026-04-05)
+
+
+### Bug Fixes
+
+* **regional-elo:** sync summary stats with canonical games ([ce1d6d8](https://github.com/victoremnm/cedh-research/commit/ce1d6d8b8edf8f000c460fc9a5b3b4e3c369a207))
+
 ## [1.4.1](https://github.com/victoremnm/cedh-research/compare/v1.4.0...v1.4.1) (2026-04-04)
 
 
