@@ -41,3 +41,11 @@ Safe templates live in:
 ## CI
 - Frontend workflows run on `apps/web/**` changes
 - Backend workflows run on `packages/backend/**` changes
+- `ci.yml` provides a tight regression loop for Regional Elo changes:
+  - frontend regression tests
+  - canonical regional aggregate proof
+  - uploaded evidence artifact for human review
+
+## QA
+- Release lessons: `docs/release-lessons-2026-04-05-regional-elo.md`
+- QA checklist: `docs/qa-release-checklist.md`
