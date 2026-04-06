@@ -1,10 +1,17 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/lib/supabase";
-import { buildProfiles, getCommanderUsageRows, lookbackStartDate } from "@/lib/meta-prep";
+import {
+  attachLatestDecklistUrls,
+  buildProfiles,
+  getCommanderDecklistRows,
+  getCommanderUsageRows,
+  lookbackStartDate,
+} from "@/lib/meta-prep";
 import type { MetaShareRow, PlayerCommanderProfile } from "@/lib/meta-prep";
-import { buildTopdeckProfileHref } from "@/lib/topdeck-profile";
 import { extractTournamentSlug, fetchTournamentBySlug } from "@/lib/topdeck";
 import Link from "next/link";
+import { unstable_cache } from "next/cache";
+import { TournamentAnalysisTables } from "./tournament-analysis-tables";
 
 export const dynamic = "force-dynamic";
 const DEFAULT_LOOKBACK_MONTHS = 6;
@@ -110,6 +117,41 @@ async function fetchBestEloRows(topdeckIds: string[]): Promise<EloRow[]> {
   return eloRows.sort((a, b) => b.rating - a.rating);
 }
 
+type TournamentAnalysis = {
+  tournament: {
+    name: string;
+    game: string;
+    format: string;
+    startDate: string;
+  };
+  standings: TournamentStanding[];
+  profiles: { players: PlayerCommanderProfile[]; metaShare: MetaShareRow[] };
+  eloRows: EloRow[];
+};
+
+const getCachedTournamentAnalysis = unstable_cache(
+  async (slug: string, lookbackStart: string): Promise<TournamentAnalysis> => {
+    const response = await fetchTournamentBySlug(slug);
+    const standings = (response.standings ?? []) as TournamentStanding[];
+    const topdeckIds = standings.map((row) => row.id).filter(Boolean);
+    const [usageRows, decklistRows, eloRows] = await Promise.all([
+      getCommanderUsageRows(topdeckIds, lookbackStart),
+      getCommanderDecklistRows(topdeckIds),
+      fetchBestEloRows(topdeckIds),
+    ]);
+    const profiles = buildProfiles(topdeckIds, usageRows, 3);
+
+    return {
+      tournament: response.data,
+      standings,
+      profiles: attachLatestDecklistUrls(profiles, decklistRows),
+      eloRows,
+    };
+  },
+  ["tournament-likelihood-analysis-v9"],
+  { revalidate: 60 * 15 }
+);
+
 export default async function TournamentLikelihoodPage({
   searchParams,
 }: {
@@ -141,16 +183,11 @@ export default async function TournamentLikelihoodPage({
 
   if (slug) {
     try {
-      const response = await fetchTournamentBySlug(slug);
-      tournament = response.data;
-      standings = (response.standings ?? []) as TournamentStanding[];
-      const topdeckIds = standings.map((row) => row.id).filter(Boolean);
-      const [usageRows, eloResult] = await Promise.all([
-        getCommanderUsageRows(topdeckIds, lookbackStart),
-        fetchBestEloRows(topdeckIds),
-      ]);
-      profiles = buildProfiles(topdeckIds, usageRows, 3);
-      eloRows = eloResult;
+      const analysis = await getCachedTournamentAnalysis(slug, lookbackStart);
+      tournament = analysis.tournament;
+      standings = analysis.standings;
+      profiles = analysis.profiles;
+      eloRows = analysis.eloRows;
     } catch (error) {
       errorMessage = (error as Error).message;
     }
@@ -188,13 +225,12 @@ export default async function TournamentLikelihoodPage({
 
   const profileByPlayer = new Map(profiles.players.map((player) => [player.topdeckId, player]));
   const standingByPlayer = new Map(standings.map((player) => [player.id, player]));
-  const topEloAttendees = eloRows
+  const allTopEloAttendees = eloRows
     .map((row) => ({
       ...row,
       standing: row.topdeck_id ? standingByPlayer.get(row.topdeck_id) : undefined,
       profile: row.topdeck_id ? profileByPlayer.get(row.topdeck_id) : undefined,
-    }))
-    .slice(0, 12);
+    }));
 
   return (
     <div className="min-h-screen">
@@ -354,158 +390,11 @@ export default async function TournamentLikelihoodPage({
               </CardContent>
             </Card>
 
-            <Card className="knd-panel mt-6">
-              <CardHeader>
-                <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
-                  Top Elo Attendees
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="mb-4 text-sm text-muted-foreground">
-                  Highest-rated players in the field using the regional leaderboard&apos;s all-games Elo,
-                  paired with the deck forecast from recent commander history.
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="text-left text-xs uppercase tracking-[0.3em] text-muted-foreground">
-                      <tr>
-                        <th className="px-2 py-3">Player</th>
-                        <th className="px-2 py-3">Elo</th>
-                        <th className="px-2 py-3">Home Region</th>
-                        <th className="px-2 py-3">Most Likely Bring</th>
-                        <th className="px-2 py-3">Alternatives</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {topEloAttendees.map((row) => {
-                        const topdeckHref = buildTopdeckProfileHref(row.topdeck_id);
-                        const primary = row.profile?.commanders[0];
-                        const alternatives = row.profile?.commanders.slice(1, 3) ?? [];
-                        return (
-                          <tr key={row.topdeck_id ?? row.player_name} className="border-t border-border/60">
-                            <td className="px-2 py-4">
-                              {topdeckHref ? (
-                                <a
-                                  className="font-medium text-foreground hover:text-primary"
-                                  href={topdeckHref}
-                                  rel="noreferrer"
-                                  target="_blank"
-                                >
-                                  {row.player_name}
-                                </a>
-                              ) : (
-                                <div className="font-medium text-foreground">{row.player_name}</div>
-                              )}
-                              <div className="text-xs text-muted-foreground">
-                                {row.standing ? `Tournament standing #${row.standing.standing}` : "Attendee"}
-                              </div>
-                            </td>
-                            <td className="px-2 py-4 font-semibold text-primary">{Math.round(row.rating)}</td>
-                            <td className="px-2 py-4 text-muted-foreground">{row.region_key}</td>
-                            <td className="px-2 py-4">
-                              {primary ? (
-                                <div>
-                                  <div className="font-medium text-foreground">{primary.commander}</div>
-                                  <div className="text-xs text-muted-foreground">
-                                    Forecast confidence {formatPercent(primary.predictionShare)} · {primary.entries} recent entries
-                                  </div>
-                                </div>
-                              ) : (
-                                <span className="text-xs text-muted-foreground">No recent deck data</span>
-                              )}
-                            </td>
-                            <td className="px-2 py-4">
-                              <div className="flex flex-wrap gap-2">
-                                {alternatives.length ? (
-                                  alternatives.map((commander) => (
-                                    <span key={`${row.topdeck_id}-${commander.commander}`} className="knd-chip">
-                                      {commander.commander} · {formatPercent(commander.predictionShare)}
-                                    </span>
-                                  ))
-                                ) : (
-                                  <span className="text-xs text-muted-foreground">No strong alternatives</span>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                      {topEloAttendees.length === 0 && (
-                        <tr>
-                          <td colSpan={5} className="py-6 text-center text-sm text-muted-foreground">
-                            No Elo rows matched the current attendee list.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="knd-panel mt-6">
-              <CardHeader>
-                <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
-                  Player Commander Profiles
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="text-left text-xs uppercase tracking-[0.3em] text-muted-foreground">
-                      <tr>
-                        <th className="px-2 py-3">Standing</th>
-                        <th className="px-2 py-3">Player</th>
-                        <th className="px-2 py-3">Tournament Record</th>
-                        <th className="px-2 py-3">Likely Decks</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {standings.map((entry) => {
-                        const profile = profileByPlayer.get(entry.id);
-                        const profileHref = buildTopdeckProfileHref(entry.username || entry.id);
-                        return (
-                          <tr key={`${entry.id}-${entry.standing}`} className="border-t border-border/60">
-                            <td className="px-2 py-4 text-muted-foreground">#{entry.standing}</td>
-                            <td className="px-2 py-4">
-                              {profileHref ? (
-                                <a
-                                  className="font-medium text-foreground hover:text-primary"
-                                  href={profileHref}
-                                  rel="noreferrer"
-                                  target="_blank"
-                                >
-                                  {entry.name}
-                                </a>
-                              ) : (
-                                <div className="font-medium text-foreground">{entry.name}</div>
-                              )}
-                              <div className="text-xs text-muted-foreground">{entry.username || entry.id}</div>
-                            </td>
-                            <td className="px-2 py-4 text-muted-foreground">
-                              {entry.points} pts · {Math.round((entry.winRate || 0) * 100)}% WR
-                            </td>
-                            <td className="px-2 py-4">
-                              <div className="flex flex-wrap gap-2">
-                                {profile?.commanders?.length ? (
-                                  profile.commanders.map((commander) => (
-                                    <span key={`${entry.id}-${commander.commander}`} className="knd-chip">
-                                      {commander.commander} · {formatPercent(commander.predictionShare)} ({commander.entries})
-                                    </span>
-                                  ))
-                                ) : (
-                                  <span className="text-xs text-muted-foreground">No recent data</span>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
+            <TournamentAnalysisTables
+              eloAttendees={allTopEloAttendees}
+              profiles={profiles.players}
+              standings={standings}
+            />
           </>
         )}
       </main>
