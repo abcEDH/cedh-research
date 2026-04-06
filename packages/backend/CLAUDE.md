@@ -37,6 +37,9 @@ python src/ingest.py --tournament-id TID --direct
 
 # Historical backfill from a stable TID manifest in restartable batches
 python src/ingest.py --tids-file data/all_time_tids.txt --batch-size 50 --direct --record-backfill --run-key all-time-cedh
+
+# Refresh the committed all-time TID manifest from Supabase
+python src/export_all_time_tids.py --out data/all_time_tids.txt
 ```
 
 ### Performance Notes

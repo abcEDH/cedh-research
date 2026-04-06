@@ -1,0 +1,11 @@
+# All-time tournament ID manifest
+# Source of truth: Supabase public.tournaments.topdeck_tid
+# Ordering: start_date ASC, topdeck_tid ASC
+# This file is intentionally committed so historical backfill runs have a stable manifest path.
+# Refresh with:
+#   python src/export_all_time_tids.py --out data/all_time_tids.txt
+#
+# Note:
+#   This placeholder is committed before the first full export. Populate it from Supabase
+#   before running the all-time backfill.
+

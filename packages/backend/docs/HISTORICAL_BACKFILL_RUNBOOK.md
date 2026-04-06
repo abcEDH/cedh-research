@@ -17,10 +17,18 @@ This means a failed or repeated batch can be rerun without producing duplicate l
 ## Recommended Flow
 
 1. Build a stable TID manifest ordered oldest-to-newest.
+   Recommended source: export from Supabase `tournaments.topdeck_tid` into `data/all_time_tids.txt`.
 2. Apply the migration `20260406000000_ingestion_backfill_runs.sql`.
 3. Run ingestion from the dedicated worktree with direct Postgres enabled.
 4. Execute one batch at a time or let the full manifest run.
 5. Rerun failed batches with the same manifest and `run_key`.
+
+Export the committed manifest from Supabase:
+
+```bash
+source .venv/bin/activate
+python src/export_all_time_tids.py --out data/all_time_tids.txt
+```
 
 ## Commands
 
