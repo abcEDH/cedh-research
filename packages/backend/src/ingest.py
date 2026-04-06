@@ -12,6 +12,7 @@ Usage:
 """
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -20,7 +21,7 @@ import sys
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import requests
 from dateutil import parser as date_parser
@@ -47,6 +48,9 @@ logging.basicConfig(
     ],
 )
 logger = logging.getLogger(__name__)
+
+BACKFILL_RUN_STATUSES = {"pending", "running", "completed", "completed_with_errors", "failed"}
+BACKFILL_BATCH_STATUSES = {"pending", "running", "completed", "failed"}
 
 
 class TopDeckClient:
@@ -795,6 +799,142 @@ def extract_name_and_tid(tournament: dict) -> tuple[Optional[str], Optional[str]
     return name, tid
 
 
+def dedupe_preserve_order(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        deduped.append(value)
+    return deduped
+
+
+def load_tids(path: Path) -> list[str]:
+    return dedupe_preserve_order([
+        line.strip()
+        for line in path.read_text().splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ])
+
+
+def chunk_items(items: list[str], batch_size: int) -> list[list[str]]:
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive")
+    return [items[i : i + batch_size] for i in range(0, len(items), batch_size)]
+
+
+def compute_file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def default_backfill_run_key(tids_path: Path, batch_size: int) -> str:
+    timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    return f"{tids_path.stem}-{batch_size}-{timestamp}"
+
+
+def ensure_backfill_run_status(status: str) -> str:
+    if status not in BACKFILL_RUN_STATUSES:
+        raise ValueError(f"invalid backfill run status: {status}")
+    return status
+
+
+def ensure_backfill_batch_status(status: str) -> str:
+    if status not in BACKFILL_BATCH_STATUSES:
+        raise ValueError(f"invalid backfill batch status: {status}")
+    return status
+
+
+def upsert_backfill_run(
+    client: Any,
+    *,
+    run_key: str,
+    tids_path: Path,
+    batch_size: int,
+    total_tournaments: int,
+    total_batches: int,
+    start_date: Optional[str],
+    end_date: Optional[str],
+    status: str,
+) -> Optional[dict]:
+    status = ensure_backfill_run_status(status)
+    payload = {
+        "run_key": run_key,
+        "manifest_path": str(tids_path),
+        "manifest_sha256": compute_file_sha256(tids_path),
+        "requested_start_date": start_date,
+        "requested_end_date": end_date,
+        "batch_size": batch_size,
+        "discovered_tournament_count": total_tournaments,
+        "total_batches": total_batches,
+        "status": status,
+        "updated_at": datetime.utcnow().isoformat(),
+    }
+    result = client.upsert("ingestion_backfill_runs", payload, on_conflict="run_key")
+    return result[0] if result else None
+
+
+def upsert_backfill_batch(
+    client: Any,
+    *,
+    run_id: str,
+    batch_index: int,
+    batch_start: int,
+    batch_end: int,
+    tournament_count: int,
+    status: str,
+    error_text: Optional[str] = None,
+) -> None:
+    status = ensure_backfill_batch_status(status)
+    now = datetime.utcnow().isoformat()
+    payload = {
+        "run_id": run_id,
+        "batch_index": batch_index,
+        "batch_start": batch_start,
+        "batch_end": batch_end,
+        "tournament_count": tournament_count,
+        "status": status,
+        "error_text": error_text,
+        "updated_at": now,
+        "started_at": now if status == "running" else None,
+        "finished_at": now if status in {"completed", "failed"} else None,
+    }
+    client.upsert("ingestion_backfill_batches", payload, on_conflict="run_id,batch_index")
+
+
+def update_backfill_run_progress(
+    client: Any,
+    *,
+    run_row: dict,
+    processed_count: int,
+    succeeded_count: int,
+    failed_count: int,
+    status: str,
+) -> Optional[dict]:
+    status = ensure_backfill_run_status(status)
+    payload = {
+        "run_key": run_row["run_key"],
+        "manifest_path": run_row["manifest_path"],
+        "manifest_sha256": run_row["manifest_sha256"],
+        "requested_start_date": run_row.get("requested_start_date"),
+        "requested_end_date": run_row.get("requested_end_date"),
+        "batch_size": run_row["batch_size"],
+        "discovered_tournament_count": run_row["discovered_tournament_count"],
+        "total_batches": run_row["total_batches"],
+        "processed_tournament_count": processed_count,
+        "succeeded_tournament_count": succeeded_count,
+        "failed_tournament_count": failed_count,
+        "status": status,
+        "updated_at": datetime.utcnow().isoformat(),
+    }
+    result = client.upsert("ingestion_backfill_runs", payload, on_conflict="run_key")
+    return result[0] if result else None
+
+
 def main():
     parser = argparse.ArgumentParser(description="cEDH Analytics Data Ingestion")
     parser.add_argument("--days", type=int, default=7, help="Days back to search")
@@ -803,6 +943,19 @@ def main():
     parser.add_argument("--min-players", type=int, default=16, help="Minimum players")
     parser.add_argument("--tournament-id", type=str, help="Process specific tournament")
     parser.add_argument("--tids-file", type=str, help="Path to file with one tournament ID per line")
+    parser.add_argument("--batch-size", type=int, default=50, help="Tournament batch size when processing --tids-file")
+    parser.add_argument("--batch-index", type=int, help="0-based batch index to process from --tids-file")
+    parser.add_argument("--run-key", type=str, help="Stable identifier for recording a historical backfill run")
+    parser.add_argument(
+        "--record-backfill",
+        action="store_true",
+        help="Persist backfill run and batch status to ingestion_backfill_runs/_batches",
+    )
+    parser.add_argument(
+        "--stop-on-error",
+        action="store_true",
+        help="Fail fast instead of continuing to later tournaments after an error in --tids-file mode",
+    )
     parser.add_argument("--names-file", type=str, help="Path to file with one tournament name per line")
     parser.add_argument("--resolve-days", type=int, default=120, help="Days back to search when resolving names to IDs")
     parser.add_argument("--resolve-min-players", type=int, default=0, help="Min players for name resolution search")
@@ -958,12 +1111,12 @@ def main():
         if not tids_path.exists():
             logger.error(f"TIDs file not found: {tids_path}")
             sys.exit(1)
-        tids = [
-            line.strip()
-            for line in tids_path.read_text().splitlines()
-            if line.strip() and not line.strip().startswith("#")
-        ]
-        logger.info(f"Loaded {len(tids)} tournament IDs from {tids_path}")
+        tids = load_tids(tids_path)
+        logger.info(f"Loaded {len(tids)} unique tournament IDs from {tids_path}")
+
+        if args.batch_size <= 0:
+            logger.error("--batch-size must be positive")
+            sys.exit(1)
 
         start_dt = date_parser.parse(args.start_date) if args.start_date else None
         end_dt = date_parser.parse(args.end_date) if args.end_date else None
@@ -971,33 +1124,142 @@ def main():
             logger.error("--end-date must be on or after --start-date")
             sys.exit(1)
 
-        for tid in tids:
-            try:
-                tournament = topdeck.get_tournament(tid)
-            except Exception as e:
-                logger.error(f"Failed to fetch {tid}: {e}")
-                continue
+        batches = chunk_items(tids, args.batch_size)
+        logger.info(f"Prepared {len(batches)} batches from {len(tids)} tournaments (batch_size={args.batch_size})")
 
-            tournament["TID"] = tid
-            ts = parse_tournament_start_date(tournament)
-            if ts is None:
-                logger.warning(f"Skipping {tid}: missing start date")
-                continue
+        if args.batch_index is not None and (args.batch_index < 0 or args.batch_index >= len(batches)):
+            logger.error(f"--batch-index must be between 0 and {max(len(batches) - 1, 0)}")
+            sys.exit(1)
 
-            if start_dt and ts.date() < start_dt.date():
-                continue
-            if end_dt and ts.date() > end_dt.date():
-                continue
+        selected_batches = (
+            [(args.batch_index, batches[args.batch_index])]
+            if args.batch_index is not None
+            else list(enumerate(batches))
+        )
 
-            if ingester:
+        run_key = args.run_key or default_backfill_run_key(tids_path, args.batch_size)
+        processed_count = 0
+        succeeded_count = 0
+        failed_count = 0
+        run_row = None
+        if args.record_backfill:
+            if not ingester:
+                logger.error("--record-backfill requires a writable database client")
+                sys.exit(1)
+            run_row = upsert_backfill_run(
+                ingester.supabase,
+                run_key=run_key,
+                tids_path=tids_path,
+                batch_size=args.batch_size,
+                total_tournaments=len(tids),
+                total_batches=len(batches),
+                start_date=start_dt.date().isoformat() if start_dt else None,
+                end_date=end_dt.date().isoformat() if end_dt else None,
+                status="running",
+            )
+            if not run_row:
+                logger.error("Failed to initialize ingestion_backfill_runs row")
+                sys.exit(1)
+
+        for batch_index, batch_tids in selected_batches:
+            batch_start = batch_index * args.batch_size
+            batch_end = batch_start + len(batch_tids) - 1
+            logger.info(
+                f"Processing batch {batch_index + 1}/{len(batches)} "
+                f"(batch_index={batch_index}, tids={batch_start}-{batch_end})"
+            )
+            if args.record_backfill and run_row:
+                upsert_backfill_batch(
+                    ingester.supabase,
+                    run_id=run_row["id"],
+                    batch_index=batch_index,
+                    batch_start=batch_start,
+                    batch_end=batch_end,
+                    tournament_count=len(batch_tids),
+                    status="running",
+                )
+
+            batch_failed = False
+            batch_error_text = None
+            for tid in batch_tids:
+                processed_count += 1
                 try:
-                    result = ingester.process_tournament(tournament)
-                    if result:
-                        logger.info(f"Processed: {result['name']}")
+                    tournament = topdeck.get_tournament(tid)
                 except Exception as e:
-                    logger.error(f"Failed to process {tid}: {e}")
-            else:
-                logger.info(f"Would process: {tournament.get('tournamentName')} ({len(tournament.get('standings', []))} players)")
+                    failed_count += 1
+                    batch_failed = True
+                    batch_error_text = f"fetch {tid}: {e}"
+                    logger.error(f"Failed to fetch {tid}: {e}")
+                    if args.stop_on_error:
+                        break
+                    continue
+
+                tournament["TID"] = tid
+                ts = parse_tournament_start_date(tournament)
+                if ts is None:
+                    logger.warning(f"Skipping {tid}: missing start date")
+                    continue
+
+                if start_dt and ts.date() < start_dt.date():
+                    logger.info(f"Skipping {tid}: before start-date filter")
+                    continue
+                if end_dt and ts.date() > end_dt.date():
+                    logger.info(f"Skipping {tid}: after end-date filter")
+                    continue
+
+                if ingester:
+                    try:
+                        result = ingester.process_tournament(tournament)
+                        if result:
+                            succeeded_count += 1
+                            logger.info(f"Processed: {result['name']}")
+                    except Exception as e:
+                        failed_count += 1
+                        batch_failed = True
+                        batch_error_text = f"process {tid}: {e}"
+                        logger.error(f"Failed to process {tid}: {e}")
+                        if args.stop_on_error:
+                            break
+                else:
+                    logger.info(f"Would process: {tournament.get('tournamentName')} ({len(tournament.get('standings', []))} players)")
+
+            if args.record_backfill and run_row:
+                upsert_backfill_batch(
+                    ingester.supabase,
+                    run_id=run_row["id"],
+                    batch_index=batch_index,
+                    batch_start=batch_start,
+                    batch_end=batch_end,
+                    tournament_count=len(batch_tids),
+                    status="failed" if batch_failed else "completed",
+                    error_text=batch_error_text,
+                )
+                updated_run_row = update_backfill_run_progress(
+                    ingester.supabase,
+                    run_row=run_row,
+                    processed_count=processed_count,
+                    succeeded_count=succeeded_count,
+                    failed_count=failed_count,
+                    status="running",
+                )
+                if updated_run_row:
+                    run_row = updated_run_row
+
+            if batch_failed and args.stop_on_error:
+                break
+
+        if args.record_backfill and run_row:
+            final_status = "completed_with_errors" if failed_count else "completed"
+            updated_run_row = update_backfill_run_progress(
+                ingester.supabase,
+                run_row=run_row,
+                processed_count=processed_count,
+                succeeded_count=succeeded_count,
+                failed_count=failed_count,
+                status=final_status,
+            )
+            if updated_run_row:
+                run_row = updated_run_row
     else:
         if args.start_date:
             start_dt = date_parser.parse(args.start_date)

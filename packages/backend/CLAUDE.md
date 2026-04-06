@@ -34,6 +34,9 @@ python src/ingest.py --days 7 --min-players 32
 
 # Use direct Postgres for ~10x faster batch operations (requires psycopg2)
 python src/ingest.py --tournament-id TID --direct
+
+# Historical backfill from a stable TID manifest in restartable batches
+python src/ingest.py --tids-file data/all_time_tids.txt --batch-size 50 --direct --record-backfill --run-key all-time-cedh
 ```
 
 ### Performance Notes
@@ -50,7 +53,7 @@ python src/ingest.py --tournament-id TID --direct
 
 ### 2. API Timeouts for Large Date Ranges
 **Problem:** TopDeck API times out when querying 6+ months of tournaments
-**Workaround:** Use shorter date ranges or ingest specific tournament TIDs
+**Workaround:** Use shorter date ranges or ingest specific tournament TIDs from a stable manifest. See `docs/HISTORICAL_BACKFILL_RUNBOOK.md`.
 
 ### 3. Moxfield Decklists
 **Problem:** Some decklists are just Moxfield URLs, no card data

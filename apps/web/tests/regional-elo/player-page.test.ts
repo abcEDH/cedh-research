@@ -209,7 +209,7 @@ vi.mock("@/lib/supabase", () => ({
 }));
 
 describe("RegionalPlayerPage", () => {
-  it("renders summary cards and regional rankings from the same canonical counts", async () => {
+  it("renders summary cards and the assigned state record from the same canonical counts", async () => {
     const module = await import("@/app/regional-elo/player/[topdeckId]/page");
     const element = await module.default({
       params: { topdeckId: "CCIQroaCHHQi7EELyNXlHiHQiQy1" },
@@ -220,12 +220,12 @@ describe("RegionalPlayerPage", () => {
 
     expect(html).toContain("Alex Lien");
     expect(html).toContain("TopDeck Global");
-    expect(html).toContain("Active region");
+    expect(html).toContain("Assigned state");
     expect(html).toContain(
-      "Rank, counted games, and record come from the same canonical regional aggregate that powers the leaderboard."
+      "Rank comes from the assigned-state leaderboard, while counted games and record reflect"
     );
     expect(html).toMatch(/Counted Games[\s\S]*?>3</);
     expect(html).toMatch(/Record[\s\S]*?>1-1-1</);
-    expect(html).toMatch(/CALIFORNIA[\s\S]*?Active region[\s\S]*?>#6<[\s\S]*?>1735<[\s\S]*?>3<[\s\S]*?>1-1-1</);
+    expect(html).toMatch(/CALIFORNIA[\s\S]*?Assigned state[\s\S]*?>#6<[\s\S]*?>1735<[\s\S]*?>3<[\s\S]*?>1-1-1</);
   });
 });

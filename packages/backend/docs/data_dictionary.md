@@ -136,7 +136,7 @@ erDiagram
   - `tournament_id`, `round_number`
 
 ### `regional_elo_ratings`
-- **Purpose**: persisted Elo-style ratings by region for players, currently keyed by state.
+- **Purpose**: persisted Elo-style ratings. Current production intent is one global row per player keyed as `('global', 'ALL')`.
 - **Key fields**:
   - `region_type`, `region_key`, `player_id`
   - `rating`, `games_played`, `wins`, `draws`, `losses`
@@ -144,6 +144,36 @@ erDiagram
 - **Security**:
   - row level security is enabled
   - public read access is allowed through a SELECT policy
+
+### `regional_elo_state_activity`
+- **Purpose**: per-player state activity snapshots used to assign each player to one primary state.
+- **Key fields**:
+  - `region_type`, `region_key`, `player_id`
+  - `games_30d`, `games_90d`, `games_365d`, `games_lifetime`
+  - `wins`, `draws`, `losses`, `last_game_date`
+  - `activity_score`, `is_primary_state`, `updated_at`
+
+### `regional_elo_game_events`
+- **Purpose**: persisted per-game Elo deltas for the global Elo stream.
+- **Key fields**:
+  - `region_type`, `region_key`, `game_id`, `player_id`
+  - `expected_score`, `actual_score`
+  - `rating_before`, `rating_delta`, `rating_after`
+
+### `ingestion_backfill_runs`
+- **Purpose**: operational log for historical backfill runs driven from stable TID manifests.
+- **Key fields**:
+  - `run_key`, `manifest_path`, `manifest_sha256`
+  - `batch_size`, `total_batches`
+  - `discovered_tournament_count`, `processed_tournament_count`, `succeeded_tournament_count`, `failed_tournament_count`
+  - `requested_start_date`, `requested_end_date`, `status`
+
+### `ingestion_backfill_batches`
+- **Purpose**: per-batch progress and failure tracking for a historical backfill run.
+- **Key fields**:
+  - `run_id`, `batch_index`
+  - `batch_start`, `batch_end`, `tournament_count`
+  - `status`, `error_text`, `started_at`, `finished_at`
 
 ## Analytical Views
 
@@ -172,10 +202,12 @@ erDiagram
 - **`commander_wow_mom`** (view): latest week/month deltas in entries (%) and win rate (percentage points).
 
 ### Regional Elo Views
-- **`regional_elo_game_results`**: denormalized game-level input rows used to compute regional Elo ratings from games, entries, players, and tournaments with location data.
-- **`regional_elo_player_stats`**: canonical per-region included-game counts and W/L/D totals derived directly from `regional_elo_game_results`, excluding byes.
-- **`regional_elo_leaderboard`**: ranked leaderboard by `region_type` and `region_key`, enriched with player names and TopDeck IDs. Games/record fields are sourced from `regional_elo_player_stats` so they stay aligned with reconstructible drilldowns.
-- **`regional_elo_regions`**: region summary with player counts and latest `updated_at` timestamp.
+- **`regional_elo_game_results`**: denormalized game-level input rows used to compute the global Elo stream and state activity from games, entries, players, and tournaments with location data.
+- **`regional_elo_game_event_log`**: global Elo per-game event log enriched with tournament, player, commander, and seat context.
+- **`regional_elo_primary_state_assignments`**: one row per player for the state currently assigned from recency-weighted activity.
+- **`regional_elo_player_stats`**: canonical assigned-state game counts and W/L/D totals sourced from `regional_elo_primary_state_assignments`.
+- **`regional_elo_leaderboard`**: assigned-state leaderboard by `region_type` and `region_key`, enriched with player names and TopDeck IDs. Rankings use global Elo; games/record fields come from assigned-state activity.
+- **`regional_elo_regions`**: assigned-state region summary with player counts and latest `updated_at` timestamp.
 
 ### Card Analytics (materialized views)
 - **`card_frequencies_by_commander`**: per-commander card inclusion frequencies.

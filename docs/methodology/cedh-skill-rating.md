@@ -96,4 +96,19 @@ Our code follows the equity-based Elo variant above and currently uses:
 - `K = 30`
 - `Equity = 2^(R/200)`
 - `Draw = 1/n`
+- A single global rating computed from all included games
 
+## State assignment
+
+State leaderboards are derived from the global rating, not from separate state-local Elo pools.
+
+For each player and state, we track:
+
+- games in the last 30 days
+- games in the last 90 days
+- games in the last 365 days
+- lifetime games in that state
+- latest game date in that state
+
+We then compute a weighted activity score that emphasizes recent play and uses lifetime volume as a
+light stabilizer. A player is assigned to the state with the highest activity score.

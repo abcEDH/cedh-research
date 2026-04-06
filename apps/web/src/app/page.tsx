@@ -116,7 +116,7 @@ export default async function Home() {
                 Tournament Prep
               </Link>
               <Link className="transition hover:text-foreground" href="/regional-elo">
-                Regional Elo
+                Leaderboard
               </Link>
               <Link className="transition hover:text-foreground" href="/about">
                 Methodology
@@ -310,8 +310,8 @@ export default async function Home() {
           />
           <FeatureCard
             href="/regional-elo"
-            title="Regional Elo"
-            description="State-level Elo leaderboards using localized tournament results"
+            title="Leaderboard"
+            description="Global Elo by default, with optional state-assigned leaderboard views"
             color="hsl(var(--knd-lime))"
           />
           <FeatureCard

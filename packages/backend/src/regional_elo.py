@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
-"""Compute regional Elo leaderboards and store them in Supabase.
+"""Compute a global cEDH Elo and derive state assignments from recency + volume.
 
 Usage:
-  python src/regional_elo.py --region-type state
+  python src/regional_elo.py
+
+The resulting data model is:
+  - `regional_elo_ratings`: one global row per player (`global` / `ALL`)
+  - `regional_elo_state_activity`: per-player state activity snapshots
+  - `regional_elo_leaderboard` view: state leaderboards ranked by global Elo
+    after assigning each player to a primary state
 """
 
 from __future__ import annotations
@@ -12,8 +18,8 @@ import os
 import time
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Any, Dict, Iterable, List, Tuple
+from datetime import date, datetime
+from typing import Any, Dict, List
 
 from ingest import SupabaseClient
 
@@ -21,16 +27,33 @@ K_FACTOR = 30
 DEFAULT_RATING = 1500.0
 ELO_BASE = 2
 ELO_DIVISOR = 200
+GLOBAL_REGION_TYPE = "global"
+GLOBAL_REGION_KEY = "ALL"
+STATE_REGION_TYPE = "state"
 
 
 @dataclass
-class PlayerStats:
+class PlayerRating:
     rating: float = DEFAULT_RATING
     games: int = 0
     wins: int = 0
     draws: int = 0
     losses: int = 0
     last_game_date: str | None = None
+
+
+@dataclass
+class StateActivity:
+    games_30d: int = 0
+    games_90d: int = 0
+    games_365d: int = 0
+    games_lifetime: int = 0
+    wins: int = 0
+    draws: int = 0
+    losses: int = 0
+    last_game_date: str | None = None
+    activity_score: float = 0.0
+    is_primary_state: bool = False
 
 
 def load_credentials() -> tuple[str, str]:
@@ -59,73 +82,188 @@ def fetch_all(client: SupabaseClient, table: str, params: Dict[str, Any], limit:
     return rows
 
 
-def region_key_from_row(row: Dict[str, Any], region_type: str) -> str | None:
-    if region_type == "state":
-        state = (row.get("state") or "").strip()
-        return state.upper() if state else None
-    return None
+def parse_game_date(value: str | None) -> date | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).date()
+    except ValueError:
+        try:
+            return datetime.strptime(value[:10], "%Y-%m-%d").date()
+        except ValueError:
+            return None
 
 
-def process_game(
-    rows: List[Dict[str, Any]],
-    region_stats: Dict[str, PlayerStats],
-    game_date: str | None,
-) -> None:
+def normalized_state(row: Dict[str, Any]) -> str | None:
+    state = (row.get("state") or "").strip()
+    return state.upper() if state else None
+
+
+def included_game(rows: List[Dict[str, Any]]) -> bool:
     if not rows:
-        return
-
+        return False
     players = [row["player_id"] for row in rows if row.get("player_id")]
     if len(players) < 2:
-        return
-
+        return False
     if any((row.get("result") or "") == "bye" for row in rows):
-        return
+        return False
+    return True
 
-    is_draw = any((row.get("result") or "") == "draw" for row in rows) or bool(rows[0].get("is_draw"))
-    result_value = 1.0 / len(players) if is_draw else None
 
-    equities = {}
+def compute_expected_scores(players: List[str], ratings: Dict[str, PlayerRating]) -> dict[str, float]:
+    equities: dict[str, float] = {}
     total_equity = 0.0
     for player_id in players:
-        rating = region_stats[player_id].rating
-        equity = ELO_BASE ** (rating / ELO_DIVISOR)
+        equity = ELO_BASE ** (ratings[player_id].rating / ELO_DIVISOR)
         equities[player_id] = equity
         total_equity += equity
 
     if total_equity == 0:
-        return
+        return {player_id: 0.0 for player_id in players}
+    return {player_id: equity / total_equity for player_id, equity in equities.items()}
+
+
+def bucketed_activity_score(activity: StateActivity) -> float:
+    games_31_90 = max(activity.games_90d - activity.games_30d, 0)
+    games_91_365 = max(activity.games_365d - activity.games_90d, 0)
+    return round(
+        (1.0 * activity.games_30d)
+        + (0.35 * games_31_90)
+        + (0.10 * games_91_365)
+        + (0.02 * activity.games_lifetime),
+        6,
+    )
+
+
+def process_games(
+    rows: List[Dict[str, Any]],
+) -> tuple[Dict[str, PlayerRating], Dict[str, Dict[str, StateActivity]], List[Dict[str, Any]]]:
+    global_ratings: Dict[str, PlayerRating] = defaultdict(PlayerRating)
+    state_activity: Dict[str, Dict[str, StateActivity]] = defaultdict(lambda: defaultdict(StateActivity))
+    event_rows: List[Dict[str, Any]] = []
+
+    current_game_id: str | None = None
+    buffer: List[Dict[str, Any]] = []
+
+    def flush_game(game_rows: List[Dict[str, Any]]) -> None:
+        if not included_game(game_rows):
+            return
+
+        game_date_raw = game_rows[0].get("start_date")
+        game_date = parse_game_date(game_date_raw)
+        today = datetime.utcnow().date()
+        age_days = (today - game_date).days if game_date else None
+        players = [row["player_id"] for row in game_rows if row.get("player_id")]
+        expected_scores = compute_expected_scores(players, global_ratings)
+        is_draw = any((row.get("result") or "") == "draw" for row in game_rows) or bool(game_rows[0].get("is_draw"))
+        draw_value = 1.0 / len(players) if is_draw and players else 0.0
+        state_key = normalized_state(game_rows[0])
+
+        for row in game_rows:
+            player_id = row["player_id"]
+            rating_stats = global_ratings[player_id]
+            expected = expected_scores[player_id]
+
+            if is_draw:
+                actual = draw_value
+                rating_stats.draws += 1
+            else:
+                actual = 1.0 if row.get("result") == "win" else 0.0
+                if actual == 1.0:
+                    rating_stats.wins += 1
+                else:
+                    rating_stats.losses += 1
+
+            before = rating_stats.rating
+            delta = K_FACTOR * (actual - expected)
+            rating_stats.rating += delta
+            rating_stats.games += 1
+            rating_stats.last_game_date = game_date_raw or rating_stats.last_game_date
+
+            event_rows.append(
+                {
+                    "region_type": GLOBAL_REGION_TYPE,
+                    "region_key": GLOBAL_REGION_KEY,
+                    "game_id": row["game_id"],
+                    "tournament_id": row["tournament_id"],
+                    "player_id": player_id,
+                    "entry_id": row["entry_id"],
+                    "game_date": game_date_raw,
+                    "game_result": row.get("result") or ("draw" if is_draw else "loss"),
+                    "is_draw": is_draw,
+                    "opponent_count": max(len(players) - 1, 0),
+                    "expected_score": round(expected, 6),
+                    "actual_score": round(actual, 6),
+                    "rating_before": round(before, 6),
+                    "rating_delta": round(delta, 6),
+                    "rating_after": round(rating_stats.rating, 6),
+                }
+            )
+
+            if not state_key:
+                continue
+
+            activity = state_activity[player_id][state_key]
+            activity.games_lifetime += 1
+            activity.last_game_date = game_date_raw or activity.last_game_date
+            if is_draw:
+                activity.draws += 1
+            elif actual == 1.0:
+                activity.wins += 1
+            else:
+                activity.losses += 1
+
+            if age_days is None:
+                continue
+            if age_days <= 365:
+                activity.games_365d += 1
+            if age_days <= 90:
+                activity.games_90d += 1
+            if age_days <= 30:
+                activity.games_30d += 1
 
     for row in rows:
-        player_id = row["player_id"]
-        stats = region_stats[player_id]
-        expected = equities[player_id] / total_equity
-        if is_draw:
-            result = result_value
-            stats.draws += 1
-        else:
-            result = 1.0 if row.get("result") == "win" else 0.0
-            if result == 1.0:
-                stats.wins += 1
-            else:
-                stats.losses += 1
+        game_id = row["game_id"]
+        if current_game_id is None:
+            current_game_id = game_id
+        if game_id != current_game_id:
+            flush_game(buffer)
+            buffer = []
+            current_game_id = game_id
+        buffer.append(row)
 
-        stats.rating += K_FACTOR * (result - expected)
-        stats.games += 1
-        stats.last_game_date = game_date or stats.last_game_date
+    if buffer:
+        flush_game(buffer)
+
+    for player_states in state_activity.values():
+        primary_state: str | None = None
+        primary_sort_key: tuple[float, str, int, int, str] | None = None
+        for region_key, activity in player_states.items():
+            activity.activity_score = bucketed_activity_score(activity)
+            sort_key = (
+                activity.activity_score,
+                activity.last_game_date or "",
+                activity.games_30d,
+                activity.games_lifetime,
+                region_key,
+            )
+            if primary_sort_key is None or sort_key > primary_sort_key:
+                primary_sort_key = sort_key
+                primary_state = region_key
+        if primary_state:
+            player_states[primary_state].is_primary_state = True
+
+    return global_ratings, state_activity, event_rows
 
 
-def build_upsert_rows(
-    region_type: str,
-    region_key: str,
-    region_stats: Dict[str, PlayerStats],
-) -> List[Dict[str, Any]]:
+def build_global_rating_rows(global_ratings: Dict[str, PlayerRating]) -> List[Dict[str, Any]]:
     updated_at = datetime.utcnow().isoformat()
-    rows = []
-    for player_id, stats in region_stats.items():
+    rows: List[Dict[str, Any]] = []
+    for player_id, stats in global_ratings.items():
         rows.append(
             {
-                "region_type": region_type,
-                "region_key": region_key,
+                "region_type": GLOBAL_REGION_TYPE,
+                "region_key": GLOBAL_REGION_KEY,
                 "player_id": player_id,
                 "rating": round(stats.rating, 3),
                 "games_played": stats.games,
@@ -139,7 +277,48 @@ def build_upsert_rows(
     return rows
 
 
-def compute_regional_elo(region_type: str) -> Dict[str, Dict[str, PlayerStats]]:
+def build_state_activity_rows(state_activity: Dict[str, Dict[str, StateActivity]]) -> List[Dict[str, Any]]:
+    updated_at = datetime.utcnow().isoformat()
+    rows: List[Dict[str, Any]] = []
+    for player_id, state_rows in state_activity.items():
+        for region_key, activity in state_rows.items():
+            rows.append(
+                {
+                    "region_type": STATE_REGION_TYPE,
+                    "region_key": region_key,
+                    "player_id": player_id,
+                    "games_30d": activity.games_30d,
+                    "games_90d": activity.games_90d,
+                    "games_365d": activity.games_365d,
+                    "games_lifetime": activity.games_lifetime,
+                    "wins": activity.wins,
+                    "draws": activity.draws,
+                    "losses": activity.losses,
+                    "last_game_date": activity.last_game_date,
+                    "activity_score": activity.activity_score,
+                    "is_primary_state": activity.is_primary_state,
+                    "updated_at": updated_at,
+                }
+            )
+    return rows
+
+
+def upsert_rows(client: SupabaseClient, table: str, rows: List[Dict[str, Any]], on_conflict: str) -> None:
+    if not rows:
+        print(f"No rows to upsert for {table}.")
+        return
+
+    batch_size = 500
+    for i in range(0, len(rows), batch_size):
+        batch = rows[i : i + batch_size]
+        client.upsert(table, batch, on_conflict=on_conflict)
+        print(f"Upserted {len(batch)} rows into {table}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Compute global Elo and derived state activity leaderboards")
+    parser.parse_args()
+
     supabase_url, supabase_key = load_credentials()
     client = SupabaseClient(supabase_url, supabase_key)
 
@@ -151,63 +330,26 @@ def compute_regional_elo(region_type: str) -> Dict[str, Dict[str, PlayerStats]]:
         },
     )
 
-    regions: Dict[str, Dict[str, PlayerStats]] = defaultdict(lambda: defaultdict(PlayerStats))
-    current_game_id: str | None = None
-    current_region_key: str | None = None
-    buffer: List[Dict[str, Any]] = []
-    current_game_date: str | None = None
+    global_ratings, state_activity, event_rows = process_games(rows)
 
-    for row in rows:
-        region_key = region_key_from_row(row, region_type)
-        if not region_key:
-            continue
-        game_id = row["game_id"]
-        if current_game_id is None:
-            current_game_id = game_id
-            current_region_key = region_key
-            current_game_date = row.get("start_date")
-
-        if game_id != current_game_id or region_key != current_region_key:
-            process_game(buffer, regions[current_region_key], current_game_date)
-            buffer = []
-            current_game_id = game_id
-            current_region_key = region_key
-            current_game_date = row.get("start_date")
-
-        buffer.append(row)
-
-    if buffer and current_region_key:
-        process_game(buffer, regions[current_region_key], current_game_date)
-
-    return regions
-
-
-def upsert_regional_elo(region_type: str, regions: Dict[str, Dict[str, PlayerStats]]) -> None:
-    supabase_url, supabase_key = load_credentials()
-    client = SupabaseClient(supabase_url, supabase_key)
-
-    all_rows: List[Dict[str, Any]] = []
-    for region_key, stats in regions.items():
-        all_rows.extend(build_upsert_rows(region_type, region_key, stats))
-
-    if not all_rows:
-        print("No regional elo rows to upsert.")
-        return
-
-    batch_size = 500
-    for i in range(0, len(all_rows), batch_size):
-        batch = all_rows[i : i + batch_size]
-        client.upsert("regional_elo_ratings", batch, on_conflict="region_type,region_key,player_id")
-        print(f"Upserted {len(batch)} rows")
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Compute regional Elo leaderboards")
-    parser.add_argument("--region-type", default="state", choices=["state"], help="Region grouping")
-    args = parser.parse_args()
-
-    regions = compute_regional_elo(args.region_type)
-    upsert_regional_elo(args.region_type, regions)
+    upsert_rows(
+        client,
+        "regional_elo_ratings",
+        build_global_rating_rows(global_ratings),
+        on_conflict="region_type,region_key,player_id",
+    )
+    upsert_rows(
+        client,
+        "regional_elo_state_activity",
+        build_state_activity_rows(state_activity),
+        on_conflict="region_type,region_key,player_id",
+    )
+    upsert_rows(
+        client,
+        "regional_elo_game_events",
+        event_rows,
+        on_conflict="region_type,region_key,game_id,player_id",
+    )
 
 
 if __name__ == "__main__":

@@ -351,7 +351,7 @@ export default async function RegionalPlayerPage({
   const canonicalLosses = regionalRank?.losses ?? totalLosses;
   const topdeckProfileHref = buildTopdeckProfileHref(topdeckId);
   const backHref = regionFilter
-    ? `/regional-elo?region=${encodeURIComponent(regionFilter)}`
+    ? `/regional-elo?scope=state&region=${encodeURIComponent(regionFilter)}`
     : "/regional-elo";
 
   return (
@@ -360,16 +360,17 @@ export default async function RegionalPlayerPage({
         <div className="space-y-8">
           <div className="space-y-3">
             <Link href={backHref} className="text-sm text-muted-foreground hover:text-foreground">
-              ← Back to regional leaderboard
+              ← Back to leaderboard
             </Link>
-            <p className="knd-chip">Regional Elo Player Drilldown</p>
+            <p className="knd-chip">Leaderboard Player Drilldown</p>
             <div className="flex flex-wrap items-end justify-between gap-4">
               <div>
                 <h1 className="text-3xl font-semibold text-foreground md:text-4xl">
                   {player.name}
                 </h1>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  Counted {canonicalGames} games from tournaments played in {regionFilter || "the selected region"}.
+                  Assigned to {regionFilter || "the selected state"} based on recent and sustained
+                  activity. The state record below shows that activity snapshot; Elo is global.
                 </p>
               </div>
               {topdeckProfileHref ? (
@@ -454,17 +455,19 @@ export default async function RegionalPlayerPage({
           </div>
 
           <p className="text-sm text-muted-foreground">
-            Rank, counted games, and record come from the same canonical regional aggregate that powers the leaderboard.
-            The detailed log below reconstructs those same included state-scoped games.
+            Rank comes from the assigned-state leaderboard, while counted games and record reflect
+            the same state activity snapshot that determined the assignment. The detailed log below
+            shows games played in that state.
           </p>
 
           <Card className="knd-panel">
             <CardHeader>
               <CardTitle className="text-sm uppercase tracking-[0.2em] text-muted-foreground">
-                Regional Rankings
+                State Assignment
               </CardTitle>
               <p className="text-xs text-muted-foreground">
-                Compare this player across states and jump directly into a different regional drilldown.
+                This player will usually appear in one assigned state. If their activity shifts over time,
+                their assignment can move on the next recompute.
               </p>
             </CardHeader>
             <CardContent>
@@ -497,7 +500,7 @@ export default async function RegionalPlayerPage({
                               {regionKey}
                             </Link>
                             {isActive ? (
-                              <div className="text-[11px] text-primary">Active region</div>
+                              <div className="text-[11px] text-primary">Assigned state</div>
                             ) : null}
                           </td>
                           <td className="px-2 py-3 text-right font-mono text-foreground">#{row.rank}</td>
@@ -516,7 +519,7 @@ export default async function RegionalPlayerPage({
                     {regionalRanks.length === 0 ? (
                       <tr>
                         <td colSpan={5} className="px-2 py-6 text-center text-sm text-muted-foreground">
-                          No regional rankings found for this player.
+                          No state assignment found for this player.
                         </td>
                       </tr>
                     ) : null}
@@ -600,7 +603,7 @@ export default async function RegionalPlayerPage({
                 Counted Games
               </CardTitle>
               <p className="text-xs text-muted-foreground">
-                These are the exact state-scoped games currently counted by the regional Elo pipeline for this player.
+                These are the exact in-state games currently counted by the leaderboard activity pipeline for this player.
                 If this list ever disagrees with the summary cards above, the aggregate pipeline is stale.
               </p>
             </CardHeader>
