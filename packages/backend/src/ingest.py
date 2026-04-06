@@ -458,8 +458,26 @@ class DataIngester:
         if not entries:
             return {}
 
-        logger.info(f"Batch upserting {len(entries)} tournament entries...")
-        result = self.supabase.upsert("tournament_entries", entries, on_conflict="tournament_id,player_id")
+        deduped_entries: list[dict] = []
+        seen_entry_keys: set[tuple[str, str]] = set()
+        duplicate_count = 0
+        for entry in entries:
+            entry_key = (entry["tournament_id"], entry["player_id"])
+            if entry_key in seen_entry_keys:
+                duplicate_count += 1
+                continue
+            seen_entry_keys.add(entry_key)
+            deduped_entries.append(entry)
+
+        if duplicate_count:
+            logger.warning(
+                f"Skipped {duplicate_count} duplicate tournament entry rows before upsert"
+            )
+
+        logger.info(f"Batch upserting {len(deduped_entries)} tournament entries...")
+        result = self.supabase.upsert(
+            "tournament_entries", deduped_entries, on_conflict="tournament_id,player_id"
+        )
 
         entry_map = {}
         if result:
