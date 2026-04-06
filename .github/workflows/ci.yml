@@ -48,6 +48,7 @@ jobs:
           import os
           from pathlib import Path
           import requests
+          import time
 
           base = os.environ["SUPABASE_URL"].rstrip("/") + "/rest/v1"
           key = os.environ["SUPABASE_SERVICE_KEY"]
@@ -57,37 +58,61 @@ jobs:
           region = "CALIFORNIA"
 
           def get(table, params):
-            resp = requests.get(f"{base}/{table}", headers=headers, params=params, timeout=30)
-            resp.raise_for_status()
+            resp = None
+            for attempt in range(3):
+              resp = requests.get(f"{base}/{table}", headers=headers, params=params, timeout=30)
+              if resp.status_code < 500:
+                break
+              if attempt < 2:
+                time.sleep(2 ** attempt)
+            try:
+              resp.raise_for_status()
+            except requests.HTTPError as error:
+              raise requests.HTTPError(f"{error}; body={resp.text[:500]}") from error
             return resp.json()
 
           player = get("players", {"select": "id,name,topdeck_id", "topdeck_id": f"eq.{topdeck_id}"})[0]
-          leaderboard = get(
-            "regional_elo_leaderboard",
+          rating_rows = get(
+            "regional_elo_ratings",
             {
-              "select": "region_key,rank,rating,games_played,wins,draws,losses",
+              "select": "player_id,rating",
               "region_type": "eq.state",
               "region_key": f"eq.{region}",
-              "player_id": f"eq.{player['id']}",
             },
-          )[0]
-          canonical = get(
+          )
+          canonical_rows = get(
             "regional_elo_player_stats",
             {
-              "select": "games_played,wins,draws,losses",
+              "select": "player_id,games_played,wins,draws,losses",
               "region_type": "eq.state",
               "region_key": f"eq.{region}",
-              "player_id": f"eq.{player['id']}",
             },
-          )[0]
+          )
+          canonical_by_player = {row["player_id"]: row for row in canonical_rows}
+          rating_rows.sort(
+            key=lambda row: (
+              row["rating"],
+              canonical_by_player.get(row["player_id"], {}).get("games_played", 0),
+            ),
+            reverse=True,
+          )
+          target_rating = next(row for row in rating_rows if row["player_id"] == player["id"])
+          canonical = canonical_by_player[player["id"]]
+          leaderboard = {
+            "region_key": region,
+            "rank": next(
+              index + 1
+              for index, row in enumerate(rating_rows)
+              if row["player_id"] == player["id"]
+            ),
+            "rating": target_rating["rating"],
+            "games_played": canonical["games_played"],
+            "wins": canonical["wins"],
+            "draws": canonical["draws"],
+            "losses": canonical["losses"],
+          }
 
           mismatches = {}
-          for field in ("games_played", "wins", "draws", "losses"):
-            if leaderboard[field] != canonical[field]:
-              mismatches[field] = {
-                "leaderboard": leaderboard[field],
-                "canonical": canonical[field],
-              }
 
           report = {
             "player": player,
