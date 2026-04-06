@@ -36,6 +36,7 @@ apps/web/out/
 # misc
 .DS_Store
 *.pem
+.idea/workspace.xml
 
 # debug
 npm-debug.log*
