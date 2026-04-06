@@ -8,13 +8,22 @@ export type CommanderUsageRow = {
   wins: number | null;
   draws: number | null;
   losses: number | null;
+  start_date: string | null;
 };
 
 export type PlayerCommanderProfile = {
   topdeckId: string;
   playerName: string;
   totalEntries: number;
-  commanders: Array<{ commander: string; entries: number; share: number; weightedShare: number }>;
+  commanders: Array<{
+    commander: string;
+    entries: number;
+    share: number;
+    weightedShare: number;
+    predictionShare: number;
+    predictionScore: number;
+    latestDate: string | null;
+  }>;
 };
 
 export type MetaShareRow = {
@@ -36,7 +45,7 @@ export async function getCommanderUsageRows(
 
   const { data, error } = await supabase
     .from("player_commander_entries")
-    .select("topdeck_id, player_name, commander_name, wins, draws, losses")
+    .select("topdeck_id, player_name, commander_name, wins, draws, losses, start_date")
     .in("topdeck_id", topdeckIds)
     .gte("start_date", lookbackStart)
     .not("commander_name", "is", null);
@@ -53,9 +62,25 @@ export function buildProfiles(
   usageRows: CommanderUsageRow[],
   topN = 3
 ): { players: PlayerCommanderProfile[]; metaShare: MetaShareRow[] } {
-  const perPlayer = new Map<string, Map<string, { entries: number; weightedPoints: number; playerName: string }>>();
+  const perPlayer = new Map<
+    string,
+    Map<
+      string,
+      {
+        entries: number;
+        weightedPoints: number;
+        predictionScore: number;
+        latestDate: string | null;
+        playerName: string;
+      }
+    >
+  >();
   const playerNames = new Map<string, string>();
   const commanderTotals = new Map<string, number>();
+  const latestTimestamp = usageRows.reduce((max, row) => {
+    const timestamp = row.start_date ? new Date(row.start_date).getTime() : 0;
+    return Number.isFinite(timestamp) ? Math.max(max, timestamp) : max;
+  }, 0);
 
   usageRows.forEach((row) => {
     if (!row.topdeck_id || !isKnownCommander(row.commander_name)) return;
@@ -68,10 +93,28 @@ export function buildProfiles(
     const current = perCommander.get(commanderName) ?? {
       entries: 0,
       weightedPoints: 0,
+      predictionScore: 0,
+      latestDate: null,
       playerName,
     };
+    const wins = row.wins ?? 0;
+    const draws = row.draws ?? 0;
+    const losses = row.losses ?? 0;
+    const games = wins + draws + losses;
+    const points = wins + draws * 0.25;
+    const eventTimestamp = row.start_date ? new Date(row.start_date).getTime() : 0;
+    const recencyWeight =
+      latestTimestamp > 0 && eventTimestamp > 0
+        ? Math.max(0.35, 1 - (latestTimestamp - eventTimestamp) / (1000 * 60 * 60 * 24 * 30 * 18))
+        : 0.5;
+    const efficiencyBoost = games > 0 ? 1 + points / games : 1;
+
     current.entries += 1;
-    current.weightedPoints += (row.wins ?? 0) + (row.draws ?? 0) * 0.25;
+    current.weightedPoints += points;
+    current.predictionScore += recencyWeight * efficiencyBoost;
+    if (!current.latestDate || (row.start_date && row.start_date > current.latestDate)) {
+      current.latestDate = row.start_date;
+    }
     perCommander.set(commanderName, current);
     perPlayer.set(row.topdeck_id, perCommander);
 
@@ -86,16 +129,26 @@ export function buildProfiles(
       commander,
       entries: values.entries,
       weightedPoints: values.weightedPoints,
+      predictionScore: values.predictionScore,
+      latestDate: values.latestDate,
       playerName: values.playerName,
     }));
     const total = rows.reduce((sum, row) => sum + row.entries, 0);
     const totalWeighted = rows.reduce((sum, row) => sum + row.weightedPoints, 0);
-    const sorted = rows.sort((a, b) => b.entries - a.entries);
+    const totalPrediction = rows.reduce((sum, row) => sum + row.predictionScore, 0);
+    const sorted = rows.sort((a, b) => {
+      if (b.predictionScore !== a.predictionScore) return b.predictionScore - a.predictionScore;
+      if (b.entries !== a.entries) return b.entries - a.entries;
+      return b.weightedPoints - a.weightedPoints;
+    });
     const commanders = sorted.slice(0, topN).map((row) => ({
       commander: row.commander,
       entries: row.entries,
       share: total ? row.entries / total : 0,
       weightedShare: totalWeighted ? row.weightedPoints / totalWeighted : total ? row.entries / total : 0,
+      predictionShare: totalPrediction ? row.predictionScore / totalPrediction : total ? row.entries / total : 0,
+      predictionScore: row.predictionScore,
+      latestDate: row.latestDate,
     }));
 
     return {
