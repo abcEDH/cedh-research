@@ -203,10 +203,11 @@ export function attachLatestDecklistUrls(
   >();
 
   for (const row of decklistRows) {
-    if (!row.topdeck_id || !isKnownCommander(row.commander_name)) continue;
+    const commanderName = row.commander_name;
+    if (!row.topdeck_id || !commanderName || !isKnownCommander(commanderName)) continue;
     const url = row.decklist_url || row.topdeck_decklist_url;
     if (!url) continue;
-    const key = decklistProfileKey(row.topdeck_id, row.commander_name);
+    const key = decklistProfileKey(row.topdeck_id, commanderName);
     const current = latestDecklistByProfile.get(key);
     if (!current || (row.start_date && row.start_date > (current.startDate ?? ""))) {
       latestDecklistByProfile.set(key, {
