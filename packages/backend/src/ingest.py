@@ -361,6 +361,21 @@ def normalize_commander_name(commanders: list[str]) -> str:
     return " / ".join(sorted_cmds)
 
 
+def normalize_rate_value(value: Any) -> Optional[float]:
+    """Normalize TopDeck rate fields into 0-1 decimal form for NUMERIC(5,4)."""
+    if value is None:
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    if numeric > 1:
+        numeric = numeric / 100.0
+    if numeric < 0 or numeric > 1:
+        return None
+    return numeric
+
+
 class DataIngester:
     """Main ingestion orchestrator."""
 
@@ -569,6 +584,8 @@ class DataIngester:
         standing_info = []  # [{idx, topdeck_id, commander_name, decklist, ...}]
 
         for idx, standing in enumerate(standings):
+            if not isinstance(standing, dict):
+                continue
             player_topdeck_id = standing.get("id")
             player_name = standing.get("name", "Unknown")
             decklist = standing.get("decklist") or ""
@@ -619,12 +636,12 @@ class DataIngester:
                 "player_id": player_id,
                 "commander_id": commander_id,
                 "final_standing": final_standing,
-                "points": standing.get("points", 0),
-                "wins": standing.get("wins", 0),
-                "losses": standing.get("losses", 0),
-                "draws": standing.get("draws", 0),
-                "win_rate": standing.get("winRate"),
-                "opponent_win_rate": standing.get("opponentWinRate"),
+                "points": int(standing.get("points") or 0),
+                "wins": int(standing.get("wins") or 0),
+                "losses": int(standing.get("losses") or 0),
+                "draws": int(standing.get("draws") or 0),
+                "win_rate": normalize_rate_value(standing.get("winRate")),
+                "opponent_win_rate": normalize_rate_value(standing.get("opponentWinRate")),
                 "decklist_url": decklist if decklist and "http" in decklist else None,
                 "decklist_text": decklist if decklist and "http" not in decklist else None,
                 "made_top_cut": final_standing <= effective_top_cut if effective_top_cut > 0 else False,
@@ -638,7 +655,13 @@ class DataIngester:
         # === BATCH PROCESSING FOR GAMES ===
         if not rounds:
             logger.warning(f"No rounds data for {name}")
-            return {"tournament_id": tournament_id, "entries": len(entry_map), "games": 0}
+            return {
+                "tournament_id": tournament_id,
+                "name": name,
+                "players": player_count,
+                "entries_created": len(entry_map),
+                "games_created": 0,
+            }
 
         # Step 1: Pre-process all rounds/tables to build game data
         logger.info(f"Pre-processing {len(rounds)} rounds for games...")
@@ -649,6 +672,8 @@ class DataIngester:
             is_bracket = isinstance(round_num, str) and not round_num.isdigit()
 
             for table in round_data.get("tables", []):
+                if not isinstance(table, dict):
+                    continue
                 table_num = table.get("table")
                 if table_num == "Byes":
                     continue
@@ -667,6 +692,8 @@ class DataIngester:
 
                 if not is_draw:
                     for p in players:
+                        if not isinstance(p, dict):
+                            continue
                         if p.get("id") == winner_id_raw or p.get("name") == winner_name:
                             winner_player_id = self.player_cache.get(p.get("id"))
                             break
@@ -692,6 +719,8 @@ class DataIngester:
                 # Build participants info for this game
                 participants_info = []
                 for seat, player in enumerate(players):
+                    if not isinstance(player, dict):
+                        continue
                     player_topdeck_id = player.get("id")
                     if not player_topdeck_id or player_topdeck_id not in entry_map:
                         continue
@@ -846,10 +875,70 @@ def load_tids(path: Path) -> list[str]:
     ])
 
 
+def write_tids(path: Path, tids: list[str], *, header_lines: Optional[list[str]] = None) -> None:
+    lines = [*(header_lines or []), "", *tids, ""]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines))
+
+
 def chunk_items(items: list[str], batch_size: int) -> list[list[str]]:
     if batch_size <= 0:
         raise ValueError("batch_size must be positive")
     return [items[i : i + batch_size] for i in range(0, len(items), batch_size)]
+
+
+def fetch_existing_tids(client: Any, tids: list[str]) -> set[str]:
+    existing: set[str] = set()
+    if not tids:
+        return existing
+
+    chunk_size = 200
+    for i in range(0, len(tids), chunk_size):
+        chunk = tids[i : i + chunk_size]
+        quoted = ",".join(f'"{tid}"' for tid in chunk)
+        rows = client.select(
+            "tournaments",
+            {
+                "select": "topdeck_tid",
+                "topdeck_tid": f"in.({quoted})",
+            },
+        )
+        existing.update(
+            row["topdeck_tid"]
+            for row in rows
+            if row.get("topdeck_tid")
+        )
+    return existing
+
+
+def fetch_failed_tids_for_run(client: Any, run_key: str) -> list[str]:
+    run_rows = client.select(
+        "ingestion_backfill_runs",
+        {
+            "select": "id",
+            "run_key": f"eq.{run_key}",
+            "limit": 1,
+        },
+    )
+    if not run_rows:
+        raise SystemExit(f"No backfill run found for run_key={run_key}")
+
+    run_id = run_rows[0]["id"]
+    event_rows = client.select(
+        "ingestion_backfill_events",
+        {
+            "select": "tid,created_at",
+            "run_id": f"eq.{run_id}",
+            "event_type": "eq.process_failed",
+            "order": "created_at.asc",
+            "limit": 10000,
+        },
+    )
+    return dedupe_preserve_order([
+        row["tid"]
+        for row in event_rows
+        if row.get("tid")
+    ])
 
 
 def compute_file_sha256(path: Path) -> str:
@@ -1014,6 +1103,21 @@ def main():
     parser.add_argument("--batch-index", type=int, help="0-based batch index to process from --tids-file")
     parser.add_argument("--run-key", type=str, help="Stable identifier for recording a historical backfill run")
     parser.add_argument(
+        "--skip-existing-tids",
+        action="store_true",
+        help="When using --tids-file, skip TIDs already present in tournaments.topdeck_tid before batching",
+    )
+    parser.add_argument(
+        "--only-failed-from-run-key",
+        type=str,
+        help="When using --tids-file, keep only TIDs that previously emitted process_failed in the specified run",
+    )
+    parser.add_argument(
+        "--selected-tids-out",
+        type=str,
+        help="Write the final post-filter TID list to this path before processing",
+    )
+    parser.add_argument(
         "--record-backfill",
         action="store_true",
         help="Persist backfill run and batch status to ingestion_backfill_runs/_batches",
@@ -1071,7 +1175,17 @@ def main():
 
     if args.dry_run:
         logger.info("DRY RUN - not writing to database")
-        db_client = None
+        if (
+            args.only_failed_from_run_key
+            or args.skip_existing_tids
+            or args.record_backfill
+        ):
+            if not supabase_url or not supabase_key:
+                logger.error("SUPABASE_URL or SUPABASE_SERVICE_KEY not set")
+                sys.exit(1)
+            db_client = SupabaseClient(supabase_url, supabase_key)
+        else:
+            db_client = None
     elif args.direct:
         # Use direct Postgres connection for ~10x faster batch operations
         if not supabase_db_url:
@@ -1180,6 +1294,41 @@ def main():
             sys.exit(1)
         tids = load_tids(tids_path)
         logger.info(f"Loaded {len(tids)} unique tournament IDs from {tids_path}")
+
+        if args.only_failed_from_run_key:
+            if not ingester:
+                logger.error("--only-failed-from-run-key requires a readable database client")
+                sys.exit(1)
+            failed_tids = set(fetch_failed_tids_for_run(ingester.supabase, args.only_failed_from_run_key))
+            original_count = len(tids)
+            tids = [tid for tid in tids if tid in failed_tids]
+            logger.info(
+                f"Filtered manifest to {len(tids)} failed tids from run_key={args.only_failed_from_run_key} "
+                f"(from {original_count})"
+            )
+
+        if args.skip_existing_tids:
+            if not ingester:
+                logger.error("--skip-existing-tids requires a readable database client")
+                sys.exit(1)
+            existing_tids = fetch_existing_tids(ingester.supabase, tids)
+            original_count = len(tids)
+            tids = [tid for tid in tids if tid not in existing_tids]
+            logger.info(
+                f"Skipped {original_count - len(tids)} tids already present in tournaments.topdeck_tid; "
+                f"{len(tids)} remaining"
+            )
+
+        if args.selected_tids_out:
+            selected_path = Path(args.selected_tids_out)
+            header_lines = [
+                "# Selected tournament IDs after ingest.py pre-batch filtering",
+                f"# Source manifest: {tids_path}",
+                f"# only_failed_from_run_key: {args.only_failed_from_run_key or ''}",
+                f"# skip_existing_tids: {args.skip_existing_tids}",
+            ]
+            write_tids(selected_path, tids, header_lines=header_lines)
+            logger.info(f"Wrote {len(tids)} selected tids to {selected_path}")
 
         if args.batch_size <= 0:
             logger.error("--batch-size must be positive")
