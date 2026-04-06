@@ -82,6 +82,97 @@ def fetch_all(client: SupabaseClient, table: str, params: Dict[str, Any], limit:
     return rows
 
 
+def fetch_game_results(client: SupabaseClient) -> List[Dict[str, Any]]:
+    tournaments = fetch_all(
+        client,
+        "tournaments",
+        {
+            "select": "id,start_date,state,country,city,name",
+            "state": "not.is.null",
+            "order": "start_date.asc,id.asc",
+        },
+    )
+    tournament_map = {
+        row["id"]: row
+        for row in tournaments
+        if (row.get("state") or "").strip()
+    }
+    if not tournament_map:
+        return []
+
+    games = fetch_all(
+        client,
+        "games",
+        {
+            "select": "id,tournament_id,is_draw,round_number,round_name,table_number",
+            "order": "tournament_id.asc,id.asc",
+        },
+    )
+    filtered_games = [row for row in games if row.get("tournament_id") in tournament_map]
+    game_map = {row["id"]: row for row in filtered_games}
+    if not game_map:
+        return []
+
+    entries = fetch_all(
+        client,
+        "tournament_entries",
+        {
+            "select": "id,player_id",
+            "order": "id.asc",
+        },
+    )
+    entry_map = {row["id"]: row for row in entries if row.get("player_id")}
+    if not entry_map:
+        return []
+
+    participants = fetch_all(
+        client,
+        "game_participants",
+        {
+            "select": "game_id,entry_id,result",
+            "order": "game_id.asc,entry_id.asc",
+        },
+    )
+
+    rows: List[Dict[str, Any]] = []
+    for participant in participants:
+        game = game_map.get(participant.get("game_id"))
+        entry = entry_map.get(participant.get("entry_id"))
+        if not game or not entry:
+            continue
+        tournament = tournament_map.get(game["tournament_id"])
+        if not tournament:
+            continue
+        rows.append(
+            {
+                "game_id": game["id"],
+                "tournament_id": game["tournament_id"],
+                "start_date": tournament.get("start_date"),
+                "state": tournament.get("state"),
+                "country": tournament.get("country"),
+                "city": tournament.get("city"),
+                "tournament_name": tournament.get("name"),
+                "entry_id": participant.get("entry_id"),
+                "player_id": entry.get("player_id"),
+                "result": participant.get("result"),
+                "is_draw": game.get("is_draw"),
+                "round_number": game.get("round_number"),
+                "round_name": game.get("round_name"),
+                "table_number": game.get("table_number"),
+            }
+        )
+
+    rows.sort(
+        key=lambda row: (
+            row.get("start_date") or "",
+            row.get("game_id") or "",
+            row.get("table_number") if row.get("table_number") is not None else -1,
+            row.get("entry_id") or "",
+        )
+    )
+    return rows
+
+
 def parse_game_date(value: str | None) -> date | None:
     if not value:
         return None
@@ -322,13 +413,7 @@ def main() -> None:
     supabase_url, supabase_key = load_credentials()
     client = SupabaseClient(supabase_url, supabase_key)
 
-    rows = fetch_all(
-        client,
-        "regional_elo_game_results",
-        {
-            "order": "start_date.asc,game_id.asc,table_number.asc",
-        },
-    )
+    rows = fetch_game_results(client)
 
     global_ratings, state_activity, event_rows = process_games(rows)
 

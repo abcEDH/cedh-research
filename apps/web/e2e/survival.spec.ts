@@ -36,19 +36,12 @@ test.describe("Survival Analysis Page", () => {
   });
 
   test("displays methodology explanation", async ({ page }) => {
-    // Should explain what survival analysis means
-    await expect(page.getByText(/Kaplan-Meier/i)).toBeVisible();
+    await expect(page.getByText(/What is Survival Analysis\?/i)).toBeVisible();
+    await expect(page.getByText(/Kaplan-Meier style/i)).toBeVisible();
   });
 
   test("survival rates are valid percentages", async ({ page }) => {
-    // Wait for data to load
     await page.waitForTimeout(2000);
-
-    // Check that percentage values are displayed (should have % symbol)
-    const percentages = page.locator("text=/%$/");
-    const count = await percentages.count();
-
-    // Should have multiple percentage displays
-    expect(count).toBeGreaterThan(0);
+    await expect(page.getByText(/\d+\.\d+%/).first()).toBeVisible();
   });
 });

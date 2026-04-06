@@ -67,10 +67,18 @@ uv run python src/ingest.py \
   --stop-on-error
 ```
 
+Inspect a recorded run:
+
+```bash
+uv run python src/backfill_status.py --run-key all-time-cedh
+```
+
 ## Notes
 
 - Keep the manifest file stable for a given `run_key`. The run record stores the manifest SHA-256.
 - Preserve TID order in the file so batch indexes stay deterministic across reruns.
 - Prefer `--direct` for historical runs; REST is slower and more brittle for large backfills.
 - If a batch partially succeeds, rerun the same batch. The database uniqueness constraints make that safe.
+- `ingestion_backfill_runs` stores a heartbeat, current TID, last completed TID, and per-batch counters so progress updates during a batch instead of only after it finishes.
+- `ingestion_backfill_events` stores an append-only event stream for batch boundaries and per-tournament fetch/process outcomes.
 - The existing search endpoint is not reliable for true all-time discovery in one request. For comprehensive backfills, use a curated TID manifest as the source of truth.

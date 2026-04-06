@@ -19,7 +19,7 @@ import os
 import re
 import sys
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -51,6 +51,10 @@ logger = logging.getLogger(__name__)
 
 BACKFILL_RUN_STATUSES = {"pending", "running", "completed", "completed_with_errors", "failed"}
 BACKFILL_BATCH_STATUSES = {"pending", "running", "completed", "failed"}
+
+
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 class TopDeckClient:
@@ -857,7 +861,7 @@ def compute_file_sha256(path: Path) -> str:
 
 
 def default_backfill_run_key(tids_path: Path, batch_size: int) -> str:
-    timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     return f"{tids_path.stem}-{batch_size}-{timestamp}"
 
 
@@ -896,7 +900,8 @@ def upsert_backfill_run(
         "discovered_tournament_count": total_tournaments,
         "total_batches": total_batches,
         "status": status,
-        "updated_at": datetime.utcnow().isoformat(),
+        "heartbeat_at": utc_now_iso(),
+        "updated_at": utc_now_iso(),
     }
     result = client.upsert("ingestion_backfill_runs", payload, on_conflict="run_key")
     return result[0] if result else None
@@ -914,7 +919,7 @@ def upsert_backfill_batch(
     error_text: Optional[str] = None,
 ) -> None:
     status = ensure_backfill_batch_status(status)
-    now = datetime.utcnow().isoformat()
+    now = utc_now_iso()
     payload = {
         "run_id": run_id,
         "batch_index": batch_index,
@@ -938,6 +943,14 @@ def update_backfill_run_progress(
     succeeded_count: int,
     failed_count: int,
     status: str,
+    current_batch_index: Optional[int] = None,
+    current_tid: Optional[str] = None,
+    last_completed_tid: Optional[str] = None,
+    current_batch_processed_count: Optional[int] = None,
+    current_batch_succeeded_count: Optional[int] = None,
+    current_batch_failed_count: Optional[int] = None,
+    last_success_at: Optional[str] = None,
+    heartbeat_at: Optional[str] = None,
 ) -> Optional[dict]:
     status = ensure_backfill_run_status(status)
     payload = {
@@ -952,11 +965,41 @@ def update_backfill_run_progress(
         "processed_tournament_count": processed_count,
         "succeeded_tournament_count": succeeded_count,
         "failed_tournament_count": failed_count,
+        "current_batch_index": current_batch_index,
+        "current_tid": current_tid,
+        "last_completed_tid": last_completed_tid,
+        "current_batch_processed_count": current_batch_processed_count or 0,
+        "current_batch_succeeded_count": current_batch_succeeded_count or 0,
+        "current_batch_failed_count": current_batch_failed_count or 0,
+        "last_success_at": last_success_at,
+        "heartbeat_at": heartbeat_at or utc_now_iso(),
         "status": status,
-        "updated_at": datetime.utcnow().isoformat(),
+        "updated_at": utc_now_iso(),
     }
     result = client.upsert("ingestion_backfill_runs", payload, on_conflict="run_key")
     return result[0] if result else None
+
+
+def append_backfill_event(
+    client: Any,
+    *,
+    run_id: str,
+    batch_index: int,
+    event_type: str,
+    tid: Optional[str] = None,
+    payload: Optional[dict[str, Any]] = None,
+) -> None:
+    client.upsert(
+        "ingestion_backfill_events",
+        {
+            "run_id": run_id,
+            "batch_index": batch_index,
+            "tid": tid,
+            "event_type": event_type,
+            "payload": payload or {},
+            "created_at": utc_now_iso(),
+        },
+    )
 
 
 def main():
@@ -1202,18 +1245,96 @@ def main():
                     tournament_count=len(batch_tids),
                     status="running",
                 )
+                append_backfill_event(
+                    ingester.supabase,
+                    run_id=run_row["id"],
+                    batch_index=batch_index,
+                    event_type="batch_started",
+                    payload={
+                        "batch_start": batch_start,
+                        "batch_end": batch_end,
+                        "tournament_count": len(batch_tids),
+                    },
+                )
+                updated_run_row = update_backfill_run_progress(
+                    ingester.supabase,
+                    run_row=run_row,
+                    processed_count=processed_count,
+                    succeeded_count=succeeded_count,
+                    failed_count=failed_count,
+                    status="running",
+                    current_batch_index=batch_index,
+                    current_batch_processed_count=0,
+                    current_batch_succeeded_count=0,
+                    current_batch_failed_count=0,
+                )
+                if updated_run_row:
+                    run_row = updated_run_row
 
             batch_failed = False
             batch_error_text = None
+            batch_processed_count = 0
+            batch_succeeded_count = 0
+            batch_failed_count = 0
             for tid in batch_tids:
                 processed_count += 1
+                batch_processed_count += 1
+                if args.record_backfill and run_row:
+                    append_backfill_event(
+                        ingester.supabase,
+                        run_id=run_row["id"],
+                        batch_index=batch_index,
+                        tid=tid,
+                        event_type="fetch_started",
+                    )
+                    updated_run_row = update_backfill_run_progress(
+                        ingester.supabase,
+                        run_row=run_row,
+                        processed_count=processed_count,
+                        succeeded_count=succeeded_count,
+                        failed_count=failed_count,
+                        status="running",
+                        current_batch_index=batch_index,
+                        current_tid=tid,
+                        current_batch_processed_count=batch_processed_count,
+                        current_batch_succeeded_count=batch_succeeded_count,
+                        current_batch_failed_count=batch_failed_count,
+                    )
+                    if updated_run_row:
+                        run_row = updated_run_row
                 try:
                     tournament = topdeck.get_tournament(tid)
                 except Exception as e:
                     failed_count += 1
+                    batch_failed_count += 1
                     batch_failed = True
                     batch_error_text = f"fetch {tid}: {e}"
                     logger.error(f"Failed to fetch {tid}: {e}")
+                    if args.record_backfill and run_row:
+                        append_backfill_event(
+                            ingester.supabase,
+                            run_id=run_row["id"],
+                            batch_index=batch_index,
+                            tid=tid,
+                            event_type="fetch_failed",
+                            payload={"error": str(e)},
+                        )
+                        updated_run_row = update_backfill_run_progress(
+                            ingester.supabase,
+                            run_row=run_row,
+                            processed_count=processed_count,
+                            succeeded_count=succeeded_count,
+                            failed_count=failed_count,
+                            status="running",
+                            current_batch_index=batch_index,
+                            current_tid=tid,
+                            last_completed_tid=tid,
+                            current_batch_processed_count=batch_processed_count,
+                            current_batch_succeeded_count=batch_succeeded_count,
+                            current_batch_failed_count=batch_failed_count,
+                        )
+                        if updated_run_row:
+                            run_row = updated_run_row
                     if args.stop_on_error:
                         break
                     continue
@@ -1222,32 +1343,182 @@ def main():
                 ts = parse_tournament_start_date(tournament)
                 if ts is None:
                     logger.warning(f"Skipping {tid}: missing start date")
+                    if args.record_backfill and run_row:
+                        append_backfill_event(
+                            ingester.supabase,
+                            run_id=run_row["id"],
+                            batch_index=batch_index,
+                            tid=tid,
+                            event_type="tournament_skipped",
+                            payload={"reason": "missing start date"},
+                        )
+                        updated_run_row = update_backfill_run_progress(
+                            ingester.supabase,
+                            run_row=run_row,
+                            processed_count=processed_count,
+                            succeeded_count=succeeded_count,
+                            failed_count=failed_count,
+                            status="running",
+                            current_batch_index=batch_index,
+                            current_tid=tid,
+                            last_completed_tid=tid,
+                            current_batch_processed_count=batch_processed_count,
+                            current_batch_succeeded_count=batch_succeeded_count,
+                            current_batch_failed_count=batch_failed_count,
+                        )
+                        if updated_run_row:
+                            run_row = updated_run_row
                     continue
 
                 if start_dt and ts.date() < start_dt.date():
                     logger.info(f"Skipping {tid}: before start-date filter")
+                    if args.record_backfill and run_row:
+                        append_backfill_event(
+                            ingester.supabase,
+                            run_id=run_row["id"],
+                            batch_index=batch_index,
+                            tid=tid,
+                            event_type="tournament_skipped",
+                            payload={"reason": "before start-date filter"},
+                        )
+                        updated_run_row = update_backfill_run_progress(
+                            ingester.supabase,
+                            run_row=run_row,
+                            processed_count=processed_count,
+                            succeeded_count=succeeded_count,
+                            failed_count=failed_count,
+                            status="running",
+                            current_batch_index=batch_index,
+                            current_tid=tid,
+                            last_completed_tid=tid,
+                            current_batch_processed_count=batch_processed_count,
+                            current_batch_succeeded_count=batch_succeeded_count,
+                            current_batch_failed_count=batch_failed_count,
+                        )
+                        if updated_run_row:
+                            run_row = updated_run_row
                     continue
                 if end_dt and ts.date() > end_dt.date():
                     logger.info(f"Skipping {tid}: after end-date filter")
+                    if args.record_backfill and run_row:
+                        append_backfill_event(
+                            ingester.supabase,
+                            run_id=run_row["id"],
+                            batch_index=batch_index,
+                            tid=tid,
+                            event_type="tournament_skipped",
+                            payload={"reason": "after end-date filter"},
+                        )
+                        updated_run_row = update_backfill_run_progress(
+                            ingester.supabase,
+                            run_row=run_row,
+                            processed_count=processed_count,
+                            succeeded_count=succeeded_count,
+                            failed_count=failed_count,
+                            status="running",
+                            current_batch_index=batch_index,
+                            current_tid=tid,
+                            last_completed_tid=tid,
+                            current_batch_processed_count=batch_processed_count,
+                            current_batch_succeeded_count=batch_succeeded_count,
+                            current_batch_failed_count=batch_failed_count,
+                        )
+                        if updated_run_row:
+                            run_row = updated_run_row
                     continue
 
                 if ingester:
                     try:
+                        if args.record_backfill and run_row:
+                            append_backfill_event(
+                                ingester.supabase,
+                                run_id=run_row["id"],
+                                batch_index=batch_index,
+                                tid=tid,
+                                event_type="process_started",
+                            )
                         result = ingester.process_tournament(tournament)
                         if result:
                             succeeded_count += 1
+                            batch_succeeded_count += 1
                             logger.info(f"Processed: {result['name']}")
+                            if args.record_backfill and run_row:
+                                last_success_at = utc_now_iso()
+                                append_backfill_event(
+                                    ingester.supabase,
+                                    run_id=run_row["id"],
+                                    batch_index=batch_index,
+                                    tid=tid,
+                                    event_type="process_succeeded",
+                                    payload=result,
+                                )
+                                updated_run_row = update_backfill_run_progress(
+                                    ingester.supabase,
+                                    run_row=run_row,
+                                    processed_count=processed_count,
+                                    succeeded_count=succeeded_count,
+                                    failed_count=failed_count,
+                                    status="running",
+                                    current_batch_index=batch_index,
+                                    current_tid=tid,
+                                    last_completed_tid=tid,
+                                    current_batch_processed_count=batch_processed_count,
+                                    current_batch_succeeded_count=batch_succeeded_count,
+                                    current_batch_failed_count=batch_failed_count,
+                                    last_success_at=last_success_at,
+                                    heartbeat_at=last_success_at,
+                                )
+                                if updated_run_row:
+                                    run_row = updated_run_row
                     except Exception as e:
                         failed_count += 1
+                        batch_failed_count += 1
                         batch_failed = True
                         batch_error_text = f"process {tid}: {e}"
                         logger.error(f"Failed to process {tid}: {e}")
+                        if args.record_backfill and run_row:
+                            append_backfill_event(
+                                ingester.supabase,
+                                run_id=run_row["id"],
+                                batch_index=batch_index,
+                                tid=tid,
+                                event_type="process_failed",
+                                payload={"error": str(e)},
+                            )
+                            updated_run_row = update_backfill_run_progress(
+                                ingester.supabase,
+                                run_row=run_row,
+                                processed_count=processed_count,
+                                succeeded_count=succeeded_count,
+                                failed_count=failed_count,
+                                status="running",
+                                current_batch_index=batch_index,
+                                current_tid=tid,
+                                last_completed_tid=tid,
+                                current_batch_processed_count=batch_processed_count,
+                                current_batch_succeeded_count=batch_succeeded_count,
+                                current_batch_failed_count=batch_failed_count,
+                            )
+                            if updated_run_row:
+                                run_row = updated_run_row
                         if args.stop_on_error:
                             break
                 else:
                     logger.info(f"Would process: {tournament.get('tournamentName')} ({len(tournament.get('standings', []))} players)")
 
             if args.record_backfill and run_row:
+                append_backfill_event(
+                    ingester.supabase,
+                    run_id=run_row["id"],
+                    batch_index=batch_index,
+                    event_type="batch_failed" if batch_failed else "batch_completed",
+                    payload={
+                        "processed_count": batch_processed_count,
+                        "succeeded_count": batch_succeeded_count,
+                        "failed_count": batch_failed_count,
+                        "error_text": batch_error_text,
+                    },
+                )
                 upsert_backfill_batch(
                     ingester.supabase,
                     run_id=run_row["id"],
@@ -1265,6 +1536,11 @@ def main():
                     succeeded_count=succeeded_count,
                     failed_count=failed_count,
                     status="running",
+                    current_batch_index=batch_index,
+                    current_tid=None,
+                    current_batch_processed_count=batch_processed_count,
+                    current_batch_succeeded_count=batch_succeeded_count,
+                    current_batch_failed_count=batch_failed_count,
                 )
                 if updated_run_row:
                     run_row = updated_run_row
@@ -1281,6 +1557,11 @@ def main():
                 succeeded_count=succeeded_count,
                 failed_count=failed_count,
                 status=final_status,
+                current_batch_index=None,
+                current_tid=None,
+                current_batch_processed_count=0,
+                current_batch_succeeded_count=0,
+                current_batch_failed_count=0,
             )
             if updated_run_row:
                 run_row = updated_run_row
