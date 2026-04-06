@@ -3,7 +3,7 @@
 import { startTransition, useState } from "react";
 import type { ReactNode } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { buildTopdeckProfileHref } from "@/lib/topdeck-profile";
+import Link from "next/link";
 
 const PAGE_SIZE = 25;
 
@@ -314,7 +314,11 @@ export function TournamentAnalysisTables({
             </thead>
             <tbody>
               {visibleRows.map((row) => {
-                const profileHref = buildTopdeckProfileHref(row.standing.username || row.standing.id);
+                const regionalProfileHref = `/regional-elo/player/${row.standing.id}${
+                  row.regionKey && row.regionKey !== "ALL"
+                    ? `?region=${encodeURIComponent(row.regionKey)}`
+                    : ""
+                }`;
                 const primary = row.profile?.commanders[0];
                 const alternatives = row.profile?.commanders.slice(1, 3) ?? [];
                 const primaryDecklistHref = primary?.latestTopdeckDecklistUrl || primary?.latestDecklistUrl;
@@ -322,18 +326,15 @@ export function TournamentAnalysisTables({
                   <tr key={`${row.standing.id}-${row.standing.standing}`} className="border-t border-border/60">
                     <td className="px-2 py-4 text-muted-foreground">#{row.standing.standing}</td>
                     <td className="px-2 py-4">
-                      {profileHref ? (
-                        <a
-                          className="font-medium text-foreground hover:text-primary"
-                          href={profileHref}
-                          rel="noreferrer"
+                      <div className="space-y-1">
+                        <Link
+                          className="block font-medium text-foreground hover:text-primary"
+                          href={regionalProfileHref}
                           target="_blank"
                         >
                           {row.standing.name}
-                        </a>
-                      ) : (
-                        <div className="font-medium text-foreground">{row.standing.name}</div>
-                      )}
+                        </Link>
+                      </div>
                     </td>
                     <td className="px-2 py-4 font-semibold text-primary">
                       {row.rating === null ? "-" : Math.round(row.rating)}

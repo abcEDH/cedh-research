@@ -148,7 +148,7 @@ const getCachedTournamentAnalysis = unstable_cache(
       eloRows,
     };
   },
-  ["tournament-likelihood-analysis-v9"],
+  ["tournament-likelihood-analysis-v10"],
   { revalidate: 60 * 15 }
 );
 

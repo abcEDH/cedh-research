@@ -9,6 +9,7 @@ export type CommanderUsageRow = {
   draws: number | null;
   losses: number | null;
   start_date: string | null;
+  player_count: number | null;
   decklist_url: string | null;
   topdeck_decklist_url: string | null;
 };
@@ -29,6 +30,7 @@ type CommanderUsageQueryRow = {
   }>;
   tournaments: Relation<{
     start_date: string | null;
+    player_count: number | null;
     topdeck_tid: string | null;
   }>;
 };
@@ -116,6 +118,19 @@ function buildTopdeckDecklistUrl(tournamentSlug: string | null | undefined, topd
   return tournamentSlug && topdeckId ? `https://topdeck.gg/deck/${tournamentSlug}/${topdeckId}` : null;
 }
 
+function calculateRecencyWeight(eventTimestamp: number, latestTimestamp: number) {
+  if (latestTimestamp <= 0 || eventTimestamp <= 0) return 0.5;
+
+  const ageInDays = Math.max(0, (latestTimestamp - eventTimestamp) / (1000 * 60 * 60 * 24));
+  return Math.max(0.25, Math.exp(-ageInDays / 120));
+}
+
+function calculateTournamentSizeWeight(playerCount: number | null) {
+  if (!playerCount || playerCount <= 0) return 1;
+
+  return Math.min(1.75, Math.max(0.75, Math.log2(playerCount) / Math.log2(64)));
+}
+
 export async function getCommanderUsageRows(
   topdeckIds: string[],
   lookbackStart: string
@@ -125,7 +140,7 @@ export async function getCommanderUsageRows(
   const { data, error } = await supabase
     .from("tournament_entries")
     .select(
-      "decklist_url, wins, draws, losses, players!inner(topdeck_id, name), commanders!inner(name), tournaments!inner(start_date, topdeck_tid)"
+      "decklist_url, wins, draws, losses, players!inner(topdeck_id, name), commanders!inner(name), tournaments!inner(start_date, player_count, topdeck_tid)"
     )
     .in("players.topdeck_id", topdeckIds)
     .gte("tournaments.start_date", lookbackStart)
@@ -151,6 +166,7 @@ export async function getCommanderUsageRows(
       draws: row.draws,
       losses: row.losses,
       start_date: tournament?.start_date ?? null,
+      player_count: tournament?.player_count ?? null,
       decklist_url: extractDecklistUrl(row.decklist_url),
       topdeck_decklist_url: buildTopdeckDecklistUrl(tournament?.topdeck_tid, player?.topdeck_id),
     };
@@ -291,15 +307,13 @@ export function buildProfiles(
     const games = wins + draws + losses;
     const points = wins + draws * 0.25;
     const eventTimestamp = row.start_date ? new Date(row.start_date).getTime() : 0;
-    const recencyWeight =
-      latestTimestamp > 0 && eventTimestamp > 0
-        ? Math.max(0.35, 1 - (latestTimestamp - eventTimestamp) / (1000 * 60 * 60 * 24 * 30 * 18))
-        : 0.5;
+    const recencyWeight = calculateRecencyWeight(eventTimestamp, latestTimestamp);
+    const tournamentSizeWeight = calculateTournamentSizeWeight(row.player_count);
     const efficiencyBoost = games > 0 ? 1 + points / games : 1;
 
     current.entries += 1;
     current.weightedPoints += points;
-    current.predictionScore += recencyWeight * efficiencyBoost;
+    current.predictionScore += recencyWeight * tournamentSizeWeight * efficiencyBoost;
     if (!current.latestDate || (row.start_date && row.start_date > current.latestDate)) {
       current.latestDate = row.start_date;
       if (row.topdeck_decklist_url) {
