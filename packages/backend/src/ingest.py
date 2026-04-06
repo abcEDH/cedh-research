@@ -726,7 +726,13 @@ class DataIngester:
 
             except Exception as e:
                 logger.error(f"Failed to batch create games: {e}")
-                return {"tournament_id": tournament_id, "entries": len(entry_map), "games": 0}
+                return {
+                    "tournament_id": tournament_id,
+                    "name": name,
+                    "players": player_count,
+                    "entries_created": len(entry_map),
+                    "games_created": 0,
+                }
 
         games_created = len(games_data)
         logger.info(f"Created {games_created} games for {name}")
