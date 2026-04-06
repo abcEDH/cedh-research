@@ -68,7 +68,6 @@ WITH global_rows AS (
     g.player_id,
     p.name AS player_name,
     p.topdeck_id,
-    s.region_key AS primary_region_key,
     g.rating,
     g.games_played,
     g.wins,
@@ -86,7 +85,8 @@ WITH global_rows AS (
     NULL::integer AS games_365d,
     ROW_NUMBER() OVER (
       ORDER BY g.rating DESC, g.games_played DESC, p.name ASC
-    ) AS rank
+    ) AS rank,
+    s.region_key AS primary_region_key
   FROM regional_elo_ratings g
   JOIN players p ON p.id = g.player_id
   LEFT JOIN regional_elo_player_stats s ON s.player_id = g.player_id
@@ -100,7 +100,6 @@ state_rows AS (
     g.player_id,
     p.name AS player_name,
     p.topdeck_id,
-    s.region_key AS primary_region_key,
     g.rating,
     s.games_played,
     s.wins,
@@ -119,7 +118,8 @@ state_rows AS (
     ROW_NUMBER() OVER (
       PARTITION BY s.region_key
       ORDER BY g.rating DESC, s.activity_score DESC, s.games_played DESC, p.name ASC
-    ) AS rank
+    ) AS rank,
+    s.region_key AS primary_region_key
   FROM regional_elo_ratings g
   JOIN players p ON p.id = g.player_id
   JOIN regional_elo_player_stats s ON s.player_id = g.player_id
