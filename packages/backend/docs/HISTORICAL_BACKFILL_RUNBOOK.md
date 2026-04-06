@@ -26,8 +26,7 @@ This means a failed or repeated batch can be rerun without producing duplicate l
 Export the committed manifest from Supabase:
 
 ```bash
-source .venv/bin/activate
-python src/export_all_time_tids.py --out data/all_time_tids.txt
+uv run python src/export_all_time_tids.py --out data/all_time_tids.txt
 ```
 
 ## Commands
@@ -35,8 +34,7 @@ python src/export_all_time_tids.py --out data/all_time_tids.txt
 Process the full manifest in batches of 50:
 
 ```bash
-source .venv/bin/activate
-python src/ingest.py \
+uv run python src/ingest.py \
   --tids-file data/all_time_tids.txt \
   --batch-size 50 \
   --direct \
@@ -47,8 +45,7 @@ python src/ingest.py \
 Process only batch 7:
 
 ```bash
-source .venv/bin/activate
-python src/ingest.py \
+uv run python src/ingest.py \
   --tids-file data/all_time_tids.txt \
   --batch-size 50 \
   --batch-index 7 \
@@ -60,7 +57,7 @@ python src/ingest.py \
 Fail fast on the first fetch or processing error:
 
 ```bash
-python src/ingest.py \
+uv run python src/ingest.py \
   --tids-file data/all_time_tids.txt \
   --batch-size 50 \
   --batch-index 7 \
