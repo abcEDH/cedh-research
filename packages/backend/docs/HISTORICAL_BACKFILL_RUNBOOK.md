@@ -17,16 +17,18 @@ This means a failed or repeated batch can be rerun without producing duplicate l
 ## Recommended Flow
 
 1. Build a stable TID manifest ordered oldest-to-newest.
-   Recommended source: export from Supabase `tournaments.topdeck_tid` into `data/all_time_tids.txt`.
+   Recommended source: export from Supabase `tournaments.topdeck_tid` into `data/all_time_tids.txt`, then merge any known-missing IDs from a supplemental file.
 2. Apply the migration `20260406000000_ingestion_backfill_runs.sql`.
 3. Run ingestion from the dedicated worktree with direct Postgres enabled.
 4. Execute one batch at a time or let the full manifest run.
 5. Rerun failed batches with the same manifest and `run_key`.
 
-Export the committed manifest from Supabase:
+Export the committed manifest from Supabase and merge any supplemental TIDs:
 
 ```bash
-uv run python src/export_all_time_tids.py --out data/all_time_tids.txt
+uv run python src/export_all_time_tids.py \
+  --out data/all_time_tids.txt \
+  --supplemental data/all_time_tids.supplemental.txt
 ```
 
 ## Commands
@@ -81,4 +83,4 @@ uv run python src/backfill_status.py --run-key all-time-cedh
 - If a batch partially succeeds, rerun the same batch. The database uniqueness constraints make that safe.
 - `ingestion_backfill_runs` stores a heartbeat, current TID, last completed TID, and per-batch counters so progress updates during a batch instead of only after it finishes.
 - `ingestion_backfill_events` stores an append-only event stream for batch boundaries and per-tournament fetch/process outcomes.
-- The existing search endpoint is not reliable for true all-time discovery in one request. For comprehensive backfills, use a curated TID manifest as the source of truth.
+- The existing search endpoint is not reliable for true all-time discovery, and the Supabase export is only as complete as the tournaments already ingested. For comprehensive backfills, maintain a curated supplemental manifest for known-missing TIDs.

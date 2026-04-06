@@ -1,8 +1,9 @@
 # All-time tournament ID manifest
-# Source: Supabase public.tournaments.topdeck_tid
+# Source: Supabase public.tournaments.topdeck_tid plus optional supplemental files
 # Ordering: start_date ASC, topdeck_tid ASC
 # Filter: player_count >= 0
-# Refresh with: python src/export_all_time_tids.py
+# Note: this is not true all-time discovery; it only exports already-ingested tournaments
+# Refresh with: python src/export_all_time_tids.py [--supplemental data/all_time_tids.supplemental.txt]
 
 MP0yPvOsJy8fx5SKREAz
 NwrwexGEnkdVqpukvIAB
@@ -460,7 +461,6 @@ cedh-arcanum-sanctorum-45
 natural-twentys-weekly-cedh-3
 commander-casual-weekly-5
 dollys-niagara-bracket-3-commander-tournament
-edh-test-mil-store
 weekly-magic-53
 liga-mesao-presencial-s1-e01
 fnm-edh-12
@@ -543,13 +543,13 @@ commander-party-lorwyn-1
 la-competencia-brain-freeze-cedh-copy-1
 gg-commander-clash
 commander-casual-copy
+commander-fnm-22
 cedh-league-season-3-week-2
 hotsauce-games-friday-cedh-53
-cosmic-cup-night-2-1
-commander-fnm-22
-tos-friday-cedh-13026
 team-6750-1st-quarter-cedh-tournament
+cosmic-cup-night-2-1
 level-7-games-cedh-engelwood-13026
+tos-friday-cedh-13026
 commander-barcedhlona-enero-2025
 commander-party-lorwyn-3
 lucky-top-deck-series-14
@@ -567,6 +567,7 @@ commander-invitational-qualifier-final-fortune-gaming-3
 from-the-vault-cedh-29-1k
 blast-off-gaming-cedh-tournament-1
 mind-full-games-decembers-monthly-1k-event-1766533425539
+edh-test-mil-store
 ascendancy-a-cedh-tournament
 la-giostra-del-regno-atto-il-bagordoiv-copy
 czech-cedh-monthly-tournament
@@ -779,3 +780,4 @@ pdx-cedh-guardian-games-april-4-2026
 2-onslaught-invasion-2026-event-series
 cat-cobra-commander-tournament
 czech-cedh-monthly-tournament-42026-1
+cardart-weekly-44

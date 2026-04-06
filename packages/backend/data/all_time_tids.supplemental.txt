@@ -1,0 +1,4 @@
+# Known-missing TopDeck tournament IDs not present in Supabase export
+# These IDs are appended to the manifest during export_all_time_tids.py.
+
+cardart-weekly-44
