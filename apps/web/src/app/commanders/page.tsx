@@ -327,12 +327,14 @@ export default async function CommandersPage() {
             value={filteredCommanders.length.toString()}
             tone="neutral"
             tooltip="Number of commanders with 5+ entries."
+            testId="stat-total-commanders"
           />
           <StatCard
             label="Total Entries"
             value={totalEntries.toLocaleString()}
             tone="neutral"
             tooltip="Total tournament entries across all listed commanders."
+            testId="stat-total-entries"
           />
           <StatCard
             label="Avg Win Rate"
@@ -387,11 +389,13 @@ function StatCard({
   value,
   tone,
   tooltip,
+  testId,
 }: {
   label: string;
   value: string;
   tone: "primary" | "amber" | "neutral";
   tooltip?: string;
+  testId?: string;
 }) {
   const toneMap: Record<typeof tone, string> = {
     primary: "text-primary",
@@ -421,7 +425,7 @@ function StatCard({
             </Tooltip>
           )}
         </div>
-        <p className={`text-2xl font-semibold ${toneMap[tone]}`}>{value}</p>
+        <p data-testid={testId} className={`text-2xl font-semibold ${toneMap[tone]}`}>{value}</p>
       </CardContent>
     </Card>
   );

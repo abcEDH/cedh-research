@@ -59,8 +59,13 @@ test.describe("Commanders List Page", () => {
     await expect(page.getByText(/Total Commanders/i)).toBeVisible();
     await expect(page.getByText("Total Entries", { exact: true })).toBeVisible();
 
-    const statCards = page.locator("main > div .grid .text-2xl");
-    const values = (await statCards.allTextContents()).map((value) => value.replace(/,/g, "").trim());
-    expect(values.some((value) => /^\d+$/.test(value) && value !== "0")).toBe(true);
+    const totalCommanders = page.getByTestId("stat-total-commanders");
+    const totalEntries = page.getByTestId("stat-total-entries");
+
+    const commanderCount = parseInt((await totalCommanders.textContent())?.replace(/,/g, "").trim() || "0", 10);
+    const entryCount = parseInt((await totalEntries.textContent())?.replace(/,/g, "").trim() || "0", 10);
+
+    expect(commanderCount).toBeGreaterThan(0);
+    expect(entryCount).toBeGreaterThan(0);
   });
 });
