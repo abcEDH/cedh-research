@@ -81,32 +81,33 @@ async function fetchBestEloRows(topdeckIds: string[]): Promise<EloRow[]> {
     throw new Error(`Error fetching Elo rows: ${error.message}`);
   }
 
-  return ((data ?? []) as PlayerEloQueryRow[])
-    .map((player) => {
-      const bestRegion = (player.regional_elo_ratings ?? []).reduce<
-        | {
-            region_key: string;
-            rating: number;
-            games_played: number;
-          }
-        | undefined
-      >((best, row) => {
-        if (!best || row.rating > best.rating) return row;
-        return best;
-      }, undefined);
+  const eloRows: EloRow[] = [];
 
-      if (!bestRegion) return null;
+  for (const player of (data ?? []) as PlayerEloQueryRow[]) {
+    const bestRegion = (player.regional_elo_ratings ?? []).reduce<
+      | {
+          region_key: string;
+          rating: number;
+          games_played: number;
+        }
+      | undefined
+    >((best, row) => {
+      if (!best || row.rating > best.rating) return row;
+      return best;
+    }, undefined);
 
-      return {
-        topdeck_id: player.topdeck_id,
-        player_name: player.name,
-        rating: bestRegion.rating,
-        games_played: bestRegion.games_played,
-        region_key: bestRegion.region_key,
-      };
-    })
-    .filter((row): row is EloRow => Boolean(row))
-    .sort((a, b) => b.rating - a.rating);
+    if (!bestRegion) continue;
+
+    eloRows.push({
+      topdeck_id: player.topdeck_id,
+      player_name: player.name,
+      rating: bestRegion.rating,
+      games_played: bestRegion.games_played,
+      region_key: bestRegion.region_key,
+    });
+  }
+
+  return eloRows.sort((a, b) => b.rating - a.rating);
 }
 
 export default async function TournamentLikelihoodPage({
