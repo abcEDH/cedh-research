@@ -1,6 +1,6 @@
 # Data Dictionary
 
-Last reviewed: 2026-03-29
+Last reviewed: 2026-04-06
 Update policy: This file must be updated whenever migrations in `packages/backend/supabase/migrations` change.
 
 This describes the primary tables and analytical views used in the cEDH Analytics database.
@@ -16,6 +16,9 @@ erDiagram
   TOURNAMENTS ||--o{ GAMES : has
   GAMES ||--o{ GAME_PARTICIPANTS : has
   TOURNAMENT_ENTRIES ||--o{ GAME_PARTICIPANTS : has
+
+  INGESTION_BACKFILL_RUNS ||--o{ INGESTION_BACKFILL_BATCHES : has
+  INGESTION_BACKFILL_RUNS ||--o{ INGESTION_BACKFILL_EVENTS : has
 
   GAMES ||--o{ COMMANDER_MATCHUPS : has
   COMMANDERS ||--o{ COMMANDER_MATCHUPS : has
@@ -60,6 +63,33 @@ erDiagram
     uuid entry_id FK
     int seat_position
     text result
+  }
+
+  INGESTION_BACKFILL_RUNS {
+    uuid id PK
+    text run_key
+    text manifest_path
+    int discovered_tournament_count
+    int processed_tournament_count
+    text status
+    int current_batch_index
+    text current_tid
+  }
+
+  INGESTION_BACKFILL_BATCHES {
+    uuid id PK
+    uuid run_id FK
+    int batch_index
+    int tournament_count
+    text status
+  }
+
+  INGESTION_BACKFILL_EVENTS {
+    uuid id PK
+    uuid run_id FK
+    int batch_index
+    text tid
+    text event_type
   }
 
   COMMANDER_MATCHUPS {
@@ -127,6 +157,8 @@ erDiagram
   - `game_id`, `entry_id`, `seat_position`
   - `result` (`win`/`loss`/`draw`/`bye`)
   - `points_earned`
+- **Notes**:
+  - `seat_position` is constrained to `>= 0`; historical backfills may contain pods larger than four seats.
 
 ### `commander_matchups`
 - **Purpose**: per-game commander vs commander outcomes.
@@ -136,7 +168,7 @@ erDiagram
   - `tournament_id`, `round_number`
 
 ### `regional_elo_ratings`
-- **Purpose**: persisted Elo-style ratings. Current production intent is one global row per player keyed as `('global', 'ALL')`.
+- **Purpose**: persisted Elo-style ratings. Current production intent is one global row per player keyed as `('global', 'ALL')`; state leaderboards are derived from assigned-state activity rather than separate state rating pools.
 - **Key fields**:
   - `region_type`, `region_key`, `player_id`
   - `rating`, `games_played`, `wins`, `draws`, `losses`
@@ -167,6 +199,9 @@ erDiagram
   - `batch_size`, `total_batches`
   - `discovered_tournament_count`, `processed_tournament_count`, `succeeded_tournament_count`, `failed_tournament_count`
   - `requested_start_date`, `requested_end_date`, `status`
+  - `current_batch_index`, `current_tid`, `last_completed_tid`
+  - `current_batch_processed_count`, `current_batch_succeeded_count`, `current_batch_failed_count`
+  - `last_success_at`, `heartbeat_at`
 
 ### `ingestion_backfill_batches`
 - **Purpose**: per-batch progress and failure tracking for a historical backfill run.
@@ -174,6 +209,18 @@ erDiagram
   - `run_id`, `batch_index`
   - `batch_start`, `batch_end`, `tournament_count`
   - `status`, `error_text`, `started_at`, `finished_at`
+
+### `ingestion_backfill_events`
+- **Purpose**: append-only event stream for backfill execution, used for per-tournament telemetry and debugging.
+- **Key fields**:
+  - `run_id`, `batch_index`, `tid`
+  - `event_type`
+  - `payload`, `created_at`
+- **Event types**:
+  - `batch_started`, `batch_completed`, `batch_failed`
+  - `fetch_started`, `fetch_failed`
+  - `process_started`, `process_succeeded`, `process_failed`
+  - `tournament_skipped`
 
 ## Analytical Views
 
@@ -218,6 +265,7 @@ erDiagram
 ## Notes / Conventions
 
 - **Competitive filter**: most analytics use tournaments with `player_count >= 32`.
+- **Discovery caveat**: `data/all_time_tids.txt` is a stable replay manifest, not a guaranteed source of all discoverable TopDeck tournaments. Known misses should be curated into supplemental manifests.
 - **Unknown commanders**: some queries exclude `commander_name = 'Unknown Commander'`.
 - **Win rate**: computed as `wins / (wins + losses + draws)`; if total results are 0, win rate is `NULL`.
 - **Security hardening (2026-03-29)**: exposed `public` views are configured to run with `security_invoker`, and `public` functions pin `search_path` to `public, extensions` to satisfy Supabase Advisor requirements.
