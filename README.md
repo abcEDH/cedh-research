@@ -11,12 +11,22 @@ Unified backend ingestion + frontend dashboard for cEDH analytics.
 - Python 3.12+ (3.14 recommended)
 
 ## Environment
-Copy `.env.example` to `.env.local` (frontend) or `.env` (backend as needed) and set:
-- SUPABASE_URL
-- SUPABASE_SERVICE_KEY
-- NEXT_PUBLIC_SUPABASE_URL
-- NEXT_PUBLIC_SUPABASE_ANON_KEY
-- TOPDECK_API_KEY
+Use separate env files for frontend and backend. Do not put server-only keys in frontend env files.
+The repo-root `.env` may still be used for local admin/debug scripts, but the Next app only reads `NEXT_PUBLIC_*` variables.
+
+Frontend (`apps/web/.env.local`):
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+
+Backend (`packages/backend/.env`):
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_KEY`
+- `TOPDECK_API_KEY`
+
+Safe templates live in:
+- `./.env.example`
+- `apps/web/.env.example`
+- `packages/backend/.env.example`
 
 ## Frontend (apps/web)
 - Dev: `npm run web:dev`
@@ -31,3 +41,11 @@ Copy `.env.example` to `.env.local` (frontend) or `.env` (backend as needed) and
 ## CI
 - Frontend workflows run on `apps/web/**` changes
 - Backend workflows run on `packages/backend/**` changes
+- `ci.yml` provides a tight regression loop for Regional Elo changes:
+  - frontend regression tests
+  - canonical regional aggregate proof
+  - uploaded evidence artifact for human review
+
+## QA
+- Release lessons: `docs/release-lessons-2026-04-05-regional-elo.md`
+- QA checklist: `docs/qa-release-checklist.md`

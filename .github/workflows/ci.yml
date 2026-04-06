@@ -1,0 +1,131 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+  SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
+jobs:
+  regional-elo-feedback:
+    name: Regional Elo Feedback Loop
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          pip install requests
+
+      - name: Run focused regional Elo regression tests
+        run: npm --workspace apps/web run test -- --run tests/regional-elo/player-stats.test.ts tests/regional-elo/player-page.test.ts
+
+      - name: Generate regional Elo evidence
+        run: |
+          mkdir -p artifacts
+          python << 'SCRIPT'
+          import json
+          import os
+          from pathlib import Path
+          import requests
+
+          base = os.environ["SUPABASE_URL"].rstrip("/") + "/rest/v1"
+          key = os.environ["SUPABASE_SERVICE_KEY"]
+          headers = {"apikey": key, "Authorization": f"Bearer {key}"}
+
+          topdeck_id = "CCIQroaCHHQi7EELyNXlHiHQiQy1"
+          region = "CALIFORNIA"
+
+          def get(table, params):
+            resp = requests.get(f"{base}/{table}", headers=headers, params=params, timeout=30)
+            resp.raise_for_status()
+            return resp.json()
+
+          player = get("players", {"select": "id,name,topdeck_id", "topdeck_id": f"eq.{topdeck_id}"})[0]
+          leaderboard = get(
+            "regional_elo_leaderboard",
+            {
+              "select": "region_key,rank,rating,games_played,wins,draws,losses",
+              "region_type": "eq.state",
+              "region_key": f"eq.{region}",
+              "player_id": f"eq.{player['id']}",
+            },
+          )[0]
+          canonical = get(
+            "regional_elo_player_stats",
+            {
+              "select": "games_played,wins,draws,losses",
+              "region_type": "eq.state",
+              "region_key": f"eq.{region}",
+              "player_id": f"eq.{player['id']}",
+            },
+          )[0]
+
+          mismatches = {}
+          for field in ("games_played", "wins", "draws", "losses"):
+            if leaderboard[field] != canonical[field]:
+              mismatches[field] = {
+                "leaderboard": leaderboard[field],
+                "canonical": canonical[field],
+              }
+
+          report = {
+            "player": player,
+            "region": region,
+            "leaderboard": leaderboard,
+            "canonical": canonical,
+            "mismatches": mismatches,
+          }
+
+          Path("artifacts/regional-elo-proof.json").write_text(json.dumps(report, indent=2))
+          Path("artifacts/regional-elo-proof.md").write_text(
+            "\n".join(
+              [
+                "# Regional Elo Proof",
+                "",
+                f"- Player: {player['name']} ({player['topdeck_id']})",
+                f"- Region: {region}",
+                f"- Rank: #{leaderboard['rank']}",
+                f"- Elo: {round(leaderboard['rating'])}",
+                f"- Leaderboard games: {leaderboard['games_played']}",
+                f"- Leaderboard record: {leaderboard['wins']}-{leaderboard['losses']}-{leaderboard['draws']}",
+                f"- Canonical games: {canonical['games_played']}",
+                f"- Canonical record: {canonical['wins']}-{canonical['losses']}-{canonical['draws']}",
+                f"- Mismatches: {'none' if not mismatches else json.dumps(mismatches)}",
+              ]
+            )
+          )
+
+          if mismatches:
+            raise SystemExit(f"Regional Elo mismatch detected: {json.dumps(mismatches)}")
+          SCRIPT
+
+      - name: Publish evidence to job summary
+        run: cat artifacts/regional-elo-proof.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload evidence artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: regional-elo-proof
+          path: artifacts/
+          retention-days: 14
