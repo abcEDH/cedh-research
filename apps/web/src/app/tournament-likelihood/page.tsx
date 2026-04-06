@@ -25,7 +25,18 @@ type EloRow = {
   rating: number;
   games_played: number;
   region_key: string;
-  rank: number;
+};
+
+type PlayerEloQueryRow = {
+  topdeck_id: string;
+  name: string;
+  regional_elo_ratings:
+    | Array<{
+        region_key: string;
+        rating: number;
+        games_played: number;
+      }>
+    | null;
 };
 
 function readStringParam(
@@ -56,6 +67,46 @@ function formatDate(value: string | null | undefined) {
     month: "short",
     day: "numeric",
   });
+}
+
+async function fetchBestEloRows(topdeckIds: string[]): Promise<EloRow[]> {
+  if (topdeckIds.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from("players")
+    .select("topdeck_id, name, regional_elo_ratings(region_key, rating, games_played)")
+    .in("topdeck_id", topdeckIds);
+
+  if (error) {
+    throw new Error(`Error fetching Elo rows: ${error.message}`);
+  }
+
+  return ((data ?? []) as PlayerEloQueryRow[])
+    .map((player) => {
+      const bestRegion = (player.regional_elo_ratings ?? []).reduce<
+        | {
+            region_key: string;
+            rating: number;
+            games_played: number;
+          }
+        | undefined
+      >((best, row) => {
+        if (!best || row.rating > best.rating) return row;
+        return best;
+      }, undefined);
+
+      if (!bestRegion) return null;
+
+      return {
+        topdeck_id: player.topdeck_id,
+        player_name: player.name,
+        rating: bestRegion.rating,
+        games_played: bestRegion.games_played,
+        region_key: bestRegion.region_key,
+      };
+    })
+    .filter((row): row is EloRow => Boolean(row))
+    .sort((a, b) => b.rating - a.rating);
 }
 
 export default async function TournamentLikelihoodPage({
@@ -95,26 +146,10 @@ export default async function TournamentLikelihoodPage({
       const topdeckIds = standings.map((row) => row.id).filter(Boolean);
       const [usageRows, eloResult] = await Promise.all([
         getCommanderUsageRows(topdeckIds, lookbackStart),
-        topdeckIds.length
-          ? supabase
-              .from("regional_elo_leaderboard")
-              .select("topdeck_id, player_name, rating, games_played, region_key, rank")
-              .in("topdeck_id", topdeckIds)
-          : Promise.resolve({ data: [], error: null }),
+        fetchBestEloRows(topdeckIds),
       ]);
       profiles = buildProfiles(topdeckIds, usageRows, 3);
-      if (eloResult.error) {
-        throw new Error(`Error fetching Elo rows: ${eloResult.error.message}`);
-      }
-      const bestEloByPlayer = new Map<string, EloRow>();
-      for (const row of (eloResult.data ?? []) as EloRow[]) {
-        if (!row.topdeck_id) continue;
-        const current = bestEloByPlayer.get(row.topdeck_id);
-        if (!current || row.rating > current.rating) {
-          bestEloByPlayer.set(row.topdeck_id, row);
-        }
-      }
-      eloRows = Array.from(bestEloByPlayer.values()).sort((a, b) => b.rating - a.rating);
+      eloRows = eloResult;
     } catch (error) {
       errorMessage = (error as Error).message;
     }
