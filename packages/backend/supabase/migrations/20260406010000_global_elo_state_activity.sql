@@ -65,10 +65,10 @@ WITH global_rows AS (
   SELECT
     'global'::text AS region_type,
     'ALL'::text AS region_key,
-    s.region_key AS primary_region_key,
     g.player_id,
     p.name AS player_name,
     p.topdeck_id,
+    s.region_key AS primary_region_key,
     g.rating,
     g.games_played,
     g.wins,
@@ -97,10 +97,10 @@ state_rows AS (
   SELECT
     'state'::text AS region_type,
     s.region_key,
-    s.region_key AS primary_region_key,
     g.player_id,
     p.name AS player_name,
     p.topdeck_id,
+    s.region_key AS primary_region_key,
     g.rating,
     s.games_played,
     s.wins,
