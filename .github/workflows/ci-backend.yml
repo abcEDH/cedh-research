@@ -22,7 +22,7 @@ jobs:
     name: Validate data dictionary updates
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkoutbd71901bbe5b1630ceea73d27597364c9af683@v4
         with:
           fetch-depth: 0
 
@@ -46,7 +46,7 @@ jobs:
     name: Backend ingest and leaderboard smoke
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkoutbd71901bbe5b1630ceea73d27597364c9af683@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
