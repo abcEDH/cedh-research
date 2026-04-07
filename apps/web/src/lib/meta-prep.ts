@@ -17,7 +17,7 @@ export type CommanderUsageRow = {
 type Relation<T> = T | T[] | null;
 
 type CommanderUsageQueryRow = {
-  decklist_url: string | null;
+  decklist_url?: string | null;
   wins: number | null;
   draws: number | null;
   losses: number | null;
@@ -75,26 +75,6 @@ function firstRelation<T>(value: Relation<T>) {
   return Array.isArray(value) ? value[0] ?? null : value;
 }
 
-function extractDecklistUrl(value: string | null) {
-  if (!value) return null;
-  const trimmed = value.trim();
-  if (/^https?:\/\//i.test(trimmed)) return trimmed;
-  return trimmed.match(/https?:\/\/\S+/i)?.[0] ?? null;
-}
-
-function extractCommanderNameFromDecklist(value: string | null) {
-  if (!value || !value.includes("~~Commanders~~")) return null;
-  const normalized = value.replace(/\\n/g, "\n");
-  const [, commanderBlock] = normalized.split("~~Commanders~~");
-  const [commanders] = commanderBlock.split(/~~\w+~~|\n\s*\n/);
-  const commanderNames = commanders
-    .split("\n")
-    .map((line) => line.trim().replace(/^\d+x?\s+/i, ""))
-    .filter(Boolean);
-
-  return commanderNames.length ? commanderNames.join(" / ") : null;
-}
-
 function commanderKey(value: string) {
   return value
     .split("/")
@@ -140,7 +120,7 @@ export async function getCommanderUsageRows(
   const { data, error } = await supabase
     .from("tournament_entries")
     .select(
-      "decklist_url, wins, draws, losses, players!inner(topdeck_id, name), commanders!inner(name), tournaments!inner(start_date, player_count, topdeck_tid)"
+      "wins, draws, losses, players!inner(topdeck_id, name), commanders!inner(name), tournaments!inner(start_date, player_count, topdeck_tid)"
     )
     .in("players.topdeck_id", topdeckIds)
     .gte("tournaments.start_date", lookbackStart)
@@ -154,10 +134,7 @@ export async function getCommanderUsageRows(
     const player = firstRelation(row.players);
     const commander = firstRelation(row.commanders);
     const tournament = firstRelation(row.tournaments);
-    const parsedCommanderName = extractCommanderNameFromDecklist(row.decklist_url);
-    const commanderName = isKnownCommander(commander?.name)
-      ? commander?.name ?? null
-      : parsedCommanderName;
+    const commanderName = isKnownCommander(commander?.name) ? commander?.name ?? null : null;
     return {
       topdeck_id: player?.topdeck_id ?? null,
       player_name: player?.name ?? null,
@@ -167,7 +144,7 @@ export async function getCommanderUsageRows(
       losses: row.losses,
       start_date: tournament?.start_date ?? null,
       player_count: tournament?.player_count ?? null,
-      decklist_url: extractDecklistUrl(row.decklist_url),
+      decklist_url: null,
       topdeck_decklist_url: buildTopdeckDecklistUrl(tournament?.topdeck_tid, player?.topdeck_id),
     };
   });
@@ -178,7 +155,7 @@ export async function getCommanderDecklistRows(topdeckIds: string[]): Promise<Co
 
   const { data, error } = await supabase
     .from("tournament_entries")
-    .select("decklist_url, players!inner(topdeck_id), commanders!inner(name), tournaments!inner(start_date, topdeck_tid)")
+    .select("players!inner(topdeck_id), commanders!inner(name), tournaments!inner(start_date, topdeck_tid)")
     .in("players.topdeck_id", topdeckIds)
     .not("decklist_url", "is", null);
 
@@ -190,16 +167,13 @@ export async function getCommanderDecklistRows(topdeckIds: string[]): Promise<Co
     const player = firstRelation(row.players);
     const commander = firstRelation(row.commanders);
     const tournament = firstRelation(row.tournaments);
-    const parsedCommanderName = extractCommanderNameFromDecklist(row.decklist_url);
-    const commanderName = isKnownCommander(commander?.name)
-      ? commander?.name ?? null
-      : parsedCommanderName;
+    const commanderName = isKnownCommander(commander?.name) ? commander?.name ?? null : null;
 
     return {
       topdeck_id: player?.topdeck_id ?? null,
       commander_name: commanderName,
       start_date: tournament?.start_date ?? null,
-      decklist_url: extractDecklistUrl(row.decklist_url),
+      decklist_url: null,
       topdeck_decklist_url: buildTopdeckDecklistUrl(tournament?.topdeck_tid, player?.topdeck_id),
     };
   });

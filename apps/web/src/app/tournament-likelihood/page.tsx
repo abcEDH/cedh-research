@@ -39,16 +39,14 @@ type EloRow = {
   region_key: string;
 };
 
-type PlayerEloQueryRow = {
-  topdeck_id: string;
-  name: string;
-  regional_elo_ratings:
-    | Array<{
-        region_key: string;
-        rating: number;
-        games_played: number;
-      }>
-    | null;
+type RegionalLeaderboardQueryRow = {
+  topdeck_id: string | null;
+  player_name: string;
+  rating: number;
+  games_played: number;
+  region_type: string;
+  region_key: string;
+  rank: number;
 };
 
 function readStringParam(
@@ -95,41 +93,42 @@ async function fetchBestEloRows(topdeckIds: string[]): Promise<EloRow[]> {
   if (topdeckIds.length === 0) return [];
 
   const { data, error } = await supabase
-    .from("players")
-    .select("topdeck_id, name, regional_elo_ratings(region_key, rating, games_played)")
-    .in("topdeck_id", topdeckIds);
+    .from("regional_elo_leaderboard")
+    .select("topdeck_id, player_name, rating, games_played, region_type, region_key, rank")
+    .in("topdeck_id", topdeckIds)
+    .in("region_type", ["state", "global"]);
 
   if (error) {
     throw new Error(`Error fetching Elo rows: ${error.message}`);
   }
 
-  const eloRows: EloRow[] = [];
+  const bestRows = new Map<string, RegionalLeaderboardQueryRow>();
 
-  for (const player of (data ?? []) as PlayerEloQueryRow[]) {
-    const bestRegion = (player.regional_elo_ratings ?? []).reduce<
-      | {
-          region_key: string;
-          rating: number;
-          games_played: number;
-        }
-      | undefined
-    >((best, row) => {
-      if (!best || row.rating > best.rating) return row;
-      return best;
-    }, undefined);
-
-    if (!bestRegion) continue;
-
-    eloRows.push({
-      topdeck_id: player.topdeck_id,
-      player_name: player.name,
-      rating: bestRegion.rating,
-      games_played: bestRegion.games_played,
-      region_key: bestRegion.region_key,
-    });
+  for (const row of (data ?? []) as RegionalLeaderboardQueryRow[]) {
+    if (!row.topdeck_id) continue;
+    const current = bestRows.get(row.topdeck_id);
+    const rowIsState = row.region_type === "state";
+    const currentIsState = current?.region_type === "state";
+    if (
+      !current ||
+      (rowIsState && !currentIsState) ||
+      (rowIsState === currentIsState &&
+        (row.rank < current.rank ||
+          (row.rank === current.rank && row.games_played > current.games_played)))
+    ) {
+      bestRows.set(row.topdeck_id, row);
+    }
   }
 
-  return eloRows.sort((a, b) => b.rating - a.rating);
+  return Array.from(bestRows.values())
+    .map((row) => ({
+      topdeck_id: row.topdeck_id,
+      player_name: row.player_name,
+      rating: row.rating,
+      games_played: row.games_played,
+      region_key: row.region_key,
+    }))
+    .sort((a, b) => b.rating - a.rating);
 }
 
 type TournamentAnalysis = {
@@ -165,7 +164,7 @@ const getCachedTournamentAnalysis = unstable_cache(
       hasRounds: (response.rounds ?? []).length > 0,
     };
   },
-  ["tournament-likelihood-analysis-v11"],
+  ["tournament-likelihood-analysis-v13"],
   { revalidate: 60 * 15 }
 );
 
