@@ -71,8 +71,6 @@ type LeaderboardRankRow = {
 type StateAssignmentRow = {
   country_key: string;
   region_key: string;
-  rank: number | null;
-  rating: number | null;
   games_played: number;
   wins: number;
   draws: number;
@@ -692,8 +690,6 @@ export default async function RegionalPlayerPage({
     assignmentRowsByRegion.set(regionKey, {
       country_key: row.country_key ?? inferCountryForRegion(regionKey) ?? "UNKNOWN",
       region_key: regionKey,
-      rank: row.rank,
-      rating: row.rating,
       games_played: row.games_played,
       wins: row.wins,
       draws: row.draws,
@@ -715,8 +711,6 @@ export default async function RegionalPlayerPage({
         : existing ?? {
             country_key: inferCountryForRegion(regionKey) ?? "UNKNOWN",
             region_key: regionKey,
-            rank: null,
-            rating: null,
             games_played: 0,
             wins: 0,
             draws: 0,
@@ -988,8 +982,7 @@ export default async function RegionalPlayerPage({
                 State Assignment
               </CardTitle>
               <p className="text-xs text-muted-foreground">
-                Historical games are grouped by inferred country and region. Assigned-state rank
-                data appears when available.
+                Historical games are grouped by inferred country and region.
               </p>
             </CardHeader>
             <CardContent>
@@ -999,8 +992,6 @@ export default async function RegionalPlayerPage({
                     <tr>
                       <th className="px-2 py-3">Country</th>
                       <th className="px-2 py-3">Region</th>
-                      <th className="px-2 py-3 text-right">Rank</th>
-                      <th className="px-2 py-3 text-right">Elo</th>
                       <th className="px-2 py-3 text-right">Games</th>
                       <th className="px-2 py-3 text-right">W-L-D</th>
                     </tr>
@@ -1010,7 +1001,7 @@ export default async function RegionalPlayerPage({
                       const rowsForCountry = stateAssignmentRows.filter((row) => row.country_key === countryKey);
                       return [
                         <tr key={`country:${countryKey}`} className="border-t border-border/60 bg-muted/20">
-                          <td colSpan={6} className="px-2 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                          <td colSpan={4} className="px-2 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                             {countryKey === "UNKNOWN" ? "UNKNOWN country" : countryKey}
                           </td>
                         </tr>,
@@ -1037,12 +1028,6 @@ export default async function RegionalPlayerPage({
                                   <div className="text-[11px] text-primary">Assigned state</div>
                                 ) : null}
                               </td>
-                              <td className="px-2 py-3 text-right font-mono text-foreground">
-                                {row.rank ? `#${row.rank}` : "—"}
-                              </td>
-                              <td className="px-2 py-3 text-right font-mono text-foreground">
-                                {row.rating ? Math.round(row.rating) : "—"}
-                              </td>
                               <td className="px-2 py-3 text-right font-mono text-muted-foreground">
                                 {row.games_played}
                               </td>
@@ -1056,7 +1041,7 @@ export default async function RegionalPlayerPage({
                     })}
                     {stateAssignmentRows.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="px-2 py-6 text-center text-sm text-muted-foreground">
+                        <td colSpan={4} className="px-2 py-6 text-center text-sm text-muted-foreground">
                           No state assignment found for this player.
                         </td>
                       </tr>
