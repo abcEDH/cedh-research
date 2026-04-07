@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 
 const failures = [];
+const plannedRetirementRoutes = ["/cards", "/turn-order", "/survival"];
 
 if (!existsSync("docs/supported-surfaces.md")) {
   failures.push("Missing docs/supported-surfaces.md");
@@ -16,9 +17,12 @@ if (!existsSync("CONTRIBUTING.md")) {
 
 if (existsSync("docs/supported-surfaces.md")) {
   const content = readFileSync("docs/supported-surfaces.md", "utf8");
-  for (const route of ["/cards", "/turn-order", "/survival"]) {
+  if (!content.includes("## Planned Retirement")) {
+    failures.push("Missing planned-retirement section in supported surfaces doc");
+  }
+  for (const route of plannedRetirementRoutes) {
     if (!content.includes(route)) {
-      failures.push(`Retired route missing from supported surfaces doc: ${route}`);
+      failures.push(`Planned-retirement route missing from supported surfaces doc: ${route}`);
     }
   }
 }
