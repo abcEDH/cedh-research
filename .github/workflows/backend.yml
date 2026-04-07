@@ -59,7 +59,7 @@ jobs:
         run: pip install -r packages/backend/requirements.txt
 
       - name: Run data ingestion
-        run: python packages/backend/src/ingest.py --days 7 --min-players 32
+        run: python packages/backend/src/ingest.py --days 7
 
       - name: Recompute global Elo, state activity, and game event data
         run: python packages/backend/src/regional_elo.py
