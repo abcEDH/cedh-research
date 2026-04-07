@@ -18,8 +18,8 @@ import os
 import time
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date, datetime
-from typing import Any, Dict, List
+from datetime import date, datetime, timedelta
+from typing import Any, Dict, List, Sequence
 
 from ingest import SupabaseClient
 
@@ -82,15 +82,85 @@ def fetch_all(client: SupabaseClient, table: str, params: Dict[str, Any], limit:
     return rows
 
 
-def fetch_game_results(client: SupabaseClient) -> List[Dict[str, Any]]:
+def fetch_all_by_cursor(
+    client: SupabaseClient,
+    table: str,
+    params: Dict[str, Any],
+    *,
+    cursor_column: str,
+    limit: int = 1000,
+) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    last_seen: str | None = None
+
+    while True:
+        page_params = {
+            **params,
+            "limit": limit,
+            "order": f"{cursor_column}.asc",
+        }
+        if last_seen:
+            page_params[cursor_column] = f"gt.{last_seen}"
+
+        page = client.select(table, page_params)
+        if not page:
+            break
+
+        rows.extend(page)
+        if len(page) < limit:
+            break
+
+        last_seen = page[-1].get(cursor_column)
+        if not last_seen:
+            raise RuntimeError(f"Cursor pagination for {table} requires column {cursor_column} in every row")
+        time.sleep(0.05)
+
+    return rows
+
+
+def chunked(values: Sequence[str], size: int) -> List[List[str]]:
+    return [list(values[i : i + size]) for i in range(0, len(values), size)]
+
+
+def fetch_by_in_filter(
+    client: SupabaseClient,
+    table: str,
+    *,
+    select: str,
+    filter_column: str,
+    values: Sequence[str],
+    order: str | None = None,
+    limit: int = 1000,
+) -> List[Dict[str, Any]]:
+    if not values:
+        return []
+
+    rows: List[Dict[str, Any]] = []
+    for batch in chunked(list(values), 50):
+        params: Dict[str, Any] = {
+            "select": select,
+            filter_column: f"in.({','.join(batch)})",
+        }
+        if order:
+            params["order"] = order
+        rows.extend(fetch_all(client, table, params, limit=limit))
+    return rows
+
+
+def fetch_game_results(client: SupabaseClient, smoke_days: int | None = None) -> List[Dict[str, Any]]:
+    tournament_filters: Dict[str, Any] = {
+        "select": "id,start_date,state,country,city,name",
+        "state": "not.is.null",
+        "order": "start_date.asc,id.asc",
+    }
+    if smoke_days is not None:
+        cutoff = (datetime.utcnow().date() - timedelta(days=smoke_days)).isoformat()
+        tournament_filters["start_date"] = f"gte.{cutoff}"
+
     tournaments = fetch_all(
         client,
         "tournaments",
-        {
-            "select": "id,start_date,state,country,city,name",
-            "state": "not.is.null",
-            "order": "start_date.asc,id.asc",
-        },
+        tournament_filters,
     )
     tournament_map = {
         row["id"]: row
@@ -100,39 +170,75 @@ def fetch_game_results(client: SupabaseClient) -> List[Dict[str, Any]]:
     if not tournament_map:
         return []
 
-    games = fetch_all(
-        client,
-        "games",
-        {
-            "select": "id,tournament_id,is_draw,round_number,round_name,table_number",
-            "order": "tournament_id.asc,id.asc",
-        },
-    )
-    filtered_games = [row for row in games if row.get("tournament_id") in tournament_map]
+    tournament_ids = list(tournament_map.keys())
+    if smoke_days is None:
+        games = fetch_all_by_cursor(
+            client,
+            "games",
+            {
+                "select": "id,tournament_id,is_draw,round_number,round_name,table_number",
+            },
+            cursor_column="id",
+        )
+        filtered_games = [row for row in games if row.get("tournament_id") in tournament_map]
+    else:
+        filtered_games = fetch_by_in_filter(
+            client,
+            "games",
+            select="id,tournament_id,is_draw,round_number,round_name,table_number",
+            filter_column="tournament_id",
+            values=tournament_ids,
+            order="tournament_id.asc,id.asc",
+        )
     game_map = {row["id"]: row for row in filtered_games}
     if not game_map:
         return []
 
-    entries = fetch_all(
-        client,
-        "tournament_entries",
-        {
-            "select": "id,player_id",
-            "order": "id.asc",
-        },
-    )
-    entry_map = {row["id"]: row for row in entries if row.get("player_id")}
+    if smoke_days is None:
+        entries = fetch_all_by_cursor(
+            client,
+            "tournament_entries",
+            {
+                "select": "id,player_id,tournament_id",
+            },
+            cursor_column="id",
+        )
+        filtered_entries = [row for row in entries if row.get("player_id") and row.get("tournament_id") in tournament_map]
+    else:
+        filtered_entries = [
+            row
+            for row in fetch_by_in_filter(
+                client,
+                "tournament_entries",
+                select="id,player_id,tournament_id",
+                filter_column="tournament_id",
+                values=tournament_ids,
+                order="tournament_id.asc,id.asc",
+            )
+            if row.get("player_id")
+        ]
+    entry_map = {row["id"]: row for row in filtered_entries}
     if not entry_map:
         return []
 
-    participants = fetch_all(
-        client,
-        "game_participants",
-        {
-            "select": "game_id,entry_id,result",
-            "order": "game_id.asc,entry_id.asc",
-        },
-    )
+    if smoke_days is None:
+        participants = fetch_all_by_cursor(
+            client,
+            "game_participants",
+            {
+                "select": "id,game_id,entry_id,result",
+            },
+            cursor_column="id",
+        )
+    else:
+        participants = fetch_by_in_filter(
+            client,
+            "game_participants",
+            select="game_id,entry_id,result",
+            filter_column="game_id",
+            values=list(game_map.keys()),
+            order="game_id.asc,entry_id.asc",
+        )
 
     rows: List[Dict[str, Any]] = []
     for participant in participants:
@@ -408,25 +514,48 @@ def upsert_rows(client: SupabaseClient, table: str, rows: List[Dict[str, Any]], 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Compute global Elo and derived state activity leaderboards")
-    parser.parse_args()
+    parser.add_argument(
+        "--smoke-days",
+        type=int,
+        default=None,
+        help="Limit recompute inputs to tournaments from the last N days for PR-safe smoke checks.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Compute output rows without writing leaderboard tables back to Supabase.",
+    )
+    args = parser.parse_args()
 
     supabase_url, supabase_key = load_credentials()
     client = SupabaseClient(supabase_url, supabase_key)
 
-    rows = fetch_game_results(client)
+    rows = fetch_game_results(client, smoke_days=args.smoke_days)
 
     global_ratings, state_activity, event_rows = process_games(rows)
+    rating_rows = build_global_rating_rows(global_ratings)
+    state_rows = build_state_activity_rows(state_activity)
+
+    if args.dry_run:
+        print(
+            "regional_elo dry-run:",
+            f"games={len(rows)}",
+            f"ratings={len(rating_rows)}",
+            f"state_rows={len(state_rows)}",
+            f"event_rows={len(event_rows)}",
+        )
+        return
 
     upsert_rows(
         client,
         "regional_elo_ratings",
-        build_global_rating_rows(global_ratings),
+        rating_rows,
         on_conflict="region_type,region_key,player_id",
     )
     upsert_rows(
         client,
         "regional_elo_state_activity",
-        build_state_activity_rows(state_activity),
+        state_rows,
         on_conflict="region_type,region_key,player_id",
     )
     upsert_rows(
