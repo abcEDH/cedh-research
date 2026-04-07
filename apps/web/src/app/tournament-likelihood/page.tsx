@@ -24,6 +24,11 @@ type TournamentStanding = {
   points: number;
   winRate: number;
   opponentWinRate: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  actualDeckCommander: string | null;
+  actualDecklistUrl: string | null;
 };
 
 type EloRow = {
@@ -63,17 +68,6 @@ function readStringParam(
 
 function formatPercent(value: number) {
   return `${Math.round(value * 100)}%`;
-}
-
-function formatDate(value: string | null | undefined) {
-  if (!value) return "Unknown date";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
 }
 
 async function fetchBestEloRows(topdeckIds: string[]): Promise<EloRow[]> {
@@ -148,7 +142,7 @@ const getCachedTournamentAnalysis = unstable_cache(
       eloRows,
     };
   },
-  ["tournament-likelihood-analysis-v10"],
+  ["tournament-likelihood-analysis-v11"],
   { revalidate: 60 * 15 }
 );
 
@@ -330,9 +324,7 @@ export default async function TournamentLikelihoodPage({
                 <div className="rounded-md border border-border/60 bg-muted/20 p-4">
                   <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Tournament</p>
                   <p className="mt-2 text-lg font-semibold text-foreground">{tournament.name}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {tournament.format} · {formatDate(tournament.startDate)}
-                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">{tournament.format}</p>
                 </div>
                 <div className="rounded-md border border-border/60 bg-muted/20 p-4">
                   <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Attendees</p>

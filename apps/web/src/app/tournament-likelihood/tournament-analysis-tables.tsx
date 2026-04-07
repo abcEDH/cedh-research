@@ -15,6 +15,7 @@ type SortKey =
   | "homeRegion"
   | "mostLikely"
   | "alternatives"
+  | "decklist"
   | "record";
 
 type CommanderPrediction = {
@@ -37,6 +38,11 @@ type TournamentStanding = {
   standing: number;
   points: number;
   winRate: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  actualDeckCommander: string | null;
+  actualDecklistUrl: string | null;
 };
 
 type EloAttendee = {
@@ -79,6 +85,17 @@ function compareText(a: string | null | undefined, b: string | null | undefined,
   return direction === "asc" ? result : -result;
 }
 
+function compareRecord(a: TournamentStanding, b: TournamentStanding, direction: SortDirection) {
+  const result = b.wins - a.wins || b.draws - a.draws || a.losses - b.losses;
+  return direction === "desc" ? result : -result;
+}
+
+function formatTournamentRecord(standing: TournamentStanding) {
+  const hasRecord = standing.wins > 0 || standing.losses > 0 || standing.draws > 0;
+  if (!hasRecord) return "--";
+  return `${standing.points} | ${standing.wins}-${standing.losses}-${standing.draws}`;
+}
+
 function defaultDirectionForSort(key: SortKey): SortDirection {
   return key === "elo" || key === "record" ? "desc" : "asc";
 }
@@ -107,14 +124,11 @@ function sortRows(rows: AttendeeRow[], key: SortKey, direction: SortDirection) {
       const bAlternatives = b.profile?.commanders.slice(1, 3).map((commander) => commander.commander).join(" ") ?? "";
       return compareText(aAlternatives, bAlternatives, direction);
     }
+    if (key === "decklist") {
+      return compareText(a.standing.actualDeckCommander, b.standing.actualDeckCommander, direction);
+    }
 
-    const pointSort = direction === "asc"
-      ? a.standing.points - b.standing.points
-      : b.standing.points - a.standing.points;
-    if (pointSort !== 0) return pointSort;
-    return direction === "asc"
-      ? a.standing.winRate - b.standing.winRate
-      : b.standing.winRate - a.standing.winRate;
+    return compareRecord(a.standing, b.standing, direction);
   });
 }
 
@@ -206,8 +220,11 @@ export function TournamentAnalysisTables({
   profiles: PlayerCommanderProfile[];
   standings: TournamentStanding[];
 }) {
-  const hasScoredPlayers = standings.some((standing) => standing.points > 0);
-  const defaultSortKey: SortKey = hasScoredPlayers ? "standing" : "elo";
+  const hasTournamentRecord = standings.some(
+    (standing) => standing.wins > 0 || standing.losses > 0 || standing.draws > 0
+  );
+  const isResultsMode = hasTournamentRecord;
+  const defaultSortKey: SortKey = hasTournamentRecord ? "standing" : "elo";
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>(defaultSortKey);
@@ -240,8 +257,9 @@ export function TournamentAnalysisTables({
           includesSearch(row.standing.id, query) ||
           includesSearch(row.rating, query) ||
           includesSearch(row.regionKey, query) ||
+          includesSearch(row.standing.actualDeckCommander, query) ||
           includesSearch(row.standing.points, query) ||
-          includesSearch(Math.round((row.standing.winRate || 0) * 100), query) ||
+          includesSearch(formatTournamentRecord(row.standing), query) ||
           includesSearch(commanders, query)
         );
       })
@@ -265,12 +283,12 @@ export function TournamentAnalysisTables({
     <Card className="knd-panel mt-6">
       <CardHeader>
         <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
-          Attendee Forecast
+          {isResultsMode ? "Attendees" : "Attendee Forecast"}
         </CardTitle>
       </CardHeader>
       <CardContent>
         <div className="mb-4 text-sm text-muted-foreground">
-          Players in the field with tournament standing, best regional Elo, and recent commander forecast.
+          Players in the field with tournament standing, best regional Elo, and commander data.
         </div>
         <label className="mb-4 flex flex-col gap-2 text-sm text-muted-foreground">
           Search attendees
@@ -301,12 +319,20 @@ export function TournamentAnalysisTables({
                 <SortHeader column="homeRegion" direction={sortDirection} onSort={handleSort} sortKey={sortKey}>
                   Home Region
                 </SortHeader>
-                <SortHeader column="mostLikely" direction={sortDirection} onSort={handleSort} sortKey={sortKey}>
-                  Most Likely To Bring
-                </SortHeader>
-                <SortHeader column="alternatives" direction={sortDirection} onSort={handleSort} sortKey={sortKey}>
-                  Alternatives
-                </SortHeader>
+                {isResultsMode ? (
+                  <SortHeader column="decklist" direction={sortDirection} onSort={handleSort} sortKey={sortKey}>
+                    Decklist
+                  </SortHeader>
+                ) : (
+                  <>
+                    <SortHeader column="mostLikely" direction={sortDirection} onSort={handleSort} sortKey={sortKey}>
+                      Most Likely To Bring
+                    </SortHeader>
+                    <SortHeader column="alternatives" direction={sortDirection} onSort={handleSort} sortKey={sortKey}>
+                      Alternatives
+                    </SortHeader>
+                  </>
+                )}
                 <SortHeader column="record" direction={sortDirection} onSort={handleSort} sortKey={sortKey}>
                   Tournament Record
                 </SortHeader>
@@ -340,63 +366,80 @@ export function TournamentAnalysisTables({
                       {row.rating === null ? "-" : Math.round(row.rating)}
                     </td>
                     <td className="px-2 py-4 text-muted-foreground">{row.regionKey ?? "-"}</td>
-                    <td className="px-2 py-4">
-                      {primary ? (
-                        <div>
-                            {primaryDecklistHref ? (
-                              <a
-                                className="font-medium text-foreground hover:text-primary"
-                                href={primaryDecklistHref}
-                                rel="noreferrer"
-                                target="_blank"
-                              >
-                                {primary.commander}
-                              </a>
-                            ) : (
-                              <div className="font-medium text-foreground">{primary.commander}</div>
-                            )}
-                          <div className="text-xs text-muted-foreground">
-                            Forecast confidence {formatPercent(primary.predictionShare)} | {primary.entries} recent entries
-                          </div>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">No recent deck data</span>
-                      )}
-                    </td>
-                    <td className="px-2 py-4">
-                      <div className="flex flex-wrap gap-2">
-                        {alternatives.length ? (
-                          alternatives.map((commander) => (
-                            commander.latestTopdeckDecklistUrl || commander.latestDecklistUrl ? (
-                              <a
-                                key={`${row.standing.id}-${commander.commander}`}
-                                className="knd-chip hover:text-primary"
-                                href={commander.latestTopdeckDecklistUrl || commander.latestDecklistUrl || "#"}
-                                rel="noreferrer"
-                                target="_blank"
-                              >
-                                {commander.commander} | {formatPercent(commander.predictionShare)}
-                              </a>
-                            ) : (
-                              <span key={`${row.standing.id}-${commander.commander}`} className="knd-chip">
-                                {commander.commander} | {formatPercent(commander.predictionShare)}
-                              </span>
-                            )
-                          ))
+                    {isResultsMode ? (
+                      <td className="px-2 py-4">
+                        {row.standing.actualDeckCommander && row.standing.actualDecklistUrl ? (
+                          <a
+                            className="font-medium text-foreground hover:text-primary"
+                            href={row.standing.actualDecklistUrl}
+                            rel="noreferrer"
+                            target="_blank"
+                          >
+                            {row.standing.actualDeckCommander}
+                          </a>
                         ) : (
-                          <span className="text-xs text-muted-foreground">No strong alternatives</span>
+                          <span className="text-xs text-muted-foreground">No decklist submitted</span>
                         )}
-                      </div>
-                    </td>
-                    <td className="px-2 py-4 text-muted-foreground">
-                      {row.standing.points} pts | {Math.round((row.standing.winRate || 0) * 100)}% WR
-                    </td>
+                      </td>
+                    ) : (
+                      <>
+                        <td className="px-2 py-4">
+                          {primary ? (
+                            <div>
+                              {primaryDecklistHref ? (
+                                <a
+                                  className="font-medium text-foreground hover:text-primary"
+                                  href={primaryDecklistHref}
+                                  rel="noreferrer"
+                                  target="_blank"
+                                >
+                                  {primary.commander}
+                                </a>
+                              ) : (
+                                <div className="font-medium text-foreground">{primary.commander}</div>
+                              )}
+                              <div className="text-xs text-muted-foreground">
+                                Forecast confidence {formatPercent(primary.predictionShare)} | {primary.entries} recent entries
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">No recent deck data</span>
+                          )}
+                        </td>
+                        <td className="px-2 py-4">
+                          <div className="flex flex-wrap gap-2">
+                            {alternatives.length ? (
+                              alternatives.map((commander) => (
+                                commander.latestTopdeckDecklistUrl || commander.latestDecklistUrl ? (
+                                  <a
+                                    key={`${row.standing.id}-${commander.commander}`}
+                                    className="knd-chip hover:text-primary"
+                                    href={commander.latestTopdeckDecklistUrl || commander.latestDecklistUrl || "#"}
+                                    rel="noreferrer"
+                                    target="_blank"
+                                  >
+                                    {commander.commander} | {formatPercent(commander.predictionShare)}
+                                  </a>
+                                ) : (
+                                  <span key={`${row.standing.id}-${commander.commander}`} className="knd-chip">
+                                    {commander.commander} | {formatPercent(commander.predictionShare)}
+                                  </span>
+                                )
+                              ))
+                            ) : (
+                              <span className="text-xs text-muted-foreground">No strong alternatives</span>
+                            )}
+                          </div>
+                        </td>
+                      </>
+                    )}
+                    <td className="px-2 py-4 text-muted-foreground">{formatTournamentRecord(row.standing)}</td>
                   </tr>
                 );
               })}
               {visibleRows.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="py-6 text-center text-sm text-muted-foreground">
+                  <td colSpan={isResultsMode ? 6 : 7} className="py-6 text-center text-sm text-muted-foreground">
                     {query ? "No attendees matched that search." : "No attendees found."}
                   </td>
                 </tr>
