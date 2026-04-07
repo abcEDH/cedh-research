@@ -4,9 +4,12 @@ import { supabase } from "@/lib/supabase";
 import {
   attachLatestDecklistUrls,
   buildProfiles,
+  COMMANDER_FALLBACK_LOOKBACK_MONTHS,
+  COMMANDER_PRIMARY_LOOKBACK_MONTHS,
   getCommanderDecklistRows,
   getCommanderUsageRows,
   lookbackStartDate,
+  selectCommanderForecastRows,
 } from "@/lib/meta-prep";
 import type { MetaShareRow, PlayerCommanderProfile } from "@/lib/meta-prep";
 import { extractTournamentSlug, fetchTournamentBySlug } from "@/lib/topdeck";
@@ -15,9 +18,7 @@ import { unstable_cache } from "next/cache";
 import { TournamentAnalysisTables } from "./tournament-analysis-tables";
 
 export const dynamic = "force-dynamic";
-const DEFAULT_LOOKBACK_MONTHS = 6;
-const FALLBACK_LOOKBACK_MONTHS = 12;
-const MIN_PRIMARY_LOOKBACK_ENTRIES = 2;
+const DEFAULT_LOOKBACK_MONTHS = COMMANDER_PRIMARY_LOOKBACK_MONTHS;
 
 type TournamentStanding = {
   name: string;
@@ -64,11 +65,13 @@ type PlayerStateHistoryQueryRow = {
     | {
         start_date: string | null;
         state: string | null;
+        city: string | null;
         player_count: number | null;
       }
     | Array<{
         start_date: string | null;
         state: string | null;
+        city: string | null;
         player_count: number | null;
       }>
     | null;
@@ -123,7 +126,7 @@ async function fetchPredictedRegions(topdeckIds: string[]): Promise<Map<string, 
 
   const { data, error } = await supabase
     .from("tournament_entries")
-    .select("players!inner(topdeck_id), tournaments!inner(start_date, state, player_count)")
+    .select("players!inner(topdeck_id), tournaments!inner(start_date, state, city, player_count)")
     .in("players.topdeck_id", topdeckIds)
     .not("tournaments.state", "is", null)
     .not("tournaments.start_date", "is", null);
@@ -140,6 +143,7 @@ async function fetchPredictedRegions(topdeckIds: string[]): Promise<Map<string, 
     const rows = histories.get(player.topdeck_id) ?? [];
     rows.push({
       state: tournament.state,
+      city: tournament.city,
       start_date: tournament.start_date,
       player_count: tournament.player_count,
     });
@@ -208,25 +212,37 @@ const getCachedTournamentAnalysis = unstable_cache(
     const anchorTimestamp = anchorToStartDate && startTimestamp ? startTimestamp : now;
     const referenceDate = new Date(anchorTimestamp);
     const lookbackStart = lookbackStartDate(lookbackMonths, referenceDate);
-    const fallbackLookbackStart = lookbackStartDate(FALLBACK_LOOKBACK_MONTHS, referenceDate);
+    const fallbackLookbackStart = lookbackStartDate(COMMANDER_FALLBACK_LOOKBACK_MONTHS, referenceDate);
     const lookbackEnd = anchorToStartDate ? referenceDate.toISOString().slice(0, 10) : undefined;
     const [primaryUsageRows, decklistRows, eloRows] = await Promise.all([
       getCommanderUsageRows(topdeckIds, lookbackStart, lookbackEnd),
       getCommanderDecklistRows(topdeckIds, lookbackEnd),
       fetchBestEloRows(topdeckIds),
     ]);
-    const primaryEntryCounts = new Map<string, number>();
+    const twelveMonthEntryCounts = new Map<string, number>();
     for (const row of primaryUsageRows) {
       if (!row.topdeck_id || !row.commander_name) continue;
-      primaryEntryCounts.set(row.topdeck_id, (primaryEntryCounts.get(row.topdeck_id) ?? 0) + 1);
+      twelveMonthEntryCounts.set(row.topdeck_id, (twelveMonthEntryCounts.get(row.topdeck_id) ?? 0) + 1);
     }
-    const sparseTopdeckIds = topdeckIds.filter(
-      (topdeckId) => (primaryEntryCounts.get(topdeckId) ?? 0) < MIN_PRIMARY_LOOKBACK_ENTRIES
-    );
+    const sparseTopdeckIds = topdeckIds.filter((topdeckId) => (twelveMonthEntryCounts.get(topdeckId) ?? 0) < 2);
     const fallbackUsageRows = sparseTopdeckIds.length
       ? await getCommanderUsageRows(sparseTopdeckIds, fallbackLookbackStart, lookbackStart)
       : [];
-    const usageRows = [...primaryUsageRows, ...fallbackUsageRows];
+    for (const row of fallbackUsageRows) {
+      if (!row.topdeck_id || !row.commander_name) continue;
+      twelveMonthEntryCounts.set(row.topdeck_id, (twelveMonthEntryCounts.get(row.topdeck_id) ?? 0) + 1);
+    }
+    const noTwelveMonthHistoryTopdeckIds = topdeckIds.filter(
+      (topdeckId) => (twelveMonthEntryCounts.get(topdeckId) ?? 0) === 0
+    );
+    const lastKnownFallbackRows = noTwelveMonthHistoryTopdeckIds.length
+      ? await getCommanderUsageRows(noTwelveMonthHistoryTopdeckIds, "1900-01-01", fallbackLookbackStart)
+      : [];
+    const usageRows = selectCommanderForecastRows(
+      topdeckIds,
+      [...primaryUsageRows, ...fallbackUsageRows, ...lastKnownFallbackRows],
+      referenceDate
+    );
     const profiles = buildProfiles(topdeckIds, usageRows, 3, referenceDate.toISOString());
 
     return {
@@ -237,7 +253,7 @@ const getCachedTournamentAnalysis = unstable_cache(
       hasRounds: (response.rounds ?? []).length > 0,
     };
   },
-  ["tournament-likelihood-analysis-v19"],
+  ["tournament-likelihood-analysis-v21"],
   { revalidate: 60 * 15 }
 );
 
@@ -284,12 +300,6 @@ export default async function TournamentLikelihoodPage({
   }
 
   const playersWithData = profiles.players.filter((player) => player.totalEntries > 0).length;
-  const topDeckShares = profiles.players
-    .filter((player) => player.commanders.length > 0)
-    .map((player) => player.commanders[0]?.predictionShare ?? 0);
-  const avgTopDeckShare = topDeckShares.length
-    ? topDeckShares.reduce((sum, share) => sum + share, 0) / topDeckShares.length
-    : 0;
   const tournamentHasStarted = tournament ? hasTournamentStarted(tournament.startDate) : false;
   const hasTournamentResults = tournamentHasStarted && hasRounds;
   const lookbackStartTimestamp = tournamentHasStarted && tournament
@@ -400,7 +410,7 @@ export default async function TournamentLikelihoodPage({
             <p className="mt-4 text-sm text-muted-foreground">
               The model uses players in the selected event, looks up their known commander entries
               since {lookbackStart}, then estimates likely deck choice from their recent history.
-              Players with sparse recent history fall back to a {FALLBACK_LOOKBACK_MONTHS}-month window.
+              Players with sparse recent history fall back to a {COMMANDER_FALLBACK_LOOKBACK_MONTHS}-month window.
             </p>
           </CardContent>
         </Card>
@@ -486,11 +496,7 @@ export default async function TournamentLikelihoodPage({
                   {hasTournamentResults ? (
                     "Actual submitted commander choices from this tournament."
                   ) : (
-                    <>
-                      This estimate weights each player by how concentrated their recent commander usage is.
-                      Average top-deck concentration across attendees with data:{" "}
-                      <span className="font-medium text-foreground">{formatPercent(avgTopDeckShare)}</span>.
-                    </>
+                    "This estimate weights each player by how concentrated their recent commander usage is."
                   )}
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">

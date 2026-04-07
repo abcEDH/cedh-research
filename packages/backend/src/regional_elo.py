@@ -1,19 +1,18 @@
 #!/usr/bin/env python3
-"""Compute regional Elo leaderboards and store them in Supabase.
+"""Compute the global Elo leaderboard and store it in Supabase.
 
 Usage:
-  python src/regional_elo.py --region-type state
+  python src/regional_elo.py
 """
 
 from __future__ import annotations
 
-import argparse
 import os
 import time
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
 
 from ingest import SupabaseClient
 
@@ -43,11 +42,21 @@ def load_credentials() -> tuple[str, str]:
     return supabase_url, supabase_key
 
 
-def fetch_all(client: SupabaseClient, table: str, params: Dict[str, Any], limit: int = 1000) -> List[Dict[str, Any]]:
+QueryParams = Mapping[str, Any] | Sequence[Tuple[str, Any]]
+
+
+def with_paging_params(params: QueryParams, limit: int, offset: int) -> QueryParams:
+    page_params = {"limit": limit, "offset": offset}
+    if isinstance(params, Mapping):
+        return {**params, **page_params}
+    return [*params, *page_params.items()]
+
+
+def fetch_all(client: SupabaseClient, table: str, params: QueryParams, limit: int = 1000) -> List[Dict[str, Any]]:
     offset = 0
     rows: List[Dict[str, Any]] = []
     while True:
-        page_params = {**params, "limit": limit, "offset": offset}
+        page_params = with_paging_params(params, limit, offset)
         page = client.select(table, page_params)
         if not page:
             break
@@ -59,11 +68,42 @@ def fetch_all(client: SupabaseClient, table: str, params: Dict[str, Any], limit:
     return rows
 
 
-def region_key_from_row(row: Dict[str, Any], region_type: str) -> str | None:
-    if region_type == "state":
-        state = (row.get("state") or "").strip()
-        return state.upper() if state else None
-    return None
+def month_starts(start_year: int, end_year: int) -> Iterable[datetime]:
+    for year in range(start_year, end_year + 1):
+        for month in range(1, 13):
+            yield datetime(year, month, 1)
+
+
+def next_month(value: datetime) -> datetime:
+    if value.month == 12:
+        return datetime(value.year + 1, 1, 1)
+    return datetime(value.year, value.month + 1, 1)
+
+
+def fetch_elo_game_rows(client: SupabaseClient) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    current_month = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    end_month = next_month(current_month)
+
+    for start in month_starts(2022, end_month.year):
+        if start >= end_month:
+            break
+        end = next_month(start)
+        page = fetch_all(
+            client,
+            "regional_elo_game_results",
+            [
+                ("select", "game_id,player_id,start_date,result,is_draw,table_number"),
+                ("order", "start_date.asc,game_id.asc,table_number.asc"),
+                ("start_date", f"gte.{start.date().isoformat()}"),
+                ("start_date", f"lt.{end.date().isoformat()}"),
+            ],
+            limit=250,
+        )
+        rows.extend(page)
+        print(f"Fetched {len(page)} game-result rows for {start:%Y-%m}", flush=True)
+
+    return rows
 
 
 def process_game(
@@ -139,17 +179,11 @@ def build_upsert_rows(
     return rows
 
 
-def compute_regional_elo(region_type: str) -> Dict[str, Dict[str, PlayerStats]]:
+def compute_global_elo() -> Dict[str, Dict[str, PlayerStats]]:
     supabase_url, supabase_key = load_credentials()
     client = SupabaseClient(supabase_url, supabase_key)
 
-    rows = fetch_all(
-        client,
-        "regional_elo_game_results",
-        {
-            "order": "start_date.asc,game_id.asc,table_number.asc",
-        },
-    )
+    rows = fetch_elo_game_rows(client)
 
     regions: Dict[str, Dict[str, PlayerStats]] = defaultdict(lambda: defaultdict(PlayerStats))
     current_game_id: str | None = None
@@ -158,9 +192,7 @@ def compute_regional_elo(region_type: str) -> Dict[str, Dict[str, PlayerStats]]:
     current_game_date: str | None = None
 
     for row in rows:
-        region_key = region_key_from_row(row, region_type)
-        if not region_key:
-            continue
+        region_key = "ALL"
         game_id = row["game_id"]
         if current_game_id is None:
             current_game_id = game_id
@@ -186,6 +218,9 @@ def upsert_regional_elo(region_type: str, regions: Dict[str, Dict[str, PlayerSta
     supabase_url, supabase_key = load_credentials()
     client = SupabaseClient(supabase_url, supabase_key)
 
+    print(f"Deleting existing {region_type} Elo rows")
+    client.delete("regional_elo_ratings", {"region_type": f"eq.{region_type}"})
+
     all_rows: List[Dict[str, Any]] = []
     for region_key, stats in regions.items():
         all_rows.extend(build_upsert_rows(region_type, region_key, stats))
@@ -202,12 +237,8 @@ def upsert_regional_elo(region_type: str, regions: Dict[str, Dict[str, PlayerSta
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Compute regional Elo leaderboards")
-    parser.add_argument("--region-type", default="state", choices=["state"], help="Region grouping")
-    args = parser.parse_args()
-
-    regions = compute_regional_elo(args.region_type)
-    upsert_regional_elo(args.region_type, regions)
+    regions = compute_global_elo()
+    upsert_regional_elo("global", regions)
 
 
 if __name__ == "__main__":

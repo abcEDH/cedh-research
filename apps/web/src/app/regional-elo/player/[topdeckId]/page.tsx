@@ -2,7 +2,7 @@ import Link from "next/link";
 import { unstable_cache } from "next/cache";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { buildProfiles, getCommanderUsageRows, lookbackStartDate } from "@/lib/meta-prep";
+import { buildProfiles, selectCommanderForecastRows, type CommanderUsageRow } from "@/lib/meta-prep";
 import { predictNextState, type PlayerStateHistoryRow } from "@/lib/player-region-predictor";
 import { supabase } from "@/lib/supabase";
 import { fetchChampionshipLeaderboard } from "@/lib/topdeck";
@@ -12,9 +12,8 @@ import { PlayerGamesTable } from "./player-games-table";
 import { summarizePlayerLogs, type PlayerGameLog } from "./player-stats";
 
 export const dynamic = "force-dynamic";
-const COMMANDER_LOOKBACK_MONTHS = 6;
-const COMMANDER_FALLBACK_LOOKBACK_MONTHS = 12;
-const MIN_PRIMARY_COMMANDER_ENTRIES = 2;
+const SUPABASE_PAGE_SIZE = 1000;
+const SUPABASE_IN_CHUNK_SIZE = 100;
 
 type PlayerRow = {
   id: string;
@@ -93,12 +92,40 @@ type PlayerStateHistoryQueryRow = {
     | {
         start_date: string | null;
         state: string | null;
+        city: string | null;
         player_count: number | null;
       }
     | Array<{
         start_date: string | null;
         state: string | null;
+        city: string | null;
         player_count: number | null;
+      }>
+    | null;
+};
+
+type PlayerCommanderUsageQueryRow = {
+  wins: number | null;
+  draws: number | null;
+  losses: number | null;
+  commanders:
+    | {
+        name: string | null;
+      }
+    | Array<{
+        name: string | null;
+      }>
+    | null;
+  tournaments:
+    | {
+        start_date: string | null;
+        player_count: number | null;
+        topdeck_tid: string | null;
+      }
+    | Array<{
+        start_date: string | null;
+        player_count: number | null;
+        topdeck_tid: string | null;
       }>
     | null;
 };
@@ -120,6 +147,14 @@ function isKnownCommanderName(value: string | null | undefined) {
 
 function firstRelation<T>(value: T | T[] | null) {
   return Array.isArray(value) ? value[0] ?? null : value;
+}
+
+function chunkValues<T>(values: T[], size = SUPABASE_IN_CHUNK_SIZE) {
+  const chunks: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size));
+  }
+  return chunks;
 }
 
 async function fetchPlayer(topdeckId: string): Promise<PlayerRow | null> {
@@ -144,35 +179,39 @@ async function fetchEntries(playerId: string): Promise<EntryRow[]> {
 async function fetchPlayerStateHistory(playerId: string): Promise<PlayerStateHistoryRow[]> {
   const { data } = await supabase
     .from("tournament_entries")
-    .select("tournaments!inner(start_date, state, player_count)")
+    .select("tournaments!inner(start_date, state, city, player_count)")
     .eq("player_id", playerId)
     .not("tournaments.state", "is", null)
     .not("tournaments.start_date", "is", null);
 
-  return ((data as Array<{
+  const rows: PlayerStateHistoryRow[] = [];
+  for (const row of ((data as Array<{
     tournaments:
-      | {
-          start_date: string | null;
-          state: string | null;
-          player_count: number | null;
-        }
-      | Array<{
-          start_date: string | null;
-          state: string | null;
-          player_count: number | null;
-        }>
-      | null;
-  }> | null) ?? [])
-    .map((row) => {
-      const tournament = Array.isArray(row.tournaments) ? row.tournaments[0] : row.tournaments;
-      if (!tournament?.start_date || !tournament.state) return null;
-      return {
+	      | {
+	          start_date: string | null;
+	          state: string | null;
+	          city: string | null;
+	          player_count: number | null;
+	        }
+	      | Array<{
+	          start_date: string | null;
+	          state: string | null;
+	          city: string | null;
+	          player_count: number | null;
+	        }>
+	      | null;
+  }> | null) ?? [])) {
+    const tournament = Array.isArray(row.tournaments) ? row.tournaments[0] : row.tournaments;
+    if (!tournament?.start_date || !tournament.state) continue;
+    rows.push({
         start_date: tournament.start_date,
         state: tournament.state,
+        city: tournament.city,
         player_count: tournament.player_count,
-      };
-    })
-    .filter((row): row is PlayerStateHistoryRow => Boolean(row));
+    });
+  }
+
+  return rows;
 }
 
 async function fetchGlobalEloRank(playerId: string): Promise<LeaderboardRankRow | null> {
@@ -195,7 +234,7 @@ const fetchPredictedRegionByPlayer = unstable_cache(
     for (let offset = 0; ; offset += pageSize) {
       const { data, error } = await supabase
         .from("tournament_entries")
-        .select("players!inner(topdeck_id), tournaments!inner(start_date, state, player_count)")
+        .select("players!inner(topdeck_id), tournaments!inner(start_date, state, city, player_count)")
         .not("players.topdeck_id", "is", null)
         .not("tournaments.state", "is", null)
         .not("tournaments.start_date", "is", null)
@@ -210,6 +249,7 @@ const fetchPredictedRegionByPlayer = unstable_cache(
         const playerRows = histories.get(player.topdeck_id) ?? [];
         playerRows.push({
           state: tournament.state,
+          city: tournament.city,
           start_date: tournament.start_date,
           player_count: tournament.player_count,
         });
@@ -281,19 +321,53 @@ async function fetchGlobalSnapshot(topdeckId: string): Promise<GlobalSnapshotRow
   }
 }
 
-async function fetchActiveCommander(topdeckId: string): Promise<string | null> {
+function buildTopdeckDecklistUrl(tournamentSlug: string | null | undefined, topdeckId: string) {
+  return tournamentSlug ? `https://topdeck.gg/deck/${tournamentSlug}/${topdeckId}` : null;
+}
+
+async function fetchPlayerCommanderUsageRows(
+  playerId: string,
+  topdeckId: string,
+  playerName: string
+): Promise<CommanderUsageRow[]> {
+  const { data, error } = await supabase
+    .from("tournament_entries")
+    .select("wins, draws, losses, commanders(name), tournaments(start_date, player_count, topdeck_tid)")
+    .eq("player_id", playerId);
+
+  if (error) {
+    throw new Error(`Error fetching player commander usage: ${error.message}`);
+  }
+
+  return ((data ?? []) as PlayerCommanderUsageQueryRow[])
+    .map((row) => {
+      const commander = firstRelation(row.commanders);
+      const tournament = firstRelation(row.tournaments);
+      const commanderName = isKnownCommanderName(commander?.name) ? commander?.name ?? null : null;
+
+      return {
+        topdeck_id: topdeckId,
+        player_name: playerName,
+        commander_name: commanderName,
+        wins: row.wins,
+        draws: row.draws,
+        losses: row.losses,
+        start_date: tournament?.start_date ?? null,
+        player_count: tournament?.player_count ?? null,
+        decklist_url: null,
+        topdeck_decklist_url: buildTopdeckDecklistUrl(tournament?.topdeck_tid, topdeckId),
+      };
+    })
+    .filter((row) => row.commander_name && row.start_date);
+}
+
+async function fetchActiveCommander(playerId: string, topdeckId: string, playerName: string): Promise<string | null> {
   const referenceDate = new Date();
-  const lookbackStart = lookbackStartDate(COMMANDER_LOOKBACK_MONTHS, referenceDate);
-  const fallbackLookbackStart = lookbackStartDate(COMMANDER_FALLBACK_LOOKBACK_MONTHS, referenceDate);
-  const primaryUsageRows = await getCommanderUsageRows([topdeckId], lookbackStart);
-  const primaryEntryCount = primaryUsageRows.filter((row) => row.topdeck_id && row.commander_name).length;
-  const fallbackUsageRows =
-    primaryEntryCount < MIN_PRIMARY_COMMANDER_ENTRIES
-      ? await getCommanderUsageRows([topdeckId], fallbackLookbackStart, lookbackStart)
-      : [];
+  const usageRows = await fetchPlayerCommanderUsageRows(playerId, topdeckId, playerName);
+  const forecastRows = selectCommanderForecastRows([topdeckId], usageRows, referenceDate);
   const profiles = buildProfiles(
     [topdeckId],
-    [...primaryUsageRows, ...fallbackUsageRows],
+    forecastRows,
     1,
     referenceDate.toISOString()
   );
@@ -302,12 +376,21 @@ async function fetchActiveCommander(topdeckId: string): Promise<string | null> {
 }
 
 async function fetchGamesAndParticipants(entryIds: string[]) {
-  const { data: participantData } = await supabase
-    .from("game_participants")
-    .select("game_id, entry_id, seat_position, result")
-    .in("entry_id", entryIds);
+  const participants: ParticipantRow[] = [];
+  for (const entryIdChunk of chunkValues(entryIds)) {
+    for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
+      const { data, error } = await supabase
+        .from("game_participants")
+        .select("game_id, entry_id, seat_position, result")
+        .in("entry_id", entryIdChunk)
+        .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
 
-  const participants = (participantData as ParticipantRow[]) ?? [];
+      if (error) throw new Error(`Error fetching player game participants: ${error.message}`);
+      participants.push(...((data as ParticipantRow[]) ?? []));
+      if (!data || data.length < SUPABASE_PAGE_SIZE) break;
+    }
+  }
+
   const gameIds = Array.from(new Set(participants.map((row) => row.game_id)));
   if (gameIds.length === 0) {
     return {
@@ -317,66 +400,114 @@ async function fetchGamesAndParticipants(entryIds: string[]) {
     };
   }
 
-  const [{ data: gameData }, { data: allParticipantData }] = await Promise.all([
-    supabase
-      .from("games")
-      .select("id, tournament_id, round_number, round_name, table_number, is_draw, winner_id")
-      .in("id", gameIds),
-    supabase
-      .from("game_participants")
-      .select("game_id, entry_id, seat_position, result")
-      .in("game_id", gameIds),
-  ]);
+  const games: GameRow[] = [];
+  const allParticipants: ParticipantRow[] = [];
+
+  for (const gameIdChunk of chunkValues(gameIds)) {
+    for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
+      const { data, error } = await supabase
+        .from("games")
+        .select("id, tournament_id, round_number, round_name, table_number, is_draw, winner_id")
+        .in("id", gameIdChunk)
+        .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
+
+      if (error) throw new Error(`Error fetching player games: ${error.message}`);
+      games.push(...((data as GameRow[]) ?? []));
+      if (!data || data.length < SUPABASE_PAGE_SIZE) break;
+    }
+  }
+
+  for (const gameIdChunk of chunkValues(gameIds)) {
+    for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
+      const { data, error } = await supabase
+        .from("game_participants")
+        .select("game_id, entry_id, seat_position, result")
+        .in("game_id", gameIdChunk)
+        .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
+
+      if (error) throw new Error(`Error fetching pod participants: ${error.message}`);
+      allParticipants.push(...((data as ParticipantRow[]) ?? []));
+      if (!data || data.length < SUPABASE_PAGE_SIZE) break;
+    }
+  }
 
   return {
     participants,
-    games: (gameData as GameRow[]) ?? [],
-    allParticipants: (allParticipantData as ParticipantRow[]) ?? [],
+    games,
+    allParticipants,
   };
 }
 
 async function fetchTournaments(tournamentIds: string[]): Promise<Map<string, TournamentRow>> {
   if (tournamentIds.length === 0) return new Map();
 
-  const { data } = await supabase
-    .from("tournaments")
-    .select("id, name, start_date, state")
-    .in("id", tournamentIds);
+  const rows: TournamentRow[] = [];
+  for (const tournamentIdChunk of chunkValues(tournamentIds)) {
+    const { data, error } = await supabase
+      .from("tournaments")
+      .select("id, name, start_date, state")
+      .in("id", tournamentIdChunk);
 
-  return new Map(((data as TournamentRow[]) ?? []).map((row) => [row.id, row]));
+    if (error) throw new Error(`Error fetching tournaments: ${error.message}`);
+    rows.push(...((data as TournamentRow[]) ?? []));
+  }
+
+  return new Map(rows.map((row) => [row.id, row]));
 }
 
 async function fetchEntriesById(entryIds: string[]): Promise<Map<string, EntryRow>> {
   if (entryIds.length === 0) return new Map();
 
-  const { data } = await supabase
-    .from("tournament_entries")
-    .select("id, tournament_id, player_id, commander_id")
-    .in("id", entryIds);
+  const rows: EntryRow[] = [];
+  for (const entryIdChunk of chunkValues(entryIds)) {
+    for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
+      const { data, error } = await supabase
+        .from("tournament_entries")
+        .select("id, tournament_id, player_id, commander_id")
+        .in("id", entryIdChunk)
+        .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
 
-  return new Map(((data as EntryRow[]) ?? []).map((row) => [row.id, row]));
+      if (error) throw new Error(`Error fetching related tournament entries: ${error.message}`);
+      rows.push(...((data as EntryRow[]) ?? []));
+      if (!data || data.length < SUPABASE_PAGE_SIZE) break;
+    }
+  }
+
+  return new Map(rows.map((row) => [row.id, row]));
 }
 
 async function fetchPlayersById(playerIds: string[]): Promise<Map<string, PlayerRow>> {
   if (playerIds.length === 0) return new Map();
 
-  const { data } = await supabase
-    .from("players")
-    .select("id, name, topdeck_id")
-    .in("id", playerIds);
+  const rows: PlayerRow[] = [];
+  for (const playerIdChunk of chunkValues(playerIds)) {
+    const { data, error } = await supabase
+      .from("players")
+      .select("id, name, topdeck_id")
+      .in("id", playerIdChunk);
 
-  return new Map(((data as PlayerRow[]) ?? []).map((row) => [row.id, row]));
+    if (error) throw new Error(`Error fetching related players: ${error.message}`);
+    rows.push(...((data as PlayerRow[]) ?? []));
+  }
+
+  return new Map(rows.map((row) => [row.id, row]));
 }
 
 async function fetchCommandersById(commanderIds: string[]): Promise<Map<string, CommanderRow>> {
   if (commanderIds.length === 0) return new Map();
 
-  const { data } = await supabase
-    .from("commanders")
-    .select("id, name")
-    .in("id", commanderIds);
+  const rows: CommanderRow[] = [];
+  for (const commanderIdChunk of chunkValues(commanderIds)) {
+    const { data, error } = await supabase
+      .from("commanders")
+      .select("id, name")
+      .in("id", commanderIdChunk);
 
-  return new Map(((data as CommanderRow[]) ?? []).map((row) => [row.id, row]));
+    if (error) throw new Error(`Error fetching related commanders: ${error.message}`);
+    rows.push(...((data as CommanderRow[]) ?? []));
+  }
+
+  return new Map(rows.map((row) => [row.id, row]));
 }
 
 export default async function RegionalPlayerPage({
@@ -401,7 +532,7 @@ export default async function RegionalPlayerPage({
     fetchGlobalEloRank(player.id),
     fetchEntries(player.id),
     fetchPlayerStateHistory(player.id),
-    fetchActiveCommander(topdeckId),
+    fetchActiveCommander(player.id, topdeckId, player.name),
   ]);
   const predictedState = predictNextState(stateHistory);
   const selectedRegion = predictedState?.state ?? "";
@@ -481,8 +612,7 @@ export default async function RegionalPlayerPage({
   const commanderRows = Array.from(
     playerLogs.reduce(
       (rows, log) => {
-        if (!isKnownCommanderName(log.commanderName)) return rows;
-        const commander = log.commanderName as string;
+        const commander = log.commanderName?.trim() || "Unknown Commander";
         const current = rows.get(commander) ?? {
           commander,
           games: 0,
@@ -518,6 +648,8 @@ export default async function RegionalPlayerPage({
       >()
     ).values()
   ).sort((a, b) => {
+    if (a.commander === "Unknown Commander") return 1;
+    if (b.commander === "Unknown Commander") return -1;
     if (b.games !== a.games) return b.games - a.games;
     if (b.latestDate !== a.latestDate) return b.latestDate.localeCompare(a.latestDate);
     return a.commander.localeCompare(b.commander);
@@ -600,7 +732,7 @@ export default async function RegionalPlayerPage({
             <Card className="knd-panel">
               <CardHeader>
                 <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  State Rank
+                  Region Rank
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-2xl font-semibold text-foreground">
@@ -677,7 +809,8 @@ export default async function RegionalPlayerPage({
           </div>
 
           <p className="text-sm text-muted-foreground">
-            Elo uses the global all-games leaderboard. State Rank uses the active profile region leaderboard.
+            Elo and rank use the global all-games leaderboard. Region Rank groups players by active profile region,
+            then orders them by global Elo.
             Games, record, seats, opponents, and the detailed log use all stored games for this player.
           </p>
 
@@ -707,7 +840,7 @@ export default async function RegionalPlayerPage({
                         <tr key={row.commander} className="border-t border-border/60">
                           <td className="px-2 py-3">
                             <span className={isActive ? "font-semibold text-foreground" : "text-foreground"}>
-                              {row.commander}
+                              {row.commander === "Unknown Commander" ? "Unknown" : row.commander}
                             </span>
                             {isActive ? (
                               <div className="text-[11px] text-primary">Active commander</div>

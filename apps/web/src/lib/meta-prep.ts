@@ -2,6 +2,8 @@ import "server-only";
 import { supabase } from "@/lib/supabase";
 
 const RECENCY_HALF_LIFE_DAYS = 15;
+const SUPABASE_PAGE_SIZE = 1000;
+const SUPABASE_IN_CHUNK_SIZE = 100;
 
 export type CommanderUsageRow = {
   topdeck_id: string | null;
@@ -20,10 +22,11 @@ type Relation<T> = T | T[] | null;
 
 type CommanderUsageQueryRow = {
   decklist_url?: string | null;
+  player_id: string | null;
   wins: number | null;
   draws: number | null;
   losses: number | null;
-  players: Relation<{
+  players?: Relation<{
     topdeck_id: string | null;
     name: string | null;
   }>;
@@ -35,6 +38,12 @@ type CommanderUsageQueryRow = {
     player_count: number | null;
     topdeck_tid: string | null;
   }>;
+};
+
+type PlayerLookupRow = {
+  id: string;
+  topdeck_id: string | null;
+  name: string | null;
 };
 
 export type PlayerCommanderProfile = {
@@ -68,6 +77,10 @@ export type CommanderDecklistRow = {
   topdeck_decklist_url: string | null;
 };
 
+export const COMMANDER_PRIMARY_LOOKBACK_MONTHS = 6;
+export const COMMANDER_FALLBACK_LOOKBACK_MONTHS = 12;
+export const MIN_PRIMARY_COMMANDER_ENTRIES = 2;
+
 function isKnownCommander(commanderName: string | null | undefined) {
   const normalized = (commanderName ?? "").trim().toLowerCase();
   return normalized.length > 0 && normalized !== "unknown commander";
@@ -100,11 +113,63 @@ function buildTopdeckDecklistUrl(tournamentSlug: string | null | undefined, topd
   return tournamentSlug && topdeckId ? `https://topdeck.gg/deck/${tournamentSlug}/${topdeckId}` : null;
 }
 
+function chunkArray<T>(values: T[], chunkSize = SUPABASE_IN_CHUNK_SIZE) {
+  const chunks: T[][] = [];
+  for (let index = 0; index < values.length; index += chunkSize) {
+    chunks.push(values.slice(index, index + chunkSize));
+  }
+  return chunks;
+}
+
 function calculateRecencyWeight(eventTimestamp: number, referenceTimestamp: number) {
   if (referenceTimestamp <= 0 || eventTimestamp <= 0) return 0.5;
 
   const ageInDays = Math.max(0, (referenceTimestamp - eventTimestamp) / (1000 * 60 * 60 * 24));
   return 0.5 ** (ageInDays / RECENCY_HALF_LIFE_DAYS);
+}
+
+async function getPlayersByTopdeckIds(topdeckIds: string[]) {
+  const playersById = new Map<string, PlayerLookupRow>();
+
+  for (const topdeckIdChunk of chunkArray(topdeckIds)) {
+    const { data, error } = await supabase
+      .from("players")
+      .select("id, topdeck_id, name")
+      .in("topdeck_id", topdeckIdChunk);
+
+    if (error) {
+      throw new Error(`Error fetching players for commander usage: ${error.message}`);
+    }
+
+    for (const row of (data ?? []) as PlayerLookupRow[]) {
+      playersById.set(row.id, row);
+    }
+  }
+
+  return playersById;
+}
+
+function mapCommanderUsageRow(
+  row: CommanderUsageQueryRow,
+  playersById: Map<string, PlayerLookupRow>
+): CommanderUsageRow {
+  const player = row.player_id ? playersById.get(row.player_id) ?? null : firstRelation(row.players ?? null);
+  const commander = firstRelation(row.commanders);
+  const tournament = firstRelation(row.tournaments);
+  const commanderName = isKnownCommander(commander?.name) ? commander?.name ?? null : null;
+
+  return {
+    topdeck_id: player?.topdeck_id ?? null,
+    player_name: player?.name ?? null,
+    commander_name: commanderName,
+    wins: row.wins,
+    draws: row.draws,
+    losses: row.losses,
+    start_date: tournament?.start_date ?? null,
+    player_count: tournament?.player_count ?? null,
+    decklist_url: null,
+    topdeck_decklist_url: buildTopdeckDecklistUrl(tournament?.topdeck_tid, player?.topdeck_id),
+  };
 }
 
 export async function getCommanderUsageRows(
@@ -114,42 +179,37 @@ export async function getCommanderUsageRows(
 ): Promise<CommanderUsageRow[]> {
   if (topdeckIds.length === 0) return [];
 
-  let query = supabase
-    .from("tournament_entries")
-    .select(
-      "wins, draws, losses, players!inner(topdeck_id, name), commanders!inner(name), tournaments!inner(start_date, player_count, topdeck_tid)"
-    )
-    .in("players.topdeck_id", topdeckIds)
-    .gte("tournaments.start_date", lookbackStart)
-    .not("commanders.name", "is", null);
-  if (lookbackEnd) {
-    query = query.lt("tournaments.start_date", lookbackEnd);
+  const playersById = await getPlayersByTopdeckIds(topdeckIds);
+  const playerIds = Array.from(playersById.keys());
+  const rows: CommanderUsageRow[] = [];
+
+  for (const playerIdChunk of chunkArray(playerIds)) {
+    for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
+      let query = supabase
+        .from("tournament_entries")
+        .select("player_id, wins, draws, losses, commanders!inner(name), tournaments!inner(start_date, player_count, topdeck_tid)")
+        .in("player_id", playerIdChunk)
+        .gte("tournaments.start_date", lookbackStart)
+        .not("commanders.name", "is", null)
+        .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
+      if (lookbackEnd) {
+        query = query.lt("tournaments.start_date", lookbackEnd);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        throw new Error(`Error fetching commander usage: ${error.message}`);
+      }
+
+      rows.push(
+        ...((data ?? []) as CommanderUsageQueryRow[]).map((row) => mapCommanderUsageRow(row, playersById))
+      );
+      if (!data || data.length < SUPABASE_PAGE_SIZE) break;
+    }
   }
 
-  const { data, error } = await query;
-
-  if (error) {
-    throw new Error(`Error fetching commander usage: ${error.message}`);
-  }
-
-  return ((data ?? []) as CommanderUsageQueryRow[]).map((row) => {
-    const player = firstRelation(row.players);
-    const commander = firstRelation(row.commanders);
-    const tournament = firstRelation(row.tournaments);
-    const commanderName = isKnownCommander(commander?.name) ? commander?.name ?? null : null;
-    return {
-      topdeck_id: player?.topdeck_id ?? null,
-      player_name: player?.name ?? null,
-      commander_name: commanderName,
-      wins: row.wins,
-      draws: row.draws,
-      losses: row.losses,
-      start_date: tournament?.start_date ?? null,
-      player_count: tournament?.player_count ?? null,
-      decklist_url: null,
-      topdeck_decklist_url: buildTopdeckDecklistUrl(tournament?.topdeck_tid, player?.topdeck_id),
-    };
-  });
+  return rows;
 }
 
 export async function getCommanderDecklistRows(
@@ -158,35 +218,49 @@ export async function getCommanderDecklistRows(
 ): Promise<CommanderDecklistRow[]> {
   if (topdeckIds.length === 0) return [];
 
-  let query = supabase
-    .from("tournament_entries")
-    .select("players!inner(topdeck_id), commanders!inner(name), tournaments!inner(start_date, topdeck_tid)")
-    .in("players.topdeck_id", topdeckIds)
-    .not("decklist_url", "is", null);
-  if (lookbackEnd) {
-    query = query.lt("tournaments.start_date", lookbackEnd);
+  const playersById = await getPlayersByTopdeckIds(topdeckIds);
+  const playerIds = Array.from(playersById.keys());
+  const rows: CommanderDecklistRow[] = [];
+
+  for (const playerIdChunk of chunkArray(playerIds)) {
+    for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
+      let query = supabase
+        .from("tournament_entries")
+        .select("player_id, commanders!inner(name), tournaments!inner(start_date, topdeck_tid)")
+        .in("player_id", playerIdChunk)
+        .not("commanders.name", "is", null)
+        .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
+      if (lookbackEnd) {
+        query = query.lt("tournaments.start_date", lookbackEnd);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        throw new Error(`Error fetching commander decklists: ${error.message}`);
+      }
+
+      rows.push(
+        ...((data ?? []) as CommanderUsageQueryRow[]).map((row) => {
+          const player = row.player_id ? playersById.get(row.player_id) ?? null : firstRelation(row.players ?? null);
+          const commander = firstRelation(row.commanders);
+          const tournament = firstRelation(row.tournaments);
+          const commanderName = isKnownCommander(commander?.name) ? commander?.name ?? null : null;
+
+          return {
+            topdeck_id: player?.topdeck_id ?? null,
+            commander_name: commanderName,
+            start_date: tournament?.start_date ?? null,
+            decklist_url: null,
+            topdeck_decklist_url: buildTopdeckDecklistUrl(tournament?.topdeck_tid, player?.topdeck_id),
+          };
+        })
+      );
+      if (!data || data.length < SUPABASE_PAGE_SIZE) break;
+    }
   }
 
-  const { data, error } = await query;
-
-  if (error) {
-    throw new Error(`Error fetching commander decklists: ${error.message}`);
-  }
-
-  return ((data ?? []) as CommanderUsageQueryRow[]).map((row) => {
-    const player = firstRelation(row.players);
-    const commander = firstRelation(row.commanders);
-    const tournament = firstRelation(row.tournaments);
-    const commanderName = isKnownCommander(commander?.name) ? commander?.name ?? null : null;
-
-    return {
-      topdeck_id: player?.topdeck_id ?? null,
-      commander_name: commanderName,
-      start_date: tournament?.start_date ?? null,
-      decklist_url: null,
-      topdeck_decklist_url: buildTopdeckDecklistUrl(tournament?.topdeck_tid, player?.topdeck_id),
-    };
-  });
+  return rows;
 }
 
 export function attachLatestDecklistUrls(
@@ -373,4 +447,42 @@ export function lookbackStartDate(months: number, referenceDate: Date = new Date
   const start = new Date(referenceDate);
   start.setMonth(start.getMonth() - months);
   return start.toISOString().slice(0, 10);
+}
+
+function latestUsageRow(rows: CommanderUsageRow[]) {
+  return [...rows].sort((a, b) => (b.start_date ?? "").localeCompare(a.start_date ?? ""))[0] ?? null;
+}
+
+export function selectCommanderForecastRows(
+  topdeckIds: string[],
+  usageRows: CommanderUsageRow[],
+  referenceDate: Date = new Date()
+) {
+  const primaryLookbackStart = lookbackStartDate(COMMANDER_PRIMARY_LOOKBACK_MONTHS, referenceDate);
+  const fallbackLookbackStart = lookbackStartDate(COMMANDER_FALLBACK_LOOKBACK_MONTHS, referenceDate);
+  const selectedRows: CommanderUsageRow[] = [];
+
+  for (const topdeckId of topdeckIds) {
+    const playerRows = usageRows.filter((row) => row.topdeck_id === topdeckId && row.commander_name && row.start_date);
+    const primaryRows = playerRows.filter((row) => row.start_date && row.start_date >= primaryLookbackStart);
+    selectedRows.push(...primaryRows);
+
+    if (primaryRows.length >= MIN_PRIMARY_COMMANDER_ENTRIES) continue;
+
+    const fallbackRows = playerRows.filter(
+      (row) => row.start_date && row.start_date >= fallbackLookbackStart && row.start_date < primaryLookbackStart
+    );
+    selectedRows.push(...fallbackRows);
+
+    if (primaryRows.length + fallbackRows.length > 0) continue;
+
+    const lastKnownRow = latestUsageRow(
+      playerRows.filter((row) => row.start_date && row.start_date < fallbackLookbackStart)
+    );
+    if (lastKnownRow) {
+      selectedRows.push(lastKnownRow);
+    }
+  }
+
+  return selectedRows;
 }

@@ -48,7 +48,7 @@ export function buildOpponentRecords(logs: PlayerGameLog[]): OpponentRecord[] {
 
   for (const log of logs) {
     for (const opponent of log.opponents) {
-      const key = opponent.topdeckId ?? `${opponent.playerName}:${opponent.seat}`;
+      const key = opponent.topdeckId ?? `${log.gameId}:${opponent.playerName}:${opponent.seat}`;
       const existing =
         records.get(key) ??
         {

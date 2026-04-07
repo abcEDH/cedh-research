@@ -55,7 +55,7 @@ jobs:
           headers = {"apikey": key, "Authorization": f"Bearer {key}"}
 
           topdeck_id = "CCIQroaCHHQi7EELyNXlHiHQiQy1"
-          region = "CALIFORNIA"
+          region = "ALL"
 
           def get(table, params):
             resp = None
@@ -76,7 +76,7 @@ jobs:
             "regional_elo_leaderboard",
             {
               "select": "region_key,rank,rating,games_played,wins,draws,losses",
-              "region_type": "eq.state",
+              "region_type": "eq.global",
               "region_key": f"eq.{region}",
               "player_id": f"eq.{player['id']}",
             },
@@ -85,7 +85,7 @@ jobs:
             "regional_elo_player_stats",
             {
               "select": "player_id,games_played,wins,draws,losses",
-              "region_type": "eq.state",
+              "region_type": "eq.global",
               "region_key": f"eq.{region}",
             },
           )

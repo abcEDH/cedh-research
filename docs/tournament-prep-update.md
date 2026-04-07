@@ -26,7 +26,7 @@ Tournament prep uses three main sources:
 
 - TopDeck tournament API: event metadata, start time, standings, points, rounds, and submitted deck data when available.
 - `tournament_entries`: historical player commander usage, tournament dates, and TopDeck tournament slugs for decklist links.
-- `regional_elo_leaderboard`: attendee Elo rating and displayed region.
+- `regional_elo_leaderboard`: attendee global Elo rating.
 
 The TopDeck API response does not explicitly identify league events. The page infers behavior from available data:
 
@@ -42,15 +42,16 @@ For each attendee:
 
 1. Use prior commander entries before the forecast reference date.
 2. Use a primary 6-month lookback window.
-3. If the player has fewer than 2 known commander entries in that primary window, fetch only that player's older 6-to-12-month history as fallback.
-4. Group entries by normalized commander name.
-5. Score each entry by recency only:
+3. If the player has fewer than 2 known commander entries in that primary window, include that player's older 6-to-12-month history as fallback.
+4. If the player has no known commander in the last 12 months, use only their last known commander before that window.
+5. Group entries by normalized commander name.
+6. Score each entry by recency only:
 
 ```text
 score += 0.5 ** (ageDays / 15)
 ```
 
-6. Sort commanders by:
+7. Sort commanders by:
 
 ```text
 predictionScore desc
@@ -59,9 +60,9 @@ latestDate desc
 commander name asc
 ```
 
-7. Display the highest-scoring commander as `Most Likely To Bring`.
-8. Display the next two commanders as `Alternatives`.
-9. Convert per-player scores into displayed confidence:
+8. Display the highest-scoring commander as `Most Likely To Bring`.
+9. Display the next two commanders as `Alternatives`. A player with only the last-known fallback has no alternatives.
+10. Convert per-player scores into displayed confidence:
 
 ```text
 predictionShare = commanderScore / sum(playerCommanderScores)
@@ -82,35 +83,27 @@ Key results from the backtest:
 
 | Model | Predictable entries | Top-1 | Top-3 |
 | --- | ---: | ---: | ---: |
-| Current chosen model: 6-month lookback, sparse 12-month fallback, 15-day half-life | 15,576 | 66.80% | 72.53% |
-| Previous model: 6-month lookback, sparse 12-month fallback, 45-day half-life, 0.25 floor | 15,576 | 65.67% | 72.52% |
-| Hard 3-month lookback, 15-day half-life | 14,073 | 68.35% | 73.05% |
-| Last-played commander, 6-month lookback | 15,479 | 66.98% | n/a |
-| Last-played commander, 12-month lookback | 15,576 | 66.79% | n/a |
+| Last commander, 12-month or any prior fallback | 37,171 | 61.69% | n/a |
+| 6-month lookback, sparse 12-month fallback, 7-day half-life | 37,171 | 61.60% | 68.82% |
+| Current chosen model: 6-month lookback, sparse 12-month fallback, 15-day half-life | 37,171 | 61.08% | 68.86% |
+| Last commander, 3-month lookback | 33,274 | 63.38% | n/a |
+| Count-only 6-month lookback with sparse 12-month fallback | 37,171 | 56.78% | 68.37% |
 
-The hard 3-month model had the best accuracy when a prediction existed, but it dropped coverage by about 1,500 entries compared to the 6-month plus sparse fallback model. The chosen model keeps broader coverage while nearly matching the last-played baseline.
+The last-commander baseline had the best top-1 accuracy among full-coverage variants, but it cannot provide meaningful alternatives. The chosen model uses a 15-day half-life because it keeps stronger top-3 performance while preserving alternatives and confidence shares.
 
 Tournament-size and performance modifiers were tested and did not improve the result enough to justify the added complexity. The final model is intentionally close to "strongly prefer the most recently played commander," with enough frequency aggregation to handle players who repeat a deck several times.
 
 ## Region Display
 
-The attendee table's region is not a true home-region field. It is selected from `regional_elo_leaderboard`:
-
-1. Query rows for the attendee's `topdeck_id`.
-2. Consider `state` and `global` leaderboard rows.
-3. Prefer any `state` row over the global `ALL` row.
-4. If multiple state rows exist, use the lowest rank.
-5. If rank ties, use the row with more games played.
-6. Fall back to `ALL` only when no state row exists.
-
-This means the displayed value is better understood as the player's best state Elo region, not where the player lives.
+The attendee table's region is not a state-specific Elo field. It uses the same predicted profile region model as
+the regional Elo player profile, while Elo values come from the global `ALL` leaderboard.
 
 ## Performance Notes
 
 The page uses `unstable_cache` with a 15-minute revalidation window:
 
 ```text
-tournament-likelihood-analysis-v18
+tournament-likelihood-analysis-v21
 ```
 
 The version suffix is a manual cache-busting namespace. It is bumped when the returned analysis shape or forecast scoring changes, so old cached results do not mask algorithm updates.

@@ -31,8 +31,11 @@ export function OpponentRecordsTable({ records }: { records: OpponentRecord[] })
             </tr>
           </thead>
           <tbody>
-            {visibleRecords.map((record) => (
-              <tr key={`${record.opponentTopdeckId ?? record.opponentName}`} className="border-t border-border/60">
+            {visibleRecords.map((record, index) => (
+              <tr
+                key={`${record.opponentTopdeckId ?? record.opponentName}:${index}`}
+                className="border-t border-border/60"
+              >
                 <td className="px-2 py-3">
                   {record.opponentTopdeckId ? (
                     <Link

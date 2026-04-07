@@ -18,7 +18,7 @@ import os
 import re
 import sys
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -202,23 +202,50 @@ class SupabaseClient:
                     logger.error(f"Failed after {max_retries} retries: {e}")
                     raise
 
-    def select(self, table: str, filters: dict = None, max_retries: int = 3) -> list:
+    def select(self, table: str, filters: dict = None, max_retries: int = 8) -> list:
         """Select data from a table with retry logic."""
         endpoint = f"{self.url}/rest/v1/{table}"
         params = filters or {}
 
         for attempt in range(max_retries):
             try:
-                response = requests.get(endpoint, headers=self.headers, params=params, timeout=30)
+                response = requests.get(endpoint, headers=self.headers, params=params, timeout=60)
+                if response.status_code >= 500:
+                    raise requests.exceptions.HTTPError(f"{response.status_code} Server Error", response=response)
                 response.raise_for_status()
                 return response.json()
-            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout, requests.exceptions.ReadTimeout) as e:
+            except (
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+                requests.exceptions.ReadTimeout,
+                requests.exceptions.HTTPError,
+            ) as e:
                 if attempt < max_retries - 1:
                     wait_time = 2 ** attempt
                     logger.warning(f"Select error, retrying in {wait_time}s... ({attempt + 1}/{max_retries})")
                     time.sleep(wait_time)
                 else:
                     logger.error(f"Select failed after {max_retries} retries: {e}")
+                    raise
+
+    def delete(self, table: str, filters: dict, max_retries: int = 3) -> None:
+        """Delete data from a table with retry logic."""
+        endpoint = f"{self.url}/rest/v1/{table}"
+
+        for attempt in range(max_retries):
+            try:
+                response = requests.delete(endpoint, headers=self.headers, params=filters, timeout=30)
+                if response.status_code >= 400:
+                    logger.error(f"Supabase delete error: {response.text}")
+                    response.raise_for_status()
+                return
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout, requests.exceptions.ReadTimeout) as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    logger.warning(f"Delete error, retrying in {wait_time}s... ({attempt + 1}/{max_retries})")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"Delete failed after {max_retries} retries: {e}")
                     raise
 
 
@@ -385,6 +412,146 @@ def normalize_commander_name(commanders: list[str]) -> str:
     return " / ".join(sorted_cmds)
 
 
+US_STATE_NAMES = {
+    "AL": "Alabama",
+    "AR": "Arkansas",
+    "AZ": "Arizona",
+    "CA": "California",
+    "CO": "Colorado",
+    "CT": "Connecticut",
+    "DC": "District of Columbia",
+    "DE": "Delaware",
+    "FL": "Florida",
+    "GA": "Georgia",
+    "HI": "Hawaii",
+    "IA": "Iowa",
+    "ID": "Idaho",
+    "IL": "Illinois",
+    "IN": "Indiana",
+    "KS": "Kansas",
+    "KY": "Kentucky",
+    "LA": "Louisiana",
+    "MA": "Massachusetts",
+    "MD": "Maryland",
+    "ME": "Maine",
+    "MI": "Michigan",
+    "MN": "Minnesota",
+    "MO": "Missouri",
+    "MS": "Mississippi",
+    "NC": "North Carolina",
+    "NE": "Nebraska",
+    "NH": "New Hampshire",
+    "NJ": "New Jersey",
+    "NM": "New Mexico",
+    "NV": "Nevada",
+    "NY": "New York",
+    "OH": "Ohio",
+    "OK": "Oklahoma",
+    "OR": "Oregon",
+    "PA": "Pennsylvania",
+    "RI": "Rhode Island",
+    "SC": "South Carolina",
+    "SD": "South Dakota",
+    "TN": "Tennessee",
+    "TX": "Texas",
+    "UT": "Utah",
+    "VA": "Virginia",
+    "VT": "Vermont",
+    "WA": "Washington",
+    "WI": "Wisconsin",
+    "WV": "West Virginia",
+}
+
+
+CANADIAN_PROVINCE_NAMES = {
+    "AB": "Alberta",
+    "BC": "British Columbia",
+    "MB": "Manitoba",
+    "NB": "New Brunswick",
+    "ON": "Ontario",
+    "PE": "Prince Edward Island",
+    "QC": "Quebec",
+}
+
+
+OTHER_REGION_NAMES = {
+    "AN": "Andalusia",
+    "BW": "Baden-Wurttemberg",
+    "BY": "Bavaria",
+    "GP": "Gauteng",
+    "HE": "Hesse",
+    "HH": "Hamburg",
+    "HR": "Haryana",
+    "PV": "Basque Country",
+    "RP": "Rhineland-Palatinate",
+    "SH": "Schleswig-Holstein",
+    "SL": "Saarland",
+    "SN": "Saxony",
+    "SP": "Sao Paulo",
+    "VC": "Valencian Community",
+    "WB": "West Bengal",
+    "WC": "Western Cape",
+}
+
+
+def normalize_region_name(state: str | None, *, city: str | None = None, country: str | None = None, venue: str | None = None) -> str | None:
+    """Expand known state/province abbreviations using location context."""
+    if not state:
+        return None
+
+    value = state.strip()
+    code = value.upper()
+    if len(code) != 2 or not code.isalpha():
+        return value
+
+    haystack = " ".join(part or "" for part in [city, country, venue]).lower()
+    if "canada" in haystack and code in CANADIAN_PROVINCE_NAMES:
+        return CANADIAN_PROVINCE_NAMES[code]
+    if ("usa" in haystack or "united states" in haystack) and code in US_STATE_NAMES:
+        return US_STATE_NAMES[code]
+    if code == "BE":
+        if "suisse" in haystack or "switzerland" in haystack or "interlaken" in haystack:
+            return "Bern"
+        if "germany" in haystack or "deutschland" in haystack or "berlin" in haystack:
+            return "Berlin"
+    if code == "GE" and ("netherlands" in haystack or "nederland" in haystack or "tiel" in haystack):
+        return "Gelderland"
+    if code == "NB" and ("netherlands" in haystack or "nederland" in haystack or "hertogenbosch" in haystack):
+        return "North Brabant"
+    if code == "NH":
+        if "netherlands" in haystack or "nederland" in haystack or "haarlem" in haystack:
+            return "North Holland"
+        if "usa" in haystack or "united states" in haystack:
+            return "New Hampshire"
+    if code in US_STATE_NAMES:
+        return US_STATE_NAMES[code]
+    if code in CANADIAN_PROVINCE_NAMES:
+        return CANADIAN_PROVINCE_NAMES[code]
+    if code in OTHER_REGION_NAMES:
+        return OTHER_REGION_NAMES[code]
+
+    return value
+
+
+def parse_datetime(value) -> datetime | None:
+    """Parse TopDeck/database timestamps into comparable aware datetimes."""
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, (int, float)):
+        parsed = datetime.fromtimestamp(value, tz=timezone.utc)
+    else:
+        try:
+            parsed = date_parser.parse(str(value))
+        except (TypeError, ValueError):
+            return None
+
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
 class DataIngester:
     """Main ingestion orchestrator."""
 
@@ -460,17 +627,71 @@ class DataIngester:
 
         return self.commander_cache.copy()
 
-    def batch_upsert_players(self, player_data: dict[str, str]) -> dict[str, str]:
+    def latest_player_tournament_dates(self, player_ids: list[str]) -> dict[str, datetime]:
+        """Return latest known tournament start date per player ID."""
+        if not player_ids:
+            return {}
+
+        try:
+            rows = self.supabase.select(
+                "tournament_entries",
+                {
+                    "select": "player_id,tournaments!inner(start_date)",
+                    "player_id": f"in.({','.join(player_ids)})",
+                },
+            )
+        except Exception as exc:
+            logger.warning(f"Could not fetch latest player tournament dates: {exc}")
+            return {}
+
+        latest: dict[str, datetime] = {}
+        for row in rows:
+            tournament = row.get("tournaments")
+            if isinstance(tournament, list):
+                tournament = tournament[0] if tournament else None
+            seen_at = parse_datetime(tournament.get("start_date") if tournament else None)
+            player_id = row.get("player_id")
+            if not player_id or not seen_at:
+                continue
+            if player_id not in latest or seen_at > latest[player_id]:
+                latest[player_id] = seen_at
+
+        return latest
+
+    def batch_upsert_players(self, player_data: dict[str, str], name_seen_at=None) -> dict[str, str]:
         """Batch upsert players and return topdeck_id -> id mapping."""
         if not player_data:
             return {}
 
-        # Build batch data (only new players)
-        batch = [
-            {"topdeck_id": tid, "name": name}
-            for tid, name in player_data.items()
-            if tid and tid not in self.player_cache
-        ]
+        topdeck_ids = [tid for tid in player_data if tid and tid not in self.player_cache]
+        existing_by_topdeck_id = {}
+        if topdeck_ids:
+            existing_rows = self.supabase.select("players", {"topdeck_id": f"in.({','.join(topdeck_ids)})"})
+            for player in existing_rows:
+                topdeck_id = player.get("topdeck_id")
+                if topdeck_id:
+                    existing_by_topdeck_id[topdeck_id] = player
+                    self.player_cache[topdeck_id] = player["id"]
+
+        incoming_seen_at = parse_datetime(name_seen_at)
+        latest_by_player_id = self.latest_player_tournament_dates(
+            [player["id"] for player in existing_by_topdeck_id.values()]
+        )
+
+        batch = []
+        for tid, name in player_data.items():
+            if not tid:
+                continue
+            existing = existing_by_topdeck_id.get(tid)
+            if not existing:
+                batch.append({"topdeck_id": tid, "name": name})
+                continue
+
+            # Only let a tournament rename an existing player when it is as
+            # recent as or newer than the player's latest known tournament.
+            latest_seen_at = latest_by_player_id.get(existing["id"])
+            if incoming_seen_at and (not latest_seen_at or incoming_seen_at >= latest_seen_at):
+                batch.append({"topdeck_id": tid, "name": name})
 
         if batch:
             logger.info(f"Batch upserting {len(batch)} players...")
@@ -486,6 +707,15 @@ class DataIngester:
         if not entries:
             return {}
 
+        deduped_entries = {}
+        for entry in entries:
+            key = (entry.get("tournament_id"), entry.get("player_id"))
+            if key in deduped_entries:
+                logger.warning(f"Skipping duplicate tournament entry for tournament/player {key}")
+                continue
+            deduped_entries[key] = entry
+
+        entries = list(deduped_entries.values())
         logger.info(f"Batch upserting {len(entries)} tournament entries...")
         result = self.supabase.upsert("tournament_entries", entries, on_conflict="tournament_id,player_id")
 
@@ -550,7 +780,12 @@ class DataIngester:
             "median_elo": int(tournament.get("medianElo")) if tournament.get("medianElo") else None,
             "top_elo": int(tournament.get("topElo")) if tournament.get("topElo") else None,
             "city": event_data.get("city"),
-            "state": event_data.get("state"),
+            "state": normalize_region_name(
+                event_data.get("state"),
+                city=event_data.get("city"),
+                country=event_data.get("country"),
+                venue=event_data.get("location"),
+            ),
             "venue": event_data.get("location"),
             "latitude": event_data.get("lat"),
             "longitude": event_data.get("lng"),
@@ -604,7 +839,7 @@ class DataIngester:
         self.batch_upsert_commanders(commander_data)
 
         # Step 3: Batch upsert players (1 API call)
-        self.batch_upsert_players(player_data)
+        self.batch_upsert_players(player_data, name_seen_at=start_date)
 
         # Step 4: Build all entry records with resolved IDs
         entries = []
@@ -644,7 +879,7 @@ class DataIngester:
         # === BATCH PROCESSING FOR GAMES ===
         if not rounds:
             logger.warning(f"No rounds data for {name}")
-            return {"tournament_id": tournament_id, "entries": len(entry_map), "games": 0}
+            return {"tournament_id": tournament_id, "name": name, "entries": len(entry_map), "games": 0}
 
         # Step 1: Pre-process all rounds/tables to build game data
         logger.info(f"Pre-processing {len(rounds)} rounds for games...")
@@ -754,7 +989,7 @@ class DataIngester:
 
             except Exception as e:
                 logger.error(f"Failed to batch create games: {e}")
-                return {"tournament_id": tournament_id, "entries": len(entry_map), "games": 0}
+                return {"tournament_id": tournament_id, "name": name, "entries": len(entry_map), "games": 0}
 
         games_created = len(games_data)
         logger.info(f"Created {games_created} games for {name}")
@@ -1032,7 +1267,7 @@ def main():
                     try:
                         result = ingester.process_tournament(tournament)
                         if result:
-                            logger.info(f"Processed: {result['name']}")
+                            logger.info(f"Processed: {result.get('name', tid)}")
                     except Exception as e:
                         logger.error(f"Failed to process {tid}: {e}")
                 else:
@@ -1069,7 +1304,7 @@ def main():
                 try:
                     result = ingester.process_tournament(t)
                     if result:
-                        logger.info(f"Processed: {result['name']}")
+                        logger.info(f"Processed: {result.get('name', t.get('tournamentName', 'unknown'))}")
                 except Exception as e:
                     logger.error(f"Failed to process {t.get('tournamentName')}: {e}")
             else:

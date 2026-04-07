@@ -61,8 +61,29 @@ type AttendeeRow = {
   regionKey: string | null;
 };
 
-function formatPercent(value: number) {
-  return `${Math.round(value * 100)}%`;
+function displayedCommanderPercents(commanders: CommanderPrediction[]) {
+  const percents = commanders.map((commander) => ({
+    commander,
+    percent: Math.round(commander.predictionShare * 100),
+  }));
+
+  for (const row of percents) {
+    if (row.commander.predictionShare > 0 && row.percent === 0) {
+      row.percent = 1;
+    }
+  }
+
+  while (percents.reduce((sum, row) => sum + row.percent, 0) > 100) {
+    const reducer = percents
+      .map((row, index) => ({ ...row, index }))
+      .filter((row) => row.percent > 1)
+      .sort((a, b) => b.percent - a.percent)[0];
+
+    if (!reducer) break;
+    percents[reducer.index].percent -= 1;
+  }
+
+  return percents.map((row) => row.percent);
 }
 
 function normalizeSearch(value: string) {
@@ -356,6 +377,7 @@ export function TournamentAnalysisTables({
                 const regionalProfileHref = `/regional-elo/player/${row.standing.id}`;
                 const primary = row.profile?.commanders[0];
                 const alternatives = row.profile?.commanders.slice(1, 3) ?? [];
+                const displayedPercents = displayedCommanderPercents(row.profile?.commanders.slice(0, 3) ?? []);
                 const primaryDecklistHref = primary?.latestTopdeckDecklistUrl || primary?.latestDecklistUrl;
                 return (
                   <tr key={`${row.standing.id}-${row.standing.standing}`} className="border-t border-border/60">
@@ -413,7 +435,7 @@ export function TournamentAnalysisTables({
                                 <div className="font-medium text-foreground">{primary.commander}</div>
                               )}
                               <div className="text-xs text-muted-foreground">
-                                Forecast confidence {formatPercent(primary.predictionShare)}
+                                Forecast confidence {displayedPercents[0] ?? 0}%
                               </div>
                             </div>
                           ) : (
@@ -423,7 +445,7 @@ export function TournamentAnalysisTables({
                         <td className="px-2 py-4">
                           <div className="flex flex-wrap gap-2">
                             {alternatives.length ? (
-                              alternatives.map((commander) => (
+                              alternatives.map((commander, index) => (
                                 commander.latestTopdeckDecklistUrl || commander.latestDecklistUrl ? (
                                   <a
                                     key={`${row.standing.id}-${commander.commander}`}
@@ -432,11 +454,11 @@ export function TournamentAnalysisTables({
                                     rel="noreferrer"
                                     target="_blank"
                                   >
-                                    {commander.commander} | {formatPercent(commander.predictionShare)}
+                                    {commander.commander} | {displayedPercents[index + 1] ?? 0}%
                                   </a>
                                 ) : (
                                   <span key={`${row.standing.id}-${commander.commander}`} className="knd-chip">
-                                    {commander.commander} | {formatPercent(commander.predictionShare)}
+                                    {commander.commander} | {displayedPercents[index + 1] ?? 0}%
                                   </span>
                                 )
                               ))

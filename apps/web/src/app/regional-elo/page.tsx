@@ -65,11 +65,13 @@ type PlayerStateHistoryQueryRow = {
     | {
         start_date: string | null;
         state: string | null;
+        city: string | null;
         player_count: number | null;
       }
     | Array<{
         start_date: string | null;
         state: string | null;
+        city: string | null;
         player_count: number | null;
       }>
     | null;
@@ -175,7 +177,7 @@ const fetchPredictedRegionByPlayer = unstable_cache(
     for (let offset = 0; ; offset += pageSize) {
       const { data, error } = await supabase
         .from("tournament_entries")
-        .select("players!inner(topdeck_id), tournaments!inner(start_date, state, player_count)")
+        .select("players!inner(topdeck_id), tournaments!inner(start_date, state, city, player_count)")
         .not("players.topdeck_id", "is", null)
         .not("tournaments.state", "is", null)
         .not("tournaments.start_date", "is", null)
@@ -190,6 +192,7 @@ const fetchPredictedRegionByPlayer = unstable_cache(
         const playerRows = histories.get(player.topdeck_id) ?? [];
         playerRows.push({
           state: tournament.state,
+          city: tournament.city,
           start_date: tournament.start_date,
           player_count: tournament.player_count,
         });
@@ -211,22 +214,6 @@ const fetchPredictedRegionByPlayer = unstable_cache(
   ["regional-elo-predicted-player-regions-v1"],
   { revalidate: 60 * 15 }
 );
-
-async function fetchAllRegionalRows(regionKey: string): Promise<LeaderboardRow[]> {
-  const globalRows = await fetchGlobalLeaderboardRows();
-  if (regionKey === GLOBAL_REGION_KEY) return globalRows;
-
-  const predictedRegionByPlayer = await fetchPredictedRegionByPlayer();
-  const regionRows = globalRows
-    .filter((row) => row.topdeck_id && predictedRegionByPlayer[row.topdeck_id] === regionKey)
-    .map((row, index) => ({
-      ...row,
-      region_type: "state",
-      region_key: regionKey,
-      rank: index + 1,
-    }));
-  return applyAllGameStats(regionRows);
-}
 
 function chunkArray<T>(values: T[], chunkSize: number) {
   const chunks: T[][] = [];
@@ -346,7 +333,7 @@ async function fetchRegionalValidity(): Promise<RegionalValidityRow[]> {
         "latest_game_date",
       ].join(", ")
     )
-    .eq("region_type", "state");
+    .eq("region_type", "global");
 
   if (error) {
     console.error("Error fetching regional validity stats:", error);
@@ -385,16 +372,41 @@ export default async function RegionalEloPage({
     | Promise<{ region?: string | string[] }>;
 }) {
   const resolvedSearchParams = await Promise.resolve(searchParams);
-  const [{ data: regionsData }, validityRows] = await Promise.all([
+  const [{ data: globalRegionData }, validityRows, predictedRegionByPlayer, globalRows] = await Promise.all([
     supabase
       .from("regional_elo_regions")
       .select("region_type, region_key, player_count, updated_at")
-      .in("region_type", ["global", "state"])
-      .order("region_key", { ascending: true }),
+      .eq("region_type", "global")
+      .eq("region_key", GLOBAL_REGION_KEY)
+      .maybeSingle(),
     fetchRegionalValidity(),
+    fetchPredictedRegionByPlayer(),
+    fetchGlobalLeaderboardRows(),
   ]);
 
-  const regions = ((regionsData ?? []) as RegionRow[]).sort((a, b) => {
+  const regionCounts = new Map<string, number>();
+  for (const row of globalRows) {
+    if (!row.topdeck_id) continue;
+    const predictedRegion = predictedRegionByPlayer[row.topdeck_id];
+    if (!predictedRegion) continue;
+    regionCounts.set(predictedRegion, (regionCounts.get(predictedRegion) ?? 0) + 1);
+  }
+
+  const globalRegion = (globalRegionData as RegionRow | null) ?? {
+    region_type: "global",
+    region_key: GLOBAL_REGION_KEY,
+    player_count: globalRows.length,
+    updated_at: null,
+  };
+  const regions = [
+    globalRegion,
+    ...Array.from(regionCounts.entries()).map(([regionKey, playerCount]) => ({
+      region_type: "global",
+      region_key: regionKey,
+      player_count: playerCount,
+      updated_at: globalRegion.updated_at,
+    })),
+  ].sort((a, b) => {
     if (a.region_key === GLOBAL_REGION_KEY) return -1;
     if (b.region_key === GLOBAL_REGION_KEY) return 1;
     return a.region_key.localeCompare(b.region_key);
@@ -408,7 +420,19 @@ export default async function RegionalEloPage({
     defaultRegion ||
     regions[0]?.region_key;
 
-  const leaderboard = selectedRegion ? await fetchAllRegionalRows(selectedRegion) : [];
+  const leaderboard = selectedRegion
+    ? selectedRegion === GLOBAL_REGION_KEY
+      ? globalRows
+      : await applyAllGameStats(
+          globalRows
+            .filter((row) => row.topdeck_id && predictedRegionByPlayer[row.topdeck_id] === selectedRegion)
+            .map((row, index) => ({
+              ...row,
+              region_key: selectedRegion,
+              rank: index + 1,
+            }))
+        )
+    : [];
 
   const topdeckIds = leaderboard
     .map((row) => row.topdeck_id)
@@ -418,9 +442,7 @@ export default async function RegionalEloPage({
 
   const updatedAt = regions.find((r) => r.region_key === selectedRegion)?.updated_at ?? null;
   const globalValidity = validityRows.find((row) => row.scope === "global");
-  const selectedRegionValidity = selectedRegion === GLOBAL_REGION_KEY
-    ? globalValidity
-    : validityRows.find((row) => row.scope === "region" && row.region_key === selectedRegion);
+  const selectedRegionValidity = globalValidity;
   const hasValidityData = validityRows.length > 0;
   const includedCoverage =
     globalValidity && globalValidity.total_games > 0
@@ -438,7 +460,9 @@ export default async function RegionalEloPage({
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="knd-chip">Regional Elo</p>
-              <h1 className="mt-4 text-3xl font-semibold text-foreground md:text-4xl">State Leaderboards</h1>
+              <h1 className="mt-4 text-3xl font-semibold text-foreground md:text-4xl">
+                Regional Leaderboards
+              </h1>
             </div>
             <nav className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
               <Link className="transition hover:text-foreground" href="/">
@@ -484,7 +508,7 @@ export default async function RegionalEloPage({
                   Global Validity
                 </CardTitle>
                 <p className="text-xs text-muted-foreground">
-                  Regional Elo only counts games from tournaments with populated state metadata and excludes pods with byes.
+                  Global Elo excludes pods with byes and games with insufficient player data.
                 </p>
               </CardHeader>
               <CardContent className="space-y-3 text-sm">
@@ -531,8 +555,8 @@ export default async function RegionalEloPage({
                 </CardTitle>
                 <p className="text-xs text-muted-foreground">
                   {selectedRegion === GLOBAL_REGION_KEY
-                    ? "Sample quality for the global Elo dataset."
-                    : "Reference sample quality for tournaments in the selected state."}
+                    ? "Full global Elo leaderboard."
+                    : "Profile-region view ranked by global Elo."}
                 </p>
               </CardHeader>
               <CardContent className="space-y-3 text-sm">
@@ -572,9 +596,7 @@ export default async function RegionalEloPage({
                   {!hasValidityData
                     ? "This panel will populate after the regional validity migration is applied to the deployed database."
                     : selectedRegionValidity
-                    ? selectedRegion === GLOBAL_REGION_KEY
-                      ? `${formatPercent(selectedRegionCoverage)} of tracked games currently qualify for global Elo.`
-                      : `${formatPercent(selectedRegionCoverage)} of tracked ${selectedRegion} games currently qualify for state Elo reference data.`
+                    ? `${formatPercent(selectedRegionCoverage)} of tracked games currently qualify for global Elo.`
                     : "No validity summary available for this region yet."}
                 </div>
               </CardContent>

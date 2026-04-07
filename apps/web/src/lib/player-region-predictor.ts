@@ -1,5 +1,6 @@
 export type PlayerStateHistoryRow = {
   state: string;
+  city?: string | null;
   start_date: string;
   player_count: number | null;
 };
@@ -11,8 +12,14 @@ export type PredictedState = {
   source: "small-events" | "all-events" | "all-prior";
 };
 
+const LOCAL_EVENT_PLAYER_LIMIT = 64;
+
 function normalizeState(value: string | null | undefined) {
   return (value ?? "").trim().toUpperCase();
+}
+
+function normalizeCity(value: string | null | undefined) {
+  return normalizeState(value).replace(/[^A-Z0-9]+/g, " ").trim();
 }
 
 function addMonths(value: Date, months: number) {
@@ -30,7 +37,29 @@ function calculateLocationRecencyWeight(eventDate: string, referenceDate: Date) 
 
 function calculateSmallTournamentWeight(playerCount: number | null) {
   if (!playerCount || playerCount <= 0) return 1;
-  return Math.max(0.5, Math.min(2, 64 / playerCount));
+  return Math.max(0.5, Math.min(2, LOCAL_EVENT_PLAYER_LIMIT / playerCount));
+}
+
+function hasSimilarLocation(left: PlayerStateHistoryRow, right: PlayerStateHistoryRow) {
+  if (left.state !== right.state) return false;
+  const leftCity = normalizeCity(left.city);
+  const rightCity = normalizeCity(right.city);
+  if (leftCity && rightCity) return leftCity === rightCity;
+  return true;
+}
+
+function isCleanSmallEvent(row: PlayerStateHistoryRow, rows: PlayerStateHistoryRow[]) {
+  if (!row.player_count || row.player_count > LOCAL_EVENT_PLAYER_LIMIT) return false;
+  const eventTimestamp = Date.parse(row.start_date);
+  if (!Number.isFinite(eventTimestamp)) return false;
+
+  return !rows.some((other) => {
+    if (!other.player_count || other.player_count <= LOCAL_EVENT_PLAYER_LIMIT) return false;
+    const otherTimestamp = Date.parse(other.start_date);
+    if (!Number.isFinite(otherTimestamp)) return false;
+    const ageDeltaDays = Math.abs(otherTimestamp - eventTimestamp) / (1000 * 60 * 60 * 24);
+    return ageDeltaDays <= 2 && hasSimilarLocation(row, other);
+  });
 }
 
 function selectStateHistoryWindow(rows: PlayerStateHistoryRow[], referenceDate: Date) {
@@ -50,12 +79,16 @@ export function predictNextState(
     .map((row) => ({
       ...row,
       state: normalizeState(row.state),
+      city: normalizeCity(row.city),
     }))
     .filter((row) => row.state && Number.isFinite(Date.parse(row.start_date)))
     .sort((a, b) => Date.parse(a.start_date) - Date.parse(b.start_date));
   if (normalizedRows.length === 0) return null;
 
-  const smallEventRows = normalizedRows.filter((row) => !row.player_count || row.player_count <= 80);
+  const cleanSmallEventRows = normalizedRows.filter((row) => isCleanSmallEvent(row, normalizedRows));
+  const smallEventRows = cleanSmallEventRows.length >= 2
+    ? cleanSmallEventRows
+    : normalizedRows.filter((row) => !row.player_count || row.player_count <= LOCAL_EVENT_PLAYER_LIMIT);
   let source: PredictedState["source"] = "small-events";
   let selectedRows = selectStateHistoryWindow(smallEventRows, referenceDate);
 
