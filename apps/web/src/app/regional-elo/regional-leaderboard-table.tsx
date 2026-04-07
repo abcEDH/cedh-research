@@ -22,8 +22,9 @@ type LeaderboardRow = {
 
 type LatestCommanderRow = {
   topdeck_id: string | null;
-  commander_name: string | null;
-  start_date: string | null;
+  active_commander: string | null;
+  latest_commander: string | null;
+  latest_commander_date: string | null;
 };
 
 function formatDate(value: string | null) {
@@ -102,7 +103,7 @@ export function RegionalLeaderboardTable({
                   <td className="px-2 py-3 text-xs text-muted-foreground">
                     <div>{formatDate(row.last_game_date)}</div>
                     <div className="truncate text-[11px]">
-                      {latestCommander?.commander_name || "No commander data"}
+                      {latestCommander?.active_commander || latestCommander?.latest_commander || "No commander data"}
                     </div>
                   </td>
                 </tr>

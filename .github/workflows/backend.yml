@@ -61,7 +61,7 @@ jobs:
       - name: Run data ingestion
         run: python packages/backend/src/ingest.py --days 7
 
-      - name: Recompute global Elo, state activity, and game event data
+      - name: Recompute global Elo, state activity, game events, and commander profiles
         run: python packages/backend/src/regional_elo.py
 
       - name: Upload logs

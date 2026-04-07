@@ -23,6 +23,10 @@ ELO_DIVISOR = 200
 GLOBAL_REGION_TYPE = "global"
 GLOBAL_REGION_KEY = "ALL"
 STATE_REGION_TYPE = "state"
+COMMANDER_PRIMARY_LOOKBACK_MONTHS = 6
+COMMANDER_FALLBACK_LOOKBACK_MONTHS = 12
+COMMANDER_MIN_PRIMARY_ENTRIES = 2
+COMMANDER_RECENCY_HALF_LIFE_DAYS = 15
 
 
 @dataclass
@@ -37,6 +41,7 @@ class PlayerStats:
 
 @dataclass
 class StateActivity:
+    country_key: str | None = None
     games_30d: int = 0
     games_90d: int = 0
     games_365d: int = 0
@@ -47,6 +52,16 @@ class StateActivity:
     last_game_date: str | None = None
     activity_score: float = 0.0
     is_primary_state: bool = False
+
+
+@dataclass
+class CommanderUsage:
+    player_id: str
+    topdeck_id: str
+    player_name: str | None
+    commander_name: str
+    start_date: str
+    decklist_url: str | None = None
 
 
 def load_credentials() -> tuple[str, str]:
@@ -112,7 +127,7 @@ def fetch_elo_game_rows(client: SupabaseClient) -> List[Dict[str, Any]]:
             [
                 (
                     "select",
-                    "game_id,tournament_id,entry_id,player_id,start_date,state,result,is_draw,table_number",
+                    "game_id,tournament_id,entry_id,player_id,start_date,state,country,result,is_draw,table_number",
                 ),
                 ("order", "start_date.asc,game_id.asc,table_number.asc"),
                 ("start_date", f"gte.{start.date().isoformat()}"),
@@ -143,6 +158,11 @@ def normalized_state(row: Dict[str, Any]) -> str | None:
     return state.upper() if state else None
 
 
+def normalized_country(row: Dict[str, Any]) -> str | None:
+    country = (row.get("country") or "").strip()
+    return country.upper() if country else None
+
+
 def bucketed_activity_score(activity: StateActivity) -> float:
     games_31_90 = max(activity.games_90d - activity.games_30d, 0)
     games_91_365 = max(activity.games_365d - activity.games_90d, 0)
@@ -153,6 +173,45 @@ def bucketed_activity_score(activity: StateActivity) -> float:
         + (0.02 * activity.games_lifetime),
         6,
     )
+
+
+def is_known_commander(value: str | None) -> bool:
+    normalized = (value or "").strip().lower()
+    return bool(normalized) and normalized != "unknown commander"
+
+
+def date_months_ago(reference: date, months: int) -> date:
+    month = reference.month - months
+    year = reference.year
+    while month <= 0:
+        month += 12
+        year -= 1
+    day = min(
+        reference.day,
+        [
+            31,
+            29 if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0) else 28,
+            31,
+            30,
+            31,
+            30,
+            31,
+            31,
+            30,
+            31,
+            30,
+            31,
+        ][month - 1],
+    )
+    return date(year, month, day)
+
+
+def recency_weight(start_date: str, reference: date) -> float:
+    parsed = parse_game_date(start_date)
+    if not parsed:
+        return 0.5
+    age_days = max((reference - parsed).days, 0)
+    return 0.5 ** (age_days / COMMANDER_RECENCY_HALF_LIFE_DAYS)
 
 
 def process_game(
@@ -177,6 +236,7 @@ def process_game(
     parsed_game_date = parse_game_date(game_date)
     age_days = (datetime.utcnow().date() - parsed_game_date).days if parsed_game_date else None
     state_key = normalized_state(rows[0])
+    country_key = normalized_country(rows[0])
 
     equities = {}
     total_equity = 0.0
@@ -233,6 +293,7 @@ def process_game(
             continue
 
         activity = state_activity[player_id][state_key]
+        activity.country_key = country_key or activity.country_key
         activity.games_lifetime += 1
         activity.last_game_date = game_date or activity.last_game_date
         if is_draw:
@@ -337,6 +398,7 @@ def build_state_activity_rows(state_activity: Dict[str, Dict[str, StateActivity]
                 {
                     "region_type": STATE_REGION_TYPE,
                     "region_key": region_key,
+                    "country_key": activity.country_key,
                     "player_id": player_id,
                     "games_30d": activity.games_30d,
                     "games_90d": activity.games_90d,
@@ -352,6 +414,146 @@ def build_state_activity_rows(state_activity: Dict[str, Dict[str, StateActivity]
                 }
             )
     return rows
+
+
+def fetch_commander_usage_rows(client: SupabaseClient) -> Dict[str, List[CommanderUsage]]:
+    rows = fetch_all(
+        client,
+        "player_commander_entries",
+        [
+            (
+                "select",
+                "player_id,topdeck_id,player_name,commander_name,start_date,decklist_url",
+            ),
+            ("topdeck_id", "not.is.null"),
+            ("commander_name", "not.is.null"),
+            ("start_date", "not.is.null"),
+            ("order", "start_date.asc"),
+        ],
+        limit=1000,
+    )
+
+    by_topdeck_id: Dict[str, List[CommanderUsage]] = defaultdict(list)
+    for row in rows:
+        topdeck_id = (row.get("topdeck_id") or "").strip()
+        commander_name = (row.get("commander_name") or "").strip()
+        start_date = row.get("start_date")
+        player_id = row.get("player_id")
+        if not topdeck_id or not player_id or not start_date or not is_known_commander(commander_name):
+            continue
+        by_topdeck_id[topdeck_id].append(
+            CommanderUsage(
+                player_id=player_id,
+                topdeck_id=topdeck_id,
+                player_name=row.get("player_name"),
+                commander_name=commander_name,
+                start_date=str(start_date),
+                decklist_url=row.get("decklist_url"),
+            )
+        )
+
+    print(f"Fetched commander history for {len(by_topdeck_id)} players", flush=True)
+    return by_topdeck_id
+
+
+def selected_commander_rows(rows: List[CommanderUsage], reference: date) -> List[CommanderUsage]:
+    primary_start = date_months_ago(reference, COMMANDER_PRIMARY_LOOKBACK_MONTHS).isoformat()
+    fallback_start = date_months_ago(reference, COMMANDER_FALLBACK_LOOKBACK_MONTHS).isoformat()
+    primary_rows = [row for row in rows if row.start_date >= primary_start]
+    if len(primary_rows) >= COMMANDER_MIN_PRIMARY_ENTRIES:
+        return primary_rows
+
+    fallback_rows = [
+        row
+        for row in rows
+        if fallback_start <= row.start_date < primary_start
+    ]
+    if primary_rows or fallback_rows:
+        return [*primary_rows, *fallback_rows]
+
+    return rows[-1:] if rows else []
+
+
+def build_commander_profile_rows(client: SupabaseClient) -> List[Dict[str, Any]]:
+    by_topdeck_id = fetch_commander_usage_rows(client)
+    updated_at = datetime.utcnow().isoformat()
+    reference = datetime.utcnow().date()
+    profile_rows: List[Dict[str, Any]] = []
+
+    for topdeck_id, rows in by_topdeck_id.items():
+        rows.sort(key=lambda row: row.start_date)
+        profile_rows_for_prediction = selected_commander_rows(rows, reference)
+        per_commander: Dict[str, Dict[str, Any]] = {}
+
+        for row in profile_rows_for_prediction:
+            current = per_commander.get(row.commander_name) or {
+                "commander": row.commander_name,
+                "entries": 0,
+                "prediction_score": 0.0,
+                "latest_date": None,
+                "latest_decklist_date": None,
+                "latest_decklist_url": None,
+            }
+            current["entries"] += 1
+            current["prediction_score"] += recency_weight(row.start_date, reference)
+            if not current["latest_date"] or row.start_date > current["latest_date"]:
+                current["latest_date"] = row.start_date
+            if row.decklist_url and (
+                not current["latest_decklist_date"] or row.start_date >= current["latest_decklist_date"]
+            ):
+                current["latest_decklist_date"] = row.start_date
+                current["latest_decklist_url"] = row.decklist_url
+            per_commander[row.commander_name] = current
+
+        sorted_commanders = sorted(
+            per_commander.values(),
+            key=lambda row: (
+                row["prediction_score"],
+                row["entries"],
+                row["latest_date"] or "",
+                row["commander"],
+            ),
+            reverse=True,
+        )
+        total_prediction_score = sum(row["prediction_score"] for row in sorted_commanders)
+        total_entries = sum(row["entries"] for row in sorted_commanders)
+        commander_predictions = [
+            {
+                "commander": row["commander"],
+                "entries": row["entries"],
+                "prediction_score": round(row["prediction_score"], 6),
+                "prediction_share": round(
+                    row["prediction_score"] / total_prediction_score,
+                    6,
+                )
+                if total_prediction_score
+                else 0,
+                "latest_date": row["latest_date"],
+                "latest_decklist_url": row["latest_decklist_url"],
+            }
+            for row in sorted_commanders[:3]
+        ]
+        latest_row = rows[-1]
+        active = commander_predictions[0] if commander_predictions else None
+
+        profile_rows.append(
+            {
+                "player_id": latest_row.player_id,
+                "topdeck_id": topdeck_id,
+                "player_name": latest_row.player_name,
+                "active_commander": active["commander"] if active else None,
+                "active_commander_entries": active["entries"] if active else 0,
+                "active_commander_prediction_score": active["prediction_score"] if active else 0,
+                "total_entries": total_entries,
+                "commander_predictions": commander_predictions,
+                "latest_commander": latest_row.commander_name,
+                "latest_commander_date": latest_row.start_date,
+                "latest_decklist_url": latest_row.decklist_url,
+                "updated_at": updated_at,
+            }
+        )
+
+    return profile_rows
 
 
 def upsert_rows(client: SupabaseClient, table: str, rows: List[Dict[str, Any]], on_conflict: str) -> None:
@@ -371,6 +573,12 @@ def main() -> None:
     client = SupabaseClient(supabase_url, supabase_key)
 
     global_stats, state_activity, event_rows = compute_global_elo()
+    rating_rows = build_upsert_rows(GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY, global_stats)
+    state_activity_rows = build_state_activity_rows(state_activity)
+    commander_profile_rows = build_commander_profile_rows(client)
+
+    if not rating_rows:
+        raise SystemExit("Refusing to clear Regional Elo rows because no global rating rows were computed.")
 
     print("Deleting existing global Elo, state activity, and event rows")
     client.delete("regional_elo_ratings", {"region_type": f"eq.{GLOBAL_REGION_TYPE}"})
@@ -380,13 +588,13 @@ def main() -> None:
     upsert_rows(
         client,
         "regional_elo_ratings",
-        build_upsert_rows(GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY, global_stats),
+        rating_rows,
         on_conflict="region_type,region_key,player_id",
     )
     upsert_rows(
         client,
         "regional_elo_state_activity",
-        build_state_activity_rows(state_activity),
+        state_activity_rows,
         on_conflict="region_type,region_key,player_id",
     )
     upsert_rows(
@@ -395,6 +603,22 @@ def main() -> None:
         event_rows,
         on_conflict="region_type,region_key,game_id,player_id",
     )
+
+    try:
+        client.delete("player_commander_profiles", {"topdeck_id": "not.is.null"})
+        upsert_rows(
+            client,
+            "player_commander_profiles",
+            commander_profile_rows,
+            on_conflict="player_id",
+        )
+    except Exception as exc:
+        print(
+            "Skipping player_commander_profiles refresh. "
+            "Apply the player_commander_profiles migration to enable it. "
+            f"Error: {exc}",
+            flush=True,
+        )
 
 
 if __name__ == "__main__":

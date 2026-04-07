@@ -52,6 +52,22 @@ type RegionalLeaderboardQueryRow = {
   rank: number;
 };
 
+type PrecomputedCommanderPrediction = {
+  commander: string;
+  entries: number;
+  prediction_score: number;
+  prediction_share: number;
+  latest_date: string | null;
+  latest_decklist_url: string | null;
+};
+
+type PrecomputedCommanderProfileRow = {
+  topdeck_id: string | null;
+  player_name: string | null;
+  total_entries: number;
+  commander_predictions: PrecomputedCommanderPrediction[] | null;
+};
+
 function readStringParam(
   params:
     | Record<string, string | string[] | undefined>
@@ -117,6 +133,68 @@ async function fetchBestEloRows(topdeckIds: string[]): Promise<EloRow[]> {
     .sort((a, b) => b.rating - a.rating);
 }
 
+async function fetchPrecomputedProfiles(
+  topdeckIds: string[]
+): Promise<{ players: PlayerCommanderProfile[]; metaShare: MetaShareRow[] } | null> {
+  if (topdeckIds.length === 0) return { players: [], metaShare: [] };
+
+  const { data, error } = await supabase
+    .from("player_commander_profiles")
+    .select("topdeck_id, player_name, total_entries, commander_predictions")
+    .in("topdeck_id", topdeckIds);
+
+  if (error) {
+    return null;
+  }
+
+  const rowsByTopdeckId = new Map(
+    ((data ?? []) as PrecomputedCommanderProfileRow[])
+      .filter((row) => row.topdeck_id)
+      .map((row) => [row.topdeck_id as string, row])
+  );
+  if (rowsByTopdeckId.size === 0) return null;
+
+  const metaTotals = new Map<string, number>();
+  const players = topdeckIds.map((topdeckId) => {
+    const row = rowsByTopdeckId.get(topdeckId);
+    const commanders = (row?.commander_predictions ?? []).map((commander) => {
+      metaTotals.set(
+        commander.commander,
+        (metaTotals.get(commander.commander) ?? 0) + commander.prediction_share
+      );
+      return {
+        commander: commander.commander,
+        entries: commander.entries,
+        share: commander.prediction_share,
+        weightedShare: commander.prediction_share,
+        predictionShare: commander.prediction_share,
+        predictionScore: commander.prediction_score,
+        latestDate: commander.latest_date,
+        latestDecklistUrl: commander.latest_decklist_url,
+        latestTopdeckDecklistUrl: null,
+      };
+    });
+
+    return {
+      topdeckId,
+      playerName: row?.player_name ?? "Unknown",
+      totalEntries: row?.total_entries ?? 0,
+      commanders,
+    };
+  });
+  const totalMeta = Array.from(metaTotals.values()).reduce((sum, value) => sum + value, 0);
+  const metaShare = Array.from(metaTotals.entries())
+    .map(([commander, entries]) => ({
+      commander,
+      entries,
+      share: totalMeta ? entries / totalMeta : 0,
+    }))
+    .sort((a, b) => b.entries - a.entries)
+    .slice(0, 15);
+
+  return { players, metaShare };
+}
+
 type TournamentAnalysis = {
   tournament: {
     name: string;
@@ -143,11 +221,21 @@ const getCachedTournamentAnalysis = unstable_cache(
     const lookbackStart = lookbackStartDate(lookbackMonths, referenceDate);
     const fallbackLookbackStart = lookbackStartDate(COMMANDER_FALLBACK_LOOKBACK_MONTHS, referenceDate);
     const lookbackEnd = anchorToStartDate ? referenceDate.toISOString().slice(0, 10) : undefined;
-    const [primaryUsageRows, decklistRows, eloRows] = await Promise.all([
-      getCommanderUsageRows(topdeckIds, lookbackStart, lookbackEnd),
+    const [precomputedProfiles, decklistRows, eloRows] = await Promise.all([
+      anchorToStartDate ? Promise.resolve(null) : fetchPrecomputedProfiles(topdeckIds),
       getCommanderDecklistRows(topdeckIds, lookbackEnd),
       fetchBestEloRows(topdeckIds),
     ]);
+    if (precomputedProfiles) {
+      return {
+        tournament: response.data,
+        standings,
+        profiles: attachLatestDecklistUrls(precomputedProfiles, decklistRows),
+        eloRows,
+        hasRounds: (response.rounds ?? []).length > 0,
+      };
+    }
+    const primaryUsageRows = await getCommanderUsageRows(topdeckIds, lookbackStart, lookbackEnd);
     const twelveMonthEntryCounts = new Map<string, number>();
     for (const row of primaryUsageRows) {
       if (!row.topdeck_id || !row.commander_name) continue;

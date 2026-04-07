@@ -97,6 +97,10 @@ type PlayerCommanderUsageQueryRow = {
     | null;
 };
 
+type PlayerCommanderProfileRow = {
+  active_commander: string | null;
+};
+
 function toRoundLabel(game: GameRow) {
   if (game.round_name) return game.round_name;
   if (game.round_number !== null) return `Round ${game.round_number}`;
@@ -248,6 +252,19 @@ async function fetchPlayerCommanderUsageRows(
 }
 
 async function fetchActiveCommander(playerId: string, topdeckId: string, playerName: string): Promise<string | null> {
+  const { data: profileRow, error: profileError } = await supabase
+    .from("player_commander_profiles")
+    .select("active_commander")
+    .eq("topdeck_id", topdeckId)
+    .maybeSingle();
+
+  if (!profileError) {
+    const profile = profileRow as PlayerCommanderProfileRow | null;
+    if (isKnownCommanderName(profile?.active_commander)) {
+      return profile?.active_commander ?? null;
+    }
+  }
+
   const referenceDate = new Date();
   const usageRows = await fetchPlayerCommanderUsageRows(playerId, topdeckId, playerName);
   const forecastRows = selectCommanderForecastRows([topdeckId], usageRows, referenceDate);

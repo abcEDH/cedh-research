@@ -180,7 +180,7 @@ erDiagram
 ### `regional_elo_state_activity`
 - **Purpose**: per-player state activity snapshots used to assign each player to one primary state.
 - **Key fields**:
-  - `region_type`, `region_key`, `player_id`
+  - `region_type`, `region_key`, `country_key`, `player_id`
   - `games_30d`, `games_90d`, `games_365d`, `games_lifetime`
   - `wins`, `draws`, `losses`, `last_game_date`
   - `activity_score`, `is_primary_state`, `updated_at`
@@ -191,6 +191,14 @@ erDiagram
   - `region_type`, `region_key`, `game_id`, `player_id`
   - `expected_score`, `actual_score`
   - `rating_before`, `rating_delta`, `rating_after`
+
+### `player_commander_profiles`
+- **Purpose**: compact per-player commander forecast snapshot populated by the weekly backend job for fast leaderboard, drilldown, and Tournament Prep reads.
+- **Key fields**:
+  - `player_id`, `topdeck_id`, `player_name`
+  - `active_commander`, `active_commander_entries`, `active_commander_prediction_score`
+  - `total_entries`, `commander_predictions`
+  - `latest_commander`, `latest_commander_date`, `latest_decklist_url`, `updated_at`
 
 ### `ingestion_backfill_runs`
 - **Purpose**: operational log for historical backfill runs driven from stable TID manifests.
@@ -263,8 +271,8 @@ erDiagram
 - **`regional_elo_game_event_log`**: global Elo per-game event log enriched with tournament, player, commander, and seat context.
 - **`regional_elo_primary_state_assignments`**: one row per player for the state currently assigned from recency-weighted activity.
 - **`regional_elo_player_stats`**: canonical assigned-state game counts and W/L/D totals sourced from `regional_elo_primary_state_assignments`.
-- **`regional_elo_leaderboard`**: assigned-state leaderboard by `region_type` and `region_key`, enriched with player names and TopDeck IDs. Rankings use global Elo; games/record fields come from assigned-state activity.
-- **`regional_elo_regions`**: assigned-state region summary with player counts and latest `updated_at` timestamp.
+- **`regional_elo_leaderboard`**: global, country, and assigned-state leaderboard rows by `region_type` and `region_key`, enriched with player names and TopDeck IDs. Rankings use global Elo; country/state games and record fields come from assigned-state activity.
+- **`regional_elo_regions`**: global, country, and assigned-state region summary with player counts, country grouping, and latest `updated_at` timestamp.
 
 ### Card Analytics (materialized views)
 - **`card_frequencies_by_commander`**: per-commander card inclusion frequencies.
