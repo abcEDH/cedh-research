@@ -16,6 +16,7 @@ env:
 jobs:
   regional-elo-feedback:
     name: Regional Elo Feedback Loop
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
