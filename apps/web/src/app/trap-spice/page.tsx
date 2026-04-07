@@ -63,6 +63,7 @@ export default function TrapSpicePage() {
         .from("commander_stats")
         .select("commander_id, commander_name, total_entries")
         .gt("total_entries", 10)
+        .not("commander_name", "ilike", "unknown commander")
         .order("total_entries", { ascending: false });
 
       if (!error && data) {
