@@ -1,9 +1,7 @@
 import Link from "next/link";
-import { unstable_cache } from "next/cache";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buildProfiles, selectCommanderForecastRows, type CommanderUsageRow } from "@/lib/meta-prep";
-import { predictNextState, type PlayerStateHistoryRow } from "@/lib/player-region-predictor";
 import { supabase } from "@/lib/supabase";
 import { fetchChampionshipLeaderboard } from "@/lib/topdeck";
 import { buildTopdeckProfileHref } from "@/lib/topdeck-profile";
@@ -58,6 +56,7 @@ type TournamentRow = {
 };
 
 type LeaderboardRankRow = {
+  primary_region_key?: string | null;
   region_key?: string;
   rank: number;
   rating: number;
@@ -70,38 +69,6 @@ type LeaderboardRankRow = {
 type GlobalSnapshotRow = {
   rank: number;
   points: number;
-};
-
-type GlobalEloLeaderboardRow = {
-  player_id: string;
-  topdeck_id: string | null;
-  rating: number;
-  games_played: number;
-};
-
-type PlayerStateHistoryQueryRow = {
-  players:
-    | {
-        topdeck_id: string | null;
-      }
-    | Array<{
-        topdeck_id: string | null;
-      }>
-    | null;
-  tournaments:
-    | {
-        start_date: string | null;
-        state: string | null;
-        city: string | null;
-        player_count: number | null;
-      }
-    | Array<{
-        start_date: string | null;
-        state: string | null;
-        city: string | null;
-        player_count: number | null;
-      }>
-    | null;
 };
 
 type PlayerCommanderUsageQueryRow = {
@@ -136,10 +103,6 @@ function toRoundLabel(game: GameRow) {
   return "Bracket";
 }
 
-function normalizeState(value: string | null | undefined) {
-  return (value ?? "").trim().toUpperCase();
-}
-
 function isKnownCommanderName(value: string | null | undefined) {
   const normalized = (value ?? "").trim().toLowerCase();
   return normalized.length > 0 && normalized !== "unknown commander";
@@ -155,6 +118,20 @@ function chunkValues<T>(values: T[], size = SUPABASE_IN_CHUNK_SIZE) {
     chunks.push(values.slice(index, index + size));
   }
   return chunks;
+}
+
+function readRegionParam(
+  params:
+    | Record<string, string | string[] | undefined>
+    | URLSearchParams
+    | undefined
+) {
+  if (!params) return "";
+  if (typeof (params as URLSearchParams).get === "function") {
+    return (params as URLSearchParams).get("region") ?? "";
+  }
+  const value = (params as Record<string, string | string[] | undefined>).region;
+  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
 }
 
 async function fetchPlayer(topdeckId: string): Promise<PlayerRow | null> {
@@ -176,48 +153,10 @@ async function fetchEntries(playerId: string): Promise<EntryRow[]> {
   return (data as EntryRow[]) ?? [];
 }
 
-async function fetchPlayerStateHistory(playerId: string): Promise<PlayerStateHistoryRow[]> {
-  const { data } = await supabase
-    .from("tournament_entries")
-    .select("tournaments!inner(start_date, state, city, player_count)")
-    .eq("player_id", playerId)
-    .not("tournaments.state", "is", null)
-    .not("tournaments.start_date", "is", null);
-
-  const rows: PlayerStateHistoryRow[] = [];
-  for (const row of ((data as Array<{
-    tournaments:
-	      | {
-	          start_date: string | null;
-	          state: string | null;
-	          city: string | null;
-	          player_count: number | null;
-	        }
-	      | Array<{
-	          start_date: string | null;
-	          state: string | null;
-	          city: string | null;
-	          player_count: number | null;
-	        }>
-	      | null;
-  }> | null) ?? [])) {
-    const tournament = Array.isArray(row.tournaments) ? row.tournaments[0] : row.tournaments;
-    if (!tournament?.start_date || !tournament.state) continue;
-    rows.push({
-        start_date: tournament.start_date,
-        state: tournament.state,
-        city: tournament.city,
-        player_count: tournament.player_count,
-    });
-  }
-
-  return rows;
-}
-
 async function fetchGlobalEloRank(playerId: string): Promise<LeaderboardRankRow | null> {
   const { data } = await supabase
     .from("regional_elo_leaderboard")
-    .select("rank, rating, games_played, wins, draws, losses")
+    .select("primary_region_key, rank, rating, games_played, wins, draws, losses")
     .eq("region_type", "global")
     .eq("region_key", "ALL")
     .eq("player_id", playerId)
@@ -226,85 +165,32 @@ async function fetchGlobalEloRank(playerId: string): Promise<LeaderboardRankRow 
   return (data as LeaderboardRankRow | null) ?? null;
 }
 
-const fetchPredictedRegionByPlayer = unstable_cache(
-  async (): Promise<Record<string, string>> => {
-    const pageSize = 1000;
-    const histories = new Map<string, PlayerStateHistoryRow[]>();
+async function fetchRegionalRank(playerId: string, regionKey: string): Promise<LeaderboardRankRow | null> {
+  if (!regionKey) return null;
 
-    for (let offset = 0; ; offset += pageSize) {
-      const { data, error } = await supabase
-        .from("tournament_entries")
-        .select("players!inner(topdeck_id), tournaments!inner(start_date, state, city, player_count)")
-        .not("players.topdeck_id", "is", null)
-        .not("tournaments.state", "is", null)
-        .not("tournaments.start_date", "is", null)
-        .range(offset, offset + pageSize - 1);
+  const { data } = await supabase
+    .from("regional_elo_leaderboard")
+    .select("region_key, rank, rating, games_played, wins, draws, losses")
+    .eq("region_type", "state")
+    .eq("region_key", regionKey)
+    .eq("player_id", playerId)
+    .maybeSingle();
 
-      if (error || !data?.length) break;
-
-      for (const row of data as PlayerStateHistoryQueryRow[]) {
-        const player = firstRelation(row.players);
-        const tournament = firstRelation(row.tournaments);
-        if (!player?.topdeck_id || !tournament?.state || !tournament.start_date) continue;
-        const playerRows = histories.get(player.topdeck_id) ?? [];
-        playerRows.push({
-          state: tournament.state,
-          city: tournament.city,
-          start_date: tournament.start_date,
-          player_count: tournament.player_count,
-        });
-        histories.set(player.topdeck_id, playerRows);
-      }
-
-      if (data.length < pageSize) break;
-    }
-
-    const predictions: Record<string, string> = {};
-    for (const [topdeckId, rows] of histories.entries()) {
-      const prediction = predictNextState(rows);
-      if (prediction) {
-        predictions[topdeckId] = prediction.state;
-      }
-    }
-    return predictions;
-  },
-  ["regional-elo-predicted-player-regions-v1"],
-  { revalidate: 60 * 15 }
-);
-
-async function fetchGlobalEloLeaderboardRows(): Promise<GlobalEloLeaderboardRow[]> {
-  const pageSize = 1000;
-  const rows: GlobalEloLeaderboardRow[] = [];
-
-  for (let offset = 0; ; offset += pageSize) {
-    const { data, error } = await supabase
-      .from("regional_elo_leaderboard")
-      .select("player_id, topdeck_id, rating, games_played")
-      .eq("region_type", "global")
-      .eq("region_key", "ALL")
-      .order("rating", { ascending: false })
-      .range(offset, offset + pageSize - 1);
-
-    if (error || !data?.length) break;
-    rows.push(...(data as GlobalEloLeaderboardRow[]));
-    if (data.length < pageSize) break;
-  }
-
-  return rows;
+  return (data as LeaderboardRankRow | null) ?? null;
 }
 
-async function fetchProfileRegionRank(playerId: string, region: string) {
-  if (!region) return null;
+async function fetchRegionalRanks(playerId: string): Promise<LeaderboardRankRow[]> {
+  const { data } = await supabase
+    .from("regional_elo_leaderboard")
+    .select("region_key, rank, rating, games_played, wins, draws, losses")
+    .eq("region_type", "state")
+    .eq("player_id", playerId)
+    .order("rank", { ascending: true });
 
-  const [globalRows, predictedRegionByPlayer] = await Promise.all([
-    fetchGlobalEloLeaderboardRows(),
-    fetchPredictedRegionByPlayer(),
-  ]);
-  const regionRows = globalRows.filter(
-    (row) => row.topdeck_id && predictedRegionByPlayer[row.topdeck_id] === region
-  );
-  const index = regionRows.findIndex((row) => row.player_id === playerId);
-  return index >= 0 ? index + 1 : null;
+  return ((data as LeaderboardRankRow[]) ?? []).sort((a, b) => {
+    if (a.rank !== b.rank) return a.rank - b.rank;
+    return (a.region_key ?? "").localeCompare(b.region_key ?? "");
+  });
 }
 
 async function fetchGlobalSnapshot(topdeckId: string): Promise<GlobalSnapshotRow | null> {
@@ -512,11 +398,18 @@ async function fetchCommandersById(commanderIds: string[]): Promise<Map<string, 
 
 export default async function RegionalPlayerPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ topdeckId: string }> | { topdeckId: string };
+  searchParams?:
+    | Promise<{ region?: string | string[] }>
+    | { region?: string | string[] };
 }) {
   const resolvedParams = await Promise.resolve(params);
+  const resolvedSearchParams = await Promise.resolve(searchParams);
   const topdeckId = resolvedParams.topdeckId;
+  const requestedRegion = decodeURIComponent(readRegionParam(resolvedSearchParams)).trim().toUpperCase();
+  const regionFilter = requestedRegion === "ALL" ? "" : requestedRegion;
 
   const player = await fetchPlayer(topdeckId);
   if (!player) {
@@ -527,16 +420,17 @@ export default async function RegionalPlayerPage({
     );
   }
 
-  const [globalSnapshot, globalEloRank, entries, stateHistory, activeCommander] = await Promise.all([
+  const [globalSnapshot, globalEloRank, regionalRanks, entries, activeCommander] = await Promise.all([
     fetchGlobalSnapshot(topdeckId),
     fetchGlobalEloRank(player.id),
+    fetchRegionalRanks(player.id),
     fetchEntries(player.id),
-    fetchPlayerStateHistory(player.id),
     fetchActiveCommander(player.id, topdeckId, player.name),
   ]);
-  const predictedState = predictNextState(stateHistory);
-  const selectedRegion = predictedState?.state ?? "";
-  const profileRegionRank = await fetchProfileRegionRank(player.id, selectedRegion);
+  const homeRegion = globalEloRank?.primary_region_key ?? regionalRanks[0]?.region_key ?? null;
+  const selectedRegion = regionFilter || homeRegion || "";
+  const regionalRank = await fetchRegionalRank(player.id, selectedRegion);
+  const activeRank = regionFilter ? regionalRank : globalEloRank;
   const entryIds = entries.map((row) => row.id);
   const { participants, games, allParticipants } = await fetchGamesAndParticipants(entryIds);
 
@@ -545,7 +439,13 @@ export default async function RegionalPlayerPage({
   const tournamentIds = Array.from(new Set(games.map((row) => row.tournament_id)));
   const tournamentsById = await fetchTournaments(tournamentIds);
 
-  const playerParticipants = participants.filter((participant) => gamesById.has(participant.game_id));
+  const playerParticipants = participants.filter((participant) => {
+    if (!gamesById.has(participant.game_id)) return false;
+    if (!regionFilter) return true;
+    const game = gamesById.get(participant.game_id);
+    const tournament = game ? tournamentsById.get(game.tournament_id) : null;
+    return ((tournament?.state ?? "").trim().toUpperCase() || "") === regionFilter;
+  });
   const playerGameIds = Array.from(new Set(playerParticipants.map((row) => row.game_id)));
   const relatedParticipants = allParticipants.filter((row) => playerGameIds.includes(row.game_id));
   const relatedEntryIds = Array.from(new Set(relatedParticipants.map((row) => row.entry_id)));
@@ -608,7 +508,11 @@ export default async function RegionalPlayerPage({
     .filter((value): value is PlayerGameLog => Boolean(value))
     .sort((a, b) => b.startDate.localeCompare(a.startDate));
 
-  const { totalGames, seatRows, opponentRecords } = summarizePlayerLogs(playerLogs);
+  const { totalGames, totalWins, totalDraws, totalLosses, seatRows, opponentRecords } = summarizePlayerLogs(playerLogs);
+  const canonicalGames = activeRank?.games_played ?? totalGames;
+  const canonicalWins = activeRank?.wins ?? totalWins;
+  const canonicalDraws = activeRank?.draws ?? totalDraws;
+  const canonicalLosses = activeRank?.losses ?? totalLosses;
   const commanderRows = Array.from(
     playerLogs.reduce(
       (rows, log) => {
@@ -654,38 +558,10 @@ export default async function RegionalPlayerPage({
     if (b.latestDate !== a.latestDate) return b.latestDate.localeCompare(a.latestDate);
     return a.commander.localeCompare(b.commander);
   });
-  const stateRows = Array.from(
-    playerLogs.reduce(
-      (rows, log) => {
-        const state = normalizeState(log.state) || "UNKNOWN";
-        const current = rows.get(state) ?? {
-          state,
-          games: 0,
-          wins: 0,
-          draws: 0,
-          losses: 0,
-        };
-        current.games += 1;
-        if (log.result === "win") {
-          current.wins += 1;
-        } else if (log.result === "draw") {
-          current.draws += 1;
-        } else if (log.result === "loss") {
-          current.losses += 1;
-        }
-        rows.set(state, current);
-        return rows;
-      },
-      new Map<string, { state: string; games: number; wins: number; draws: number; losses: number }>()
-    ).values()
-  ).sort((a, b) => {
-    if (a.state === "UNKNOWN") return 1;
-    if (b.state === "UNKNOWN") return -1;
-    if (b.games !== a.games) return b.games - a.games;
-    return a.state.localeCompare(b.state);
-  });
   const topdeckProfileHref = buildTopdeckProfileHref(topdeckId);
-  const backHref = selectedRegion ? `/regional-elo?region=${encodeURIComponent(selectedRegion)}` : "/regional-elo";
+  const backHref = regionFilter
+    ? `/regional-elo?scope=state&region=${encodeURIComponent(regionFilter)}`
+    : "/regional-elo";
 
   return (
     <div className="min-h-screen">
@@ -702,7 +578,8 @@ export default async function RegionalPlayerPage({
                   {player.name}
                 </h1>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  Showing {totalGames} games from this player&apos;s stored tournament history.
+                  Home region is assigned from recent and sustained activity. This page defaults
+                  to the global view; use the region filter below to inspect a specific state slice.
                 </p>
               </div>
               {topdeckProfileHref ? (
@@ -722,21 +599,21 @@ export default async function RegionalPlayerPage({
             <Card className="knd-panel">
               <CardHeader>
                 <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Region
+                  Home Region
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-2xl font-semibold text-foreground">
-                {predictedState?.state ?? "—"}
+                {homeRegion ?? "Unassigned"}
               </CardContent>
             </Card>
             <Card className="knd-panel">
               <CardHeader>
                 <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Region Rank
+                  Current Rank
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-2xl font-semibold text-foreground">
-                {profileRegionRank ? `#${profileRegionRank}` : "—"}
+                {activeRank ? `#${activeRank.rank}` : "—"}
               </CardContent>
             </Card>
             <Card className="knd-panel">
@@ -777,11 +654,11 @@ export default async function RegionalPlayerPage({
             <Card className="knd-panel">
               <CardHeader>
                 <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Games
+                  Counted Games
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-2xl font-semibold text-foreground">
-                {totalGames}
+                {canonicalGames}
               </CardContent>
             </Card>
             <Card className="knd-panel">
@@ -791,9 +668,7 @@ export default async function RegionalPlayerPage({
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-2xl font-semibold text-foreground">
-                {seatRows.reduce((sum, row) => sum + row.wins, 0)}-
-                {seatRows.reduce((sum, row) => sum + row.losses, 0)}-
-                {seatRows.reduce((sum, row) => sum + row.draws, 0)}
+                {canonicalWins}-{canonicalLosses}-{canonicalDraws}
               </CardContent>
             </Card>
             <Card className="knd-panel">
@@ -809,9 +684,8 @@ export default async function RegionalPlayerPage({
           </div>
 
           <p className="text-sm text-muted-foreground">
-            Elo and rank use the global all-games leaderboard. Region Rank groups players by active profile region,
-            then orders them by global Elo.
-            Games, record, seats, opponents, and the detailed log use all stored games for this player.
+            Elo is global. Home region is assigned separately. The summary cards and game log below
+            reflect the active filter, which defaults to all games unless you narrow to a state.
           </p>
 
           <Card className="knd-panel">
@@ -871,10 +745,11 @@ export default async function RegionalPlayerPage({
           <Card className="knd-panel">
             <CardHeader>
               <CardTitle className="text-sm uppercase tracking-[0.2em] text-muted-foreground">
-                Regional Games
+                State Assignment
               </CardTitle>
               <p className="text-xs text-muted-foreground">
-                States where this player has stored game results, sorted by total games.
+                This player will usually appear in one assigned state. If their activity shifts over time,
+                their assignment can move on the next recompute.
               </p>
             </CardHeader>
             <CardContent>
@@ -883,25 +758,39 @@ export default async function RegionalPlayerPage({
                   <thead className="text-left text-xs uppercase tracking-[0.2em] text-muted-foreground">
                     <tr>
                       <th className="px-2 py-3">Region</th>
+                      <th className="px-2 py-3 text-right">Rank</th>
+                      <th className="px-2 py-3 text-right">Elo</th>
                       <th className="px-2 py-3 text-right">Games</th>
                       <th className="px-2 py-3 text-right">W-L-D</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {stateRows.map((row) => {
-                      const isActive = row.state === selectedRegion;
+                    {regionalRanks.map((row) => {
+                      const regionKey = row.region_key ?? "";
+                      const isActive = regionKey === regionFilter;
                       return (
-                        <tr key={row.state} className="border-t border-border/60">
+                        <tr key={regionKey} className="border-t border-border/60">
                           <td className="px-2 py-3">
-                            <span className={isActive ? "font-semibold text-foreground" : "text-foreground"}>
-                              {row.state}
-                            </span>
-                            {isActive ? (
-                              <div className="text-[11px] text-primary">Active region</div>
+                            <Link
+                              href={`/regional-elo/player/${topdeckId}?region=${encodeURIComponent(regionKey)}`}
+                              className={
+                                isActive
+                                  ? "font-semibold text-foreground hover:text-primary"
+                                  : "text-foreground hover:text-primary"
+                              }
+                            >
+                              {regionKey}
+                            </Link>
+                            {regionKey === homeRegion ? (
+                              <div className="text-[11px] text-primary">Assigned state</div>
                             ) : null}
                           </td>
+                          <td className="px-2 py-3 text-right font-mono text-foreground">#{row.rank}</td>
+                          <td className="px-2 py-3 text-right font-mono text-foreground">
+                            {Math.round(row.rating)}
+                          </td>
                           <td className="px-2 py-3 text-right font-mono text-muted-foreground">
-                            {row.games}
+                            {row.games_played}
                           </td>
                           <td className="px-2 py-3 text-right font-mono text-muted-foreground">
                             {row.wins}-{row.losses}-{row.draws}
@@ -909,10 +798,10 @@ export default async function RegionalPlayerPage({
                         </tr>
                       );
                     })}
-                    {stateRows.length === 0 ? (
+                    {regionalRanks.length === 0 ? (
                       <tr>
-                        <td colSpan={3} className="px-2 py-6 text-center text-sm text-muted-foreground">
-                          No state-level game history found for this player.
+                        <td colSpan={5} className="px-2 py-6 text-center text-sm text-muted-foreground">
+                          No state assignment found for this player.
                         </td>
                       </tr>
                     ) : null}

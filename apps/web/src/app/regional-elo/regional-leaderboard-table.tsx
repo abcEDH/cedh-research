@@ -71,6 +71,12 @@ export function RegionalLeaderboardTable({
           <tbody>
             {visibleRows.map((row) => {
               const latestCommander = row.topdeck_id ? latestByPlayer[row.topdeck_id] : undefined;
+              const playerHref =
+                row.topdeck_id && row.region_type === "state"
+                  ? `/regional-elo/player/${row.topdeck_id}?region=${encodeURIComponent(row.region_key)}`
+                  : row.topdeck_id
+                    ? `/regional-elo/player/${row.topdeck_id}`
+                    : "";
               return (
                 <tr key={row.player_id} className="border-t border-border/60">
                   <td className="px-2 py-3 text-muted-foreground">#{row.rank}</td>
@@ -79,7 +85,7 @@ export function RegionalLeaderboardTable({
                       <div className="space-y-1">
                         <Link
                           className="font-medium text-foreground hover:text-primary"
-                          href={`/regional-elo/player/${row.topdeck_id}`}
+                          href={playerHref}
                         >
                           {row.player_name}
                         </Link>

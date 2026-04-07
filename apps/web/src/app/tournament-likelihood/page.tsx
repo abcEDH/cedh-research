@@ -1,5 +1,4 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { predictNextState, type PlayerStateHistoryRow } from "@/lib/player-region-predictor";
 import { supabase } from "@/lib/supabase";
 import {
   attachLatestDecklistUrls,
@@ -48,33 +47,9 @@ type RegionalLeaderboardQueryRow = {
   player_name: string;
   rating: number;
   games_played: number;
+  primary_region_key: string | null;
   region_key: string;
   rank: number;
-};
-
-type PlayerStateHistoryQueryRow = {
-  players:
-    | {
-        topdeck_id: string | null;
-      }
-    | Array<{
-        topdeck_id: string | null;
-      }>
-    | null;
-  tournaments:
-    | {
-        start_date: string | null;
-        state: string | null;
-        city: string | null;
-        player_count: number | null;
-      }
-    | Array<{
-        start_date: string | null;
-        state: string | null;
-        city: string | null;
-        player_count: number | null;
-      }>
-    | null;
 };
 
 function readStringParam(
@@ -117,61 +92,15 @@ function hasTournamentStarted(startDate: string | number | null | undefined) {
   return timestamp !== null && Date.now() >= timestamp;
 }
 
-function firstRelation<T>(value: T | T[] | null) {
-  return Array.isArray(value) ? value[0] ?? null : value;
-}
-
-async function fetchPredictedRegions(topdeckIds: string[]): Promise<Map<string, string>> {
-  if (topdeckIds.length === 0) return new Map();
-
-  const { data, error } = await supabase
-    .from("tournament_entries")
-    .select("players!inner(topdeck_id), tournaments!inner(start_date, state, city, player_count)")
-    .in("players.topdeck_id", topdeckIds)
-    .not("tournaments.state", "is", null)
-    .not("tournaments.start_date", "is", null);
-
-  if (error) {
-    throw new Error(`Error fetching player regions: ${error.message}`);
-  }
-
-  const histories = new Map<string, PlayerStateHistoryRow[]>();
-  for (const row of (data ?? []) as PlayerStateHistoryQueryRow[]) {
-    const player = firstRelation(row.players);
-    const tournament = firstRelation(row.tournaments);
-    if (!player?.topdeck_id || !tournament?.state || !tournament.start_date) continue;
-    const rows = histories.get(player.topdeck_id) ?? [];
-    rows.push({
-      state: tournament.state,
-      city: tournament.city,
-      start_date: tournament.start_date,
-      player_count: tournament.player_count,
-    });
-    histories.set(player.topdeck_id, rows);
-  }
-
-  const predictions = new Map<string, string>();
-  for (const [topdeckId, rows] of histories.entries()) {
-    const prediction = predictNextState(rows);
-    if (prediction) {
-      predictions.set(topdeckId, prediction.state);
-    }
-  }
-  return predictions;
-}
-
 async function fetchBestEloRows(topdeckIds: string[]): Promise<EloRow[]> {
   if (topdeckIds.length === 0) return [];
 
-  const [{ data, error }, predictedRegions] = await Promise.all([
-    supabase
-      .from("regional_elo_leaderboard")
-      .select("topdeck_id, player_name, rating, games_played, region_key, rank")
-      .in("topdeck_id", topdeckIds)
-      .eq("region_type", "global")
-      .eq("region_key", "ALL"),
-    fetchPredictedRegions(topdeckIds),
-  ]);
+  const { data, error } = await supabase
+    .from("regional_elo_leaderboard")
+    .select("topdeck_id, player_name, rating, games_played, primary_region_key, region_key, rank")
+    .in("topdeck_id", topdeckIds)
+    .eq("region_type", "global")
+    .eq("region_key", "ALL");
 
   if (error) {
     throw new Error(`Error fetching Elo rows: ${error.message}`);
@@ -183,7 +112,7 @@ async function fetchBestEloRows(topdeckIds: string[]): Promise<EloRow[]> {
       player_name: row.player_name,
       rating: row.rating,
       games_played: row.games_played,
-      region_key: row.topdeck_id ? predictedRegions.get(row.topdeck_id) ?? row.region_key : row.region_key,
+      region_key: row.primary_region_key ?? row.region_key,
     }))
     .sort((a, b) => b.rating - a.rating);
 }

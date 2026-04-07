@@ -17,7 +17,20 @@ const tableData: TableData = {
       region_key: "ALL",
       player_id: "player-1",
       topdeck_id: "CCIQroaCHHQi7EELyNXlHiHQiQy1",
+      primary_region_key: "CALIFORNIA",
       rank: 6,
+      rating: 1734.864,
+      games_played: 3,
+      wins: 1,
+      draws: 1,
+      losses: 1,
+    },
+    {
+      region_type: "state",
+      region_key: "CALIFORNIA",
+      player_id: "player-1",
+      topdeck_id: "CCIQroaCHHQi7EELyNXlHiHQiQy1",
+      rank: 3,
       rating: 1734.864,
       games_played: 3,
       wins: 1,
@@ -254,13 +267,13 @@ describe("RegionalPlayerPage", () => {
 
     expect(html).toContain("Alex Lien");
     expect(html).toContain("TopDeck Rank");
-    expect(html).toContain("Region Rank");
-    expect(html).toContain("Active region");
+    expect(html).toContain("Home Region");
+    expect(html).toContain("Assigned state");
     expect(html).toContain(
-      "Elo and rank use the global all-games leaderboard. Region Rank groups players by active profile region"
+      "Elo is global. Home region is assigned separately."
     );
-    expect(html).toMatch(/Games[\s\S]*?>3</);
+    expect(html).toMatch(/Counted Games[\s\S]*?>3</);
     expect(html).toMatch(/Record[\s\S]*?>1-1-1</);
-    expect(html).toMatch(/CALIFORNIA[\s\S]*?Active region[\s\S]*?>3<[\s\S]*?>1-1-1</);
+    expect(html).toMatch(/CALIFORNIA[\s\S]*?Assigned state[\s\S]*?>#3<[\s\S]*?>1735<[\s\S]*?>3<[\s\S]*?>1-1-1</);
   });
 });
