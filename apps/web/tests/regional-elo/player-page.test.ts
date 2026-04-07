@@ -10,6 +10,7 @@ const tableData: TableData = {
     { id: "player-2", name: "Opponent A", topdeck_id: "opp-a" },
     { id: "player-3", name: "Opponent B", topdeck_id: "opp-b" },
     { id: "player-4", name: "Opponent C", topdeck_id: "opp-c" },
+    { id: "player-5", name: "Unknown Region Player", topdeck_id: "unknown-region-player" },
   ],
   regional_elo_leaderboard: [
     {
@@ -77,6 +78,7 @@ const tableData: TableData = {
     { id: "entry-6", tournament_id: "tournament-3", player_id: "player-3", commander_id: "cmd-3" },
     { id: "entry-7", tournament_id: "tournament-1", player_id: "player-3", commander_id: "cmd-3" },
     { id: "entry-8", tournament_id: "tournament-2", player_id: "player-4", commander_id: "cmd-4" },
+    { id: "entry-9", tournament_id: "tournament-4", player_id: "player-5", commander_id: "cmd-1" },
   ],
   game_participants: [
     { game_id: "game-1", entry_id: "entry-1", seat_position: 0, result: "win" },
@@ -87,6 +89,7 @@ const tableData: TableData = {
     { game_id: "game-2", entry_id: "entry-8", seat_position: 3, result: "loss" },
     { game_id: "game-3", entry_id: "entry-3", seat_position: 3, result: "draw" },
     { game_id: "game-3", entry_id: "entry-6", seat_position: 1, result: "draw" },
+    { game_id: "game-4", entry_id: "entry-9", seat_position: 0, result: "win" },
   ],
   games: [
     {
@@ -116,11 +119,21 @@ const tableData: TableData = {
       is_draw: true,
       winner_id: null,
     },
+    {
+      id: "game-4",
+      tournament_id: "tournament-4",
+      round_number: 1,
+      round_name: null,
+      table_number: 1,
+      is_draw: false,
+      winner_id: "entry-9",
+    },
   ],
   tournaments: [
     { id: "tournament-1", name: "California Open I", start_date: "2026-04-03", state: "California" },
     { id: "tournament-2", name: "California Open II", start_date: "2026-04-02", state: "California" },
     { id: "tournament-3", name: "California Open III", start_date: "2026-04-01", state: "California" },
+    { id: "tournament-4", name: "Unknown Region Open", start_date: "2026-04-04", state: null },
   ],
   commanders: [
     { id: "cmd-1", name: "Rograkh / Silas" },
@@ -286,5 +299,20 @@ describe("RegionalPlayerPage", () => {
     expect(html).toMatch(/Games Played[\s\S]*?>3</);
     expect(html).toMatch(/Record[\s\S]*?>1-1-1</);
     expect(html).toMatch(/CALIFORNIA[\s\S]*?Assigned state[\s\S]*?>#3<[\s\S]*?>1735<[\s\S]*?>3<[\s\S]*?>1-1-1</);
+  });
+
+  it("groups unknown-region games for any player profile", async () => {
+    const pageModule = await import("@/app/regional-elo/player/[topdeckId]/page");
+    const element = await pageModule.default({
+      params: { topdeckId: "unknown-region-player" },
+      searchParams: {},
+    });
+
+    const html = renderToStaticMarkup(element);
+
+    expect(html).toContain("Unknown Region Player");
+    expect(html).toMatch(/Games Played[\s\S]*?>1</);
+    expect(html).toContain("UNKNOWN country");
+    expect(html).toContain("UNKNOWN state");
   });
 });
