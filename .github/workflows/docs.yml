@@ -5,6 +5,10 @@ on:
     paths:
       - "**/*.md"
       - "scripts/check-mermaid.mjs"
+      - "scripts/check-repo-hygiene.mjs"
+      - "docs/supported-surfaces.md"
+      - ".github/pull_request_template.md"
+      - "CONTRIBUTING.md"
       - ".github/workflows/docs.yml"
 
 jobs:
@@ -19,3 +23,5 @@ jobs:
           node-version: "20"
       - name: Mermaid lint
         run: npm run docs:check
+      - name: Repo hygiene
+        run: npm run docs:hygiene
