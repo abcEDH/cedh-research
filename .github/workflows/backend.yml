@@ -394,7 +394,7 @@ jobs:
           failures = []
           for row in leaderboard_rows:
               stats_url = (
-                  f"{SUPABASE_URL}/rest/v1/regional_elo_player_stats"
+                  f"{SUPABASE_URL}/rest/v1/regional_elo_ratings"
                   f"?select=games_played,wins,draws,losses"
                   f"&region_type=eq.{row['region_type']}"
                   f"&region_key=eq.{row['region_key']}"
@@ -404,13 +404,13 @@ jobs:
               stats_resp.raise_for_status()
               stats_rows = stats_resp.json()
               if not stats_rows:
-                  failures.append((row, "missing canonical stats row"))
+                  failures.append((row, "missing rating row"))
                   continue
 
               stats = stats_rows[0]
               for field in ("games_played", "wins", "draws", "losses"):
                   if row[field] != stats[field]:
-                      failures.append((row, f"{field}: leaderboard={row[field]} canonical={stats[field]}"))
+                      failures.append((row, f"{field}: leaderboard={row[field]} rating={stats[field]}"))
                       break
 
           if failures:
@@ -421,5 +421,5 @@ jobs:
                   )
               sys.exit(1)
 
-          print(f"Validated {len(leaderboard_rows)} regional Elo rows against canonical stats.")
+          print(f"Validated {len(leaderboard_rows)} global Regional Elo rows against rating rows.")
           SCRIPT
