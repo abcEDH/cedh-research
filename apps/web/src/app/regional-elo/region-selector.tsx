@@ -23,7 +23,6 @@ export function RegionSelector({
   supportsCountryRegions?: boolean;
 }) {
   const [isLoading, setIsLoading] = useState(false);
-  const globalRegion = regions.find((region) => region.region_type === "global");
   const countryRegions = regions.filter((region) => region.region_type === "country");
   const [view, setView] = useState(
     supportsCountryRegions && selectedScope === "country" && selectedCountry
@@ -52,13 +51,11 @@ export function RegionSelector({
           setRegion("");
         }}
       >
-        <option value="global">
-          Global {globalRegion ? `(${globalRegion.player_count})` : ""}
-        </option>
+        <option value="global">Global</option>
         {supportsCountryRegions
           ? countryRegions.map((region) => (
               <option key={region.region_key} value={region.region_key}>
-                {region.region_key} ({region.player_count})
+                {region.region_key}
               </option>
             ))
           : null}
@@ -79,7 +76,7 @@ export function RegionSelector({
             <option value="">All states</option>
             {stateRegions.map((region) => (
               <option key={`${region.country_key}:${region.region_key}`} value={region.region_key}>
-                {region.region_key} ({region.player_count})
+                {region.region_key}
               </option>
             ))}
           </select>
