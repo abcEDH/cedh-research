@@ -14,8 +14,8 @@ test.describe("Survival Analysis Page", () => {
     await page.waitForTimeout(3000);
 
     // Chart should have round labels (R1, R2, etc.)
-    await expect(page.getByText("R1")).toBeVisible();
-    await expect(page.getByText("R2")).toBeVisible();
+    await expect(page.getByText("R1", { exact: true })).toBeVisible();
+    await expect(page.getByText("R2", { exact: true })).toBeVisible();
 
     // Bars are rendered with inline styles, look for elements with backgroundColor
     // The seat legend should have colored squares
@@ -45,7 +45,7 @@ test.describe("Survival Analysis Page", () => {
     await page.waitForTimeout(2000);
 
     // Check that percentage values are displayed (should have % symbol)
-    const percentages = page.locator("text=/%$/");
+    const percentages = page.getByText(/\d+(\.\d+)?%/);
     const count = await percentages.count();
 
     // Should have multiple percentage displays
