@@ -49,7 +49,7 @@ type EloAttendee = {
   topdeck_id: string | null;
   player_name: string;
   rating: number;
-  region_key: string;
+  region_key: string | null;
   standing?: TournamentStanding;
   profile?: PlayerCommanderProfile;
 };
@@ -239,7 +239,7 @@ export function TournamentAnalysisTables({
   const [sortDirection, setSortDirection] = useState<SortDirection>(
     defaultDirectionForSort(defaultSortKey)
   );
-  const [selectedRegions, setSelectedRegions] = useState<string[]>([ALL_REGION_FILTER]);
+  const [selectedRegion, setSelectedRegion] = useState<string>(ALL_REGION_FILTER);
   const profileByPlayer = new Map(profiles.map((profile) => [profile.topdeckId, profile]));
   const eloByPlayer = new Map(
     eloAttendees
@@ -264,11 +264,9 @@ export function TournamentAnalysisTables({
     )
   );
   const regionFilteredRows =
-    selectedRegions.includes(ALL_REGION_FILTER)
+    selectedRegion === ALL_REGION_FILTER
       ? rows
-      : rows.filter((row) =>
-          selectedRegions.includes(row.regionKey ?? UNASSIGNED_REGION_FILTER)
-        );
+      : rows.filter((row) => (row.regionKey ?? UNASSIGNED_REGION_FILTER) === selectedRegion);
   const filteredRows = query
     ? regionFilteredRows.filter((row) => {
         const commanders = row.profile?.commanders.map((commander) => commander.commander).join(" ");
@@ -289,20 +287,10 @@ export function TournamentAnalysisTables({
   const sortedRows = sortRows(filteredRows, sortKey, sortDirection);
   const visibleRows = sortedRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  function toggleRegion(regionKey: string) {
+  function updateRegion(regionKey: string) {
     startTransition(() => {
       setPage(1);
-      setSelectedRegions((current) => {
-        if (regionKey === ALL_REGION_FILTER) {
-          return [ALL_REGION_FILTER];
-        }
-        const next = current.filter((value) => value !== ALL_REGION_FILTER);
-        if (next.includes(regionKey)) {
-          const reduced = next.filter((value) => value !== regionKey);
-          return reduced.length ? reduced : [ALL_REGION_FILTER];
-        }
-        return [...next, regionKey];
-      });
+      setSelectedRegion(regionKey);
     });
   }
 
@@ -333,38 +321,22 @@ export function TournamentAnalysisTables({
         </div>
         <div className="mb-4 space-y-2">
           <div className="text-sm text-muted-foreground">Home region filter</div>
-          <div className="flex flex-wrap gap-2">
-            <label className="knd-chip flex cursor-pointer items-center gap-2 text-foreground">
-              <input
-                checked={selectedRegions.includes(ALL_REGION_FILTER)}
-                onChange={() => toggleRegion(ALL_REGION_FILTER)}
-                type="checkbox"
-              />
-              ALL
-            </label>
-            {availableRegionOptions.map((regionKey) => {
-              const normalizedRegion = regionKey === UNASSIGNED_REGION_FILTER ? null : regionKey;
-              return (
-                <label key={regionKey} className="knd-chip flex cursor-pointer items-center gap-2 text-foreground">
-                  <input
-                    checked={selectedRegions.includes(regionKey)}
-                    onChange={() => toggleRegion(regionKey)}
-                    type="checkbox"
-                  />
-                  {formatHomeRegionLabel(normalizedRegion)}
-                </label>
-              );
-            })}
-          </div>
+          <select
+            className="knd-input"
+            onChange={(event) => updateRegion(event.target.value)}
+            value={selectedRegion}
+          >
+            <option value={ALL_REGION_FILTER}>ALL</option>
+            {availableRegionOptions.map((regionKey) => (
+              <option key={regionKey} value={regionKey}>
+                {formatHomeRegionLabel(regionKey === UNASSIGNED_REGION_FILTER ? null : regionKey)}
+              </option>
+            ))}
+          </select>
           <div className="text-xs text-muted-foreground">
-            Showing{" "}
-            {selectedRegions.includes(ALL_REGION_FILTER)
+            Showing {selectedRegion === ALL_REGION_FILTER
               ? "all home regions"
-              : selectedRegions
-                  .map((regionKey) =>
-                    formatHomeRegionLabel(regionKey === UNASSIGNED_REGION_FILTER ? null : regionKey)
-                  )
-                  .join(", ")}
+              : formatHomeRegionLabel(selectedRegion === UNASSIGNED_REGION_FILTER ? null : selectedRegion)}
             .
           </div>
         </div>
