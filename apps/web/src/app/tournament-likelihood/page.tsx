@@ -145,16 +145,23 @@ type TournamentAnalysis = {
 };
 
 const getCachedTournamentAnalysis = unstable_cache(
-  async (slug: string, lookbackStart: string): Promise<TournamentAnalysis> => {
+  async (slug: string, lookbackMonths: number): Promise<TournamentAnalysis> => {
     const response = await fetchTournamentBySlug(slug);
     const standings = (response.standings ?? []) as TournamentStanding[];
     const topdeckIds = standings.map((row) => row.id).filter(Boolean);
+    const startTimestamp = readStartTimestamp(response.data.startDate);
+    const now = Date.now();
+    const anchorToStartDate = Boolean(startTimestamp && now >= startTimestamp);
+    const anchorTimestamp = anchorToStartDate && startTimestamp ? startTimestamp : now;
+    const referenceDate = new Date(anchorTimestamp);
+    const lookbackStart = lookbackStartDate(lookbackMonths, referenceDate);
+    const lookbackEnd = anchorToStartDate ? referenceDate.toISOString().slice(0, 10) : undefined;
     const [usageRows, decklistRows, eloRows] = await Promise.all([
-      getCommanderUsageRows(topdeckIds, lookbackStart),
-      getCommanderDecklistRows(topdeckIds),
+      getCommanderUsageRows(topdeckIds, lookbackStart, lookbackEnd),
+      getCommanderDecklistRows(topdeckIds, lookbackEnd),
       fetchBestEloRows(topdeckIds),
     ]);
-    const profiles = buildProfiles(topdeckIds, usageRows, 3);
+    const profiles = buildProfiles(topdeckIds, usageRows, 3, referenceDate.toISOString());
 
     return {
       tournament: response.data,
@@ -164,7 +171,7 @@ const getCachedTournamentAnalysis = unstable_cache(
       hasRounds: (response.rounds ?? []).length > 0,
     };
   },
-  ["tournament-likelihood-analysis-v13"],
+  ["tournament-likelihood-analysis-v16"],
   { revalidate: 60 * 15 }
 );
 
@@ -179,7 +186,6 @@ export default async function TournamentLikelihoodPage({
   const tournamentInput = readStringParam(resolvedSearchParams, "tournament").trim();
   const slug = extractTournamentSlug(tournamentInput);
   const lookbackMonths = DEFAULT_LOOKBACK_MONTHS;
-  const lookbackStart = lookbackStartDate(lookbackMonths);
 
   let tournament:
     | {
@@ -200,7 +206,7 @@ export default async function TournamentLikelihoodPage({
 
   if (slug) {
     try {
-      const analysis = await getCachedTournamentAnalysis(slug, lookbackStart);
+      const analysis = await getCachedTournamentAnalysis(slug, lookbackMonths);
       tournament = analysis.tournament;
       standings = analysis.standings;
       profiles = analysis.profiles;
@@ -220,6 +226,13 @@ export default async function TournamentLikelihoodPage({
     : 0;
   const tournamentHasStarted = tournament ? hasTournamentStarted(tournament.startDate) : false;
   const hasTournamentResults = tournamentHasStarted && hasRounds;
+  const lookbackStartTimestamp = tournamentHasStarted && tournament
+    ? readStartTimestamp(tournament.startDate)
+    : null;
+  const lookbackStart = lookbackStartDate(
+    lookbackMonths,
+    lookbackStartTimestamp ? new Date(lookbackStartTimestamp) : new Date()
+  );
 
   const weightedMeta = new Map<string, number>();
   for (const player of profiles.players) {

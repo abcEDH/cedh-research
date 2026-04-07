@@ -1,6 +1,8 @@
 import "server-only";
 import { supabase } from "@/lib/supabase";
 
+const RECENCY_HALF_LIFE_DAYS = 45;
+
 export type CommanderUsageRow = {
   topdeck_id: string | null;
   player_name: string | null;
@@ -98,26 +100,21 @@ function buildTopdeckDecklistUrl(tournamentSlug: string | null | undefined, topd
   return tournamentSlug && topdeckId ? `https://topdeck.gg/deck/${tournamentSlug}/${topdeckId}` : null;
 }
 
-function calculateRecencyWeight(eventTimestamp: number, latestTimestamp: number) {
-  if (latestTimestamp <= 0 || eventTimestamp <= 0) return 0.5;
+function calculateRecencyWeight(eventTimestamp: number, referenceTimestamp: number) {
+  if (referenceTimestamp <= 0 || eventTimestamp <= 0) return 0.5;
 
-  const ageInDays = Math.max(0, (latestTimestamp - eventTimestamp) / (1000 * 60 * 60 * 24));
-  return Math.max(0.25, Math.exp(-ageInDays / 120));
-}
-
-function calculateTournamentSizeWeight(playerCount: number | null) {
-  if (!playerCount || playerCount <= 0) return 1;
-
-  return Math.min(1.75, Math.max(0.75, Math.log2(playerCount) / Math.log2(64)));
+  const ageInDays = Math.max(0, (referenceTimestamp - eventTimestamp) / (1000 * 60 * 60 * 24));
+  return Math.max(0.25, 0.5 ** (ageInDays / RECENCY_HALF_LIFE_DAYS));
 }
 
 export async function getCommanderUsageRows(
   topdeckIds: string[],
-  lookbackStart: string
+  lookbackStart: string,
+  lookbackEnd?: string
 ): Promise<CommanderUsageRow[]> {
   if (topdeckIds.length === 0) return [];
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("tournament_entries")
     .select(
       "wins, draws, losses, players!inner(topdeck_id, name), commanders!inner(name), tournaments!inner(start_date, player_count, topdeck_tid)"
@@ -125,6 +122,11 @@ export async function getCommanderUsageRows(
     .in("players.topdeck_id", topdeckIds)
     .gte("tournaments.start_date", lookbackStart)
     .not("commanders.name", "is", null);
+  if (lookbackEnd) {
+    query = query.lt("tournaments.start_date", lookbackEnd);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     throw new Error(`Error fetching commander usage: ${error.message}`);
@@ -150,14 +152,22 @@ export async function getCommanderUsageRows(
   });
 }
 
-export async function getCommanderDecklistRows(topdeckIds: string[]): Promise<CommanderDecklistRow[]> {
+export async function getCommanderDecklistRows(
+  topdeckIds: string[],
+  lookbackEnd?: string
+): Promise<CommanderDecklistRow[]> {
   if (topdeckIds.length === 0) return [];
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("tournament_entries")
     .select("players!inner(topdeck_id), commanders!inner(name), tournaments!inner(start_date, topdeck_tid)")
     .in("players.topdeck_id", topdeckIds)
     .not("decklist_url", "is", null);
+  if (lookbackEnd) {
+    query = query.lt("tournaments.start_date", lookbackEnd);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     throw new Error(`Error fetching commander decklists: ${error.message}`);
@@ -232,7 +242,8 @@ export function attachLatestDecklistUrls(
 export function buildProfiles(
   topdeckIds: string[],
   usageRows: CommanderUsageRow[],
-  topN = 3
+  topN = 3,
+  referenceDate?: string | null
 ): { players: PlayerCommanderProfile[]; metaShare: MetaShareRow[] } {
   const perPlayer = new Map<
     string,
@@ -252,10 +263,14 @@ export function buildProfiles(
   >();
   const playerNames = new Map<string, string>();
   const commanderTotals = new Map<string, number>();
-  const latestTimestamp = usageRows.reduce((max, row) => {
+  const fallbackTimestamp = usageRows.reduce((max, row) => {
     const timestamp = row.start_date ? new Date(row.start_date).getTime() : 0;
     return Number.isFinite(timestamp) ? Math.max(max, timestamp) : max;
   }, 0);
+  const parsedReferenceTimestamp = referenceDate ? new Date(referenceDate).getTime() : Number.NaN;
+  const referenceTimestamp = Number.isFinite(parsedReferenceTimestamp)
+    ? parsedReferenceTimestamp
+    : fallbackTimestamp;
 
   usageRows.forEach((row) => {
     if (!row.topdeck_id || !isKnownCommander(row.commander_name)) return;
@@ -277,17 +292,13 @@ export function buildProfiles(
     };
     const wins = row.wins ?? 0;
     const draws = row.draws ?? 0;
-    const losses = row.losses ?? 0;
-    const games = wins + draws + losses;
     const points = wins + draws * 0.25;
     const eventTimestamp = row.start_date ? new Date(row.start_date).getTime() : 0;
-    const recencyWeight = calculateRecencyWeight(eventTimestamp, latestTimestamp);
-    const tournamentSizeWeight = calculateTournamentSizeWeight(row.player_count);
-    const efficiencyBoost = games > 0 ? 1 + points / games : 1;
+    const recencyWeight = calculateRecencyWeight(eventTimestamp, referenceTimestamp);
 
     current.entries += 1;
     current.weightedPoints += points;
-    current.predictionScore += recencyWeight * tournamentSizeWeight * efficiencyBoost;
+    current.predictionScore += recencyWeight;
     if (!current.latestDate || (row.start_date && row.start_date > current.latestDate)) {
       current.latestDate = row.start_date;
       if (row.topdeck_decklist_url) {
@@ -363,8 +374,8 @@ export function buildProfiles(
   return { players, metaShare };
 }
 
-export function lookbackStartDate(months: number) {
-  const start = new Date();
+export function lookbackStartDate(months: number, referenceDate: Date = new Date()) {
+  const start = new Date(referenceDate);
   start.setMonth(start.getMonth() - months);
   return start.toISOString().slice(0, 10);
 }
