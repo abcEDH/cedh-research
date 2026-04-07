@@ -589,9 +589,6 @@ export default async function RegionalPlayerPage({
     fetchActiveCommander(player.id, topdeckId, player.name),
   ]);
   const homeRegion = globalEloRank?.primary_region_key ?? regionalRanks[0]?.region_key ?? null;
-  const homeCountry =
-    globalEloRank?.primary_country_key ??
-    (homeRegion ? inferCountryForRegion(homeRegion) : null);
   const regionalRankRows = regionalRanks.map((row) => ({
     ...row,
     country_key: row.country_key ?? inferCountryForRegion(row.region_key) ?? "UNKNOWN",
@@ -738,13 +735,6 @@ export default async function RegionalPlayerPage({
     if (b.region_key === "UNKNOWN" && a.region_key !== "UNKNOWN") return -1;
     if (b.games_played !== a.games_played) return b.games_played - a.games_played;
     return a.region_key.localeCompare(b.region_key);
-  });
-  const countryAssignmentRows = Array.from(new Set(stateAssignmentRows.map((row) => row.country_key))).sort((a, b) => {
-    if (a === homeCountry) return -1;
-    if (b === homeCountry) return 1;
-    if (a === "UNKNOWN") return 1;
-    if (b === "UNKNOWN") return -1;
-    return a.localeCompare(b);
   });
   const commanderRows = Array.from(
     playerLogs.reduce(
@@ -997,47 +987,38 @@ export default async function RegionalPlayerPage({
                     </tr>
                   </thead>
                   <tbody>
-                    {countryAssignmentRows.flatMap((countryKey) => {
-                      const rowsForCountry = stateAssignmentRows.filter((row) => row.country_key === countryKey);
-                      return [
-                        <tr key={`country:${countryKey}`} className="border-t border-border/60 bg-muted/20">
-                          <td colSpan={4} className="px-2 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                    {stateAssignmentRows.map((row) => {
+                      const countryKey = row.country_key;
+                      const regionKey = row.region_key ?? "";
+                      const isActive = regionKey === regionFilter;
+                      return (
+                        <tr key={`${countryKey}:${regionKey}`} className="border-t border-border/60">
+                          <td className="px-2 py-3 text-muted-foreground">
                             {countryKey === "UNKNOWN" ? "UNKNOWN country" : countryKey}
                           </td>
-                        </tr>,
-                        ...rowsForCountry.map((row) => {
-                          const regionKey = row.region_key ?? "";
-                          const isActive = regionKey === regionFilter;
-                          return (
-                            <tr key={`${countryKey}:${regionKey}`} className="border-t border-border/60">
-                              <td className="px-2 py-3 text-muted-foreground">
-                                {countryKey === "UNKNOWN" ? "UNKNOWN country" : countryKey}
-                              </td>
-                              <td className="px-2 py-3">
-                                <Link
-                                  href={`/regional-elo/player/${topdeckId}?region=${encodeURIComponent(regionKey)}`}
-                                  className={
-                                    isActive
-                                      ? "font-semibold text-foreground hover:text-primary"
-                                      : "text-foreground hover:text-primary"
-                                  }
-                                >
-                                  {regionKey === "UNKNOWN" ? "UNKNOWN state" : regionKey}
-                                </Link>
-                                {regionKey === homeRegion ? (
-                                  <div className="text-[11px] text-primary">Assigned state</div>
-                                ) : null}
-                              </td>
-                              <td className="px-2 py-3 text-right font-mono text-muted-foreground">
-                                {row.games_played}
-                              </td>
-                              <td className="px-2 py-3 text-right font-mono text-muted-foreground">
-                                {row.wins}-{row.losses}-{row.draws}
-                              </td>
-                            </tr>
-                          );
-                        }),
-                      ];
+                          <td className="px-2 py-3">
+                            <Link
+                              href={`/regional-elo/player/${topdeckId}?region=${encodeURIComponent(regionKey)}`}
+                              className={
+                                isActive
+                                  ? "font-semibold text-foreground hover:text-primary"
+                                  : "text-foreground hover:text-primary"
+                              }
+                            >
+                              {regionKey === "UNKNOWN" ? "UNKNOWN state" : regionKey}
+                            </Link>
+                            {regionKey === homeRegion ? (
+                              <div className="text-[11px] text-primary">Assigned state</div>
+                            ) : null}
+                          </td>
+                          <td className="px-2 py-3 text-right font-mono text-muted-foreground">
+                            {row.games_played}
+                          </td>
+                          <td className="px-2 py-3 text-right font-mono text-muted-foreground">
+                            {row.wins}-{row.losses}-{row.draws}
+                          </td>
+                        </tr>
+                      );
                     })}
                     {stateAssignmentRows.length === 0 ? (
                       <tr>
