@@ -460,7 +460,7 @@ export function TournamentAnalysisTables({
                                 <div className="font-medium text-foreground">{primary.commander}</div>
                               )}
                               <div className="text-xs text-muted-foreground">
-                                Forecast confidence {formatPercent(primary.predictionShare)} | {primary.entries} recent entries
+                                Forecast confidence {formatPercent(primary.predictionShare)}
                               </div>
                             </div>
                           ) : (

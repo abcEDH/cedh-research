@@ -254,9 +254,6 @@ export default async function Home() {
                   );
                 })}
               </div>
-              <Button asChild variant="ghost" className="mt-4 w-full border border-border/70">
-                <Link href="/midseason-invitational">Open current top-100 breakdown</Link>
-              </Button>
             </CardContent>
           </Card>
         </section>
@@ -299,12 +296,6 @@ export default async function Home() {
             color="hsl(var(--knd-amber))"
           />
           <FeatureCard
-            href="/midseason-invitational"
-            title="TopDeck Top 100"
-            description="Current TopDeck leaderboard and most-played deck profiles"
-            color="hsl(var(--knd-cyan))"
-          />
-          <FeatureCard
             href="/regional-elo"
             title="Leaderboard"
             description="Global Elo by default, with optional state-assigned leaderboard views"
@@ -318,31 +309,6 @@ export default async function Home() {
           />
         </section>
       </main>
-    </div>
-  );
-}
-
-function MetricCard({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone: "cyan" | "amber" | "neutral";
-}) {
-  const toneMap: Record<typeof tone, string> = {
-    cyan: "text-primary",
-    amber: "text-[hsl(var(--knd-amber))]",
-    neutral: "text-muted-foreground",
-  };
-
-  return (
-    <div className="rounded-xl border border-border/70 bg-muted/30 p-4">
-      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{label}</p>
-      <div className="mt-3 flex items-center justify-between">
-        <span className={`text-2xl font-semibold ${toneMap[tone]}`}>{value}</span>
-      </div>
     </div>
   );
 }

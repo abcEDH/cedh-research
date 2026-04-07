@@ -288,9 +288,6 @@ export default async function RegionalEloPage({
               <Link className="transition hover:text-foreground" href="/tournament-likelihood">
                 Tournament Prep
               </Link>
-              <Link className="transition hover:text-foreground" href="/midseason-invitational">
-                MidSeason
-              </Link>
               <Link className="transition hover:text-foreground" href="/about">
                 Elo methodology
               </Link>

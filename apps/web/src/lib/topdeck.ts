@@ -149,11 +149,14 @@ function buildTopdeckDecklistUrl(tournamentSlug: string, topdeckId: string) {
 function withActualDecklists(response: TopDeckTournamentResponse, slug: string): TopDeckTournamentResponse {
   return {
     ...response,
-    standings: response.standings.map((standing) => ({
-      ...standing,
-      actualDeckCommander: getCommanderName(standing),
-      actualDecklistUrl: standing.decklist || standing.deckObj ? buildTopdeckDecklistUrl(slug, standing.id) : null,
-    })),
+    standings: response.standings.map((standing) => {
+      const { decklist, deckObj, ...rest } = standing;
+      return {
+        ...rest,
+        actualDeckCommander: getCommanderName(standing),
+        actualDecklistUrl: decklist || deckObj ? buildTopdeckDecklistUrl(slug, standing.id) : null,
+      };
+    }),
   };
 }
 
