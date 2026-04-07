@@ -1,10 +1,10 @@
 # cEDH Analytics Dependencies
 
 # Core dependencies
-requests>=2.31.0
-python-dateutil>=2.8.2
+requests==2.32.3
+python-dateutil==2.9.0.post0
 
 # Optional: Direct Postgres connection (10x faster for large batches)
 # Install with: pip install psycopg2-binary
 # or for production: pip install psycopg2
-psycopg2-binary>=2.9.9
+psycopg2-binary==2.9.10

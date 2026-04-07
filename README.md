@@ -45,14 +45,12 @@ Safe templates live in:
   - frontend regression tests
   - canonical regional aggregate proof
   - uploaded evidence artifact for human review
-- Release ownership: semantic release runs from `.github/workflows/frontend.yml`; production aliasing runs from `.github/workflows/cd.yml`; `.github/workflows/release.yml` remains a manual fallback only
+- GitHub Actions should be pinned by commit SHA, not floating major tags.
+
+## Dependency Policy
+- Python dependencies in `packages/backend/requirements.txt` are exact-pinned for reproducibility.
+- npm dependencies remain lockfile-driven through `package-lock.json`.
 
 ## QA
 - Release lessons: `docs/release-lessons-2026-04-05-regional-elo.md`
 - QA checklist: `docs/qa-release-checklist.md`
-
-## Contribution Flow
-- Review guidance: `CONTRIBUTING.md`
-- PRs should use `.github/pull_request_template.md`
-- Supported product surfaces live in `docs/supported-surfaces.md`
-- After opening a PR and letting CI start, comment `@codex review` for an automated pass

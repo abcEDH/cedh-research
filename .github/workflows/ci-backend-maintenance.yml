@@ -1,19 +1,19 @@
-name: CI Backend Maintenance
+name: Backend
 
 on:
   schedule:
-    - cron: "0 9 * * 1"
+    # Run weekly on Monday at 9 AM UTC
+    - cron: '0 9 * * 1'
   workflow_dispatch:
-  push:
+  pull_request:
     branches: [main]
     paths:
-      - "packages/backend/**"
-      - ".github/workflows/ci-backend.yml"
-      - ".github/workflows/ci-backend-maintenance.yml"
-
-concurrency:
-  group: backend-maintenance-${{ github.ref }}
-  cancel-in-progress: true
+      - 'packages/backend/**'
+      - '.github/workflows/backend.yml'
+  push:
+    paths:
+      - 'packages/backend/**'
+      - '.github/workflows/backend.yml'
 
 env:
   TOPDECK_API_KEY: ${{ secrets.TOPDECK_API_KEY }}
@@ -21,16 +21,39 @@ env:
   SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
 
 jobs:
+  data-dictionary:
+    name: Validate data dictionary updates
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkoutbd71901bbe5b1630ceea73d27597364c9af683@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+
+      - name: Check data dictionary updated when migrations change
+        run: |
+          set -euo pipefail
+          BASE_REF="${{ github.base_ref }}"
+          git fetch origin "$BASE_REF"
+
+          MIGRATIONS_CHANGED=$(git diff --name-only "origin/$BASE_REF"...HEAD -- packages/backend/supabase/migrations | wc -l | tr -d ' ')
+          DICT_CHANGED=$(git diff --name-only "origin/$BASE_REF"...HEAD -- packages/backend/docs/data_dictionary.md | wc -l | tr -d ' ')
+
+          if [ "$MIGRATIONS_CHANGED" -gt 0 ] && [ "$DICT_CHANGED" -eq 0 ]; then
+            echo "::error::Migrations changed but packages/backend/docs/data_dictionary.md was not updated."
+            exit 1
+          fi
+
+          echo "Data dictionary check passed."
   ingest:
-    name: Backend ingest and leaderboard
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkoutbd71901bbe5b1630ceea73d27597364c9af683@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
-          python-version: "3.12"
+          python-version: '3.12'
 
       - name: Install dependencies
         run: pip install -r packages/backend/requirements.txt
@@ -42,7 +65,7 @@ jobs:
         run: python packages/backend/src/regional_elo.py
 
       - name: Upload logs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
           name: ingest-logs
@@ -53,12 +76,12 @@ jobs:
     runs-on: ubuntu-latest
     needs: ingest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkoutbd71901bbe5b1630ceea73d27597364c9af683@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
-          python-version: "3.12"
+          python-version: '3.12'
 
       - name: Install dependencies
         run: pip install requests
@@ -94,6 +117,7 @@ jobs:
               body = response.text[:500] if response.text else "<empty body>"
               return f"HTTP {response.status_code}: {body}"
 
+          # Views to validate (with minimum expected row count)
           views = [
               ("commander_stats", 10),
               ("seat_position_stats", 4),
@@ -102,6 +126,7 @@ jobs:
               ("card_frequencies_by_commander", 100),
               ("trap_cards_report", 1),
               ("spice_cards_report", 1),
+              # Survival analysis views
               ("seat_survival_by_commander", 10),
               ("seat_survival_by_round", 4),
               ("commander_survival_curve", 10),
@@ -115,6 +140,7 @@ jobs:
               ("regional_elo_leaderboard", 10),
           ]
 
+          # RPC functions to validate
           rpc_functions = [
               ("get_notable_players_for_commander", {"p_commander_id": "00000000-0000-0000-0000-000000000000"}, False),
               ("get_commander_matchups", {"p_commander_id": "00000000-0000-0000-0000-000000000000"}, False),
@@ -199,12 +225,12 @@ jobs:
     runs-on: ubuntu-latest
     needs: ingest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkoutbd71901bbe5b1630ceea73d27597364c9af683@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
-          python-version: "3.12"
+          python-version: '3.12'
 
       - name: Install dependencies
         run: pip install requests
@@ -246,6 +272,7 @@ jobs:
                   details.append(response.text[:500])
               return ": ".join(details)
 
+          # Tables and minimum expected counts
           tables = [
               ("tournaments", 50),
               ("commanders", 100),
@@ -322,12 +349,12 @@ jobs:
     runs-on: ubuntu-latest
     needs: ingest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkoutbd71901bbe5b1630ceea73d27597364c9af683@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
-          python-version: "3.12"
+          python-version: '3.12'
 
       - name: Install dependencies
         run: pip install requests
@@ -385,7 +412,9 @@ jobs:
           if failures:
               print("Regional Elo aggregate consistency check failed:")
               for row, reason in failures:
-                  print(f"  - {row['region_key']} / {row['player_id']}: {reason}")
+                  print(
+                      f"  - {row['region_key']} / {row['player_id']}: {reason}"
+                  )
               sys.exit(1)
 
           print(f"Validated {len(leaderboard_rows)} regional Elo rows against canonical stats.")
