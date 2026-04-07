@@ -1,4 +1,4 @@
-name: Backend Maintenance
+name: CI Backend Maintenance
 
 on:
   schedule:
