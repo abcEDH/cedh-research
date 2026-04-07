@@ -19,7 +19,7 @@ import os
 import re
 import sys
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -51,10 +51,77 @@ logger = logging.getLogger(__name__)
 
 BACKFILL_RUN_STATUSES = {"pending", "running", "completed", "completed_with_errors", "failed"}
 BACKFILL_BATCH_STATUSES = {"pending", "running", "completed", "failed"}
+US_STATE_BY_ABBREV = {
+    "AL": "Alabama",
+    "AK": "Alaska",
+    "AZ": "Arizona",
+    "AR": "Arkansas",
+    "CA": "California",
+    "CO": "Colorado",
+    "CT": "Connecticut",
+    "DE": "Delaware",
+    "FL": "Florida",
+    "GA": "Georgia",
+    "HI": "Hawaii",
+    "ID": "Idaho",
+    "IL": "Illinois",
+    "IN": "Indiana",
+    "IA": "Iowa",
+    "KS": "Kansas",
+    "KY": "Kentucky",
+    "LA": "Louisiana",
+    "ME": "Maine",
+    "MD": "Maryland",
+    "MA": "Massachusetts",
+    "MI": "Michigan",
+    "MN": "Minnesota",
+    "MS": "Mississippi",
+    "MO": "Missouri",
+    "MT": "Montana",
+    "NE": "Nebraska",
+    "NV": "Nevada",
+    "NH": "New Hampshire",
+    "NJ": "New Jersey",
+    "NM": "New Mexico",
+    "NY": "New York",
+    "NC": "North Carolina",
+    "ND": "North Dakota",
+    "OH": "Ohio",
+    "OK": "Oklahoma",
+    "OR": "Oregon",
+    "PA": "Pennsylvania",
+    "RI": "Rhode Island",
+    "SC": "South Carolina",
+    "SD": "South Dakota",
+    "TN": "Tennessee",
+    "TX": "Texas",
+    "UT": "Utah",
+    "VT": "Vermont",
+    "VA": "Virginia",
+    "WA": "Washington",
+    "WV": "West Virginia",
+    "WI": "Wisconsin",
+    "WY": "Wyoming",
+    "DC": "District of Columbia",
+}
 
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def canonicalize_state_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    state = str(value).strip()
+    if not state:
+        return None
+    upper_state = state.upper()
+    if upper_state in US_STATE_BY_ABBREV:
+        return US_STATE_BY_ABBREV[upper_state]
+    if state == upper_state:
+        return state.title()
+    return state
 
 
 class TopDeckClient:
@@ -66,19 +133,35 @@ class TopDeckClient:
         self.api_key = api_key
         self.session = requests.Session()
         self.session.headers.update({"Authorization": api_key})
+        self.min_request_interval_seconds = float(os.getenv("TOPDECK_MIN_REQUEST_INTERVAL_SECONDS", "0.75"))
+        self._last_request_monotonic = 0.0
 
     def _request(self, method: str, url: str, *, json_payload: dict | None = None, max_retries: int = 3):
         """HTTP request with basic retry for transient upstream errors."""
         for attempt in range(max_retries):
             try:
+                if self.min_request_interval_seconds > 0 and self._last_request_monotonic:
+                    elapsed = time.monotonic() - self._last_request_monotonic
+                    if elapsed < self.min_request_interval_seconds:
+                        time.sleep(self.min_request_interval_seconds - elapsed)
                 response = self.session.request(method, url, json=json_payload, timeout=60)
-                if response.status_code in (502, 503, 504):
+                self._last_request_monotonic = time.monotonic()
+                if response.status_code in (429, 502, 503, 504):
                     raise requests.exceptions.HTTPError(f"{response.status_code} Server Error", response=response)
                 response.raise_for_status()
                 return response
             except (requests.exceptions.ConnectionError, requests.exceptions.Timeout, requests.exceptions.HTTPError) as e:
                 if attempt < max_retries - 1:
-                    wait_time = 2 ** attempt
+                    response = getattr(e, "response", None)
+                    status_code = response.status_code if response is not None else None
+                    if status_code == 429:
+                        retry_after = response.headers.get("Retry-After") if response is not None else None
+                        try:
+                            wait_time = max(float(retry_after), 5.0) if retry_after else float(5 * (2 ** attempt))
+                        except ValueError:
+                            wait_time = float(5 * (2 ** attempt))
+                    else:
+                        wait_time = float(2 ** attempt)
                     logger.warning(f"TopDeck request error, retrying in {wait_time}s... ({attempt + 1}/{max_retries})")
                     time.sleep(wait_time)
                 else:
@@ -386,6 +469,36 @@ class DataIngester:
         self.commander_cache = {}  # name -> id
         self.player_cache = {}  # topdeck_id -> id
 
+    def fetch_existing_tournament(self, tid: str) -> dict | None:
+        existing = self.supabase.select(
+            "tournaments",
+            {
+                "select": "id,city,state,country,venue,latitude,longitude,header_image_url",
+                "topdeck_tid": f"eq.{tid}",
+                "limit": 1,
+            },
+        )
+        return existing[0] if existing else None
+
+    @staticmethod
+    def extract_event_data(tournament: dict, info: dict | None = None) -> dict:
+        info = info or {}
+        event_data = tournament.get("eventData") or info.get("eventData") or {}
+        if not isinstance(event_data, dict):
+            event_data = {}
+
+        return {
+            "city": event_data.get("city") or event_data.get("town") or event_data.get("municipality"),
+            "state": canonicalize_state_value(
+                event_data.get("state") or event_data.get("province") or event_data.get("region")
+            ),
+            "country": event_data.get("country"),
+            "venue": event_data.get("location") or event_data.get("venue") or event_data.get("address"),
+            "latitude": event_data.get("lat") if event_data.get("lat") is not None else event_data.get("latitude"),
+            "longitude": event_data.get("lng") if event_data.get("lng") is not None else event_data.get("longitude"),
+            "header_image_url": event_data.get("headerImage") or event_data.get("header_image_url"),
+        }
+
     def get_or_create_commander(self, name: str, commander_names: list[str]) -> str:
         """Get or create a commander entry, return UUID. (Legacy - use batch method)"""
         if name in self.commander_cache:
@@ -544,8 +657,8 @@ class DataIngester:
         if isinstance(start_date, (int, float)):
             start_date = datetime.fromtimestamp(start_date).isoformat()
 
-        # Get location data
-        event_data = tournament.get("eventData", {})
+        existing_tournament = self.fetch_existing_tournament(tid)
+        location_data = self.extract_event_data(tournament, info)
 
         # Upsert tournament
         tournament_data = {
@@ -558,12 +671,21 @@ class DataIngester:
             "average_elo": int(tournament.get("averageElo")) if tournament.get("averageElo") else None,
             "median_elo": int(tournament.get("medianElo")) if tournament.get("medianElo") else None,
             "top_elo": int(tournament.get("topElo")) if tournament.get("topElo") else None,
-            "city": event_data.get("city"),
-            "state": event_data.get("state"),
-            "venue": event_data.get("location"),
-            "latitude": event_data.get("lat"),
-            "longitude": event_data.get("lng"),
-            "header_image_url": event_data.get("headerImage"),
+            "city": location_data["city"] or (existing_tournament or {}).get("city"),
+            "state": location_data["state"] or (existing_tournament or {}).get("state"),
+            "country": location_data["country"] or (existing_tournament or {}).get("country"),
+            "venue": location_data["venue"] or (existing_tournament or {}).get("venue"),
+            "latitude": (
+                location_data["latitude"]
+                if location_data["latitude"] is not None
+                else (existing_tournament or {}).get("latitude")
+            ),
+            "longitude": (
+                location_data["longitude"]
+                if location_data["longitude"] is not None
+                else (existing_tournament or {}).get("longitude")
+            ),
+            "header_image_url": location_data["header_image_url"] or (existing_tournament or {}).get("header_image_url"),
         }
 
         result = self.supabase.upsert("tournaments", tournament_data, on_conflict="topdeck_tid")
@@ -1405,7 +1527,7 @@ def main():
                         "tournament_count": len(batch_tids),
                     },
                 )
-                updated_run_row = update_backfill_run_progress(
+                update_backfill_run_progress(
                     ingester.supabase,
                     run_row=run_row,
                     processed_count=processed_count,
@@ -1417,8 +1539,6 @@ def main():
                     current_batch_succeeded_count=0,
                     current_batch_failed_count=0,
                 )
-                if updated_run_row:
-                    run_row = updated_run_row
 
             batch_failed = False
             batch_error_text = None
@@ -1436,7 +1556,7 @@ def main():
                         tid=tid,
                         event_type="fetch_started",
                     )
-                    updated_run_row = update_backfill_run_progress(
+                    update_backfill_run_progress(
                         ingester.supabase,
                         run_row=run_row,
                         processed_count=processed_count,
@@ -1449,8 +1569,6 @@ def main():
                         current_batch_succeeded_count=batch_succeeded_count,
                         current_batch_failed_count=batch_failed_count,
                     )
-                    if updated_run_row:
-                        run_row = updated_run_row
                 try:
                     tournament = topdeck.get_tournament(tid)
                 except Exception as e:
@@ -1468,7 +1586,7 @@ def main():
                             event_type="fetch_failed",
                             payload={"error": str(e)},
                         )
-                        updated_run_row = update_backfill_run_progress(
+                        update_backfill_run_progress(
                             ingester.supabase,
                             run_row=run_row,
                             processed_count=processed_count,
@@ -1482,8 +1600,6 @@ def main():
                             current_batch_succeeded_count=batch_succeeded_count,
                             current_batch_failed_count=batch_failed_count,
                         )
-                        if updated_run_row:
-                            run_row = updated_run_row
                     if args.stop_on_error:
                         break
                     continue
@@ -1501,7 +1617,7 @@ def main():
                             event_type="tournament_skipped",
                             payload={"reason": "missing start date"},
                         )
-                        updated_run_row = update_backfill_run_progress(
+                        update_backfill_run_progress(
                             ingester.supabase,
                             run_row=run_row,
                             processed_count=processed_count,
@@ -1515,8 +1631,6 @@ def main():
                             current_batch_succeeded_count=batch_succeeded_count,
                             current_batch_failed_count=batch_failed_count,
                         )
-                        if updated_run_row:
-                            run_row = updated_run_row
                     continue
 
                 if start_dt and ts.date() < start_dt.date():
@@ -1530,7 +1644,7 @@ def main():
                             event_type="tournament_skipped",
                             payload={"reason": "before start-date filter"},
                         )
-                        updated_run_row = update_backfill_run_progress(
+                        update_backfill_run_progress(
                             ingester.supabase,
                             run_row=run_row,
                             processed_count=processed_count,
@@ -1544,8 +1658,6 @@ def main():
                             current_batch_succeeded_count=batch_succeeded_count,
                             current_batch_failed_count=batch_failed_count,
                         )
-                        if updated_run_row:
-                            run_row = updated_run_row
                     continue
                 if end_dt and ts.date() > end_dt.date():
                     logger.info(f"Skipping {tid}: after end-date filter")
@@ -1558,7 +1670,7 @@ def main():
                             event_type="tournament_skipped",
                             payload={"reason": "after end-date filter"},
                         )
-                        updated_run_row = update_backfill_run_progress(
+                        update_backfill_run_progress(
                             ingester.supabase,
                             run_row=run_row,
                             processed_count=processed_count,
@@ -1572,8 +1684,6 @@ def main():
                             current_batch_succeeded_count=batch_succeeded_count,
                             current_batch_failed_count=batch_failed_count,
                         )
-                        if updated_run_row:
-                            run_row = updated_run_row
                     continue
 
                 if ingester:
@@ -1601,7 +1711,7 @@ def main():
                                     event_type="process_succeeded",
                                     payload=result,
                                 )
-                                updated_run_row = update_backfill_run_progress(
+                                update_backfill_run_progress(
                                     ingester.supabase,
                                     run_row=run_row,
                                     processed_count=processed_count,
@@ -1617,8 +1727,6 @@ def main():
                                     last_success_at=last_success_at,
                                     heartbeat_at=last_success_at,
                                 )
-                                if updated_run_row:
-                                    run_row = updated_run_row
                     except Exception as e:
                         failed_count += 1
                         batch_failed_count += 1
@@ -1634,7 +1742,7 @@ def main():
                                 event_type="process_failed",
                                 payload={"error": str(e)},
                             )
-                            updated_run_row = update_backfill_run_progress(
+                            update_backfill_run_progress(
                                 ingester.supabase,
                                 run_row=run_row,
                                 processed_count=processed_count,
@@ -1648,8 +1756,6 @@ def main():
                                 current_batch_succeeded_count=batch_succeeded_count,
                                 current_batch_failed_count=batch_failed_count,
                             )
-                            if updated_run_row:
-                                run_row = updated_run_row
                         if args.stop_on_error:
                             break
                 else:
@@ -1678,7 +1784,7 @@ def main():
                     status="failed" if batch_failed else "completed",
                     error_text=batch_error_text,
                 )
-                updated_run_row = update_backfill_run_progress(
+                update_backfill_run_progress(
                     ingester.supabase,
                     run_row=run_row,
                     processed_count=processed_count,
@@ -1691,15 +1797,13 @@ def main():
                     current_batch_succeeded_count=batch_succeeded_count,
                     current_batch_failed_count=batch_failed_count,
                 )
-                if updated_run_row:
-                    run_row = updated_run_row
 
             if batch_failed and args.stop_on_error:
                 break
 
         if args.record_backfill and run_row:
             final_status = "completed_with_errors" if failed_count else "completed"
-            updated_run_row = update_backfill_run_progress(
+            update_backfill_run_progress(
                 ingester.supabase,
                 run_row=run_row,
                 processed_count=processed_count,
@@ -1712,8 +1816,6 @@ def main():
                 current_batch_succeeded_count=0,
                 current_batch_failed_count=0,
             )
-            if updated_run_row:
-                run_row = updated_run_row
     else:
         if args.start_date:
             start_dt = date_parser.parse(args.start_date)
