@@ -737,7 +737,11 @@ export default async function RegionalPlayerPage({
   const stateAssignmentRows = Array.from(assignmentRowsByRegion.values()).sort((a, b) => {
     if (a.region_key === homeRegion) return -1;
     if (b.region_key === homeRegion) return 1;
+    if (a.country_key === "UNKNOWN" && b.country_key !== "UNKNOWN") return 1;
+    if (b.country_key === "UNKNOWN" && a.country_key !== "UNKNOWN") return -1;
     if (a.country_key !== b.country_key) return a.country_key.localeCompare(b.country_key);
+    if (a.region_key === "UNKNOWN" && b.region_key !== "UNKNOWN") return 1;
+    if (b.region_key === "UNKNOWN" && a.region_key !== "UNKNOWN") return -1;
     if (b.games_played !== a.games_played) return b.games_played - a.games_played;
     return a.region_key.localeCompare(b.region_key);
   });
@@ -1007,7 +1011,7 @@ export default async function RegionalPlayerPage({
                       return [
                         <tr key={`country:${countryKey}`} className="border-t border-border/60 bg-muted/20">
                           <td colSpan={6} className="px-2 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                            {countryKey === "UNKNOWN" ? "Unknown country" : countryKey}
+                            {countryKey === "UNKNOWN" ? "UNKNOWN country" : countryKey}
                           </td>
                         </tr>,
                         ...rowsForCountry.map((row) => {
@@ -1016,7 +1020,7 @@ export default async function RegionalPlayerPage({
                           return (
                             <tr key={`${countryKey}:${regionKey}`} className="border-t border-border/60">
                               <td className="px-2 py-3 text-muted-foreground">
-                                {countryKey === "UNKNOWN" ? "Unknown" : countryKey}
+                                {countryKey === "UNKNOWN" ? "UNKNOWN country" : countryKey}
                               </td>
                               <td className="px-2 py-3">
                                 <Link
@@ -1027,7 +1031,7 @@ export default async function RegionalPlayerPage({
                                       : "text-foreground hover:text-primary"
                                   }
                                 >
-                                  {regionKey}
+                                  {regionKey === "UNKNOWN" ? "UNKNOWN state" : regionKey}
                                 </Link>
                                 {regionKey === homeRegion ? (
                                   <div className="text-[11px] text-primary">Assigned state</div>
