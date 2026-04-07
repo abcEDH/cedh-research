@@ -32,6 +32,7 @@ interface RisingCommander {
   commander_id: string;
   commander_name: string;
   entries_delta: number;
+  meta_share_delta: number;
   recent_entries: number;
   prior_entries: number;
   total_entries: number;
@@ -113,30 +114,35 @@ async function getTopRisingCommandersByTwoWeekTrend(): Promise<RisingCommander[]
 
     if (weekSet.length < 2) return [];
 
-    let recentWeekDates: string[];
+    const recentWeekDates = weekSet.slice(0, 2);
     let priorWeekDates: string[];
     if (weekSet.length >= 4) {
-      recentWeekDates = weekSet.slice(0, 2);
       priorWeekDates = weekSet.slice(2, 4);
     } else if (weekSet.length === 3) {
-      recentWeekDates = weekSet.slice(0, 2);
       priorWeekDates = weekSet.slice(2, 3);
     } else {
-      recentWeekDates = [weekSet[0]];
-      priorWeekDates = [weekSet[1]];
+      priorWeekDates = [];
     }
 
     const recentKey = new Set(recentWeekDates);
     const priorKey = new Set(priorWeekDates);
 
+    let recentTotal = 0;
+    let priorTotal = 0;
     const totals = new Map<string, { name: string; recent: number; prior: number }>();
     for (const row of trendRows) {
       const id = row.commander_id as string;
       const wk = row.week_start_date as string;
       const n = row.entries ?? 0;
       const cur = totals.get(id) ?? { name: row.commander_name as string, recent: 0, prior: 0 };
-      if (recentKey.has(wk)) cur.recent += n;
-      if (priorKey.has(wk)) cur.prior += n;
+      if (recentKey.has(wk)) {
+        cur.recent += n;
+        recentTotal += n;
+      }
+      if (priorKey.has(wk)) {
+        cur.prior += n;
+        priorTotal += n;
+      }
       totals.set(id, cur);
     }
 
@@ -145,12 +151,13 @@ async function getTopRisingCommandersByTwoWeekTrend(): Promise<RisingCommander[]
         commander_id,
         commander_name: v.name,
         entries_delta: v.recent - v.prior,
+        meta_share_delta: (v.recent / recentTotal) - (v.prior / priorTotal),
         recent_entries: v.recent,
         prior_entries: v.prior,
       }))
       .filter((x) => x.commander_name?.toLowerCase() !== "unknown commander")
-      .filter((x) => x.entries_delta > 0)
-      .sort((a, b) => b.entries_delta - a.entries_delta)
+      .filter((x) => x.meta_share_delta > 0)
+      .sort((a, b) => b.meta_share_delta - a.meta_share_delta)
       .slice(0, 3);
 
     if (scored.length === 0) return [];
@@ -346,7 +353,7 @@ export default async function Home() {
                   <CardTitle className="text-lg">Top 3 most popular commanders</CardTitle>
                   <p className="text-sm text-muted-foreground">
                     Ranked by total entries in large events—same metric as the performance table below. Meta share is
-                    each commander's percent of all entries in 32+ player events.
+                    each commander&apos;s percent of all entries in 32+ player events.
                   </p>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-3">
@@ -365,9 +372,8 @@ export default async function Home() {
                 <CardHeader className="knd-panel-header">
                   <CardTitle className="text-lg">Biggest popularity gain (2 weeks)</CardTitle>
                   <p className="text-sm text-muted-foreground">
-                    Extra tournament entries in the latest two ISO weeks vs the stretch before that (32+ player events;
-                    windows shorten if the dataset has fewer weeks). Meta share is overall large-event share, not the
-                    2-week slice.
+                    Extra tournament entries in the latest two ISO weeks vs the stretch before that (32+ player events).
+                    Raw meta share is overall large-event share, not the 2-week slice.
                   </p>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-3">
@@ -583,8 +589,8 @@ function RisingCommanderRow({
         </p>
       </div>
       <div className="shrink-0 self-start text-right">
-        <p className="font-mono text-sm text-primary">+{commander.entries_delta}</p>
-        <p className="text-xs text-muted-foreground">net entries</p>
+        <p className="font-mono text-sm text-primary">+{(commander.meta_share_delta * 100).toFixed(2)}%</p>
+        <p className="text-xs text-muted-foreground">meta share</p>
       </div>
     </Link>
   );
