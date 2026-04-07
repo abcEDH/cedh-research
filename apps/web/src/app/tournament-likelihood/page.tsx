@@ -287,9 +287,6 @@ export default async function TournamentLikelihoodPage({
               <Link className="transition hover:text-foreground" href="/regional-elo">
                 Regional Elo
               </Link>
-              <Link className="transition hover:text-foreground" href="/midseason-invitational">
-                MidSeason
-              </Link>
             </nav>
           </div>
           <p className="max-w-4xl text-base text-muted-foreground">
