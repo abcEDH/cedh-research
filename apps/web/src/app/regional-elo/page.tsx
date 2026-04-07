@@ -3,10 +3,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
 import { RegionalLeaderboardTable } from "./regional-leaderboard-table";
 import { RegionSelector } from "./region-selector";
+import { inferCountryForRegion } from "@/lib/region-countries";
 
 export const dynamic = "force-dynamic";
 const GLOBAL_REGION_KEY = "ALL";
-const LEGACY_COUNTRY_KEY = "UNITED STATES";
 const LEADERBOARD_LIMIT = 50;
 const INITIAL_COMMANDER_LOOKUP_LIMIT = 50;
 
@@ -210,26 +210,35 @@ async function fetchRegionRows(): Promise<{ rows: RegionRow[]; supportsCountry: 
 
   const fallbackRows = ((fallbackData ?? []) as Omit<RegionRow, "country_key">[]).map((row) => ({
     ...row,
-    country_key: row.region_type === "state" ? LEGACY_COUNTRY_KEY : null,
+    country_key: row.region_type === "state" ? inferCountryForRegion(row.region_key) : null,
   }));
-  const globalRow = fallbackRows.find(
-    (row) => row.region_type === "global" && row.region_key === GLOBAL_REGION_KEY
-  );
-  const hasStateRows = fallbackRows.some((row) => row.region_type === "state");
-  const legacyCountryRow: RegionRow | null =
-    hasStateRows && !fallbackRows.some((row) => row.region_type === "country")
-      ? {
-          region_type: "country",
-          region_key: LEGACY_COUNTRY_KEY,
-          country_key: null,
-          player_count: globalRow?.player_count ?? 0,
-          updated_at: globalRow?.updated_at ?? null,
-        }
-      : null;
+  const inferredCountries = new Map<string, RegionRow>();
+  for (const row of fallbackRows) {
+    if (row.region_type !== "state" || !row.country_key) continue;
+    const existing = inferredCountries.get(row.country_key);
+    inferredCountries.set(row.country_key, {
+      region_type: "country",
+      region_key: row.country_key,
+      country_key: row.country_key,
+      player_count: (existing?.player_count ?? 0) + Number(row.player_count ?? 0),
+      updated_at:
+        existing?.updated_at && row.updated_at
+          ? existing.updated_at > row.updated_at
+            ? existing.updated_at
+            : row.updated_at
+          : existing?.updated_at ?? row.updated_at ?? null,
+    });
+  }
+  const legacyCountryRows: RegionRow[] =
+    fallbackRows.some((row) => row.region_type === "country")
+      ? []
+      : Array.from(inferredCountries.values()).sort((a, b) =>
+          a.region_key.localeCompare(b.region_key)
+        );
 
   return {
     rows: [
-      ...(legacyCountryRow ? [legacyCountryRow] : []),
+      ...legacyCountryRows,
       ...fallbackRows.map((row) => ({
         ...row,
         country_key: row.country_key ?? null,
