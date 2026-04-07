@@ -72,12 +72,13 @@ jobs:
             return resp.json()
 
           player = get("players", {"select": "id,name,topdeck_id", "topdeck_id": f"eq.{topdeck_id}"})[0]
-          rating_rows = get(
-            "regional_elo_ratings",
+          leaderboard_rows = get(
+            "regional_elo_leaderboard",
             {
-              "select": "player_id,rating",
+              "select": "region_key,rank,rating,games_played,wins,draws,losses",
               "region_type": "eq.state",
               "region_key": f"eq.{region}",
+              "player_id": f"eq.{player['id']}",
             },
           )
           canonical_rows = get(
@@ -89,28 +90,19 @@ jobs:
             },
           )
           canonical_by_player = {row["player_id"]: row for row in canonical_rows}
-          rating_rows.sort(
-            key=lambda row: (
-              row["rating"],
-              canonical_by_player.get(row["player_id"], {}).get("games_played", 0),
-            ),
-            reverse=True,
-          )
-          target_rating = next(row for row in rating_rows if row["player_id"] == player["id"])
+          if not leaderboard_rows:
+            raise SystemExit(
+              f"No regional_elo_leaderboard row for player_id={player['id']} "
+              f"topdeck_id={topdeck_id} region={region}; canonical={canonical_by_player.get(player['id'])}"
+            )
+          if player["id"] not in canonical_by_player:
+            raise SystemExit(
+              f"No regional_elo_player_stats row for player_id={player['id']} "
+              f"topdeck_id={topdeck_id} region={region}; leaderboard={leaderboard_rows[0]}"
+            )
+
+          leaderboard = leaderboard_rows[0]
           canonical = canonical_by_player[player["id"]]
-          leaderboard = {
-            "region_key": region,
-            "rank": next(
-              index + 1
-              for index, row in enumerate(rating_rows)
-              if row["player_id"] == player["id"]
-            ),
-            "rating": target_rating["rating"],
-            "games_played": canonical["games_played"],
-            "wins": canonical["wins"],
-            "draws": canonical["draws"],
-            "losses": canonical["losses"],
-          }
 
           mismatches = {}
 
