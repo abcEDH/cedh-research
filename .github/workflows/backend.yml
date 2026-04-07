@@ -61,7 +61,7 @@ jobs:
       - name: Run data ingestion
         run: python packages/backend/src/ingest.py --days 7 --min-players 32
 
-      - name: Recompute leaderboard data
+      - name: Recompute global Elo, state activity, and game event data
         run: python packages/backend/src/regional_elo.py
 
       - name: Upload logs
@@ -138,6 +138,8 @@ jobs:
               ("survival_summary", 10),
               ("regional_elo_player_stats", 10),
               ("regional_elo_leaderboard", 10),
+              ("regional_elo_regions", 2),
+              ("regional_elo_game_event_log", 100),
           ]
 
           # RPC functions to validate
@@ -280,6 +282,8 @@ jobs:
               ("games", 5000),
               ("game_participants", 15000),
               ("players", 2000),
+              ("regional_elo_state_activity", 10),
+              ("regional_elo_game_events", 100),
           ]
 
           failed = []
