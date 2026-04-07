@@ -68,6 +68,17 @@ type LeaderboardRankRow = {
   losses: number;
 };
 
+type StateAssignmentRow = {
+  country_key: string;
+  region_key: string;
+  rank: number | null;
+  rating: number | null;
+  games_played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+};
+
 type GlobalSnapshotRow = {
   rank: number;
   points: number;
@@ -587,15 +598,6 @@ export default async function RegionalPlayerPage({
     ...row,
     country_key: row.country_key ?? inferCountryForRegion(row.region_key) ?? "UNKNOWN",
   }));
-  const countryAssignmentRows = Array.from(
-    new Set(regionalRankRows.map((row) => row.country_key).filter((value): value is string => Boolean(value)))
-  ).sort((a, b) => {
-    if (a === homeCountry) return -1;
-    if (b === homeCountry) return 1;
-    if (a === "UNKNOWN") return 1;
-    if (b === "UNKNOWN") return -1;
-    return a.localeCompare(b);
-  });
   const selectedRegion = regionFilter || homeRegion || "";
   const regionalRank = await fetchRegionalRank(player.id, selectedRegion);
   const activeRank = regionFilter ? regionalRank : globalEloRank;
@@ -678,10 +680,74 @@ export default async function RegionalPlayerPage({
   }
 
   const { totalGames, totalWins, totalDraws, totalLosses, seatRows, opponentRecords } = summarizePlayerLogs(playerLogs);
-  const canonicalGames = activeRank?.games_played ?? totalGames;
-  const canonicalWins = activeRank?.wins ?? totalWins;
-  const canonicalDraws = activeRank?.draws ?? totalDraws;
-  const canonicalLosses = activeRank?.losses ?? totalLosses;
+  const canonicalGames = globalEloRank?.games_played ?? totalGames;
+  const canonicalWins = globalEloRank?.wins ?? totalWins;
+  const canonicalDraws = globalEloRank?.draws ?? totalDraws;
+  const canonicalLosses = globalEloRank?.losses ?? totalLosses;
+  const assignmentRowsByRegion = new Map<string, StateAssignmentRow>();
+  const historicalRegionKeys = new Set<string>();
+  for (const row of regionalRankRows) {
+    const regionKey = row.region_key ?? "";
+    if (!regionKey) continue;
+    assignmentRowsByRegion.set(regionKey, {
+      country_key: row.country_key ?? inferCountryForRegion(regionKey) ?? "UNKNOWN",
+      region_key: regionKey,
+      rank: row.rank,
+      rating: row.rating,
+      games_played: row.games_played,
+      wins: row.wins,
+      draws: row.draws,
+      losses: row.losses,
+    });
+  }
+  for (const log of playerLogs) {
+    const regionKey = (log.state ?? "").trim().toUpperCase() || "UNKNOWN";
+    const existing = assignmentRowsByRegion.get(regionKey);
+    const current =
+      existing && !historicalRegionKeys.has(regionKey)
+        ? {
+            ...existing,
+            games_played: 0,
+            wins: 0,
+            draws: 0,
+            losses: 0,
+          }
+        : existing ?? {
+            country_key: inferCountryForRegion(regionKey) ?? "UNKNOWN",
+            region_key: regionKey,
+            rank: null,
+            rating: null,
+            games_played: 0,
+            wins: 0,
+            draws: 0,
+            losses: 0,
+          };
+
+    historicalRegionKeys.add(regionKey);
+    current.games_played += 1;
+    if (log.result === "win") {
+      current.wins += 1;
+    } else if (log.result === "draw") {
+      current.draws += 1;
+    } else if (log.result === "loss") {
+      current.losses += 1;
+    }
+    assignmentRowsByRegion.set(regionKey, current);
+  }
+  const stateAssignmentRows = Array.from(assignmentRowsByRegion.values()).sort((a, b) => {
+    if (a.region_key === homeRegion) return -1;
+    if (b.region_key === homeRegion) return 1;
+    if (a.country_key !== b.country_key) return a.country_key.localeCompare(b.country_key);
+    if (b.games_played !== a.games_played) return b.games_played - a.games_played;
+    return a.region_key.localeCompare(b.region_key);
+  });
+  const countryAssignmentRows = Array.from(new Set(stateAssignmentRows.map((row) => row.country_key))).sort((a, b) => {
+    if (a === homeCountry) return -1;
+    if (b === homeCountry) return 1;
+    if (a === "UNKNOWN") return 1;
+    if (b === "UNKNOWN") return -1;
+    return a.localeCompare(b);
+  });
   const commanderRows = Array.from(
     playerLogs.reduce(
       (rows, log) => {
@@ -918,8 +984,8 @@ export default async function RegionalPlayerPage({
                 State Assignment
               </CardTitle>
               <p className="text-xs text-muted-foreground">
-                State assignments are grouped by inferred country. If activity shifts over time, a
-                player&apos;s assignment can move on the next recompute.
+                Historical games are grouped by inferred country and region. Assigned-state rank
+                data appears when available.
               </p>
             </CardHeader>
             <CardContent>
@@ -937,7 +1003,7 @@ export default async function RegionalPlayerPage({
                   </thead>
                   <tbody>
                     {countryAssignmentRows.flatMap((countryKey) => {
-                      const rowsForCountry = regionalRankRows.filter((row) => row.country_key === countryKey);
+                      const rowsForCountry = stateAssignmentRows.filter((row) => row.country_key === countryKey);
                       return [
                         <tr key={`country:${countryKey}`} className="border-t border-border/60 bg-muted/20">
                           <td colSpan={6} className="px-2 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
@@ -967,9 +1033,11 @@ export default async function RegionalPlayerPage({
                                   <div className="text-[11px] text-primary">Assigned state</div>
                                 ) : null}
                               </td>
-                              <td className="px-2 py-3 text-right font-mono text-foreground">#{row.rank}</td>
                               <td className="px-2 py-3 text-right font-mono text-foreground">
-                                {Math.round(row.rating)}
+                                {row.rank ? `#${row.rank}` : "—"}
+                              </td>
+                              <td className="px-2 py-3 text-right font-mono text-foreground">
+                                {row.rating ? Math.round(row.rating) : "—"}
                               </td>
                               <td className="px-2 py-3 text-right font-mono text-muted-foreground">
                                 {row.games_played}
@@ -982,7 +1050,7 @@ export default async function RegionalPlayerPage({
                         }),
                       ];
                     })}
-                    {regionalRankRows.length === 0 ? (
+                    {stateAssignmentRows.length === 0 ? (
                       <tr>
                         <td colSpan={6} className="px-2 py-6 text-center text-sm text-muted-foreground">
                           No state assignment found for this player.
