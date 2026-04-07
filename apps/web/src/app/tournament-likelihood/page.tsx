@@ -1,10 +1,17 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/lib/supabase";
-import { buildProfiles, getCommanderUsageRows, lookbackStartDate } from "@/lib/meta-prep";
+import {
+  attachLatestDecklistUrls,
+  buildProfiles,
+  getCommanderDecklistRows,
+  getCommanderUsageRows,
+  lookbackStartDate,
+} from "@/lib/meta-prep";
 import type { MetaShareRow, PlayerCommanderProfile } from "@/lib/meta-prep";
-import { buildTopdeckProfileHref } from "@/lib/topdeck-profile";
 import { extractTournamentSlug, fetchTournamentBySlug } from "@/lib/topdeck";
 import Link from "next/link";
+import { unstable_cache } from "next/cache";
+import { TournamentAnalysisTables } from "./tournament-analysis-tables";
 
 export const dynamic = "force-dynamic";
 const DEFAULT_LOOKBACK_MONTHS = 6;
@@ -17,6 +24,11 @@ type TournamentStanding = {
   points: number;
   winRate: number;
   opponentWinRate: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  actualDeckCommander: string | null;
+  actualDecklistUrl: string | null;
 };
 
 type EloRow = {
@@ -58,15 +70,25 @@ function formatPercent(value: number) {
   return `${Math.round(value * 100)}%`;
 }
 
-function formatDate(value: string | null | undefined) {
-  if (!value) return "Unknown date";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
+function readStartTimestamp(startDate: string | number | null | undefined) {
+  if (typeof startDate === "number") return startDate * 1000;
+  if (!startDate) return null;
+  const timestamp = Date.parse(startDate);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function formatStartTime(startDate: string | number | null | undefined) {
+  const timestamp = readStartTimestamp(startDate);
+  if (timestamp === null) return "Unknown start time";
+  return new Date(timestamp).toLocaleString("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
   });
+}
+
+function hasTournamentStarted(startDate: string | number | null | undefined) {
+  const timestamp = readStartTimestamp(startDate);
+  return timestamp !== null && Date.now() >= timestamp;
 }
 
 async function fetchBestEloRows(topdeckIds: string[]): Promise<EloRow[]> {
@@ -110,6 +132,43 @@ async function fetchBestEloRows(topdeckIds: string[]): Promise<EloRow[]> {
   return eloRows.sort((a, b) => b.rating - a.rating);
 }
 
+type TournamentAnalysis = {
+  tournament: {
+    name: string;
+    game: string;
+    format: string;
+    startDate: string | number;
+  };
+  standings: TournamentStanding[];
+  profiles: { players: PlayerCommanderProfile[]; metaShare: MetaShareRow[] };
+  eloRows: EloRow[];
+  hasRounds: boolean;
+};
+
+const getCachedTournamentAnalysis = unstable_cache(
+  async (slug: string, lookbackStart: string): Promise<TournamentAnalysis> => {
+    const response = await fetchTournamentBySlug(slug);
+    const standings = (response.standings ?? []) as TournamentStanding[];
+    const topdeckIds = standings.map((row) => row.id).filter(Boolean);
+    const [usageRows, decklistRows, eloRows] = await Promise.all([
+      getCommanderUsageRows(topdeckIds, lookbackStart),
+      getCommanderDecklistRows(topdeckIds),
+      fetchBestEloRows(topdeckIds),
+    ]);
+    const profiles = buildProfiles(topdeckIds, usageRows, 3);
+
+    return {
+      tournament: response.data,
+      standings,
+      profiles: attachLatestDecklistUrls(profiles, decklistRows),
+      eloRows,
+      hasRounds: (response.rounds ?? []).length > 0,
+    };
+  },
+  ["tournament-likelihood-analysis-v11"],
+  { revalidate: 60 * 15 }
+);
+
 export default async function TournamentLikelihoodPage({
   searchParams,
 }: {
@@ -128,7 +187,7 @@ export default async function TournamentLikelihoodPage({
         name: string;
         game: string;
         format: string;
-        startDate: string;
+        startDate: string | number;
       }
     | null = null;
   let standings: TournamentStanding[] = [];
@@ -137,20 +196,17 @@ export default async function TournamentLikelihoodPage({
     metaShare: [],
   };
   let eloRows: EloRow[] = [];
+  let hasRounds = false;
   let errorMessage: string | null = null;
 
   if (slug) {
     try {
-      const response = await fetchTournamentBySlug(slug);
-      tournament = response.data;
-      standings = (response.standings ?? []) as TournamentStanding[];
-      const topdeckIds = standings.map((row) => row.id).filter(Boolean);
-      const [usageRows, eloResult] = await Promise.all([
-        getCommanderUsageRows(topdeckIds, lookbackStart),
-        fetchBestEloRows(topdeckIds),
-      ]);
-      profiles = buildProfiles(topdeckIds, usageRows, 3);
-      eloRows = eloResult;
+      const analysis = await getCachedTournamentAnalysis(slug, lookbackStart);
+      tournament = analysis.tournament;
+      standings = analysis.standings;
+      profiles = analysis.profiles;
+      eloRows = analysis.eloRows;
+      hasRounds = analysis.hasRounds;
     } catch (error) {
       errorMessage = (error as Error).message;
     }
@@ -163,6 +219,8 @@ export default async function TournamentLikelihoodPage({
   const avgTopDeckShare = topDeckShares.length
     ? topDeckShares.reduce((sum, share) => sum + share, 0) / topDeckShares.length
     : 0;
+  const tournamentHasStarted = tournament ? hasTournamentStarted(tournament.startDate) : false;
+  const hasTournamentResults = tournamentHasStarted && hasRounds;
 
   const weightedMeta = new Map<string, number>();
   for (const player of profiles.players) {
@@ -181,20 +239,35 @@ export default async function TournamentLikelihoodPage({
     }))
     .sort((a, b) => b.expectedPlayers - a.expectedPlayers)
     .slice(0, 15);
-  const topCommander = weightedMetaRows[0];
-  const topFiveCombinedShare = weightedMetaRows
+
+  const actualMeta = new Map<string, number>();
+  for (const standing of standings) {
+    if (!standing.actualDeckCommander) continue;
+    actualMeta.set(standing.actualDeckCommander, (actualMeta.get(standing.actualDeckCommander) ?? 0) + 1);
+  }
+  const actualMetaRows = Array.from(actualMeta.entries())
+    .map(([commander, players]) => ({
+      commander,
+      fieldShare: standings.length ? players / standings.length : 0,
+      expectedPlayers: players,
+    }))
+    .sort((a, b) => b.expectedPlayers - a.expectedPlayers)
+    .slice(0, 15);
+
+  const fieldShareRows = hasTournamentResults ? actualMetaRows : weightedMetaRows;
+  const topCommander = fieldShareRows[0];
+  const topFiveCombinedShare = fieldShareRows
     .slice(0, 5)
     .reduce((sum, row) => sum + row.fieldShare, 0);
 
   const profileByPlayer = new Map(profiles.players.map((player) => [player.topdeckId, player]));
   const standingByPlayer = new Map(standings.map((player) => [player.id, player]));
-  const topEloAttendees = eloRows
+  const allTopEloAttendees = eloRows
     .map((row) => ({
       ...row,
       standing: row.topdeck_id ? standingByPlayer.get(row.topdeck_id) : undefined,
       profile: row.topdeck_id ? profileByPlayer.get(row.topdeck_id) : undefined,
-    }))
-    .slice(0, 12);
+    }));
 
   return (
     <div className="min-h-screen">
@@ -213,9 +286,6 @@ export default async function TournamentLikelihoodPage({
               </Link>
               <Link className="transition hover:text-foreground" href="/regional-elo">
                 Regional Elo
-              </Link>
-              <Link className="transition hover:text-foreground" href="/midseason-invitational">
-                MidSeason
               </Link>
             </nav>
           </div>
@@ -295,7 +365,7 @@ export default async function TournamentLikelihoodPage({
                   <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Tournament</p>
                   <p className="mt-2 text-lg font-semibold text-foreground">{tournament.name}</p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    {tournament.format} · {formatDate(tournament.startDate)}
+                    {tournament.format} | {formatStartTime(tournament.startDate)}
                   </p>
                 </div>
                 <div className="rounded-md border border-border/60 bg-muted/20 p-4">
@@ -313,12 +383,15 @@ export default async function TournamentLikelihoodPage({
                   </p>
                 </div>
                 <div className="rounded-md border border-border/60 bg-muted/20 p-4">
-                  <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Most Likely Deck</p>
+                  <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">
+                    {hasTournamentResults ? "Most Played Deck" : "Most Likely Deck"}
+                  </p>
                   <p className="mt-2 text-lg font-semibold text-foreground">
                     {topCommander ? `${topCommander.commander} (${formatPercent(topCommander.fieldShare)})` : "No consensus yet"}
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Top 5 commanders represent {formatPercent(topFiveCombinedShare)} of known field history
+                    Top 5 commanders represent {formatPercent(topFiveCombinedShare)} of{" "}
+                    {hasTournamentResults ? "submitted decklists" : "known field history"}
                   </p>
                 </div>
               </CardContent>
@@ -327,185 +400,49 @@ export default async function TournamentLikelihoodPage({
             <Card className="knd-panel mt-6">
               <CardHeader>
                 <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
-                  Expected Field Share (Player-Weighted)
+                  {hasTournamentResults ? "Field Share" : "Expected Field Share (Player-Weighted)"}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="mb-4 text-sm text-muted-foreground">
-                  This estimate weights each player by how concentrated their recent commander usage is.
-                  Average top-deck concentration across attendees with data:{" "}
-                  <span className="font-medium text-foreground">{formatPercent(avgTopDeckShare)}</span>.
+                  {hasTournamentResults ? (
+                    "Actual submitted commander choices from this tournament."
+                  ) : (
+                    <>
+                      This estimate weights each player by how concentrated their recent commander usage is.
+                      Average top-deck concentration across attendees with data:{" "}
+                      <span className="font-medium text-foreground">{formatPercent(avgTopDeckShare)}</span>.
+                    </>
+                  )}
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">
-                  {weightedMetaRows.map((row) => (
+                  {fieldShareRows.map((row) => (
                     <div key={row.commander} className="flex items-center justify-between text-sm">
                       <span className="text-foreground">{row.commander}</span>
                       <span className="text-primary">
-                        {formatPercent(row.fieldShare)} · {row.expectedPlayers.toFixed(1)} players
+                        {formatPercent(row.fieldShare)} ·{" "}
+                        {hasTournamentResults ? row.expectedPlayers : row.expectedPlayers.toFixed(1)} players
                       </span>
                     </div>
                   ))}
-                  {!weightedMetaRows.length && (
+                  {!fieldShareRows.length && (
                     <div className="text-sm text-muted-foreground">
-                      No known commander history for the players in this event.
+                      {hasTournamentResults
+                        ? "No submitted decklists found for the players in this event."
+                        : "No known commander history for the players in this event."}
                     </div>
                   )}
                 </div>
               </CardContent>
             </Card>
 
-            <Card className="knd-panel mt-6">
-              <CardHeader>
-                <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
-                  Top Elo Attendees
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="mb-4 text-sm text-muted-foreground">
-                  Highest-rated players in the field using the regional leaderboard&apos;s all-games Elo,
-                  paired with the deck forecast from recent commander history.
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="text-left text-xs uppercase tracking-[0.3em] text-muted-foreground">
-                      <tr>
-                        <th className="px-2 py-3">Player</th>
-                        <th className="px-2 py-3">Elo</th>
-                        <th className="px-2 py-3">Home Region</th>
-                        <th className="px-2 py-3">Most Likely Bring</th>
-                        <th className="px-2 py-3">Alternatives</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {topEloAttendees.map((row) => {
-                        const topdeckHref = buildTopdeckProfileHref(row.topdeck_id);
-                        const primary = row.profile?.commanders[0];
-                        const alternatives = row.profile?.commanders.slice(1, 3) ?? [];
-                        return (
-                          <tr key={row.topdeck_id ?? row.player_name} className="border-t border-border/60">
-                            <td className="px-2 py-4">
-                              {topdeckHref ? (
-                                <a
-                                  className="font-medium text-foreground hover:text-primary"
-                                  href={topdeckHref}
-                                  rel="noreferrer"
-                                  target="_blank"
-                                >
-                                  {row.player_name}
-                                </a>
-                              ) : (
-                                <div className="font-medium text-foreground">{row.player_name}</div>
-                              )}
-                              <div className="text-xs text-muted-foreground">
-                                {row.standing ? `Tournament standing #${row.standing.standing}` : "Attendee"}
-                              </div>
-                            </td>
-                            <td className="px-2 py-4 font-semibold text-primary">{Math.round(row.rating)}</td>
-                            <td className="px-2 py-4 text-muted-foreground">{row.region_key}</td>
-                            <td className="px-2 py-4">
-                              {primary ? (
-                                <div>
-                                  <div className="font-medium text-foreground">{primary.commander}</div>
-                                  <div className="text-xs text-muted-foreground">
-                                    Forecast confidence {formatPercent(primary.predictionShare)} · {primary.entries} recent entries
-                                  </div>
-                                </div>
-                              ) : (
-                                <span className="text-xs text-muted-foreground">No recent deck data</span>
-                              )}
-                            </td>
-                            <td className="px-2 py-4">
-                              <div className="flex flex-wrap gap-2">
-                                {alternatives.length ? (
-                                  alternatives.map((commander) => (
-                                    <span key={`${row.topdeck_id}-${commander.commander}`} className="knd-chip">
-                                      {commander.commander} · {formatPercent(commander.predictionShare)}
-                                    </span>
-                                  ))
-                                ) : (
-                                  <span className="text-xs text-muted-foreground">No strong alternatives</span>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                      {topEloAttendees.length === 0 && (
-                        <tr>
-                          <td colSpan={5} className="py-6 text-center text-sm text-muted-foreground">
-                            No Elo rows matched the current attendee list.
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="knd-panel mt-6">
-              <CardHeader>
-                <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
-                  Player Commander Profiles
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="text-left text-xs uppercase tracking-[0.3em] text-muted-foreground">
-                      <tr>
-                        <th className="px-2 py-3">Standing</th>
-                        <th className="px-2 py-3">Player</th>
-                        <th className="px-2 py-3">Tournament Record</th>
-                        <th className="px-2 py-3">Likely Decks</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {standings.map((entry) => {
-                        const profile = profileByPlayer.get(entry.id);
-                        const profileHref = buildTopdeckProfileHref(entry.username || entry.id);
-                        return (
-                          <tr key={`${entry.id}-${entry.standing}`} className="border-t border-border/60">
-                            <td className="px-2 py-4 text-muted-foreground">#{entry.standing}</td>
-                            <td className="px-2 py-4">
-                              {profileHref ? (
-                                <a
-                                  className="font-medium text-foreground hover:text-primary"
-                                  href={profileHref}
-                                  rel="noreferrer"
-                                  target="_blank"
-                                >
-                                  {entry.name}
-                                </a>
-                              ) : (
-                                <div className="font-medium text-foreground">{entry.name}</div>
-                              )}
-                              <div className="text-xs text-muted-foreground">{entry.username || entry.id}</div>
-                            </td>
-                            <td className="px-2 py-4 text-muted-foreground">
-                              {entry.points} pts · {Math.round((entry.winRate || 0) * 100)}% WR
-                            </td>
-                            <td className="px-2 py-4">
-                              <div className="flex flex-wrap gap-2">
-                                {profile?.commanders?.length ? (
-                                  profile.commanders.map((commander) => (
-                                    <span key={`${entry.id}-${commander.commander}`} className="knd-chip">
-                                      {commander.commander} · {formatPercent(commander.predictionShare)} ({commander.entries})
-                                    </span>
-                                  ))
-                                ) : (
-                                  <span className="text-xs text-muted-foreground">No recent data</span>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
+            <TournamentAnalysisTables
+              eloAttendees={allTopEloAttendees}
+              showActualDecks={hasTournamentResults}
+              showTournamentRecord={tournamentHasStarted}
+              profiles={profiles.players}
+              standings={standings}
+            />
           </>
         )}
       </main>

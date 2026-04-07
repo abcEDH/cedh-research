@@ -87,6 +87,7 @@ jobs:
           python << 'SCRIPT'
           import requests
           import sys
+          import time
 
           SUPABASE_URL = "${{ secrets.SUPABASE_URL }}"
           SUPABASE_KEY = "${{ secrets.SUPABASE_SERVICE_KEY }}"
@@ -96,6 +97,21 @@ jobs:
               "Authorization": f"Bearer {SUPABASE_KEY}",
               "Content-Type": "application/json"
           }
+
+          def request_with_retry(method, url, **kwargs):
+              last_response = None
+              for attempt in range(3):
+                  response = requests.request(method, url, **kwargs)
+                  last_response = response
+                  if response.status_code < 500:
+                      return response
+                  if attempt < 2:
+                      time.sleep(2 ** attempt)
+              return last_response
+
+          def response_failure(response):
+              body = response.text[:500] if response.text else "<empty body>"
+              return f"HTTP {response.status_code}: {body}"
 
           # Views to validate (with minimum expected row count)
           views = [
@@ -137,7 +153,7 @@ jobs:
           for view_name, min_rows in views:
               try:
                   url = f"{SUPABASE_URL}/rest/v1/{view_name}?select=*&limit=100"
-                  resp = requests.get(url, headers=headers, timeout=30)
+                  resp = request_with_retry("GET", url, headers=headers, timeout=30)
 
                   if resp.status_code == 200:
                       data = resp.json()
@@ -149,8 +165,9 @@ jobs:
                           print(f"✗ {view_name}: {row_count} rows (expected >= {min_rows})")
                           failed.append((view_name, f"Only {row_count} rows"))
                   else:
-                      print(f"✗ {view_name}: HTTP {resp.status_code}")
-                      failed.append((view_name, f"HTTP {resp.status_code}"))
+                      reason = response_failure(resp)
+                      print(f"✗ {view_name}: {reason}")
+                      failed.append((view_name, reason))
               except Exception as e:
                   print(f"✗ {view_name}: {str(e)}")
                   failed.append((view_name, str(e)))
@@ -163,7 +180,7 @@ jobs:
           for func_name, params, expect_data in rpc_functions:
               try:
                   url = f"{SUPABASE_URL}/rest/v1/rpc/{func_name}"
-                  resp = requests.post(url, headers=headers, json=params, timeout=30)
+                  resp = request_with_retry("POST", url, headers=headers, json=params, timeout=30)
 
                   if resp.status_code == 200:
                       data = resp.json()
@@ -176,8 +193,9 @@ jobs:
                           print(f"✓ {func_name}: {row_count} rows returned")
                           passed.append(func_name)
                   else:
-                      print(f"✗ {func_name}: HTTP {resp.status_code}")
-                      failed.append((func_name, f"HTTP {resp.status_code}"))
+                      reason = response_failure(resp)
+                      print(f"✗ {func_name}: {reason}")
+                      failed.append((func_name, reason))
               except Exception as e:
                   print(f"✗ {func_name}: {str(e)}")
                   failed.append((func_name, str(e)))
@@ -217,6 +235,7 @@ jobs:
           python << 'SCRIPT'
           import requests
           import sys
+          import time
 
           SUPABASE_URL = "${{ secrets.SUPABASE_URL }}"
           SUPABASE_KEY = "${{ secrets.SUPABASE_SERVICE_KEY }}"
@@ -227,6 +246,26 @@ jobs:
               "Content-Type": "application/json",
               "Prefer": "count=exact"
           }
+
+          def request_with_retry(method, url, **kwargs):
+              last_response = None
+              for attempt in range(3):
+                  response = requests.request(method, url, **kwargs)
+                  last_response = response
+                  if response.status_code < 500:
+                      return response
+                  if attempt < 2:
+                      time.sleep(2 ** attempt)
+              return last_response
+
+          def response_failure(response):
+              details = [f"HTTP {response.status_code}"]
+              content_range = response.headers.get("content-range")
+              if content_range:
+                  details.append(f"content-range={content_range}")
+              if response.text:
+                  details.append(response.text[:500])
+              return ": ".join(details)
 
           # Tables and minimum expected counts
           tables = [
@@ -247,7 +286,7 @@ jobs:
           for table_name, min_count in tables:
               try:
                   url = f"{SUPABASE_URL}/rest/v1/{table_name}?select=count"
-                  resp = requests.head(url, headers=headers, timeout=30)
+                  resp = request_with_retry("HEAD", url, headers=headers, timeout=30)
 
                   if resp.status_code in (200, 206):
                       count = int(resp.headers.get("content-range", "0-0/0").split("/")[1])
@@ -256,8 +295,9 @@ jobs:
                       if count < min_count:
                           failed.append((table_name, f"{count} < {min_count}"))
                   else:
-                      print(f"✗ {table_name}: HTTP {resp.status_code}")
-                      failed.append((table_name, f"HTTP {resp.status_code}"))
+                      reason = response_failure(resp)
+                      print(f"✗ {table_name}: {reason}")
+                      failed.append((table_name, reason))
               except Exception as e:
                   print(f"✗ {table_name}: {str(e)}")
                   failed.append((table_name, str(e)))

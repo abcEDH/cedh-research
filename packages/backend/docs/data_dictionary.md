@@ -1,6 +1,6 @@
 # Data Dictionary
 
-Last reviewed: 2026-03-29
+Last reviewed: 2026-04-06
 Update policy: This file must be updated whenever migrations in `packages/backend/supabase/migrations` change.
 
 This describes the primary tables and analytical views used in the cEDH Analytics database.
@@ -165,6 +165,16 @@ erDiagram
 
 ### `commander_seat_stats` (materialized view)
 - **Purpose**: commander performance split by seat position.
+
+### `player_commander_entries` (view)
+- **Purpose**: normalized player commander history for meta prep and tournament likelihood tools.
+- **Source tables**: `tournament_entries`, `players`, `commanders`, `tournaments`.
+- **Key fields**:
+  - `player_id`, `topdeck_id`, `player_name`
+  - `commander_id`, `commander_name`
+  - `start_date`, `state`, `country`
+  - `wins`, `losses`, `draws`
+  - `decklist_url`: decklist link or stored TopDeck decklist payload from the tournament entry.
 
 ### Trend Views (materialized + view)
 - **`commander_weekly_trends`**: per-commander weekly aggregates. Includes `week_start_date` and `week_key`.

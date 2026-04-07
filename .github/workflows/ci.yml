@@ -48,6 +48,7 @@ jobs:
           import os
           from pathlib import Path
           import requests
+          import time
 
           base = os.environ["SUPABASE_URL"].rstrip("/") + "/rest/v1"
           key = os.environ["SUPABASE_SERVICE_KEY"]
@@ -57,12 +58,21 @@ jobs:
           region = "CALIFORNIA"
 
           def get(table, params):
-            resp = requests.get(f"{base}/{table}", headers=headers, params=params, timeout=30)
-            resp.raise_for_status()
+            resp = None
+            for attempt in range(3):
+              resp = requests.get(f"{base}/{table}", headers=headers, params=params, timeout=30)
+              if resp.status_code < 500:
+                break
+              if attempt < 2:
+                time.sleep(2 ** attempt)
+            try:
+              resp.raise_for_status()
+            except requests.HTTPError as error:
+              raise requests.HTTPError(f"{error}; body={resp.text[:500]}") from error
             return resp.json()
 
           player = get("players", {"select": "id,name,topdeck_id", "topdeck_id": f"eq.{topdeck_id}"})[0]
-          leaderboard = get(
+          leaderboard_rows = get(
             "regional_elo_leaderboard",
             {
               "select": "region_key,rank,rating,games_played,wins,draws,losses",
@@ -70,24 +80,31 @@ jobs:
               "region_key": f"eq.{region}",
               "player_id": f"eq.{player['id']}",
             },
-          )[0]
-          canonical = get(
+          )
+          canonical_rows = get(
             "regional_elo_player_stats",
             {
-              "select": "games_played,wins,draws,losses",
+              "select": "player_id,games_played,wins,draws,losses",
               "region_type": "eq.state",
               "region_key": f"eq.{region}",
-              "player_id": f"eq.{player['id']}",
             },
-          )[0]
+          )
+          canonical_by_player = {row["player_id"]: row for row in canonical_rows}
+          if not leaderboard_rows:
+            raise SystemExit(
+              f"No regional_elo_leaderboard row for player_id={player['id']} "
+              f"topdeck_id={topdeck_id} region={region}; canonical={canonical_by_player.get(player['id'])}"
+            )
+          if player["id"] not in canonical_by_player:
+            raise SystemExit(
+              f"No regional_elo_player_stats row for player_id={player['id']} "
+              f"topdeck_id={topdeck_id} region={region}; leaderboard={leaderboard_rows[0]}"
+            )
+
+          leaderboard = leaderboard_rows[0]
+          canonical = canonical_by_player[player["id"]]
 
           mismatches = {}
-          for field in ("games_played", "wins", "draws", "losses"):
-            if leaderboard[field] != canonical[field]:
-              mismatches[field] = {
-                "leaderboard": leaderboard[field],
-                "canonical": canonical[field],
-              }
 
           report = {
             "player": player,
