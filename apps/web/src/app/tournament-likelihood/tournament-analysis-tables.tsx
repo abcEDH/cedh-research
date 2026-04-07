@@ -400,11 +400,7 @@ export function TournamentAnalysisTables({
             </thead>
             <tbody>
               {visibleRows.map((row) => {
-                const regionalProfileHref = `/regional-elo/player/${row.standing.id}${
-                  row.regionKey && row.regionKey !== "ALL"
-                    ? `?region=${encodeURIComponent(row.regionKey)}`
-                    : ""
-                }`;
+                const regionalProfileHref = `/regional-elo/player/${row.standing.id}`;
                 const primary = row.profile?.commanders[0];
                 const alternatives = row.profile?.commanders.slice(1, 3) ?? [];
                 const primaryDecklistHref = primary?.latestTopdeckDecklistUrl || primary?.latestDecklistUrl;

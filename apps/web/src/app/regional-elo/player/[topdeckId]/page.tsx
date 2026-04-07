@@ -52,6 +52,7 @@ type TournamentRow = {
 };
 
 type LeaderboardRankRow = {
+  primary_region_key?: string | null;
   region_key?: string;
   rank: number;
   rating: number;
@@ -125,6 +126,18 @@ async function fetchRegionalRank(playerId: string, regionKey: string): Promise<L
     .select("rank, rating, games_played, wins, draws, losses")
     .eq("region_type", "state")
     .eq("region_key", regionKey)
+    .eq("player_id", playerId)
+    .maybeSingle();
+
+  return (data as LeaderboardRankRow | null) ?? null;
+}
+
+async function fetchGlobalRank(playerId: string): Promise<LeaderboardRankRow | null> {
+  const { data } = await supabase
+    .from("regional_elo_leaderboard")
+    .select("primary_region_key, rank, rating, games_played, wins, draws, losses")
+    .eq("region_type", "global")
+    .eq("region_key", "ALL")
     .eq("player_id", playerId)
     .maybeSingle();
 
@@ -249,7 +262,8 @@ export default async function RegionalPlayerPage({
   const resolvedParams = await Promise.resolve(params);
   const resolvedSearchParams = await Promise.resolve(searchParams);
   const topdeckId = resolvedParams.topdeckId;
-  const regionFilter = decodeURIComponent(readRegionParam(resolvedSearchParams)).trim().toUpperCase();
+  const requestedRegion = decodeURIComponent(readRegionParam(resolvedSearchParams)).trim().toUpperCase();
+  const regionFilter = requestedRegion === "ALL" ? "" : requestedRegion;
 
   const player = await fetchPlayer(topdeckId);
   if (!player) {
@@ -260,7 +274,8 @@ export default async function RegionalPlayerPage({
     );
   }
 
-  const [regionalRank, regionalRanks, globalSnapshot, entries] = await Promise.all([
+  const [globalRank, regionalRank, regionalRanks, globalSnapshot, entries] = await Promise.all([
+    fetchGlobalRank(player.id),
     fetchRegionalRank(player.id, regionFilter),
     fetchRegionalRanks(player.id),
     fetchGlobalSnapshot(topdeckId),
@@ -345,10 +360,12 @@ export default async function RegionalPlayerPage({
 
   const { totalGames, totalWins, totalDraws, totalLosses, seatRows, opponentRecords } =
     summarizePlayerLogs(playerLogs);
-  const canonicalGames = regionalRank?.games_played ?? totalGames;
-  const canonicalWins = regionalRank?.wins ?? totalWins;
-  const canonicalDraws = regionalRank?.draws ?? totalDraws;
-  const canonicalLosses = regionalRank?.losses ?? totalLosses;
+  const homeRegion = globalRank?.primary_region_key ?? regionalRanks[0]?.region_key ?? null;
+  const activeRank = regionFilter ? regionalRank : globalRank;
+  const canonicalGames = activeRank?.games_played ?? totalGames;
+  const canonicalWins = activeRank?.wins ?? totalWins;
+  const canonicalDraws = activeRank?.draws ?? totalDraws;
+  const canonicalLosses = activeRank?.losses ?? totalLosses;
   const topdeckProfileHref = buildTopdeckProfileHref(topdeckId);
   const backHref = regionFilter
     ? `/regional-elo?scope=state&region=${encodeURIComponent(regionFilter)}`
@@ -369,8 +386,8 @@ export default async function RegionalPlayerPage({
                   {player.name}
                 </h1>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  Assigned to {regionFilter || "the selected state"} based on recent and sustained
-                  activity. The state record below shows that activity snapshot; Elo is global.
+                  Home region is assigned from recent and sustained activity, but this page defaults
+                  to the global view. Use the region filter below to inspect a specific state slice.
                 </p>
               </div>
               {topdeckProfileHref ? (
@@ -390,11 +407,11 @@ export default async function RegionalPlayerPage({
             <Card className="knd-panel">
               <CardHeader>
                 <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Region
+                  Home Region
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-2xl font-semibold text-foreground">
-                {regionFilter || "All states"}
+                {homeRegion ?? "Unassigned"}
               </CardContent>
             </Card>
             <Card className="knd-panel">
@@ -404,7 +421,7 @@ export default async function RegionalPlayerPage({
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-2xl font-semibold text-foreground">
-                {regionalRank ? `#${regionalRank.rank}` : "—"}
+                {activeRank ? `#${activeRank.rank}` : "—"}
               </CardContent>
             </Card>
             <Card className="knd-panel">
@@ -420,6 +437,42 @@ export default async function RegionalPlayerPage({
                 <div className="text-sm text-muted-foreground">
                   {globalSnapshot ? `${globalSnapshot.points} points` : "No global snapshot"}
                 </div>
+              </CardContent>
+            </Card>
+            <Card className="knd-panel">
+              <CardHeader>
+                <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                  View Filter
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <form method="get" className="space-y-2">
+                  <label className="text-xs text-muted-foreground" htmlFor="region-filter">
+                    Region
+                  </label>
+                  <select
+                    id="region-filter"
+                    name="region"
+                    defaultValue={regionFilter || "ALL"}
+                    className="knd-input"
+                  >
+                    <option value="ALL">ALL</option>
+                    {regionalRanks
+                      .map((row) => row.region_key)
+                      .filter((value): value is string => Boolean(value))
+                      .map((value) => (
+                        <option key={value} value={value}>
+                          {value}
+                        </option>
+                      ))}
+                  </select>
+                  <button
+                    type="submit"
+                    className="w-full rounded-md bg-primary px-3 py-2 text-sm font-semibold text-background"
+                  >
+                    Apply filter
+                  </button>
+                </form>
               </CardContent>
             </Card>
             <Card className="knd-panel">
@@ -455,9 +508,8 @@ export default async function RegionalPlayerPage({
           </div>
 
           <p className="text-sm text-muted-foreground">
-            Rank comes from the assigned-state leaderboard, while counted games and record reflect
-            the same state activity snapshot that determined the assignment. The detailed log below
-            shows games played in that state.
+            Elo is global. Home region is assigned separately. The summary cards and game log below
+            reflect the active filter, which defaults to all games unless you narrow to a state.
           </p>
 
           <Card className="knd-panel">
@@ -499,7 +551,7 @@ export default async function RegionalPlayerPage({
                             >
                               {regionKey}
                             </Link>
-                            {isActive ? (
+                            {regionKey === homeRegion ? (
                               <div className="text-[11px] text-primary">Assigned state</div>
                             ) : null}
                           </td>
@@ -573,7 +625,11 @@ export default async function RegionalPlayerPage({
                           <td className="px-2 py-3">
                             {record.opponentTopdeckId ? (
                               <Link
-                                href={`/regional-elo/player/${record.opponentTopdeckId}?region=${encodeURIComponent(regionFilter)}`}
+                                href={
+                                  regionFilter
+                                    ? `/regional-elo/player/${record.opponentTopdeckId}?region=${encodeURIComponent(regionFilter)}`
+                                    : `/regional-elo/player/${record.opponentTopdeckId}`
+                                }
                                 className="font-medium text-foreground hover:text-primary"
                               >
                                 {record.opponentName}
@@ -603,8 +659,8 @@ export default async function RegionalPlayerPage({
                 Counted Games
               </CardTitle>
               <p className="text-xs text-muted-foreground">
-                These are the exact in-state games currently counted by the leaderboard activity pipeline for this player.
-                If this list ever disagrees with the summary cards above, the aggregate pipeline is stale.
+                These are the exact games included by the active filter for this player. By default
+                the view is global and shows all tracked games; choosing a state narrows the log to that region.
               </p>
             </CardHeader>
             <CardContent>

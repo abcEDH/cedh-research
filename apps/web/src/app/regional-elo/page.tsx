@@ -476,7 +476,7 @@ export default async function RegionalEloPage({
                               <div className="space-y-1">
                                 <Link
                                   className="font-medium text-foreground hover:text-primary"
-                                  href={`/regional-elo/player/${row.topdeck_id}?region=${encodeURIComponent((row.primary_region_key ?? selectedRegion ?? ""))}`}
+                                  href={`/regional-elo/player/${row.topdeck_id}`}
                                 >
                                 {row.player_name}
                                 </Link>
