@@ -6,7 +6,7 @@
 |------|-------|
 | **Supabase Project ID** | `msjjihqbxtgjdtapywrj` |
 | **Supabase URL** | `https://msjjihqbxtgjdtapywrj.supabase.co` |
-| **Python Version** | 3.14 (use `.venv`) |
+| **Python Version** | 3.14 (use `uv`) |
 | **TopDeck API** | V2 - requires API key in `.env` |
 
 ## Project Structure
@@ -23,17 +23,20 @@ supabase/
 ## Running Ingestion
 
 ```bash
-# Activate venv first
-source .venv/bin/activate
-
 # Ingest specific tournament by TID (from TopDeck URL slug)
-python src/ingest.py --tournament-id steel-city-spectacular-20k-cedh-main-event
+uv run python src/ingest.py --tournament-id steel-city-spectacular-20k-cedh-main-event
 
 # Ingest recent tournaments
-python src/ingest.py --days 7 --min-players 32
+uv run python src/ingest.py --days 7 --min-players 4
 
 # Use direct Postgres for ~10x faster batch operations (requires psycopg2)
-python src/ingest.py --tournament-id TID --direct
+uv run python src/ingest.py --tournament-id TID --direct
+
+# Historical backfill from a stable TID manifest in restartable batches
+uv run python src/ingest.py --tids-file data/all_time_tids.txt --batch-size 50 --direct --record-backfill --run-key all-time-cedh
+
+# Refresh the committed all-time TID manifest from Supabase
+uv run python src/export_all_time_tids.py --out data/all_time_tids.txt
 ```
 
 ### Performance Notes
@@ -50,7 +53,7 @@ python src/ingest.py --tournament-id TID --direct
 
 ### 2. API Timeouts for Large Date Ranges
 **Problem:** TopDeck API times out when querying 6+ months of tournaments
-**Workaround:** Use shorter date ranges or ingest specific tournament TIDs
+**Workaround:** Use shorter date ranges or ingest specific tournament TIDs from a stable manifest. See `docs/HISTORICAL_BACKFILL_RUNBOOK.md`.
 
 ### 3. Moxfield Decklists
 **Problem:** Some decklists are just Moxfield URLs, no card data

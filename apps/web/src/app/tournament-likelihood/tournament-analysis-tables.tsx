@@ -49,7 +49,7 @@ type EloAttendee = {
   topdeck_id: string | null;
   player_name: string;
   rating: number;
-  region_key: string;
+  region_key: string | null;
   standing?: TournamentStanding;
   profile?: PlayerCommanderProfile;
 };
@@ -60,6 +60,13 @@ type AttendeeRow = {
   rating: number | null;
   regionKey: string | null;
 };
+
+const ALL_REGION_FILTER = "__ALL__";
+const UNASSIGNED_REGION_FILTER = "__UNASSIGNED__";
+
+function formatHomeRegionLabel(value: string | null) {
+  return value ?? "Unassigned";
+}
 
 function formatPercent(value: number) {
   return `${Math.round(value * 100)}%`;
@@ -232,6 +239,7 @@ export function TournamentAnalysisTables({
   const [sortDirection, setSortDirection] = useState<SortDirection>(
     defaultDirectionForSort(defaultSortKey)
   );
+  const [selectedRegion, setSelectedRegion] = useState<string>(ALL_REGION_FILTER);
   const profileByPlayer = new Map(profiles.map((profile) => [profile.topdeckId, profile]));
   const eloByPlayer = new Map(
     eloAttendees
@@ -248,8 +256,19 @@ export function TournamentAnalysisTables({
       regionKey: elo?.region_key ?? null,
     };
   });
+  const availableRegionOptions = Array.from(
+    new Set(rows.map((row) => row.regionKey ?? UNASSIGNED_REGION_FILTER))
+  ).sort((left, right) =>
+    formatHomeRegionLabel(left === UNASSIGNED_REGION_FILTER ? null : left).localeCompare(
+      formatHomeRegionLabel(right === UNASSIGNED_REGION_FILTER ? null : right)
+    )
+  );
+  const regionFilteredRows =
+    selectedRegion === ALL_REGION_FILTER
+      ? rows
+      : rows.filter((row) => (row.regionKey ?? UNASSIGNED_REGION_FILTER) === selectedRegion);
   const filteredRows = query
-    ? rows.filter((row) => {
+    ? regionFilteredRows.filter((row) => {
         const commanders = row.profile?.commanders.map((commander) => commander.commander).join(" ");
         return (
           includesSearch(row.standing.standing, query) ||
@@ -264,9 +283,16 @@ export function TournamentAnalysisTables({
           includesSearch(commanders, query)
         );
       })
-    : rows;
+    : regionFilteredRows;
   const sortedRows = sortRows(filteredRows, sortKey, sortDirection);
   const visibleRows = sortedRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  function updateRegion(regionKey: string) {
+    startTransition(() => {
+      setPage(1);
+      setSelectedRegion(regionKey);
+    });
+  }
 
   function handleSort(column: SortKey) {
     startTransition(() => {
@@ -290,8 +316,29 @@ export function TournamentAnalysisTables({
       <CardContent>
         <div className="mb-4 text-sm text-muted-foreground">
           {showActualDecks
-            ? "Players in the field with tournament standing, best regional Elo, and commander data."
-            : "Players in the field with best regional Elo and recent commander forecast."}
+            ? "Players in the field with tournament standing, global Elo, assigned home region, and commander data."
+            : "Players in the field with global Elo, assigned home region, and recent commander forecast."}
+        </div>
+        <div className="mb-4 space-y-2">
+          <div className="text-sm text-muted-foreground">Home region filter</div>
+          <select
+            className="knd-input"
+            onChange={(event) => updateRegion(event.target.value)}
+            value={selectedRegion}
+          >
+            <option value={ALL_REGION_FILTER}>ALL</option>
+            {availableRegionOptions.map((regionKey) => (
+              <option key={regionKey} value={regionKey}>
+                {formatHomeRegionLabel(regionKey === UNASSIGNED_REGION_FILTER ? null : regionKey)}
+              </option>
+            ))}
+          </select>
+          <div className="text-xs text-muted-foreground">
+            Showing {selectedRegion === ALL_REGION_FILTER
+              ? "all home regions"
+              : formatHomeRegionLabel(selectedRegion === UNASSIGNED_REGION_FILTER ? null : selectedRegion)}
+            .
+          </div>
         </div>
         <label className="mb-4 flex flex-col gap-2 text-sm text-muted-foreground">
           Search attendees
@@ -353,11 +400,7 @@ export function TournamentAnalysisTables({
             </thead>
             <tbody>
               {visibleRows.map((row) => {
-                const regionalProfileHref = `/regional-elo/player/${row.standing.id}${
-                  row.regionKey && row.regionKey !== "ALL"
-                    ? `?region=${encodeURIComponent(row.regionKey)}`
-                    : ""
-                }`;
+                const regionalProfileHref = `/regional-elo/player/${row.standing.id}`;
                 const primary = row.profile?.commanders[0];
                 const alternatives = row.profile?.commanders.slice(1, 3) ?? [];
                 const primaryDecklistHref = primary?.latestTopdeckDecklistUrl || primary?.latestDecklistUrl;
@@ -383,7 +426,7 @@ export function TournamentAnalysisTables({
                     <td className="px-2 py-4 font-semibold text-primary">
                       {row.rating === null ? "-" : Math.round(row.rating)}
                     </td>
-                    <td className="px-2 py-4 text-muted-foreground">{row.regionKey ?? "-"}</td>
+                    <td className="px-2 py-4 text-muted-foreground">{formatHomeRegionLabel(row.regionKey)}</td>
                     {showActualDecks ? (
                       <td className="px-2 py-4">
                         {row.standing.actualDeckCommander && row.standing.actualDecklistUrl ? (

@@ -36,19 +36,15 @@ type EloRow = {
   player_name: string;
   rating: number;
   games_played: number;
-  region_key: string;
+  region_key: string | null;
 };
 
 type PlayerEloQueryRow = {
-  topdeck_id: string;
-  name: string;
-  regional_elo_ratings:
-    | Array<{
-        region_key: string;
-        rating: number;
-        games_played: number;
-      }>
-    | null;
+  topdeck_id: string | null;
+  player_name: string;
+  rating: number;
+  games_played: number;
+  primary_region_key: string | null;
 };
 
 function readStringParam(
@@ -95,41 +91,25 @@ async function fetchBestEloRows(topdeckIds: string[]): Promise<EloRow[]> {
   if (topdeckIds.length === 0) return [];
 
   const { data, error } = await supabase
-    .from("players")
-    .select("topdeck_id, name, regional_elo_ratings(region_key, rating, games_played)")
+    .from("regional_elo_leaderboard")
+    .select("topdeck_id, player_name, rating, games_played, primary_region_key")
+    .eq("region_type", "global")
+    .eq("region_key", "ALL")
     .in("topdeck_id", topdeckIds);
 
   if (error) {
     throw new Error(`Error fetching Elo rows: ${error.message}`);
   }
 
-  const eloRows: EloRow[] = [];
-
-  for (const player of (data ?? []) as PlayerEloQueryRow[]) {
-    const bestRegion = (player.regional_elo_ratings ?? []).reduce<
-      | {
-          region_key: string;
-          rating: number;
-          games_played: number;
-        }
-      | undefined
-    >((best, row) => {
-      if (!best || row.rating > best.rating) return row;
-      return best;
-    }, undefined);
-
-    if (!bestRegion) continue;
-
-    eloRows.push({
+  return ((data ?? []) as PlayerEloQueryRow[])
+    .map((player) => ({
       topdeck_id: player.topdeck_id,
-      player_name: player.name,
-      rating: bestRegion.rating,
-      games_played: bestRegion.games_played,
-      region_key: bestRegion.region_key,
-    });
-  }
-
-  return eloRows.sort((a, b) => b.rating - a.rating);
+      player_name: player.player_name,
+      rating: player.rating,
+      games_played: player.games_played,
+      region_key: player.primary_region_key,
+    }))
+    .sort((a, b) => b.rating - a.rating);
 }
 
 type TournamentAnalysis = {
@@ -285,7 +265,7 @@ export default async function TournamentLikelihoodPage({
                 Home
               </Link>
               <Link className="transition hover:text-foreground" href="/regional-elo">
-                Regional Elo
+                Leaderboard
               </Link>
             </nav>
           </div>

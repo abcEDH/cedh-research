@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const metadata = {
   title: "Elo Methodology | cEDH Analytics",
-  description: "How our 4-player cEDH Elo model is derived and implemented.",
+  description: "How our 4-player cEDH Elo model is derived and how state assignment is computed.",
 };
 
 export default function EloMethodologyPage() {
@@ -31,9 +31,9 @@ export default function EloMethodologyPage() {
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-muted-foreground">
             <p>
-              We model each game as a 4-player zero-sum event. Players have ratings and converted
-              equity. Expected outcome is proportional to equity, and rating updates follow Elo
-              style gradient steps.
+              We model each game as a 4-player zero-sum event. Players have one global rating and
+              converted equity. Expected outcome is proportional to equity, and rating updates
+              follow Elo-style gradient steps.
             </p>
             <p>
               Player equity: <code>2^(R/200)</code>
@@ -58,9 +58,13 @@ export default function EloMethodologyPage() {
           </CardHeader>
           <CardContent className="space-y-2 text-sm text-muted-foreground">
             <p>Initial rating is 1500 for unseen players.</p>
-            <p>Games are processed chronologically.</p>
+            <p>Games are processed chronologically across the full included dataset.</p>
             <p>Draws are handled as fractional wins to preserve zero-sum accounting.</p>
             <p>Non-4-player games are included and draw value scales to player count.</p>
+            <p>
+              State leaderboards do not recompute a separate Elo. They rank players by global Elo
+              after assigning each player to a primary state from recency-weighted local activity.
+            </p>
           </CardContent>
         </Card>
 
@@ -90,4 +94,3 @@ export default function EloMethodologyPage() {
     </div>
   );
 }
-
