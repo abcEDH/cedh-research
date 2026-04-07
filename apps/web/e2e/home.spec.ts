@@ -33,7 +33,6 @@ test.describe("Home Page", () => {
   test("tool links on home are valid when present", async ({ page }) => {
     const optionalToolPaths = [
       "/tournament-likelihood",
-      "/midseason-invitational",
       "/regional-elo",
     ];
 

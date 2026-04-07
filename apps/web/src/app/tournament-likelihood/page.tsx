@@ -15,6 +15,8 @@ import { TournamentAnalysisTables } from "./tournament-analysis-tables";
 
 export const dynamic = "force-dynamic";
 const DEFAULT_LOOKBACK_MONTHS = 6;
+const FALLBACK_LOOKBACK_MONTHS = 12;
+const MIN_PRIMARY_LOOKBACK_ENTRIES = 2;
 
 type TournamentStanding = {
   name: string;
@@ -155,12 +157,25 @@ const getCachedTournamentAnalysis = unstable_cache(
     const anchorTimestamp = anchorToStartDate && startTimestamp ? startTimestamp : now;
     const referenceDate = new Date(anchorTimestamp);
     const lookbackStart = lookbackStartDate(lookbackMonths, referenceDate);
+    const fallbackLookbackStart = lookbackStartDate(FALLBACK_LOOKBACK_MONTHS, referenceDate);
     const lookbackEnd = anchorToStartDate ? referenceDate.toISOString().slice(0, 10) : undefined;
-    const [usageRows, decklistRows, eloRows] = await Promise.all([
+    const [primaryUsageRows, decklistRows, eloRows] = await Promise.all([
       getCommanderUsageRows(topdeckIds, lookbackStart, lookbackEnd),
       getCommanderDecklistRows(topdeckIds, lookbackEnd),
       fetchBestEloRows(topdeckIds),
     ]);
+    const primaryEntryCounts = new Map<string, number>();
+    for (const row of primaryUsageRows) {
+      if (!row.topdeck_id || !row.commander_name) continue;
+      primaryEntryCounts.set(row.topdeck_id, (primaryEntryCounts.get(row.topdeck_id) ?? 0) + 1);
+    }
+    const sparseTopdeckIds = topdeckIds.filter(
+      (topdeckId) => (primaryEntryCounts.get(topdeckId) ?? 0) < MIN_PRIMARY_LOOKBACK_ENTRIES
+    );
+    const fallbackUsageRows = sparseTopdeckIds.length
+      ? await getCommanderUsageRows(sparseTopdeckIds, fallbackLookbackStart, lookbackStart)
+      : [];
+    const usageRows = [...primaryUsageRows, ...fallbackUsageRows];
     const profiles = buildProfiles(topdeckIds, usageRows, 3, referenceDate.toISOString());
 
     return {
@@ -171,7 +186,7 @@ const getCachedTournamentAnalysis = unstable_cache(
       hasRounds: (response.rounds ?? []).length > 0,
     };
   },
-  ["tournament-likelihood-analysis-v16"],
+  ["tournament-likelihood-analysis-v17"],
   { revalidate: 60 * 15 }
 );
 
@@ -334,7 +349,7 @@ export default async function TournamentLikelihoodPage({
             <p className="mt-4 text-sm text-muted-foreground">
               The model uses players in the selected event, looks up their known commander entries
               since {lookbackStart}, then estimates likely deck choice from their recent history.
-              A fixed {lookbackMonths}-month window is used to balance recency against enough sample size.
+              Players with sparse recent history fall back to a {FALLBACK_LOOKBACK_MONTHS}-month window.
             </p>
           </CardContent>
         </Card>

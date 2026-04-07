@@ -251,7 +251,6 @@ export function buildProfiles(
       string,
       {
         entries: number;
-        weightedPoints: number;
         predictionScore: number;
         latestDate: string | null;
         latestDecklistDate: string | null;
@@ -282,7 +281,6 @@ export function buildProfiles(
     const perCommander = perPlayer.get(row.topdeck_id) ?? new Map();
     const current = perCommander.get(commanderName) ?? {
       entries: 0,
-      weightedPoints: 0,
       predictionScore: 0,
       latestDate: null,
       latestDecklistDate: null,
@@ -290,14 +288,10 @@ export function buildProfiles(
       latestTopdeckDecklistUrl: null,
       playerName,
     };
-    const wins = row.wins ?? 0;
-    const draws = row.draws ?? 0;
-    const points = wins + draws * 0.25;
     const eventTimestamp = row.start_date ? new Date(row.start_date).getTime() : 0;
     const recencyWeight = calculateRecencyWeight(eventTimestamp, referenceTimestamp);
 
     current.entries += 1;
-    current.weightedPoints += points;
     current.predictionScore += recencyWeight;
     if (!current.latestDate || (row.start_date && row.start_date > current.latestDate)) {
       current.latestDate = row.start_date;
@@ -327,7 +321,6 @@ export function buildProfiles(
     const rows = Array.from(perCommander.entries()).map(([commander, values]) => ({
       commander,
       entries: values.entries,
-      weightedPoints: values.weightedPoints,
       predictionScore: values.predictionScore,
       latestDate: values.latestDate,
       latestDecklistUrl: values.latestDecklistUrl,
@@ -335,18 +328,20 @@ export function buildProfiles(
       playerName: values.playerName,
     }));
     const total = rows.reduce((sum, row) => sum + row.entries, 0);
-    const totalWeighted = rows.reduce((sum, row) => sum + row.weightedPoints, 0);
     const totalPrediction = rows.reduce((sum, row) => sum + row.predictionScore, 0);
     const sorted = rows.sort((a, b) => {
       if (b.predictionScore !== a.predictionScore) return b.predictionScore - a.predictionScore;
       if (b.entries !== a.entries) return b.entries - a.entries;
-      return b.weightedPoints - a.weightedPoints;
+      if ((b.latestDate ?? "") !== (a.latestDate ?? "")) {
+        return (b.latestDate ?? "").localeCompare(a.latestDate ?? "");
+      }
+      return a.commander.localeCompare(b.commander);
     });
     const commanders = sorted.slice(0, topN).map((row) => ({
       commander: row.commander,
       entries: row.entries,
       share: total ? row.entries / total : 0,
-      weightedShare: totalWeighted ? row.weightedPoints / totalWeighted : total ? row.entries / total : 0,
+      weightedShare: totalPrediction ? row.predictionScore / totalPrediction : total ? row.entries / total : 0,
       predictionShare: totalPrediction ? row.predictionScore / totalPrediction : total ? row.entries / total : 0,
       predictionScore: row.predictionScore,
       latestDate: row.latestDate,
