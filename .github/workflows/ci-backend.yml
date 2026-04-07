@@ -5,8 +5,8 @@ on:
     branches: [main]
     paths:
       - "packages/backend/**"
-      - ".github/workflows/backend-pr.yml"
-      - ".github/workflows/backend-maintenance.yml"
+      - ".github/workflows/ci-backend.yml"
+      - ".github/workflows/ci-backend-maintenance.yml"
 
 concurrency:
   group: backend-pr-${{ github.event.pull_request.number }}
