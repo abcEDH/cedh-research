@@ -1,7 +1,7 @@
 import "server-only";
 import { supabase } from "@/lib/supabase";
 
-const RECENCY_HALF_LIFE_DAYS = 45;
+const RECENCY_HALF_LIFE_DAYS = 15;
 
 export type CommanderUsageRow = {
   topdeck_id: string | null;
@@ -104,7 +104,7 @@ function calculateRecencyWeight(eventTimestamp: number, referenceTimestamp: numb
   if (referenceTimestamp <= 0 || eventTimestamp <= 0) return 0.5;
 
   const ageInDays = Math.max(0, (referenceTimestamp - eventTimestamp) / (1000 * 60 * 60 * 24));
-  return Math.max(0.25, 0.5 ** (ageInDays / RECENCY_HALF_LIFE_DAYS));
+  return 0.5 ** (ageInDays / RECENCY_HALF_LIFE_DAYS);
 }
 
 export async function getCommanderUsageRows(
