@@ -23,11 +23,11 @@ export function RegionSelector({
       className="space-y-3"
       onSubmit={() => setIsLoading(true)}
     >
-      <label className="text-sm text-muted-foreground">Select a state</label>
+      <label className="text-sm text-muted-foreground">Select a leaderboard</label>
       <select name="region" defaultValue={selectedRegion} className="knd-input">
         {regions.map((region) => (
           <option key={region.region_key} value={region.region_key}>
-            {region.region_key} ({region.player_count})
+            {region.region_key}
           </option>
         ))}
       </select>

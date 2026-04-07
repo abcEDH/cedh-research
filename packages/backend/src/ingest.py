@@ -129,6 +129,38 @@ class TopDeckClient:
         response = self._request("GET", f"{self.BASE_URL}/v2/tournaments/{tid}")
         return response.json()
 
+    def get_tournaments_by_ids(self, tids: list[str]) -> list[dict]:
+        """Get full tournament details for IDs using the search endpoint.
+
+        Some older TopDeck events return incomplete metadata from GET
+        /v2/tournaments/{TID}, while POST /v2/tournaments with TID still
+        returns the historical search payload with startDate and standings.
+        """
+        if not tids:
+            return []
+
+        logger.info(f"Fetching {len(tids)} tournaments by TID batch")
+        payload = {
+            "TID": tids if len(tids) > 1 else tids[0],
+            "game": "Magic: The Gathering",
+            "format": "EDH",
+            "columns": [
+                "name",
+                "decklist",
+                "wins",
+                "draws",
+                "losses",
+                "id",
+                "winRate",
+            ],
+            "rounds": True,
+            "tables": ["table", "players", "winner", "status"],
+            "players": ["name", "id", "decklist"],
+        }
+        response = self._request("POST", f"{self.BASE_URL}/v2/tournaments", json_payload=payload)
+        tournaments = response.json()
+        return tournaments if isinstance(tournaments, list) else [tournaments]
+
 
 class SupabaseClient:
     """Lightweight Supabase client for data insertion."""
@@ -803,6 +835,7 @@ def main():
     parser.add_argument("--min-players", type=int, default=16, help="Minimum players")
     parser.add_argument("--tournament-id", type=str, help="Process specific tournament")
     parser.add_argument("--tids-file", type=str, help="Path to file with one tournament ID per line")
+    parser.add_argument("--tids-batch-size", type=int, default=50, help="Batch size for --tids-file TopDeck fetches")
     parser.add_argument("--names-file", type=str, help="Path to file with one tournament name per line")
     parser.add_argument("--resolve-days", type=int, default=120, help="Days back to search when resolving names to IDs")
     parser.add_argument("--resolve-min-players", type=int, default=0, help="Min players for name resolution search")
@@ -971,33 +1004,39 @@ def main():
             logger.error("--end-date must be on or after --start-date")
             sys.exit(1)
 
-        for tid in tids:
+        for index in range(0, len(tids), max(args.tids_batch_size, 1)):
+            tid_batch = tids[index:index + max(args.tids_batch_size, 1)]
             try:
-                tournament = topdeck.get_tournament(tid)
+                tournaments = topdeck.get_tournaments_by_ids(tid_batch)
             except Exception as e:
-                logger.error(f"Failed to fetch {tid}: {e}")
+                logger.error(f"Failed to fetch TID batch {tid_batch[0]}..{tid_batch[-1]}: {e}")
                 continue
 
-            tournament["TID"] = tid
-            ts = parse_tournament_start_date(tournament)
-            if ts is None:
-                logger.warning(f"Skipping {tid}: missing start date")
-                continue
+            for tournament in tournaments:
+                _, tid = extract_name_and_tid(tournament)
+                if not tid:
+                    logger.warning(f"Skipping tournament payload without TID: {tournament.get('tournamentName')}")
+                    continue
 
-            if start_dt and ts.date() < start_dt.date():
-                continue
-            if end_dt and ts.date() > end_dt.date():
-                continue
+                ts = parse_tournament_start_date(tournament)
+                if ts is None:
+                    logger.warning(f"Skipping {tid}: missing start date")
+                    continue
 
-            if ingester:
-                try:
-                    result = ingester.process_tournament(tournament)
-                    if result:
-                        logger.info(f"Processed: {result['name']}")
-                except Exception as e:
-                    logger.error(f"Failed to process {tid}: {e}")
-            else:
-                logger.info(f"Would process: {tournament.get('tournamentName')} ({len(tournament.get('standings', []))} players)")
+                if start_dt and ts.date() < start_dt.date():
+                    continue
+                if end_dt and ts.date() > end_dt.date():
+                    continue
+
+                if ingester:
+                    try:
+                        result = ingester.process_tournament(tournament)
+                        if result:
+                            logger.info(f"Processed: {result['name']}")
+                    except Exception as e:
+                        logger.error(f"Failed to process {tid}: {e}")
+                else:
+                    logger.info(f"Would process: {tournament.get('tournamentName')} ({len(tournament.get('standings', []))} players)")
     else:
         if args.start_date:
             start_dt = date_parser.parse(args.start_date)
