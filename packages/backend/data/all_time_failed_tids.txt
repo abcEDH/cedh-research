@@ -1,0 +1,25 @@
+# Selected tournament IDs after ingest.py pre-batch filtering
+# Source manifest: data/all_time_tids.txt
+# only_failed_from_run_key: all-time-cedh
+# skip_existing_tids: False
+
+dnpADU4PNQvtfKI8qkAA
+testing-points
+5c7lA4biAjjzyhBWMJUA
+test-liga-commander-precon-moii-juegos-enero
+commander-casual-34
+bracket-3-event-3
+fecha-1-8
+enero-fecha-1-liga-commander
+blight-cedh-man-o-war-y02s06
+ekzw55SgcPhZ1qk0FcvH
+commander-casual-35
+commander-fnm-bracket-3-5-955
+ludik-111-commander
+liga-jan-2-3
+commander-budget-26
+january-cedh-win-a-dual
+gg-commander-clash
+commander-casual-copy
+commander-party-lorwyn-3
+brain-dead-precon-commander-tournament-pdx-february-2026

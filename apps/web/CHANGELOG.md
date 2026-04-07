@@ -1,3 +1,41 @@
+## [1.5.1](https://github.com/abcEDH/cedh-research/compare/v1.5.0...v1.5.1) (2026-04-07)
+
+
+### Bug Fixes
+
+* **web:** exclude unknown commander rows in supabase queries ([#47](https://github.com/abcEDH/cedh-research/issues/47)) ([84d1499](https://github.com/abcEDH/cedh-research/commit/84d1499ef33a018f443e785c562d280e5b80f6e3))
+
+# [1.5.0](https://github.com/abcEDH/cedh-research/compare/v1.4.2...v1.5.0) (2026-04-07)
+
+
+### Bug Fixes
+
+* **backfill:** add delta retry and scrub tooling ([f3aa35c](https://github.com/abcEDH/cedh-research/commit/f3aa35cb4c934b6a72e139d4a7745693390ff030))
+* **backfill:** dedupe duplicate tournament entries ([2245451](https://github.com/abcEDH/cedh-research/commit/224545184a2be826da3ff29eb9a26d2b62da12ca))
+* **backfill:** export manifest and allow larger pods ([5af89c2](https://github.com/abcEDH/cedh-research/commit/5af89c2b0d3ba15dbb0d92e830a949ede688c874))
+* **backfill:** support supplemental manifest tids ([3d78686](https://github.com/abcEDH/cedh-research/commit/3d786861cf1dd4f86ccebe04d6da44fa8a1eed80))
+* **ci:** make backfill progress observable ([a273664](https://github.com/abcEDH/cedh-research/commit/a273664e03cb4cbf10aeb161aeb9ec2a684d192c))
+* **ci:** make integrity count checks resilient ([a3c80d8](https://github.com/abcEDH/cedh-research/commit/a3c80d860e2e7f47917ef4af7293e8f310f0ae1a))
+* **ci:** recompute leaderboard data before backend validation ([0a7fcd3](https://github.com/abcEDH/cedh-research/commit/0a7fcd38cc060a4881da02891f0873f741c5b56c))
+* **ci:** stabilize PR checks ([efbef3f](https://github.com/abcEDH/cedh-research/commit/efbef3fb523a8c1a47524276c6833c6b82e5e758))
+* **db:** append new leaderboard metadata columns ([b5d73d6](https://github.com/abcEDH/cedh-research/commit/b5d73d668b4fb52a71d91a45b6c1b1bca7e95a3a))
+* **db:** keep leaderboard rank column stable ([3555a9e](https://github.com/abcEDH/cedh-research/commit/3555a9ef17eb4281dbd9275968ee109bd7e6cf73))
+* **db:** preserve leaderboard view column order ([94b94c7](https://github.com/abcEDH/cedh-research/commit/94b94c7747f6be30ba8def357d1689785686a67f))
+* **web:** default regional player views to global ([d2de4ea](https://github.com/abcEDH/cedh-research/commit/d2de4ea1a609ba89a7c5537899b04be0efb47782))
+* **web:** repair tournament prep region typing ([a4c8ca2](https://github.com/abcEDH/cedh-research/commit/a4c8ca274f678558bed49b1179a0be18b81819cb))
+* **web:** use primary home region in tournament prep ([0911beb](https://github.com/abcEDH/cedh-research/commit/0911beb7a7ad9d0cf51fff8a8c5309cdebb16539))
+
+
+### Features
+
+* **backfill:** add supabase-backed all-time tid manifest ([51257c1](https://github.com/abcEDH/cedh-research/commit/51257c1c9b5833aac374020a6bdc66945d99173c))
+* **leaderboard:** add global elo and historical backfill orchestration ([5315448](https://github.com/abcEDH/cedh-research/commit/5315448cd1e26f7e6af112c8bb321bfca7e94697))
+
+
+### Performance Improvements
+
+* **db:** index normalized tournament state ([6723675](https://github.com/abcEDH/cedh-research/commit/6723675be397e8090c5e0321c3e2f8b59cea1c55))
+
 ## [1.4.2](https://github.com/victoremnm/cedh-research/compare/v1.4.1...v1.4.2) (2026-04-05)
 
 

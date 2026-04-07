@@ -47,6 +47,7 @@ async function getCommanders() {
     .from("commander_stats")
     .select("*")
     .gt("total_entries", 5)
+    .not("commander_name", "ilike", "unknown commander")
     .order("total_entries", { ascending: false });
 
   if (error) {
@@ -271,10 +272,7 @@ async function getGlobalTrendSeries() {
 
 export default async function CommandersPage() {
   const commanders = await getCommanders();
-  const filteredCommanders = commanders.filter(
-    (commander) => commander.commander_name?.toLowerCase() !== "unknown commander"
-  );
-  const topCommanders = [...filteredCommanders].sort((a, b) => b.total_entries - a.total_entries).slice(0, 30);
+  const topCommanders = [...commanders].sort((a, b) => b.total_entries - a.total_entries).slice(0, 30);
   const snapshotsByCommanderId = await getCommanderPeriodSnapshots(
     topCommanders.map((commander) => commander.commander_id)
   );
@@ -284,13 +282,13 @@ export default async function CommandersPage() {
   );
   const globalSeries = await getGlobalTrendSeries();
 
-  const totalEntries = filteredCommanders.reduce((sum, c) => sum + c.total_entries, 0);
+  const totalEntries = commanders.reduce((sum, c) => sum + c.total_entries, 0);
   const avgWinRate =
-    filteredCommanders.reduce((sum, c) => sum + parseFloat(c.avg_win_rate), 0) /
-    Math.max(filteredCommanders.length, 1);
+    commanders.reduce((sum, c) => sum + parseFloat(c.avg_win_rate), 0) /
+    Math.max(commanders.length, 1);
   const avgTop16 =
-    filteredCommanders.reduce((sum, c) => sum + parseFloat(c.conversion_rate_top_16), 0) /
-    Math.max(filteredCommanders.length, 1);
+    commanders.reduce((sum, c) => sum + parseFloat(c.conversion_rate_top_16), 0) /
+    Math.max(commanders.length, 1);
 
   return (
     <div className="min-h-screen">
@@ -308,7 +306,7 @@ export default async function CommandersPage() {
               Commander Rankings
             </h1>
             <p className="text-muted-foreground mt-2">
-              Performance data for {filteredCommanders.length} commanders with 5+ tournament entries.
+              Performance data for {commanders.length} commanders with 5+ tournament entries.
             </p>
             <div className="mt-3 flex flex-wrap gap-3 text-sm">
               <Link
@@ -324,15 +322,17 @@ export default async function CommandersPage() {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-4 mb-8">
           <StatCard
             label="Total Commanders"
-            value={filteredCommanders.length.toString()}
+            value={commanders.length.toString()}
             tone="neutral"
             tooltip="Number of commanders with 5+ entries."
+            testId="stat-total-commanders"
           />
           <StatCard
             label="Total Entries"
             value={totalEntries.toLocaleString()}
             tone="neutral"
             tooltip="Total tournament entries across all listed commanders."
+            testId="stat-total-entries"
           />
           <StatCard
             label="Avg Win Rate"
@@ -376,7 +376,7 @@ export default async function CommandersPage() {
           />
         </div>
 
-        <CommandersTable commanders={filteredCommanders} />
+        <CommandersTable commanders={commanders} />
       </main>
     </div>
   );
@@ -387,11 +387,13 @@ function StatCard({
   value,
   tone,
   tooltip,
+  testId,
 }: {
   label: string;
   value: string;
   tone: "primary" | "amber" | "neutral";
   tooltip?: string;
+  testId?: string;
 }) {
   const toneMap: Record<typeof tone, string> = {
     primary: "text-primary",
@@ -421,7 +423,7 @@ function StatCard({
             </Tooltip>
           )}
         </div>
-        <p className={`text-2xl font-semibold ${toneMap[tone]}`}>{value}</p>
+        <p data-testid={testId} className={`text-2xl font-semibold ${toneMap[tone]}`}>{value}</p>
       </CardContent>
     </Card>
   );
