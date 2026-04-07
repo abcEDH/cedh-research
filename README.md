@@ -49,3 +49,9 @@ Safe templates live in:
 ## QA
 - Release lessons: `docs/release-lessons-2026-04-05-regional-elo.md`
 - QA checklist: `docs/qa-release-checklist.md`
+
+## Contribution Flow
+- Review guidance: `CONTRIBUTING.md`
+- PRs should use `.github/pull_request_template.md`
+- Supported product surfaces live in `docs/supported-surfaces.md`
+- After opening a PR and letting CI start, comment `@codex review` for an automated pass
