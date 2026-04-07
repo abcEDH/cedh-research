@@ -36,12 +36,14 @@ async function getStats() {
           .from("commander_stats")
           .select("commander_id, commander_name, total_entries, avg_win_rate, conversion_rate_top_16, color_identity")
           .gt("total_entries", 20)
+          .not("commander_name", "ilike", "unknown commander")
           .order("total_entries", { ascending: false })
           .limit(21),
         supabase
           .from("commander_stats")
           .select("commander_id, commander_name, total_entries, avg_win_rate, conversion_rate_top_16, color_identity")
           .gt("total_entries", 30)
+          .not("commander_name", "ilike", "unknown commander")
           .order("avg_win_rate", { ascending: false })
           .limit(10),
       ]);
@@ -84,12 +86,6 @@ async function getStats() {
 
 export default async function Home() {
   const { topCommanders, topWinRate, topPlayers } = await getStats();
-  const filteredCommanders = topCommanders.filter(
-    (commander) => commander.commander_name?.toLowerCase() !== "unknown commander"
-  );
-  const filteredWinRate = topWinRate.filter(
-    (commander) => commander.commander_name?.toLowerCase() !== "unknown commander"
-  );
 
   return (
     <div className="min-h-screen">
@@ -173,7 +169,7 @@ export default async function Home() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredCommanders.map((commander, index) => (
+                  {topCommanders.map((commander, index) => (
                     <TableRow key={commander.commander_id} className="border-border/60">
                       <TableCell className="font-mono text-xs text-muted-foreground">#{index + 1}</TableCell>
                       <TableCell>
@@ -213,7 +209,7 @@ export default async function Home() {
               <p className="text-sm text-muted-foreground">30+ entries minimum</p>
             </CardHeader>
             <CardContent className="space-y-3">
-              {filteredWinRate.map((commander, index) => (
+              {topWinRate.map((commander, index) => (
                 <CommanderRow key={commander.commander_id} commander={commander} rank={index + 1} />
               ))}
               <Button asChild variant="ghost" className="w-full border border-border/70">
