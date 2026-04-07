@@ -70,6 +70,27 @@ function formatPercent(value: number) {
   return `${Math.round(value * 100)}%`;
 }
 
+function readStartTimestamp(startDate: string | number | null | undefined) {
+  if (typeof startDate === "number") return startDate * 1000;
+  if (!startDate) return null;
+  const timestamp = Date.parse(startDate);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function formatStartTime(startDate: string | number | null | undefined) {
+  const timestamp = readStartTimestamp(startDate);
+  if (timestamp === null) return "Unknown start time";
+  return new Date(timestamp).toLocaleString("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
+function hasTournamentStarted(startDate: string | number | null | undefined) {
+  const timestamp = readStartTimestamp(startDate);
+  return timestamp !== null && Date.now() >= timestamp;
+}
+
 async function fetchBestEloRows(topdeckIds: string[]): Promise<EloRow[]> {
   if (topdeckIds.length === 0) return [];
 
@@ -116,7 +137,7 @@ type TournamentAnalysis = {
     name: string;
     game: string;
     format: string;
-    startDate: string;
+    startDate: string | number;
   };
   standings: TournamentStanding[];
   profiles: { players: PlayerCommanderProfile[]; metaShare: MetaShareRow[] };
@@ -164,7 +185,7 @@ export default async function TournamentLikelihoodPage({
         name: string;
         game: string;
         format: string;
-        startDate: string;
+        startDate: string | number;
       }
     | null = null;
   let standings: TournamentStanding[] = [];
@@ -324,7 +345,9 @@ export default async function TournamentLikelihoodPage({
                 <div className="rounded-md border border-border/60 bg-muted/20 p-4">
                   <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Tournament</p>
                   <p className="mt-2 text-lg font-semibold text-foreground">{tournament.name}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">{tournament.format}</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {tournament.format} | {formatStartTime(tournament.startDate)}
+                  </p>
                 </div>
                 <div className="rounded-md border border-border/60 bg-muted/20 p-4">
                   <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Attendees</p>
@@ -384,6 +407,7 @@ export default async function TournamentLikelihoodPage({
 
             <TournamentAnalysisTables
               eloAttendees={allTopEloAttendees}
+              hasTournamentStarted={hasTournamentStarted(tournament.startDate)}
               profiles={profiles.players}
               standings={standings}
             />

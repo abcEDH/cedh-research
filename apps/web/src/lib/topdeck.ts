@@ -16,7 +16,7 @@ type TopDeckTournamentResponse = {
     name: string;
     game: string;
     format: string;
-    startDate: string;
+    startDate: string | number;
   };
   standings: Array<{
     name: string;
