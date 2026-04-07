@@ -96,13 +96,21 @@ jobs:
 
           views = [
               ("commander_stats", 10),
+              ("seat_position_stats", 4),
+              ("commander_seat_stats", 10),
               ("card_frequencies_global", 100),
               ("card_frequencies_by_commander", 100),
               ("trap_cards_report", 1),
               ("spice_cards_report", 1),
+              ("seat_survival_by_commander", 10),
+              ("seat_survival_by_round", 4),
+              ("commander_survival_curve", 10),
+              ("commander_tournament_depth", 10),
+              ("player_survival_stats", 10),
               ("commander_meta_monthly", 5),
               ("commander_momentum", 1),
               ("commander_first_appearances", 10),
+              ("survival_summary", 10),
               ("regional_elo_player_stats", 10),
               ("regional_elo_leaderboard", 10),
           ]
@@ -110,6 +118,7 @@ jobs:
           rpc_functions = [
               ("get_notable_players_for_commander", {"p_commander_id": "00000000-0000-0000-0000-000000000000"}, False),
               ("get_commander_matchups", {"p_commander_id": "00000000-0000-0000-0000-000000000000"}, False),
+              ("get_commanders_for_card", {"p_card_name": "Sol Ring"}, True),
           ]
 
           failed = []
