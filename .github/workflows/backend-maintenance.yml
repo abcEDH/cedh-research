@@ -1,4 +1,4 @@
-name: CI Backend Maintenance
+name: Backend Maintenance
 
 on:
   schedule:
@@ -8,8 +8,8 @@ on:
     branches: [main]
     paths:
       - "packages/backend/**"
-      - ".github/workflows/ci-backend.yml"
-      - ".github/workflows/ci-backend-maintenance.yml"
+      - ".github/workflows/backend-pr.yml"
+      - ".github/workflows/backend-maintenance.yml"
 
 concurrency:
   group: backend-maintenance-${{ github.ref }}
@@ -38,12 +38,7 @@ jobs:
       - name: Run data ingestion
         run: python packages/backend/src/ingest.py --days 7 --min-players 32
 
-      - name: Smoke-test leaderboard recompute
-        if: github.event_name == 'pull_request'
-        run: python packages/backend/src/regional_elo.py --smoke-days 30 --dry-run
-
       - name: Recompute leaderboard data
-        if: github.event_name != 'pull_request'
         run: python packages/backend/src/regional_elo.py
 
       - name: Upload logs
@@ -55,7 +50,6 @@ jobs:
           retention-days: 30
 
   validate-views:
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     needs: ingest
     steps:
@@ -202,7 +196,6 @@ jobs:
           SCRIPT
 
   validate-data-integrity:
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     needs: ingest
     steps:
