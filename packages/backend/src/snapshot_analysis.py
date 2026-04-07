@@ -178,9 +178,6 @@ class SnapshotGenerator:
         # Filter out Unknown Commander
         stats = [s for s in stats if s["commander_name"] != "Unknown Commander"]
 
-        # Get overall seat position data
-        seat_stats = self.query("seat_position_stats")
-
         # Calculate meta health metrics
         total_entries = sum(s["total_entries"] for s in stats)
         top_10_share = sum(s["total_entries"] for s in stats[:10]) / total_entries if total_entries else 0
@@ -199,7 +196,6 @@ class SnapshotGenerator:
                     {"name": s["commander_name"], "entries": s["total_entries"], "win_rate": s["avg_win_rate"]}
                     for s in stats[:10]
                 ],
-                "seat_win_rates": {f"seat_{s['seat_position']}": s["win_rate"] for s in seat_stats},
             },
             "summary": f"Meta snapshot: {len(stats)} commanders, {total_entries} entries",
             "generator_version": self.version,

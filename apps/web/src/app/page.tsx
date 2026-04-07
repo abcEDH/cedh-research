@@ -293,15 +293,6 @@ export default async function Home() {
               <Link className="transition hover:text-foreground" href="/commanders">
                 Commanders
               </Link>
-              <Link className="transition hover:text-foreground" href="/cards">
-                Cards
-              </Link>
-              <Link className="transition hover:text-foreground" href="/turn-order">
-                Turn Order
-              </Link>
-              <Link className="transition hover:text-foreground" href="/survival">
-                Survival
-              </Link>
               <Link className="transition hover:text-foreground" href="/tournament-likelihood">
                 Tournament Prep
               </Link>
@@ -505,28 +496,10 @@ export default async function Home() {
             color="hsl(var(--knd-cyan))"
           />
           <FeatureCard
-            href="/cards"
-            title="Card Frequency"
-            description="Global card inclusion rates and tiers"
-            color="hsl(var(--knd-amber))"
-          />
-          <FeatureCard
-            href="/turn-order"
-            title="Turn Order Fairness"
-            description="Statistical analysis of seat position advantage"
-            color="hsl(var(--knd-cyan))"
-          />
-          <FeatureCard
             href="/trap-spice"
             title="Trap & Spice Cards"
             description="Find overrated and underrated cards"
             color="hsl(var(--knd-amber))"
-          />
-          <FeatureCard
-            href="/survival"
-            title="Survival Analysis"
-            description="Track survival probability through tournament rounds"
-            color="hsl(var(--knd-cyan))"
           />
           <FeatureCard
             href="/tournament-likelihood"

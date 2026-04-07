@@ -14,7 +14,6 @@ import { createClient } from "@supabase/supabase-js";
 import {
   CommanderMatchupsResponseSchema,
   NotablePlayersResponseSchema,
-  SurvivalCurveResponseSchema,
   CommanderStatsSchema,
   GlobalCardFrequencySchema,
   TrapCardSchema,
@@ -106,34 +105,6 @@ describe.skipIf(!canRunTests)("API Contract Tests", () => {
       });
     });
 
-    describe("get_survival_curve", () => {
-      it("should return data matching SurvivalDataPoint schema", async () => {
-        const { data, error } = await supabase.rpc("get_survival_curve", {
-          p_commander_id: TEST_COMMANDER_ID,
-        });
-
-        expect(error).toBeNull();
-        expect(data).toBeDefined();
-        expect(Array.isArray(data)).toBe(true);
-
-        if (data && data.length > 0) {
-          const result = SurvivalCurveResponseSchema.safeParse(data);
-
-          if (!result.success) {
-            console.error("Schema validation failed:", result.error.format());
-            console.error("Sample data:", JSON.stringify(data[0], null, 2));
-          }
-
-          expect(result.success).toBe(true);
-
-          // Verify key fields
-          const sample = data[0];
-          expect(sample).toHaveProperty("round_number");
-          expect(sample).toHaveProperty("survival_probability");
-          expect(sample).toHaveProperty("players_remaining");
-        }
-      });
-    });
   });
 
   describe("Database Views", () => {
