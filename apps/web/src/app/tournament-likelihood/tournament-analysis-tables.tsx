@@ -61,6 +61,13 @@ type AttendeeRow = {
   regionKey: string | null;
 };
 
+const ALL_REGION_FILTER = "__ALL__";
+const UNASSIGNED_REGION_FILTER = "__UNASSIGNED__";
+
+function formatHomeRegionLabel(value: string | null) {
+  return value ?? "Unassigned";
+}
+
 function formatPercent(value: number) {
   return `${Math.round(value * 100)}%`;
 }
@@ -232,6 +239,7 @@ export function TournamentAnalysisTables({
   const [sortDirection, setSortDirection] = useState<SortDirection>(
     defaultDirectionForSort(defaultSortKey)
   );
+  const [selectedRegions, setSelectedRegions] = useState<string[]>([ALL_REGION_FILTER]);
   const profileByPlayer = new Map(profiles.map((profile) => [profile.topdeckId, profile]));
   const eloByPlayer = new Map(
     eloAttendees
@@ -248,8 +256,21 @@ export function TournamentAnalysisTables({
       regionKey: elo?.region_key ?? null,
     };
   });
+  const availableRegionOptions = Array.from(
+    new Set(rows.map((row) => row.regionKey ?? UNASSIGNED_REGION_FILTER))
+  ).sort((left, right) =>
+    formatHomeRegionLabel(left === UNASSIGNED_REGION_FILTER ? null : left).localeCompare(
+      formatHomeRegionLabel(right === UNASSIGNED_REGION_FILTER ? null : right)
+    )
+  );
+  const regionFilteredRows =
+    selectedRegions.includes(ALL_REGION_FILTER)
+      ? rows
+      : rows.filter((row) =>
+          selectedRegions.includes(row.regionKey ?? UNASSIGNED_REGION_FILTER)
+        );
   const filteredRows = query
-    ? rows.filter((row) => {
+    ? regionFilteredRows.filter((row) => {
         const commanders = row.profile?.commanders.map((commander) => commander.commander).join(" ");
         return (
           includesSearch(row.standing.standing, query) ||
@@ -264,9 +285,26 @@ export function TournamentAnalysisTables({
           includesSearch(commanders, query)
         );
       })
-    : rows;
+    : regionFilteredRows;
   const sortedRows = sortRows(filteredRows, sortKey, sortDirection);
   const visibleRows = sortedRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  function toggleRegion(regionKey: string) {
+    startTransition(() => {
+      setPage(1);
+      setSelectedRegions((current) => {
+        if (regionKey === ALL_REGION_FILTER) {
+          return [ALL_REGION_FILTER];
+        }
+        const next = current.filter((value) => value !== ALL_REGION_FILTER);
+        if (next.includes(regionKey)) {
+          const reduced = next.filter((value) => value !== regionKey);
+          return reduced.length ? reduced : [ALL_REGION_FILTER];
+        }
+        return [...next, regionKey];
+      });
+    });
+  }
 
   function handleSort(column: SortKey) {
     startTransition(() => {
@@ -290,8 +328,45 @@ export function TournamentAnalysisTables({
       <CardContent>
         <div className="mb-4 text-sm text-muted-foreground">
           {showActualDecks
-            ? "Players in the field with tournament standing, best regional Elo, and commander data."
-            : "Players in the field with best regional Elo and recent commander forecast."}
+            ? "Players in the field with tournament standing, global Elo, assigned home region, and commander data."
+            : "Players in the field with global Elo, assigned home region, and recent commander forecast."}
+        </div>
+        <div className="mb-4 space-y-2">
+          <div className="text-sm text-muted-foreground">Home region filter</div>
+          <div className="flex flex-wrap gap-2">
+            <label className="knd-chip flex cursor-pointer items-center gap-2 text-foreground">
+              <input
+                checked={selectedRegions.includes(ALL_REGION_FILTER)}
+                onChange={() => toggleRegion(ALL_REGION_FILTER)}
+                type="checkbox"
+              />
+              ALL
+            </label>
+            {availableRegionOptions.map((regionKey) => {
+              const normalizedRegion = regionKey === UNASSIGNED_REGION_FILTER ? null : regionKey;
+              return (
+                <label key={regionKey} className="knd-chip flex cursor-pointer items-center gap-2 text-foreground">
+                  <input
+                    checked={selectedRegions.includes(regionKey)}
+                    onChange={() => toggleRegion(regionKey)}
+                    type="checkbox"
+                  />
+                  {formatHomeRegionLabel(normalizedRegion)}
+                </label>
+              );
+            })}
+          </div>
+          <div className="text-xs text-muted-foreground">
+            Showing{" "}
+            {selectedRegions.includes(ALL_REGION_FILTER)
+              ? "all home regions"
+              : selectedRegions
+                  .map((regionKey) =>
+                    formatHomeRegionLabel(regionKey === UNASSIGNED_REGION_FILTER ? null : regionKey)
+                  )
+                  .join(", ")}
+            .
+          </div>
         </div>
         <label className="mb-4 flex flex-col gap-2 text-sm text-muted-foreground">
           Search attendees
@@ -383,7 +458,7 @@ export function TournamentAnalysisTables({
                     <td className="px-2 py-4 font-semibold text-primary">
                       {row.rating === null ? "-" : Math.round(row.rating)}
                     </td>
-                    <td className="px-2 py-4 text-muted-foreground">{row.regionKey ?? "-"}</td>
+                    <td className="px-2 py-4 text-muted-foreground">{formatHomeRegionLabel(row.regionKey)}</td>
                     {showActualDecks ? (
                       <td className="px-2 py-4">
                         {row.standing.actualDeckCommander && row.standing.actualDecklistUrl ? (
