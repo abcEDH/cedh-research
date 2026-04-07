@@ -7,7 +7,6 @@ import { fetchChampionshipLeaderboard } from "@/lib/topdeck";
 import { buildTopdeckProfileHref } from "@/lib/topdeck-profile";
 import { inferCountryForRegion } from "@/lib/region-countries";
 import { OpponentRecordsTable } from "./opponent-records-table";
-import { PlayerGamesTable } from "./player-games-table";
 import { summarizePlayerLogs, type PlayerGameLog } from "./player-stats";
 
 export const dynamic = "force-dynamic";
@@ -1029,20 +1028,6 @@ export default async function RegionalPlayerPage({
               </CardContent>
             </Card>
           </div>
-
-          <Card className="knd-panel">
-            <CardHeader>
-              <CardTitle className="text-sm uppercase tracking-[0.2em] text-muted-foreground">
-                Games
-              </CardTitle>
-              <p className="text-xs text-muted-foreground">
-                These are all stored games found for this player across tournament locations.
-              </p>
-            </CardHeader>
-            <CardContent>
-              <PlayerGamesTable logs={playerLogs} />
-            </CardContent>
-          </Card>
         </div>
       </main>
     </div>
