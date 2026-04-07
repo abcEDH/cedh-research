@@ -16,7 +16,7 @@ type TopDeckTournamentResponse = {
     name: string;
     game: string;
     format: string;
-    startDate: string;
+    startDate: string | number;
   };
   standings: Array<{
     name: string;
@@ -26,12 +26,55 @@ type TopDeckTournamentResponse = {
     points: number;
     winRate: number;
     opponentWinRate: number;
+    wins: number;
+    draws: number;
+    losses: number;
+    decklist?: string | null;
+    deckObj?: TopDeckDeckObject | null;
+    actualDeckCommander: string | null;
+    actualDecklistUrl: string | null;
   }>;
-  rounds: any[];
+  rounds: TopDeckRound[];
+};
+
+type TopDeckDeckObject = {
+  Commanders?: Record<string, unknown>;
+};
+
+type TopDeckRound = {
+  tables?: Array<{
+    status?: string | null;
+    winner_id?: string | null;
+    players?: Array<{
+      id?: string | null;
+    }>;
+  }>;
 };
 
 const CHAMPIONSHIP_LEADERBOARD_URL =
   "https://topdeck.gg/championship-series-2026/leaderboard";
+
+export function extractTournamentSlug(input: string): string {
+  const value = input.trim();
+  if (!value) return "";
+
+  try {
+    const normalized = value.startsWith("http://") || value.startsWith("https://")
+      ? value
+      : `https://${value}`;
+    const url = new URL(normalized);
+    const segments = url.pathname.split("/").filter(Boolean);
+    const knownPrefixes = new Set(["event", "bracket", "tournament", "tournaments"]);
+    const slug = segments.length >= 2 && knownPrefixes.has(segments[0]) ? segments[1] : segments.at(-1);
+    return slug?.trim() ?? "";
+  } catch {
+    const compact = value.replace(/^https?:\/\//, "").replace(/^topdeck\.gg\//, "");
+    const segments = compact.split("/").filter(Boolean);
+    if (segments.length === 0) return "";
+    const knownPrefixes = new Set(["event", "bracket", "tournament", "tournaments"]);
+    return segments.length >= 2 && knownPrefixes.has(segments[0]) ? segments[1] : segments.at(-1) ?? "";
+  }
+}
 
 export async function fetchChampionshipLeaderboard(): Promise<TopDeckLeaderboardEntry[]> {
   const res = await fetch(CHAMPIONSHIP_LEADERBOARD_URL, { cache: "no-store" });
@@ -44,6 +87,74 @@ export async function fetchChampionshipLeaderboard(): Promise<TopDeckLeaderboard
     throw new Error("TopDeck leaderboard payload not found in HTML");
   }
   return JSON.parse(match[1]) as TopDeckLeaderboardEntry[];
+}
+
+function withTournamentRecords(response: TopDeckTournamentResponse): TopDeckTournamentResponse {
+  const records = new Map<string, { wins: number; draws: number; losses: number }>();
+
+  for (const round of response.rounds ?? []) {
+    for (const table of round.tables ?? []) {
+      if (table.status && table.status !== "Completed") continue;
+      const playerIds = (table.players ?? [])
+        .map((player) => player.id)
+        .filter((id): id is string => Boolean(id));
+      if (playerIds.length === 0) continue;
+
+      for (const playerId of playerIds) {
+        const record = records.get(playerId) ?? { wins: 0, draws: 0, losses: 0 };
+        if (!table.winner_id) {
+          record.draws += 1;
+        } else if (table.winner_id === playerId) {
+          record.wins += 1;
+        } else {
+          record.losses += 1;
+        }
+        records.set(playerId, record);
+      }
+    }
+  }
+
+  return {
+    ...response,
+    standings: response.standings.map((standing) => ({
+      ...standing,
+      ...(records.get(standing.id) ?? { wins: 0, draws: 0, losses: 0 }),
+    })),
+  };
+}
+
+function extractCommanderNameFromDecklist(value: string | null | undefined) {
+  if (!value || !value.includes("~~Commanders~~")) return null;
+  const normalized = value.replace(/\\n/g, "\n");
+  const [, commanderBlock] = normalized.split("~~Commanders~~");
+  const [commanders] = commanderBlock.split(/~~\w+~~|\n\s*\n/);
+  const commanderNames = commanders
+    .split("\n")
+    .map((line) => line.trim().replace(/^\d+x?\s+/i, ""))
+    .filter(Boolean);
+
+  return commanderNames.length ? commanderNames.join(" / ") : null;
+}
+
+function getCommanderName(standing: TopDeckTournamentResponse["standings"][number]) {
+  const deckObjectCommanders = standing.deckObj?.Commanders ? Object.keys(standing.deckObj.Commanders) : [];
+  if (deckObjectCommanders.length > 0) return deckObjectCommanders.join(" / ");
+  return extractCommanderNameFromDecklist(standing.decklist);
+}
+
+function buildTopdeckDecklistUrl(tournamentSlug: string, topdeckId: string) {
+  return `https://topdeck.gg/deck/${tournamentSlug}/${topdeckId}`;
+}
+
+function withActualDecklists(response: TopDeckTournamentResponse, slug: string): TopDeckTournamentResponse {
+  return {
+    ...response,
+    standings: response.standings.map((standing) => ({
+      ...standing,
+      actualDeckCommander: getCommanderName(standing),
+      actualDecklistUrl: standing.decklist || standing.deckObj ? buildTopdeckDecklistUrl(slug, standing.id) : null,
+    })),
+  };
 }
 
 export async function fetchTournamentBySlug(slug: string): Promise<TopDeckTournamentResponse> {
@@ -60,7 +171,7 @@ export async function fetchTournamentBySlug(slug: string): Promise<TopDeckTourna
         `TopDeck API failed (${res.status}). TOPDECK_API_KEY is set, so fallback was skipped.`
       );
     }
-    return (await res.json()) as TopDeckTournamentResponse;
+    return withActualDecklists(withTournamentRecords((await res.json()) as TopDeckTournamentResponse), slug);
   }
 
   const [bracketResponse, playersResponse] = await Promise.all([
@@ -76,9 +187,14 @@ export async function fetchTournamentBySlug(slug: string): Promise<TopDeckTourna
   const [html, playersJson] = await Promise.all([bracketResponse.text(), playersResponse.json()]);
   const titleMatch = html.match(/<title>(.*?)<\/title>/i);
   const title = (titleMatch?.[1] ?? slug).replace(/\s*-\s*Tournament Standings\s*$/i, "").trim();
-  const players = Object.values(playersJson as Record<string, any>) as Array<any>;
+  const players = Object.values(playersJson as Record<string, {
+    name?: string | null;
+    uid?: string | null;
+    username?: string | null;
+    decklist?: string | null;
+  }>);
 
-  return {
+  return withActualDecklists(withTournamentRecords({
     data: {
       name: title || slug,
       game: "Magic: The Gathering",
@@ -94,8 +210,15 @@ export async function fetchTournamentBySlug(slug: string): Promise<TopDeckTourna
         points: 0,
         winRate: 0,
         opponentWinRate: 0,
+        wins: 0,
+        draws: 0,
+        losses: 0,
+        decklist: player?.decklist ?? null,
+        deckObj: null,
+        actualDeckCommander: null,
+        actualDecklistUrl: null,
       }))
       .filter((row) => row.id.length > 0),
     rounds: [],
-  };
+  }), slug);
 }

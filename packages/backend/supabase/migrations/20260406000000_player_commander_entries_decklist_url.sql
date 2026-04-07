@@ -1,4 +1,4 @@
--- Player commander usage view (for meta prep + likelihood tools)
+-- Expose decklist URLs for tournament prep commander forecasts.
 
 CREATE OR REPLACE VIEW player_commander_entries AS
 SELECT

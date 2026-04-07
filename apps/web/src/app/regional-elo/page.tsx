@@ -1,7 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
-import { buildTopdeckProfileHref } from "@/lib/topdeck-profile";
 import { RegionSelector } from "./region-selector";
 
 export const dynamic = "force-dynamic";
@@ -466,7 +465,6 @@ export default async function RegionalEloPage({
                   </thead>
                   <tbody>
                     {leaderboard.map((row) => {
-                      const topdeckHref = buildTopdeckProfileHref(row.topdeck_id);
                       const latestCommander = row.topdeck_id
                         ? latestByPlayer.get(row.topdeck_id)
                         : undefined;
@@ -482,16 +480,6 @@ export default async function RegionalEloPage({
                                 >
                                 {row.player_name}
                                 </Link>
-                                {topdeckHref ? (
-                                  <a
-                                    className="inline-flex items-center rounded-md border border-border/60 px-2 py-1 text-[11px] font-medium text-muted-foreground hover:border-primary/40 hover:text-foreground"
-                                    href={topdeckHref}
-                                    rel="noreferrer"
-                                    target="_blank"
-                                  >
-                                    TopDeck
-                                  </a>
-                                ) : null}
                               </div>
                             ) : (
                               <div className="font-medium text-foreground">{row.player_name}</div>
