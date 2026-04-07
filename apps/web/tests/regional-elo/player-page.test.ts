@@ -283,7 +283,7 @@ describe("RegionalPlayerPage", () => {
     expect(html).toContain(
       "Elo is global. Home region is assigned separately."
     );
-    expect(html).toMatch(/Counted Games[\s\S]*?>3</);
+    expect(html).toMatch(/Games Played[\s\S]*?>3</);
     expect(html).toMatch(/Record[\s\S]*?>1-1-1</);
     expect(html).toMatch(/CALIFORNIA[\s\S]*?Assigned state[\s\S]*?>#3<[\s\S]*?>1735<[\s\S]*?>3<[\s\S]*?>1-1-1</);
   });
