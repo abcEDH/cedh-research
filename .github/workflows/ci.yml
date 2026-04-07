@@ -15,7 +15,7 @@ env:
 
 jobs:
   regional-elo-feedback:
-    name: Regional Elo Feedback Loop
+    name: Global Elo Feedback Loop
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -37,10 +37,10 @@ jobs:
           npm ci
           pip install requests
 
-      - name: Run focused regional Elo regression tests
+      - name: Run focused global Elo regression tests
         run: npm --workspace apps/web run test -- --run tests/regional-elo/player-stats.test.ts tests/regional-elo/player-page.test.ts
 
-      - name: Generate regional Elo evidence
+      - name: Generate global Elo evidence
         run: |
           mkdir -p artifacts
           python << 'SCRIPT'
@@ -124,7 +124,7 @@ jobs:
           Path("artifacts/regional-elo-proof.md").write_text(
             "\n".join(
               [
-                "# Regional Elo Proof",
+                "# Global Elo Proof",
                 "",
                 f"- Player: {player['name']} ({player['topdeck_id']})",
                 f"- Region: {region}",
@@ -140,7 +140,7 @@ jobs:
           )
 
           if mismatches:
-            raise SystemExit(f"Regional Elo mismatch detected: {json.dumps(mismatches)}")
+            raise SystemExit(f"Global Elo mismatch detected: {json.dumps(mismatches)}")
           SCRIPT
 
       - name: Publish evidence to job summary

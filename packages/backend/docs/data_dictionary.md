@@ -266,7 +266,7 @@ erDiagram
 - **`commander_monthly_trends`**: per-commander monthly aggregates. Includes `month_start_date` and `month_key`.
 - **`commander_wow_mom`** (view): latest week/month deltas in entries (%) and win rate (percentage points).
 
-### Regional Elo Views
+### Global Elo And Region Views
 - **`regional_elo_game_results`**: denormalized game-level input rows used to compute the global Elo stream and state activity from games, entries, players, and tournaments with location data.
 - **`regional_elo_game_event_log`**: global Elo per-game event log enriched with tournament, player, commander, and seat context.
 - **`regional_elo_primary_state_assignments`**: one row per player for the state currently assigned from recency-weighted activity.

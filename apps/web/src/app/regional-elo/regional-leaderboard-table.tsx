@@ -112,7 +112,7 @@ export function RegionalLeaderboardTable({
             {visibleRows.length === 0 && (
               <tr>
                 <td colSpan={6} className="py-6 text-center text-sm text-muted-foreground">
-                  No regional Elo data yet. Run the regional Elo job to populate this leaderboard.
+                  No Global Elo data yet. Run the Global Elo job to populate this leaderboard.
                 </td>
               </tr>
             )}

@@ -586,9 +586,9 @@ export default async function RegionalPlayerPage({
         <div className="space-y-8">
           <div className="space-y-3">
             <Link href={backHref} className="text-sm text-muted-foreground hover:text-foreground">
-              ← Back to regional leaderboard
+              ← Back to region-filtered leaderboard
             </Link>
-            <p className="knd-chip">Regional Elo Player Drilldown</p>
+            <p className="knd-chip">Global Elo Player Drilldown</p>
             <div className="flex flex-wrap items-end justify-between gap-4">
               <div>
                 <h1 className="text-3xl font-semibold text-foreground md:text-4xl">

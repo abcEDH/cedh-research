@@ -363,7 +363,7 @@ jobs:
       - name: Install dependencies
         run: pip install requests
 
-      - name: Check regional Elo aggregate consistency
+      - name: Check global Elo aggregate consistency
         run: |
           python << 'SCRIPT'
           import requests
@@ -388,7 +388,7 @@ jobs:
           leaderboard_rows = leaderboard_resp.json()
 
           if not leaderboard_rows:
-              print("No regional Elo leaderboard rows found to validate.")
+              print("No global Elo leaderboard rows found to validate.")
               sys.exit(1)
 
           failures = []
@@ -414,12 +414,12 @@ jobs:
                       break
 
           if failures:
-              print("Regional Elo aggregate consistency check failed:")
+              print("Global Elo aggregate consistency check failed:")
               for row, reason in failures:
                   print(
                       f"  - {row['region_key']} / {row['player_id']}: {reason}"
                   )
               sys.exit(1)
 
-          print(f"Validated {len(leaderboard_rows)} global Regional Elo rows against rating rows.")
+          print(f"Validated {len(leaderboard_rows)} global Global Elo rows against rating rows.")
           SCRIPT

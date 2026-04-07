@@ -28,7 +28,7 @@ const sections = [
       "card_performance_by_commander / card_performance_global: Card performance.",
       "player_tournament_journey / pod_composition / player_seat_distribution: Round-level journeys.",
       "get_survival_curve (RPC) / survival_curves_by_seat: Survival curves by round and seat.",
-      "regional_elo_* views: Regional Elo ratings and leaderboards.",
+      "regional_elo_* views: Global Elo ratings and leaderboards.",
       "player_commander_entries: Fast per-player commander history for meta prep.",
     ],
   },

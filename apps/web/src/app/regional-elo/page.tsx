@@ -328,9 +328,9 @@ export default async function RegionalEloPage({
         <header className="flex flex-col gap-6 border-b border-border/60 pb-8">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="knd-chip">Regional Elo</p>
+              <p className="knd-chip">Global Elo</p>
               <h1 className="mt-4 text-3xl font-semibold text-foreground md:text-4xl">
-                Regional Leaderboards
+                Global Leaderboard
               </h1>
             </div>
             <nav className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
@@ -346,8 +346,8 @@ export default async function RegionalEloPage({
             </nav>
           </div>
           <p className="max-w-4xl text-base text-muted-foreground">
-            Elo is computed globally across all included games. Players are then assigned to the
-            state where they are most active, using a weighted mix of recency and game volume.
+            Elo is computed globally across all included games. Country and state views are
+            filtered slices of that global rating set.
           </p>
           <p className="text-sm text-muted-foreground">
             Rating model details:{" "}

@@ -311,8 +311,8 @@ export function TournamentAnalysisTables({
       <CardContent>
         <div className="mb-4 text-sm text-muted-foreground">
           {showActualDecks
-            ? "Players in the field with tournament standing, best regional Elo, and commander data."
-            : "Players in the field with best regional Elo and recent commander forecast."}
+            ? "Players in the field with tournament standing, best global Elo, and commander data."
+            : "Players in the field with best global Elo and recent commander forecast."}
         </div>
         <label className="mb-4 flex flex-col gap-2 text-sm text-muted-foreground">
           Search attendees

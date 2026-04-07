@@ -4,7 +4,7 @@ Last reviewed: 2026-04-06
 
 ## Summary
 
-This update changes the tournament prep page from separate Elo and commander-profile tables into one attendee-focused workflow. The page now accepts a TopDeck tournament link or slug, fetches event standings through the TopDeck API when `TOPDECK_API_KEY` is available, and combines that data with Supabase commander history and regional Elo.
+This update changes the tournament prep page from separate Elo and commander-profile tables into one attendee-focused workflow. The page now accepts a TopDeck tournament link or slug, fetches event standings through the TopDeck API when `TOPDECK_API_KEY` is available, and combines that data with Supabase commander history and global Elo.
 
 Main user-facing changes:
 
@@ -14,7 +14,7 @@ Main user-facing changes:
 - After a tournament starts, the table shows standing and tournament record.
 - After a tournament starts and TopDeck returns non-empty `rounds`, the table switches from forecasted decks to actual submitted decklists.
 - Field-share cards use expected player-weighted commander share before results, and actual submitted deck share once results are available.
-- Player names link to the internal regional Elo profile.
+- Player names link to the internal global Elo profile.
 - Commander/decklist links prefer TopDeck deck pages, using `https://topdeck.gg/deck/{tournament_slug}/{player_topdeck_id}`.
 - Tournament analysis is cached with `unstable_cache` for 15 minutes to avoid redoing expensive TopDeck and Supabase work on every render.
 
@@ -96,7 +96,7 @@ Tournament-size and performance modifiers were tested and did not improve the re
 ## Region Display
 
 The attendee table's region is not a state-specific Elo field. It uses the same predicted profile region model as
-the regional Elo player profile, while Elo values come from the global `ALL` leaderboard.
+the global Elo player profile, while Elo values come from the global `ALL` leaderboard.
 
 ## Performance Notes
 

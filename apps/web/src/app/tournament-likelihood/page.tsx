@@ -390,7 +390,7 @@ export default async function TournamentLikelihoodPage({
                 Home
               </Link>
               <Link className="transition hover:text-foreground" href="/regional-elo">
-                Regional Elo
+                Global Elo
               </Link>
             </nav>
           </div>
