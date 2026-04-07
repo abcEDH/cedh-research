@@ -14,16 +14,18 @@ export function RegionSelector({
   selectedScope,
   selectedCountry,
   selectedRegion,
+  supportsCountryRegions = true,
 }: {
   regions: RegionOption[];
   selectedScope: "global" | "country";
   selectedCountry?: string;
   selectedRegion?: string;
+  supportsCountryRegions?: boolean;
 }) {
   const [isLoading, setIsLoading] = useState(false);
   const globalRegion = regions.find((region) => region.region_type === "global");
   const countryRegions = regions.filter((region) => region.region_type === "country");
-  const [scope, setScope] = useState(selectedScope);
+  const [scope, setScope] = useState(supportsCountryRegions ? selectedScope : "global");
   const [country, setCountry] = useState(selectedCountry ?? countryRegions[0]?.region_key ?? "");
   const [region, setRegion] = useState(selectedRegion ?? "");
   const stateRegions = regions.filter(
@@ -47,7 +49,7 @@ export function RegionSelector({
         <option value="global">
           Global {globalRegion ? `(${globalRegion.player_count})` : ""}
         </option>
-        <option value="country">Country</option>
+        {supportsCountryRegions ? <option value="country">Country</option> : null}
       </select>
 
       {scope === "country" ? (

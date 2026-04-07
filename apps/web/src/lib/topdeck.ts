@@ -77,7 +77,7 @@ export function extractTournamentSlug(input: string): string {
 }
 
 export async function fetchChampionshipLeaderboard(): Promise<TopDeckLeaderboardEntry[]> {
-  const res = await fetch(CHAMPIONSHIP_LEADERBOARD_URL, { cache: "no-store" });
+  const res = await fetch(CHAMPIONSHIP_LEADERBOARD_URL, { next: { revalidate: 60 * 15 } });
   if (!res.ok) {
     throw new Error(`TopDeck leaderboard fetch failed (${res.status})`);
   }

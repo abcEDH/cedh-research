@@ -154,6 +154,11 @@ class MockQuery {
     return this;
   }
 
+  neq(column: string, value: unknown) {
+    this.filters.push((row) => row[column] !== value);
+    return this;
+  }
+
   not(column: string, operator: string, value: unknown) {
     if (column.includes(".")) return this;
     if (operator === "is" && value === null) {
@@ -164,6 +169,12 @@ class MockQuery {
 
   in(column: string, values: unknown[]) {
     this.filters.push((row) => values.includes(row[column]));
+    return this;
+  }
+
+  ilike(column: string, value: string) {
+    const normalized = value.toLowerCase();
+    this.filters.push((row) => String(row[column] ?? "").toLowerCase() === normalized);
     return this;
   }
 

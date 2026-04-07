@@ -150,12 +150,70 @@ async function fetchLeaderboardRows(
 
     const { data, error } = await query;
 
-    if (error || !data?.length) break;
+    if (error) {
+      console.error("Error fetching leaderboard rows:", error);
+      break;
+    }
+    if (!data?.length) break;
     rows.push(...(data as LeaderboardRow[]));
     if (data.length < pageSize || rows.length >= maxRows) break;
   }
 
   return rows;
+}
+
+async function fetchLegacyLeaderboardRows(
+  regionType: "global" | "state",
+  regionKey: string,
+  maxRows = LEADERBOARD_LIMIT
+): Promise<LeaderboardRow[]> {
+  const { data, error } = await supabase
+    .from("regional_elo_leaderboard")
+    .select(
+      "region_type, region_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank"
+    )
+    .eq("region_type", regionType)
+    .eq("region_key", regionKey)
+    .order("rank", { ascending: true })
+    .range(0, maxRows - 1);
+
+  if (error) {
+    console.error("Error fetching legacy leaderboard rows:", error);
+    return [];
+  }
+
+  return (data as LeaderboardRow[]) ?? [];
+}
+
+async function fetchRegionRows(): Promise<{ rows: RegionRow[]; supportsCountry: boolean }> {
+  const { data, error } = await supabase
+    .from("regional_elo_regions")
+    .select("region_type, region_key, country_key, player_count, updated_at")
+    .order("region_type", { ascending: true })
+    .order("region_key", { ascending: true });
+
+  if (!error) {
+    return { rows: (data ?? []) as RegionRow[], supportsCountry: true };
+  }
+
+  const { data: fallbackData, error: fallbackError } = await supabase
+    .from("regional_elo_regions")
+    .select("region_type, region_key, player_count, updated_at")
+    .order("region_type", { ascending: true })
+    .order("region_key", { ascending: true });
+
+  if (fallbackError) {
+    console.error("Error fetching region rows:", fallbackError);
+    return { rows: [], supportsCountry: false };
+  }
+
+  return {
+    rows: ((fallbackData ?? []) as Omit<RegionRow, "country_key">[]).map((row) => ({
+      ...row,
+      country_key: null,
+    })),
+    supportsCountry: false,
+  };
 }
 
 function chunkArray<T>(values: T[], chunkSize: number) {
@@ -192,10 +250,47 @@ async function fetchLatestCommanders(topdeckIds: string[]): Promise<Map<string, 
     if (!isKnownCommander(row.active_commander) && !isKnownCommander(row.latest_commander)) continue;
     latestByPlayer.set(row.topdeck_id, row);
   }
+  if (latestByPlayer.size > 0) return latestByPlayer;
+
+  return fetchLatestCommandersFromHistory(topdeckIds);
+}
+
+async function fetchLatestCommandersFromHistory(topdeckIds: string[]): Promise<Map<string, LatestCommanderRow>> {
+  const rows: Array<{ topdeck_id: string | null; commander_name: string | null; start_date: string | null }> = [];
+  for (const topdeckIdChunk of chunkArray(topdeckIds, 250)) {
+    const { data, error } = await supabase
+      .from("player_commander_entries")
+      .select("topdeck_id, commander_name, start_date")
+      .in("topdeck_id", topdeckIdChunk)
+      .order("start_date", { ascending: false })
+      .range(0, 999);
+
+    if (error) {
+      console.error("Error fetching legacy commander history:", error);
+      continue;
+    }
+    rows.push(...((data ?? []) as Array<{ topdeck_id: string | null; commander_name: string | null; start_date: string | null }>));
+  }
+
+  const latestByPlayer = new Map<string, LatestCommanderRow>();
+  for (const row of rows) {
+    if (!row.topdeck_id || latestByPlayer.has(row.topdeck_id)) continue;
+    if (!isKnownCommander(row.commander_name)) continue;
+    latestByPlayer.set(row.topdeck_id, {
+      topdeck_id: row.topdeck_id,
+      active_commander: row.commander_name,
+      latest_commander: row.commander_name,
+      latest_commander_date: row.start_date,
+    });
+  }
   return latestByPlayer;
 }
 
 async function fetchRegionalValidity(): Promise<RegionalValidityRow[]> {
+  if (process.env.ENABLE_REGIONAL_ELO_VALIDITY !== "true") {
+    return [];
+  }
+
   const { data, error } = await supabase
     .from("regional_elo_data_validity")
     .select(
@@ -255,21 +350,19 @@ export default async function RegionalEloPage({
     | Promise<{ country?: string | string[]; region?: string | string[]; scope?: string | string[] }>;
 }) {
   const resolvedSearchParams = await Promise.resolve(searchParams);
-  const [{ data: regionsData }, validityRows] = await Promise.all([
-    supabase
-      .from("regional_elo_regions")
-      .select("region_type, region_key, country_key, player_count, updated_at")
-      .order("region_type", { ascending: true })
-      .order("region_key", { ascending: true }),
+  const [regionResult, validityRows] = await Promise.all([
+    fetchRegionRows(),
     fetchRegionalValidity(),
   ]);
 
-  const regions = (regionsData ?? []) as RegionRow[];
+  const regions = regionResult.rows;
+  const supportsCountryRegions = regionResult.supportsCountry;
   const requestedScope = readScopeParam(resolvedSearchParams).trim().toLowerCase();
   const requestedCountry = decodeURIComponent(readCountryParam(resolvedSearchParams)).trim();
   const requestedRegion = decodeURIComponent(readRegionParam(resolvedSearchParams)).trim();
   const countryRegions = regions.filter((region) => region.region_type === "country");
-  const selectedScope: "global" | "country" = requestedScope === "country" ? "country" : "global";
+  const selectedScope: "global" | "country" =
+    supportsCountryRegions && requestedScope === "country" ? "country" : "global";
   const defaultCountry =
     countryRegions.find((region) => region.region_key === "UNITED STATES")?.region_key ||
     countryRegions[0]?.region_key;
@@ -278,9 +371,9 @@ export default async function RegionalEloPage({
     countryRegions.find((region) => region.region_key.toUpperCase() === requestedCountry.toUpperCase())
       ?.region_key ||
     defaultCountry;
-  const stateRegionsForCountry = regions.filter(
-    (region) => region.region_type === "state" && region.country_key === selectedCountry
-  );
+  const stateRegionsForCountry = supportsCountryRegions
+    ? regions.filter((region) => region.region_type === "state" && region.country_key === selectedCountry)
+    : regions.filter((region) => region.region_type === "state");
   const selectedRegion =
     stateRegionsForCountry.find((region) => region.region_key === requestedRegion)?.region_key ||
     stateRegionsForCountry.find(
@@ -293,7 +386,14 @@ export default async function RegionalEloPage({
     selectedScope === "global" ? GLOBAL_REGION_KEY : selectedRegion || selectedCountry || "";
 
   const leaderboard =
-    activeRegionKey ? await fetchLeaderboardRows(activeRegionType, activeRegionKey) : [];
+    activeRegionKey
+      ? supportsCountryRegions
+        ? await fetchLeaderboardRows(activeRegionType, activeRegionKey)
+        : await fetchLegacyLeaderboardRows(
+            activeRegionType === "state" ? "state" : "global",
+            activeRegionType === "state" ? activeRegionKey : GLOBAL_REGION_KEY
+          )
+      : [];
 
   const topdeckIds = leaderboard
     .slice(0, INITIAL_COMMANDER_LOOKUP_LIMIT)
@@ -369,6 +469,7 @@ export default async function RegionalEloPage({
                   selectedScope={selectedScope}
                   selectedCountry={selectedCountry}
                   selectedRegion={selectedRegion}
+                  supportsCountryRegions={supportsCountryRegions}
                 />
                 <div className="text-xs text-muted-foreground">
                   Updated {updatedAt ? formatDate(updatedAt) : "—"}
