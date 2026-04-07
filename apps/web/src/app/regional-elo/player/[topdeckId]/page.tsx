@@ -600,7 +600,7 @@ export default async function RegionalPlayerPage({
   const selectedRegion = regionFilter || homeRegion || "";
   const regionalRank = await fetchRegionalRank(player.id, selectedRegion);
   const activeRank = regionFilter ? regionalRank : globalEloRank;
-  let playerLogs = await fetchPlayerEventLogs(player.id, regionFilter);
+  let playerLogs = await fetchPlayerEventLogs(player.id, "");
 
   if (playerLogs.length === 0) {
     const entryIds = entries.map((row) => row.id);
@@ -613,10 +613,7 @@ export default async function RegionalPlayerPage({
 
     const playerParticipants = participants.filter((participant) => {
       if (!gamesById.has(participant.game_id)) return false;
-      if (!regionFilter) return true;
-      const game = gamesById.get(participant.game_id);
-      const tournament = game ? tournamentsById.get(game.tournament_id) : null;
-      return ((tournament?.state ?? "").trim().toUpperCase() || "") === regionFilter;
+      return true;
     });
     const playerGameIds = Array.from(new Set(playerParticipants.map((row) => row.game_id)));
     const relatedParticipants = allParticipants.filter((row) => playerGameIds.includes(row.game_id));
@@ -858,7 +855,8 @@ export default async function RegionalPlayerPage({
 
           <p className="text-sm text-muted-foreground">
             Elo is global. Home region is assigned separately. The summary cards and game log below
-            reflect the active filter, which defaults to all games unless you narrow to a state.
+            include all stored games across regions. The active filter only changes the highlighted
+            state rank.
           </p>
 
           <Card className="knd-panel">
@@ -930,6 +928,7 @@ export default async function RegionalPlayerPage({
                 <table className="w-full text-sm">
                   <thead className="text-left text-xs uppercase tracking-[0.2em] text-muted-foreground">
                     <tr>
+                      <th className="px-2 py-3">Country</th>
                       <th className="px-2 py-3">Region</th>
                       <th className="px-2 py-3 text-right">Rank</th>
                       <th className="px-2 py-3 text-right">Elo</th>
@@ -942,7 +941,7 @@ export default async function RegionalPlayerPage({
                       const rowsForCountry = regionalRankRows.filter((row) => row.country_key === countryKey);
                       return [
                         <tr key={`country:${countryKey}`} className="border-t border-border/60 bg-muted/20">
-                          <td colSpan={5} className="px-2 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                          <td colSpan={6} className="px-2 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
                             {countryKey === "UNKNOWN" ? "Unknown country" : countryKey}
                           </td>
                         </tr>,
@@ -951,6 +950,9 @@ export default async function RegionalPlayerPage({
                           const isActive = regionKey === regionFilter;
                           return (
                             <tr key={`${countryKey}:${regionKey}`} className="border-t border-border/60">
+                              <td className="px-2 py-3 text-muted-foreground">
+                                {countryKey === "UNKNOWN" ? "Unknown" : countryKey}
+                              </td>
                               <td className="px-2 py-3">
                                 <Link
                                   href={`/regional-elo/player/${topdeckId}?region=${encodeURIComponent(regionKey)}`}
@@ -983,7 +985,7 @@ export default async function RegionalPlayerPage({
                     })}
                     {regionalRankRows.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="px-2 py-6 text-center text-sm text-muted-foreground">
+                        <td colSpan={6} className="px-2 py-6 text-center text-sm text-muted-foreground">
                           No state assignment found for this player.
                         </td>
                       </tr>
