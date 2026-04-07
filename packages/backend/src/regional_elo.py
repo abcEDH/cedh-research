@@ -170,6 +170,7 @@ def fetch_game_results(client: SupabaseClient, smoke_days: int | None = None) ->
     if not tournament_map:
         return []
 
+<<<<<<< HEAD
     tournament_ids = list(tournament_map.keys())
     if smoke_days is None:
         games = fetch_all_by_cursor(
@@ -190,10 +191,22 @@ def fetch_game_results(client: SupabaseClient, smoke_days: int | None = None) ->
             values=tournament_ids,
             order="tournament_id.asc,id.asc",
         )
+=======
+    games = fetch_all_by_cursor(
+        client,
+        "games",
+        {
+            "select": "id,tournament_id,is_draw,round_number,round_name,table_number",
+        },
+        cursor_column="id",
+    )
+    filtered_games = [row for row in games if row.get("tournament_id") in tournament_map]
+>>>>>>> aebac01 (fix: keyset paginate regional elo backfill reads)
     game_map = {row["id"]: row for row in filtered_games}
     if not game_map:
         return []
 
+<<<<<<< HEAD
     if smoke_days is None:
         entries = fetch_all_by_cursor(
             client,
@@ -218,6 +231,17 @@ def fetch_game_results(client: SupabaseClient, smoke_days: int | None = None) ->
             if row.get("player_id")
         ]
     entry_map = {row["id"]: row for row in filtered_entries}
+=======
+    entries = fetch_all_by_cursor(
+        client,
+        "tournament_entries",
+        {
+            "select": "id,player_id",
+        },
+        cursor_column="id",
+    )
+    entry_map = {row["id"]: row for row in entries if row.get("player_id")}
+>>>>>>> aebac01 (fix: keyset paginate regional elo backfill reads)
     if not entry_map:
         return []
 
