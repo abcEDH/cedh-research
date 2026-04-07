@@ -38,7 +38,7 @@ type EloRow = {
   player_name: string;
   rating: number;
   games_played: number;
-  region_key: string;
+  region_key: string | null;
 };
 
 type RegionalLeaderboardQueryRow = {
@@ -312,7 +312,7 @@ export default async function TournamentLikelihoodPage({
                 Home
               </Link>
               <Link className="transition hover:text-foreground" href="/regional-elo">
-                Regional Elo
+                Leaderboard
               </Link>
             </nav>
           </div>

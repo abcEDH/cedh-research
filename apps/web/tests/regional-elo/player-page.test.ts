@@ -13,6 +13,18 @@ const tableData: TableData = {
   ],
   regional_elo_leaderboard: [
     {
+      region_type: "global",
+      region_key: "ALL",
+      primary_region_key: "CALIFORNIA",
+      player_id: "player-1",
+      rank: 22,
+      rating: 1797.364,
+      games_played: 5,
+      wins: 2,
+      draws: 1,
+      losses: 2,
+    },
+    {
       region_type: "state",
       region_key: "CALIFORNIA",
       player_id: "player-1",
@@ -209,7 +221,29 @@ vi.mock("@/lib/supabase", () => ({
 }));
 
 describe("RegionalPlayerPage", () => {
-  it("renders summary cards and regional rankings from the same canonical counts", async () => {
+  it("defaults to the global view while still showing the assigned home region", async () => {
+    const module = await import("@/app/regional-elo/player/[topdeckId]/page");
+    const element = await module.default({
+      params: { topdeckId: "CCIQroaCHHQi7EELyNXlHiHQiQy1" },
+      searchParams: {},
+    });
+
+    const html = renderToStaticMarkup(element);
+
+    expect(html).toContain("Alex Lien");
+    expect(html).toContain("Home Region");
+    expect(html).toContain("CALIFORNIA");
+    expect(html).toContain("View Filter");
+    expect(html).toContain(">ALL<");
+    expect(html).toContain(
+      "Home region is assigned from recent and sustained activity, but this page defaults to the global view."
+    );
+    expect(html).toMatch(/Current Rank[\s\S]*?>#22</);
+    expect(html).toMatch(/Counted Games[\s\S]*?>5</);
+    expect(html).toMatch(/Record[\s\S]*?>2-2-1</);
+  });
+
+  it("renders summary cards and the assigned state record from the same canonical counts", async () => {
     const module = await import("@/app/regional-elo/player/[topdeckId]/page");
     const element = await module.default({
       params: { topdeckId: "CCIQroaCHHQi7EELyNXlHiHQiQy1" },
@@ -220,12 +254,9 @@ describe("RegionalPlayerPage", () => {
 
     expect(html).toContain("Alex Lien");
     expect(html).toContain("TopDeck Global");
-    expect(html).toContain("Active region");
-    expect(html).toContain(
-      "Rank, counted games, and record come from the same canonical regional aggregate that powers the leaderboard."
-    );
+    expect(html).toContain("Assigned state");
     expect(html).toMatch(/Counted Games[\s\S]*?>3</);
     expect(html).toMatch(/Record[\s\S]*?>1-1-1</);
-    expect(html).toMatch(/CALIFORNIA[\s\S]*?Active region[\s\S]*?>#6<[\s\S]*?>1735<[\s\S]*?>3<[\s\S]*?>1-1-1</);
+    expect(html).toMatch(/CALIFORNIA[\s\S]*?Assigned state[\s\S]*?>#6<[\s\S]*?>1735<[\s\S]*?>3<[\s\S]*?>1-1-1</);
   });
 });

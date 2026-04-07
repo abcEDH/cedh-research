@@ -20,6 +20,23 @@ function readRegionParam(
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
 }
 
+function readScopeParam(
+  params:
+    | Awaited<Promise<{ scope?: string | string[] }> | { scope?: string | string[] }>
+    | undefined
+) {
+  const anyParams = params as
+    | Record<string, string | string[] | undefined>
+    | URLSearchParams
+    | undefined;
+  if (!anyParams) return "";
+  if (typeof (anyParams as URLSearchParams).get === "function") {
+    return (anyParams as URLSearchParams).get("scope") ?? "";
+  }
+  const value = (anyParams as Record<string, string | string[] | undefined>).scope;
+  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+}
+
 type RegionRow = {
   region_type: string;
   region_key: string;
@@ -30,6 +47,7 @@ type RegionRow = {
 type LeaderboardRow = {
   region_type: string;
   region_key: string;
+  primary_region_key?: string | null;
   player_id: string;
   player_name: string;
   topdeck_id: string | null;
@@ -79,20 +97,27 @@ function formatDate(value: string | null) {
   });
 }
 
-async function fetchAllRegionalRows(regionKey: string): Promise<LeaderboardRow[]> {
+async function fetchLeaderboardRows(regionType: "global" | "state", regionKey: string): Promise<LeaderboardRow[]> {
   const pageSize = 1000;
   const rows: LeaderboardRow[] = [];
 
   for (let offset = 0; ; offset += pageSize) {
-    const { data, error } = await supabase
+    let query = supabase
       .from("regional_elo_leaderboard")
       .select(
-        "region_type, region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank"
+        "region_type, region_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank"
       )
-      .eq("region_type", "state")
-      .eq("region_key", regionKey)
+      .eq("region_type", regionType)
       .order("rating", { ascending: false })
       .range(offset, offset + pageSize - 1);
+
+    if (regionType === "global") {
+      query = query.eq("region_key", "ALL");
+    } else {
+      query = query.eq("region_key", regionKey);
+    }
+
+    const { data, error } = await query;
 
     if (error || !data?.length) break;
     rows.push(...(data as LeaderboardRow[]));
@@ -153,7 +178,7 @@ async function fetchRegionalValidity(): Promise<RegionalValidityRow[]> {
     .eq("region_type", "state");
 
   if (error) {
-    console.error("Error fetching regional validity stats:", error);
+    console.error("Error fetching leaderboard validity stats:", error);
     return [];
   }
 
@@ -185,37 +210,54 @@ export default async function RegionalEloPage({
   searchParams,
 }: {
   searchParams?:
-    | { region?: string | string[] }
-    | Promise<{ region?: string | string[] }>;
+    | { region?: string | string[]; scope?: string | string[] }
+    | Promise<{ region?: string | string[]; scope?: string | string[] }>;
 }) {
   const resolvedSearchParams = await Promise.resolve(searchParams);
   const [{ data: regionsData }, validityRows] = await Promise.all([
     supabase
       .from("regional_elo_regions")
       .select("region_type, region_key, player_count, updated_at")
-      .eq("region_type", "state")
+      .order("region_type", { ascending: true })
       .order("region_key", { ascending: true }),
     fetchRegionalValidity(),
   ]);
 
   const regions = (regionsData ?? []) as RegionRow[];
+  const requestedScope = readScopeParam(resolvedSearchParams).trim().toLowerCase();
   const requestedRegion = decodeURIComponent(readRegionParam(resolvedSearchParams)).trim();
-  const defaultRegion = regions.find((region) => region.region_key === "CALIFORNIA")?.region_key;
+  const defaultRegion = regions.find(
+    (region) => region.region_type === "state" && region.region_key === "CALIFORNIA"
+  )?.region_key;
+  const selectedScope: "global" | "state" = requestedScope === "state" ? "state" : "global";
   const selectedRegion =
-    regions.find((region) => region.region_key === requestedRegion)?.region_key ||
-    regions.find((region) => region.region_key.toUpperCase() === requestedRegion.toUpperCase())
+    regions.find((region) => region.region_type === "state" && region.region_key === requestedRegion)?.region_key ||
+    regions.find(
+      (region) =>
+        region.region_type === "state" && region.region_key.toUpperCase() === requestedRegion.toUpperCase()
+    )
       ?.region_key ||
     defaultRegion ||
-    regions[0]?.region_key;
+    regions.find((region) => region.region_type === "state")?.region_key;
 
-  const leaderboard = selectedRegion ? await fetchAllRegionalRows(selectedRegion) : [];
+  const leaderboard =
+    selectedScope === "global"
+      ? await fetchLeaderboardRows("global", "ALL")
+      : selectedRegion
+      ? await fetchLeaderboardRows("state", selectedRegion)
+      : [];
 
   const topdeckIds = leaderboard
     .map((row) => row.topdeck_id)
     .filter((value): value is string => Boolean(value));
   const latestByPlayer = await fetchLatestCommanders(topdeckIds);
 
-  const updatedAt = regions.find((r) => r.region_key === selectedRegion)?.updated_at ?? null;
+  const updatedAt =
+    regions.find((r) =>
+      selectedScope === "global"
+        ? r.region_type === "global" && r.region_key === "ALL"
+        : r.region_type === "state" && r.region_key === selectedRegion
+    )?.updated_at ?? null;
   const globalValidity = validityRows.find((row) => row.scope === "global");
   const selectedRegionValidity = validityRows.find(
     (row) => row.scope === "region" && row.region_key === selectedRegion
@@ -236,8 +278,8 @@ export default async function RegionalEloPage({
         <header className="flex flex-col gap-6 border-b border-border/60 pb-8">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="knd-chip">Regional Elo</p>
-              <h1 className="mt-4 text-3xl font-semibold text-foreground md:text-4xl">State Leaderboards</h1>
+              <p className="knd-chip">Leaderboard</p>
+              <h1 className="mt-4 text-3xl font-semibold text-foreground md:text-4xl">Leaderboard</h1>
             </div>
             <nav className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
               <Link className="transition hover:text-foreground" href="/">
@@ -252,8 +294,8 @@ export default async function RegionalEloPage({
             </nav>
           </div>
           <p className="max-w-4xl text-base text-muted-foreground">
-            Elo ratings recalculated within each state using only games played in that state.
-            Players can rank differently across regions based on localized metas.
+            Elo is computed globally across all included games. Players are then assigned to the
+            state where they are most active, using a weighted mix of recency and game volume.
           </p>
           <p className="text-sm text-muted-foreground">
             Rating model details:{" "}
@@ -267,10 +309,14 @@ export default async function RegionalEloPage({
           <div className="grid gap-6 xl:grid-cols-[300px_minmax(0,1fr)_minmax(0,1fr)]">
             <Card className="knd-panel">
               <CardHeader>
-                <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">Region</CardTitle>
+                <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">View</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <RegionSelector regions={regions} selectedRegion={selectedRegion} />
+                <RegionSelector
+                  regions={regions}
+                  selectedScope={selectedScope}
+                  selectedRegion={selectedRegion}
+                />
                 <div className="text-xs text-muted-foreground">
                   Updated {updatedAt ? formatDate(updatedAt) : "—"}
                 </div>
@@ -283,7 +329,7 @@ export default async function RegionalEloPage({
                   Global Validity
                 </CardTitle>
                 <p className="text-xs text-muted-foreground">
-                  Regional Elo only counts games from tournaments with populated state metadata and excludes pods with byes.
+                  State assignment only counts games from tournaments with populated state metadata and excludes pods with byes.
                 </p>
               </CardHeader>
               <CardContent className="space-y-3 text-sm">
@@ -326,51 +372,67 @@ export default async function RegionalEloPage({
             <Card className="knd-panel">
               <CardHeader>
                 <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
-                  {selectedRegion ?? "Selected Region"}
+                  {selectedScope === "global" ? "Global" : selectedRegion ?? "Selected State"}
                 </CardTitle>
                 <p className="text-xs text-muted-foreground">
-                  Region-specific sample quality for the active leaderboard.
+                  {selectedScope === "global"
+                    ? "Global leaderboard scope and coverage."
+                    : "State-specific sample quality for the active leaderboard."}
                 </p>
               </CardHeader>
               <CardContent className="space-y-3 text-sm">
                 <div className="flex items-center justify-between gap-4">
                   <span className="text-muted-foreground">Ranked players</span>
                   <span className="font-mono text-foreground">
-                    {(regions.find((row) => row.region_key === selectedRegion)?.player_count ?? 0).toLocaleString()}
+                    {(regions.find((row) =>
+                      selectedScope === "global"
+                        ? row.region_type === "global" && row.region_key === "ALL"
+                        : row.region_type === "state" && row.region_key === selectedRegion
+                    )?.player_count ?? 0).toLocaleString()}
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <span className="text-muted-foreground">Tracked tournaments</span>
                   <span className="font-mono text-foreground">
-                    {selectedRegionValidity ? selectedRegionValidity.total_tournaments.toLocaleString() : "—"}
+                    {selectedScope === "global"
+                      ? globalValidity?.total_tournaments.toLocaleString() ?? "—"
+                      : selectedRegionValidity?.total_tournaments.toLocaleString() ?? "—"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <span className="text-muted-foreground">Included games</span>
                   <span className="font-mono text-foreground">
-                    {selectedRegionValidity ? selectedRegionValidity.included_games.toLocaleString() : "—"}
+                    {selectedScope === "global"
+                      ? globalValidity?.included_games.toLocaleString() ?? "—"
+                      : selectedRegionValidity?.included_games.toLocaleString() ?? "—"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <span className="text-muted-foreground">Games dropped for byes</span>
                   <span className="font-mono text-foreground">
-                    {selectedRegionValidity
-                      ? selectedRegionValidity.excluded_games_with_byes.toLocaleString()
-                      : "—"}
+                    {selectedScope === "global"
+                      ? globalValidity?.excluded_games_with_byes.toLocaleString() ?? "—"
+                      : selectedRegionValidity?.excluded_games_with_byes.toLocaleString() ?? "—"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <span className="text-muted-foreground">Sample freshness</span>
                   <span className="font-mono text-foreground">
-                    {selectedRegionValidity ? formatDate(selectedRegionValidity.latest_game_date) : "—"}
+                    {selectedScope === "global"
+                      ? formatDate(globalValidity?.latest_game_date ?? null)
+                      : selectedRegionValidity
+                      ? formatDate(selectedRegionValidity.latest_game_date)
+                      : "—"}
                   </span>
                 </div>
                 <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
                   {!hasValidityData
-                    ? "This panel will populate after the regional validity migration is applied to the deployed database."
+                    ? "This panel will populate after the leaderboard validity migration is applied to the deployed database."
+                    : selectedScope === "global"
+                    ? `${formatPercent(includedCoverage)} of tracked games currently qualify for state assignment coverage.`
                     : selectedRegionValidity
-                    ? `${formatPercent(selectedRegionCoverage)} of tracked ${selectedRegion} games currently qualify for regional Elo.`
-                    : "No validity summary available for this region yet."}
+                    ? `${formatPercent(selectedRegionCoverage)} of tracked ${selectedRegion} games currently qualify for state assignment coverage.`
+                    : "No validity summary available for this state yet."}
                 </div>
               </CardContent>
             </Card>
@@ -381,7 +443,9 @@ export default async function RegionalEloPage({
               <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
                 Top Players
               </CardTitle>
-              <p className="text-xs text-muted-foreground">Active region: {selectedRegion ?? "—"}</p>
+              <p className="text-xs text-muted-foreground">
+                Active view: {selectedScope === "global" ? "Global" : selectedRegion ?? "—"}
+              </p>
             </CardHeader>
             <CardContent>
               <div className="max-h-[70vh] overflow-auto">
@@ -409,7 +473,7 @@ export default async function RegionalEloPage({
                               <div className="space-y-1">
                                 <Link
                                   className="font-medium text-foreground hover:text-primary"
-                                  href={`/regional-elo/player/${row.topdeck_id}?region=${encodeURIComponent(selectedRegion ?? "")}`}
+                                  href={`/regional-elo/player/${row.topdeck_id}`}
                                 >
                                 {row.player_name}
                                 </Link>
@@ -435,7 +499,7 @@ export default async function RegionalEloPage({
                     {leaderboard.length === 0 && (
                       <tr>
                         <td colSpan={6} className="py-6 text-center text-sm text-muted-foreground">
-                          No regional Elo data yet. Run the regional Elo job to populate this leaderboard.
+                          No leaderboard data yet. Run the Elo job to populate this leaderboard.
                         </td>
                       </tr>
                     )}
