@@ -6,6 +6,7 @@ import { RegionSelector } from "./region-selector";
 
 export const dynamic = "force-dynamic";
 const GLOBAL_REGION_KEY = "ALL";
+const LEGACY_COUNTRY_KEY = "UNITED STATES";
 const LEADERBOARD_LIMIT = 50;
 const INITIAL_COMMANDER_LOOKUP_LIMIT = 50;
 
@@ -207,11 +208,33 @@ async function fetchRegionRows(): Promise<{ rows: RegionRow[]; supportsCountry: 
     return { rows: [], supportsCountry: false };
   }
 
+  const fallbackRows = ((fallbackData ?? []) as Omit<RegionRow, "country_key">[]).map((row) => ({
+    ...row,
+    country_key: row.region_type === "state" ? LEGACY_COUNTRY_KEY : null,
+  }));
+  const globalRow = fallbackRows.find(
+    (row) => row.region_type === "global" && row.region_key === GLOBAL_REGION_KEY
+  );
+  const hasStateRows = fallbackRows.some((row) => row.region_type === "state");
+  const legacyCountryRow: RegionRow | null =
+    hasStateRows && !fallbackRows.some((row) => row.region_type === "country")
+      ? {
+          region_type: "country",
+          region_key: LEGACY_COUNTRY_KEY,
+          country_key: null,
+          player_count: globalRow?.player_count ?? 0,
+          updated_at: globalRow?.updated_at ?? null,
+        }
+      : null;
+
   return {
-    rows: ((fallbackData ?? []) as Omit<RegionRow, "country_key">[]).map((row) => ({
-      ...row,
-      country_key: null,
-    })),
+    rows: [
+      ...(legacyCountryRow ? [legacyCountryRow] : []),
+      ...fallbackRows.map((row) => ({
+        ...row,
+        country_key: row.country_key ?? null,
+      })),
+    ],
     supportsCountry: false,
   };
 }
@@ -361,8 +384,9 @@ export default async function RegionalEloPage({
   const requestedCountry = decodeURIComponent(readCountryParam(resolvedSearchParams)).trim();
   const requestedRegion = decodeURIComponent(readRegionParam(resolvedSearchParams)).trim();
   const countryRegions = regions.filter((region) => region.region_type === "country");
+  const hasCountryOptions = countryRegions.length > 0;
   const selectedScope: "global" | "country" =
-    supportsCountryRegions && requestedScope === "country" ? "country" : "global";
+    hasCountryOptions && requestedScope === "country" ? "country" : "global";
   const defaultCountry =
     countryRegions.find((region) => region.region_key === "UNITED STATES")?.region_key ||
     countryRegions[0]?.region_key;
@@ -371,7 +395,7 @@ export default async function RegionalEloPage({
     countryRegions.find((region) => region.region_key.toUpperCase() === requestedCountry.toUpperCase())
       ?.region_key ||
     defaultCountry;
-  const stateRegionsForCountry = supportsCountryRegions
+  const stateRegionsForCountry = hasCountryOptions
     ? regions.filter((region) => region.region_type === "state" && region.country_key === selectedCountry)
     : regions.filter((region) => region.region_type === "state");
   const selectedRegion =
@@ -469,7 +493,7 @@ export default async function RegionalEloPage({
                   selectedScope={selectedScope}
                   selectedCountry={selectedCountry}
                   selectedRegion={selectedRegion}
-                  supportsCountryRegions={supportsCountryRegions}
+                  supportsCountryRegions={hasCountryOptions}
                 />
                 <div className="text-xs text-muted-foreground">
                   Updated {updatedAt ? formatDate(updatedAt) : "—"}
