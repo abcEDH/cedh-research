@@ -6,6 +6,8 @@ import { RegionSelector } from "./region-selector";
 
 export const dynamic = "force-dynamic";
 const GLOBAL_REGION_KEY = "ALL";
+const LEADERBOARD_LIMIT = 1000;
+const INITIAL_COMMANDER_LOOKUP_LIMIT = 50;
 
 function readRegionParam(
   params: Awaited<Promise<{ region?: string | string[] }> | { region?: string | string[] }> | undefined
@@ -99,19 +101,25 @@ function formatDate(value: string | null) {
   });
 }
 
-async function fetchLeaderboardRows(regionType: "global" | "state", regionKey: string): Promise<LeaderboardRow[]> {
+async function fetchLeaderboardRows(
+  regionType: "global" | "state",
+  regionKey: string,
+  maxRows = LEADERBOARD_LIMIT
+): Promise<LeaderboardRow[]> {
   const pageSize = 1000;
   const rows: LeaderboardRow[] = [];
 
-  for (let offset = 0; ; offset += pageSize) {
+  for (let offset = 0; offset < maxRows; offset += pageSize) {
+    const remaining = maxRows - offset;
+    const pageEnd = offset + Math.min(pageSize, remaining) - 1;
     let query = supabase
       .from("regional_elo_leaderboard")
       .select(
         "region_type, region_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank"
       )
       .eq("region_type", regionType)
-      .order("rating", { ascending: false })
-      .range(offset, offset + pageSize - 1);
+      .order("rank", { ascending: true })
+      .range(offset, pageEnd);
 
     if (regionType === "global") {
       query = query.eq("region_key", GLOBAL_REGION_KEY);
@@ -123,7 +131,7 @@ async function fetchLeaderboardRows(regionType: "global" | "state", regionKey: s
 
     if (error || !data?.length) break;
     rows.push(...(data as LeaderboardRow[]));
-    if (data.length < pageSize) break;
+    if (data.length < pageSize || rows.length >= maxRows) break;
   }
 
   return rows;
@@ -259,6 +267,7 @@ export default async function RegionalEloPage({
         : [];
 
   const topdeckIds = leaderboard
+    .slice(0, INITIAL_COMMANDER_LOOKUP_LIMIT)
     .map((row) => row.topdeck_id)
     .filter((value): value is string => Boolean(value));
   const latestByPlayer = await fetchLatestCommanders(topdeckIds);
