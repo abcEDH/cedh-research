@@ -92,7 +92,7 @@ function compareRecord(a: TournamentStanding, b: TournamentStanding, direction: 
 
 function formatTournamentRecord(standing: TournamentStanding) {
   const hasRecord = standing.wins > 0 || standing.losses > 0 || standing.draws > 0;
-  if (!hasRecord) return standing.points > 0 ? String(standing.points) : "--";
+  if (!hasRecord) return String(standing.points);
   return `${standing.points} | ${standing.wins}-${standing.losses}-${standing.draws}`;
 }
 
@@ -213,17 +213,19 @@ function SortHeader({
 
 export function TournamentAnalysisTables({
   eloAttendees,
-  hasTournamentStarted,
   profiles,
+  showActualDecks,
+  showTournamentRecord,
   standings,
 }: {
   eloAttendees: EloAttendee[];
-  hasTournamentStarted: boolean;
   profiles: PlayerCommanderProfile[];
+  showActualDecks: boolean;
+  showTournamentRecord: boolean;
   standings: TournamentStanding[];
 }) {
-  const isResultsMode = hasTournamentStarted;
-  const defaultSortKey: SortKey = hasTournamentStarted ? "standing" : "elo";
+  const defaultSortKey: SortKey = showTournamentRecord ? "standing" : "elo";
+  const visibleColumnCount = 3 + (showActualDecks ? 1 : 2) + (showTournamentRecord ? 2 : 0);
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>(defaultSortKey);
@@ -282,12 +284,12 @@ export function TournamentAnalysisTables({
     <Card className="knd-panel mt-6">
       <CardHeader>
         <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
-          {isResultsMode ? "Attendees" : "Attendee Forecast"}
+          {showActualDecks ? "Attendees" : "Attendee Forecast"}
         </CardTitle>
       </CardHeader>
       <CardContent>
         <div className="mb-4 text-sm text-muted-foreground">
-          {isResultsMode
+          {showActualDecks
             ? "Players in the field with tournament standing, best regional Elo, and commander data."
             : "Players in the field with best regional Elo and recent commander forecast."}
         </div>
@@ -299,9 +301,13 @@ export function TournamentAnalysisTables({
               setSearch(event.target.value);
               setPage(1);
             }}
-            placeholder={isResultsMode
-              ? "Standing, player, Elo, region, record, profile ID, or commander"
-              : "Player, Elo, region, profile ID, or commander"}
+            placeholder={
+              showActualDecks
+                ? "Standing, player, Elo, region, record, profile ID, or commander"
+                : showTournamentRecord
+                  ? "Player, Elo, region, record, profile ID, or commander"
+                  : "Player, Elo, region, profile ID, or commander"
+            }
             type="search"
             value={search}
           />
@@ -310,7 +316,7 @@ export function TournamentAnalysisTables({
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-muted-foreground">
               <tr>
-                {isResultsMode && (
+                {showTournamentRecord && (
                   <SortHeader column="standing" direction={sortDirection} onSort={handleSort} sortKey={sortKey}>
                     Standing
                   </SortHeader>
@@ -318,13 +324,18 @@ export function TournamentAnalysisTables({
                 <SortHeader column="player" direction={sortDirection} onSort={handleSort} sortKey={sortKey}>
                   Player
                 </SortHeader>
+                {showTournamentRecord && (
+                  <SortHeader column="record" direction={sortDirection} onSort={handleSort} sortKey={sortKey}>
+                    Tournament Record
+                  </SortHeader>
+                )}
                 <SortHeader column="elo" direction={sortDirection} onSort={handleSort} sortKey={sortKey}>
                   Elo
                 </SortHeader>
                 <SortHeader column="homeRegion" direction={sortDirection} onSort={handleSort} sortKey={sortKey}>
                   Home Region
                 </SortHeader>
-                {isResultsMode ? (
+                {showActualDecks ? (
                   <SortHeader column="decklist" direction={sortDirection} onSort={handleSort} sortKey={sortKey}>
                     Decklist
                   </SortHeader>
@@ -337,11 +348,6 @@ export function TournamentAnalysisTables({
                       Alternatives
                     </SortHeader>
                   </>
-                )}
-                {isResultsMode && (
-                  <SortHeader column="record" direction={sortDirection} onSort={handleSort} sortKey={sortKey}>
-                    Tournament Record
-                  </SortHeader>
                 )}
               </tr>
             </thead>
@@ -357,7 +363,7 @@ export function TournamentAnalysisTables({
                 const primaryDecklistHref = primary?.latestTopdeckDecklistUrl || primary?.latestDecklistUrl;
                 return (
                   <tr key={`${row.standing.id}-${row.standing.standing}`} className="border-t border-border/60">
-                    {isResultsMode && (
+                    {showTournamentRecord && (
                       <td className="px-2 py-4 text-muted-foreground">#{row.standing.standing}</td>
                     )}
                     <td className="px-2 py-4">
@@ -371,11 +377,14 @@ export function TournamentAnalysisTables({
                         </Link>
                       </div>
                     </td>
+                    {showTournamentRecord && (
+                      <td className="px-2 py-4 text-muted-foreground">{formatTournamentRecord(row.standing)}</td>
+                    )}
                     <td className="px-2 py-4 font-semibold text-primary">
                       {row.rating === null ? "-" : Math.round(row.rating)}
                     </td>
                     <td className="px-2 py-4 text-muted-foreground">{row.regionKey ?? "-"}</td>
-                    {isResultsMode ? (
+                    {showActualDecks ? (
                       <td className="px-2 py-4">
                         {row.standing.actualDeckCommander && row.standing.actualDecklistUrl ? (
                           <a
@@ -442,15 +451,12 @@ export function TournamentAnalysisTables({
                         </td>
                       </>
                     )}
-                    {isResultsMode && (
-                      <td className="px-2 py-4 text-muted-foreground">{formatTournamentRecord(row.standing)}</td>
-                    )}
                   </tr>
                 );
               })}
               {visibleRows.length === 0 && (
                 <tr>
-                  <td colSpan={isResultsMode ? 6 : 5} className="py-6 text-center text-sm text-muted-foreground">
+                  <td colSpan={visibleColumnCount} className="py-6 text-center text-sm text-muted-foreground">
                     {query ? "No attendees matched that search." : "No attendees found."}
                   </td>
                 </tr>

@@ -142,6 +142,7 @@ type TournamentAnalysis = {
   standings: TournamentStanding[];
   profiles: { players: PlayerCommanderProfile[]; metaShare: MetaShareRow[] };
   eloRows: EloRow[];
+  hasRounds: boolean;
 };
 
 const getCachedTournamentAnalysis = unstable_cache(
@@ -161,6 +162,7 @@ const getCachedTournamentAnalysis = unstable_cache(
       standings,
       profiles: attachLatestDecklistUrls(profiles, decklistRows),
       eloRows,
+      hasRounds: (response.rounds ?? []).length > 0,
     };
   },
   ["tournament-likelihood-analysis-v11"],
@@ -194,6 +196,7 @@ export default async function TournamentLikelihoodPage({
     metaShare: [],
   };
   let eloRows: EloRow[] = [];
+  let hasRounds = false;
   let errorMessage: string | null = null;
 
   if (slug) {
@@ -203,6 +206,7 @@ export default async function TournamentLikelihoodPage({
       standings = analysis.standings;
       profiles = analysis.profiles;
       eloRows = analysis.eloRows;
+      hasRounds = analysis.hasRounds;
     } catch (error) {
       errorMessage = (error as Error).message;
     }
@@ -215,6 +219,8 @@ export default async function TournamentLikelihoodPage({
   const avgTopDeckShare = topDeckShares.length
     ? topDeckShares.reduce((sum, share) => sum + share, 0) / topDeckShares.length
     : 0;
+  const tournamentHasStarted = tournament ? hasTournamentStarted(tournament.startDate) : false;
+  const hasTournamentResults = tournamentHasStarted && hasRounds;
 
   const weightedMeta = new Map<string, number>();
   for (const player of profiles.players) {
@@ -233,8 +239,24 @@ export default async function TournamentLikelihoodPage({
     }))
     .sort((a, b) => b.expectedPlayers - a.expectedPlayers)
     .slice(0, 15);
-  const topCommander = weightedMetaRows[0];
-  const topFiveCombinedShare = weightedMetaRows
+
+  const actualMeta = new Map<string, number>();
+  for (const standing of standings) {
+    if (!standing.actualDeckCommander) continue;
+    actualMeta.set(standing.actualDeckCommander, (actualMeta.get(standing.actualDeckCommander) ?? 0) + 1);
+  }
+  const actualMetaRows = Array.from(actualMeta.entries())
+    .map(([commander, players]) => ({
+      commander,
+      fieldShare: standings.length ? players / standings.length : 0,
+      expectedPlayers: players,
+    }))
+    .sort((a, b) => b.expectedPlayers - a.expectedPlayers)
+    .slice(0, 15);
+
+  const fieldShareRows = hasTournamentResults ? actualMetaRows : weightedMetaRows;
+  const topCommander = fieldShareRows[0];
+  const topFiveCombinedShare = fieldShareRows
     .slice(0, 5)
     .reduce((sum, row) => sum + row.fieldShare, 0);
 
@@ -364,12 +386,15 @@ export default async function TournamentLikelihoodPage({
                   </p>
                 </div>
                 <div className="rounded-md border border-border/60 bg-muted/20 p-4">
-                  <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Most Likely Deck</p>
+                  <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">
+                    {hasTournamentResults ? "Most Played Deck" : "Most Likely Deck"}
+                  </p>
                   <p className="mt-2 text-lg font-semibold text-foreground">
                     {topCommander ? `${topCommander.commander} (${formatPercent(topCommander.fieldShare)})` : "No consensus yet"}
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Top 5 commanders represent {formatPercent(topFiveCombinedShare)} of known field history
+                    Top 5 commanders represent {formatPercent(topFiveCombinedShare)} of{" "}
+                    {hasTournamentResults ? "submitted decklists" : "known field history"}
                   </p>
                 </div>
               </CardContent>
@@ -378,27 +403,36 @@ export default async function TournamentLikelihoodPage({
             <Card className="knd-panel mt-6">
               <CardHeader>
                 <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
-                  Expected Field Share (Player-Weighted)
+                  {hasTournamentResults ? "Field Share" : "Expected Field Share (Player-Weighted)"}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="mb-4 text-sm text-muted-foreground">
-                  This estimate weights each player by how concentrated their recent commander usage is.
-                  Average top-deck concentration across attendees with data:{" "}
-                  <span className="font-medium text-foreground">{formatPercent(avgTopDeckShare)}</span>.
+                  {hasTournamentResults ? (
+                    "Actual submitted commander choices from this tournament."
+                  ) : (
+                    <>
+                      This estimate weights each player by how concentrated their recent commander usage is.
+                      Average top-deck concentration across attendees with data:{" "}
+                      <span className="font-medium text-foreground">{formatPercent(avgTopDeckShare)}</span>.
+                    </>
+                  )}
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">
-                  {weightedMetaRows.map((row) => (
+                  {fieldShareRows.map((row) => (
                     <div key={row.commander} className="flex items-center justify-between text-sm">
                       <span className="text-foreground">{row.commander}</span>
                       <span className="text-primary">
-                        {formatPercent(row.fieldShare)} · {row.expectedPlayers.toFixed(1)} players
+                        {formatPercent(row.fieldShare)} ·{" "}
+                        {hasTournamentResults ? row.expectedPlayers : row.expectedPlayers.toFixed(1)} players
                       </span>
                     </div>
                   ))}
-                  {!weightedMetaRows.length && (
+                  {!fieldShareRows.length && (
                     <div className="text-sm text-muted-foreground">
-                      No known commander history for the players in this event.
+                      {hasTournamentResults
+                        ? "No submitted decklists found for the players in this event."
+                        : "No known commander history for the players in this event."}
                     </div>
                   )}
                 </div>
@@ -407,7 +441,8 @@ export default async function TournamentLikelihoodPage({
 
             <TournamentAnalysisTables
               eloAttendees={allTopEloAttendees}
-              hasTournamentStarted={hasTournamentStarted(tournament.startDate)}
+              showActualDecks={hasTournamentResults}
+              showTournamentRecord={tournamentHasStarted}
               profiles={profiles.players}
               standings={standings}
             />
