@@ -5,6 +5,7 @@ import { buildProfiles, selectCommanderForecastRows, type CommanderUsageRow } fr
 import { supabase } from "@/lib/supabase";
 import { fetchChampionshipLeaderboard } from "@/lib/topdeck";
 import { buildTopdeckProfileHref } from "@/lib/topdeck-profile";
+import { inferCountryForRegion } from "@/lib/region-countries";
 import { OpponentRecordsTable } from "./opponent-records-table";
 import { PlayerGamesTable } from "./player-games-table";
 import { summarizePlayerLogs, type PlayerGameLog } from "./player-stats";
@@ -56,6 +57,8 @@ type TournamentRow = {
 };
 
 type LeaderboardRankRow = {
+  country_key?: string | null;
+  primary_country_key?: string | null;
   primary_region_key?: string | null;
   region_key?: string;
   rank: number;
@@ -197,7 +200,7 @@ async function fetchEntries(playerId: string): Promise<EntryRow[]> {
 async function fetchGlobalEloRank(playerId: string): Promise<LeaderboardRankRow | null> {
   const { data } = await supabase
     .from("regional_elo_leaderboard")
-    .select("primary_region_key, rank, rating, games_played, wins, draws, losses")
+    .select("primary_country_key, primary_region_key, rank, rating, games_played, wins, draws, losses")
     .eq("region_type", "global")
     .eq("region_key", "ALL")
     .eq("player_id", playerId)
@@ -209,24 +212,50 @@ async function fetchGlobalEloRank(playerId: string): Promise<LeaderboardRankRow 
 async function fetchRegionalRank(playerId: string, regionKey: string): Promise<LeaderboardRankRow | null> {
   if (!regionKey) return null;
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("regional_elo_leaderboard")
-    .select("region_key, rank, rating, games_played, wins, draws, losses")
+    .select("country_key, region_key, rank, rating, games_played, wins, draws, losses")
     .eq("region_type", "state")
     .eq("region_key", regionKey)
     .eq("player_id", playerId)
     .maybeSingle();
 
+  if (error) {
+    const { data: fallbackData } = await supabase
+      .from("regional_elo_leaderboard")
+      .select("region_key, rank, rating, games_played, wins, draws, losses")
+      .eq("region_type", "state")
+      .eq("region_key", regionKey)
+      .eq("player_id", playerId)
+      .maybeSingle();
+
+    return (fallbackData as LeaderboardRankRow | null) ?? null;
+  }
+
   return (data as LeaderboardRankRow | null) ?? null;
 }
 
 async function fetchRegionalRanks(playerId: string): Promise<LeaderboardRankRow[]> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("regional_elo_leaderboard")
-    .select("region_key, rank, rating, games_played, wins, draws, losses")
+    .select("country_key, region_key, rank, rating, games_played, wins, draws, losses")
     .eq("region_type", "state")
     .eq("player_id", playerId)
     .order("rank", { ascending: true });
+
+  if (error) {
+    const { data: fallbackData } = await supabase
+      .from("regional_elo_leaderboard")
+      .select("region_key, rank, rating, games_played, wins, draws, losses")
+      .eq("region_type", "state")
+      .eq("player_id", playerId)
+      .order("rank", { ascending: true });
+
+    return ((fallbackData as LeaderboardRankRow[]) ?? []).sort((a, b) => {
+      if (a.rank !== b.rank) return a.rank - b.rank;
+      return (a.region_key ?? "").localeCompare(b.region_key ?? "");
+    });
+  }
 
   return ((data as LeaderboardRankRow[]) ?? []).sort((a, b) => {
     if (a.rank !== b.rank) return a.rank - b.rank;
@@ -552,6 +581,22 @@ export default async function RegionalPlayerPage({
     fetchActiveCommander(player.id, topdeckId, player.name),
   ]);
   const homeRegion = globalEloRank?.primary_region_key ?? regionalRanks[0]?.region_key ?? null;
+  const homeCountry =
+    globalEloRank?.primary_country_key ??
+    (homeRegion ? inferCountryForRegion(homeRegion) : null);
+  const regionalRankRows = regionalRanks.map((row) => ({
+    ...row,
+    country_key: row.country_key ?? inferCountryForRegion(row.region_key) ?? "UNKNOWN",
+  }));
+  const countryAssignmentRows = Array.from(
+    new Set(regionalRankRows.map((row) => row.country_key).filter((value): value is string => Boolean(value)))
+  ).sort((a, b) => {
+    if (a === homeCountry) return -1;
+    if (b === homeCountry) return 1;
+    if (a === "UNKNOWN") return 1;
+    if (b === "UNKNOWN") return -1;
+    return a.localeCompare(b);
+  });
   const selectedRegion = regionFilter || homeRegion || "";
   const regionalRank = await fetchRegionalRank(player.id, selectedRegion);
   const activeRank = regionFilter ? regionalRank : globalEloRank;
@@ -876,8 +921,8 @@ export default async function RegionalPlayerPage({
                 State Assignment
               </CardTitle>
               <p className="text-xs text-muted-foreground">
-                This player will usually appear in one assigned state. If their activity shifts over time,
-                their assignment can move on the next recompute.
+                State assignments are grouped by inferred country. If activity shifts over time, a
+                player&apos;s assignment can move on the next recompute.
               </p>
             </CardHeader>
             <CardContent>
@@ -893,40 +938,50 @@ export default async function RegionalPlayerPage({
                     </tr>
                   </thead>
                   <tbody>
-                    {regionalRanks.map((row) => {
-                      const regionKey = row.region_key ?? "";
-                      const isActive = regionKey === regionFilter;
-                      return (
-                        <tr key={regionKey} className="border-t border-border/60">
-                          <td className="px-2 py-3">
-                            <Link
-                              href={`/regional-elo/player/${topdeckId}?region=${encodeURIComponent(regionKey)}`}
-                              className={
-                                isActive
-                                  ? "font-semibold text-foreground hover:text-primary"
-                                  : "text-foreground hover:text-primary"
-                              }
-                            >
-                              {regionKey}
-                            </Link>
-                            {regionKey === homeRegion ? (
-                              <div className="text-[11px] text-primary">Assigned state</div>
-                            ) : null}
+                    {countryAssignmentRows.flatMap((countryKey) => {
+                      const rowsForCountry = regionalRankRows.filter((row) => row.country_key === countryKey);
+                      return [
+                        <tr key={`country:${countryKey}`} className="border-t border-border/60 bg-muted/20">
+                          <td colSpan={5} className="px-2 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                            {countryKey === "UNKNOWN" ? "Unknown country" : countryKey}
                           </td>
-                          <td className="px-2 py-3 text-right font-mono text-foreground">#{row.rank}</td>
-                          <td className="px-2 py-3 text-right font-mono text-foreground">
-                            {Math.round(row.rating)}
-                          </td>
-                          <td className="px-2 py-3 text-right font-mono text-muted-foreground">
-                            {row.games_played}
-                          </td>
-                          <td className="px-2 py-3 text-right font-mono text-muted-foreground">
-                            {row.wins}-{row.losses}-{row.draws}
-                          </td>
-                        </tr>
-                      );
+                        </tr>,
+                        ...rowsForCountry.map((row) => {
+                          const regionKey = row.region_key ?? "";
+                          const isActive = regionKey === regionFilter;
+                          return (
+                            <tr key={`${countryKey}:${regionKey}`} className="border-t border-border/60">
+                              <td className="px-2 py-3">
+                                <Link
+                                  href={`/regional-elo/player/${topdeckId}?region=${encodeURIComponent(regionKey)}`}
+                                  className={
+                                    isActive
+                                      ? "font-semibold text-foreground hover:text-primary"
+                                      : "text-foreground hover:text-primary"
+                                  }
+                                >
+                                  {regionKey}
+                                </Link>
+                                {regionKey === homeRegion ? (
+                                  <div className="text-[11px] text-primary">Assigned state</div>
+                                ) : null}
+                              </td>
+                              <td className="px-2 py-3 text-right font-mono text-foreground">#{row.rank}</td>
+                              <td className="px-2 py-3 text-right font-mono text-foreground">
+                                {Math.round(row.rating)}
+                              </td>
+                              <td className="px-2 py-3 text-right font-mono text-muted-foreground">
+                                {row.games_played}
+                              </td>
+                              <td className="px-2 py-3 text-right font-mono text-muted-foreground">
+                                {row.wins}-{row.losses}-{row.draws}
+                              </td>
+                            </tr>
+                          );
+                        }),
+                      ];
                     })}
-                    {regionalRanks.length === 0 ? (
+                    {regionalRankRows.length === 0 ? (
                       <tr>
                         <td colSpan={5} className="px-2 py-6 text-center text-sm text-muted-foreground">
                           No state assignment found for this player.
