@@ -20,6 +20,11 @@ type PlayerRow = {
   topdeck_id: string;
 };
 
+type PlayerCommanderUsageRow = CommanderUsageRow & {
+  tournament_name: string | null;
+  tournament_topdeck_tid: string | null;
+};
+
 type EntryRow = {
   id: string;
   tournament_id: string;
@@ -105,11 +110,13 @@ type PlayerCommanderUsageQueryRow = {
   tournaments:
     | {
         start_date: string | null;
+        name: string | null;
         player_count: number | null;
         topdeck_tid: string | null;
       }
     | Array<{
         start_date: string | null;
+        name: string | null;
         player_count: number | null;
         topdeck_tid: string | null;
       }>
@@ -440,14 +447,27 @@ function buildTopdeckDecklistUrl(tournamentSlug: string | null | undefined, topd
   return tournamentSlug ? `https://topdeck.gg/deck/${tournamentSlug}/${topdeckId}` : null;
 }
 
+function buildTopdeckTournamentUrl(tournamentSlug: string | null | undefined) {
+  return tournamentSlug ? `https://topdeck.gg/bracket/${tournamentSlug}` : null;
+}
+
+function formatShortDate(value: string | null | undefined) {
+  if (!value) return "—";
+  return new Date(value).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 async function fetchPlayerCommanderUsageRows(
   playerId: string,
   topdeckId: string,
   playerName: string
-): Promise<CommanderUsageRow[]> {
+): Promise<PlayerCommanderUsageRow[]> {
   const { data, error } = await supabase
     .from("tournament_entries")
-    .select("wins, draws, losses, commanders(name), tournaments(start_date, player_count, topdeck_tid)")
+    .select("wins, draws, losses, commanders(name), tournaments(start_date, name, player_count, topdeck_tid)")
     .eq("player_id", playerId);
 
   if (error) {
@@ -471,6 +491,8 @@ async function fetchPlayerCommanderUsageRows(
         player_count: tournament?.player_count ?? null,
         decklist_url: null,
         topdeck_decklist_url: buildTopdeckDecklistUrl(tournament?.topdeck_tid, topdeckId),
+        tournament_name: tournament?.name ?? null,
+        tournament_topdeck_tid: tournament?.topdeck_tid ?? null,
       };
     })
     .filter((row) => row.commander_name && row.start_date);
@@ -957,14 +979,26 @@ export default async function RegionalPlayerPage({
     return a.commander.localeCompare(b.commander);
   });
   const latestDecklistByCommander = new Map<string, { date: string; url: string }>();
+  const latestTournamentByCommander = new Map<
+    string,
+    { date: string; name: string; url: string | null }
+  >();
   for (const row of await fetchPlayerCommanderUsageRows(player.id, topdeckId, player.name)) {
     const commanderName = row.commander_name;
     if (!isKnownCommanderName(commanderName) || !commanderName || !row.start_date) continue;
     const url = row.decklist_url || row.topdeck_decklist_url;
-    if (!url) continue;
-    const existing = latestDecklistByCommander.get(commanderName);
-    if (!existing || row.start_date > existing.date) {
+    const existingDecklist = latestDecklistByCommander.get(commanderName);
+    if (url && (!existingDecklist || row.start_date > existingDecklist.date)) {
       latestDecklistByCommander.set(commanderName, { date: row.start_date, url });
+    }
+    const tournamentName = row.tournament_name || "Unknown tournament";
+    const existingTournament = latestTournamentByCommander.get(commanderName);
+    if (!existingTournament || row.start_date > existingTournament.date) {
+      latestTournamentByCommander.set(commanderName, {
+        date: row.start_date,
+        name: tournamentName,
+        url: buildTopdeckTournamentUrl(row.tournament_topdeck_tid),
+      });
     }
   }
   const topdeckProfileHref = buildTopdeckProfileHref(topdeckId);
@@ -1154,6 +1188,7 @@ export default async function RegionalPlayerPage({
                   <thead className="text-left text-xs uppercase tracking-[0.2em] text-muted-foreground">
                     <tr>
                       <th className="px-2 py-3">Commander</th>
+                      <th className="px-2 py-3">Last Played</th>
                       <th className="px-2 py-3 text-right">Games</th>
                       <th className="px-2 py-3 text-right">W-L-D</th>
                     </tr>
@@ -1165,6 +1200,10 @@ export default async function RegionalPlayerPage({
                         row.commander === "Unknown Commander"
                           ? null
                           : latestDecklistByCommander.get(row.commander)?.url ?? null;
+                      const latestTournament =
+                        row.commander === "Unknown Commander"
+                          ? null
+                          : latestTournamentByCommander.get(row.commander) ?? null;
                       const commanderLabel = row.commander === "Unknown Commander" ? "Unknown" : row.commander;
                       return (
                         <tr key={row.commander} className="border-t border-border/60">
@@ -1191,6 +1230,26 @@ export default async function RegionalPlayerPage({
                               <div className="text-[11px] text-primary">Active commander</div>
                             ) : null}
                           </td>
+                          <td className="px-2 py-3 text-muted-foreground">
+                            {latestTournament ? (
+                              latestTournament.url ? (
+                                <a
+                                  href={latestTournament.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="hover:text-primary"
+                                >
+                                  {formatShortDate(latestTournament.date)} | {latestTournament.name}
+                                </a>
+                              ) : (
+                                <span>
+                                  {formatShortDate(latestTournament.date)} | {latestTournament.name}
+                                </span>
+                              )
+                            ) : (
+                              "—"
+                            )}
+                          </td>
                           <td className="px-2 py-3 text-right font-mono text-muted-foreground">
                             {row.games}
                           </td>
@@ -1202,7 +1261,7 @@ export default async function RegionalPlayerPage({
                     })}
                     {commanderRows.length === 0 ? (
                       <tr>
-                        <td colSpan={3} className="px-2 py-6 text-center text-sm text-muted-foreground">
+                        <td colSpan={4} className="px-2 py-6 text-center text-sm text-muted-foreground">
                           No commander game history found for this player.
                         </td>
                       </tr>
