@@ -1063,10 +1063,10 @@ export default async function RegionalPlayerPage({
       >()
     ).values()
   ).sort((a, b) => {
+    if (b.latestDate !== a.latestDate) return b.latestDate.localeCompare(a.latestDate);
     if (a.commander === "Unknown Commander") return 1;
     if (b.commander === "Unknown Commander") return -1;
     if (b.games !== a.games) return b.games - a.games;
-    if (b.latestDate !== a.latestDate) return b.latestDate.localeCompare(a.latestDate);
     return a.commander.localeCompare(b.commander);
   });
   const latestDecklistByCommander = new Map<string, { date: string; url: string }>();
