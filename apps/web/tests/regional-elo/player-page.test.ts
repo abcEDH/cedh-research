@@ -215,6 +215,11 @@ class MockQuery {
     return this;
   }
 
+  gte(column: string, value: unknown) {
+    this.filters.push((row) => String(row[column] ?? "") >= String(value));
+    return this;
+  }
+
   not(column: string, operator: string, value: unknown) {
     if (column.includes(".")) return this;
     if (operator === "is" && value === null) {

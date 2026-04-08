@@ -160,6 +160,11 @@ function isActiveRank(row: LeaderboardRankRow | null) {
   return Boolean(row?.last_game_date && row.last_game_date >= activePlayerCutoffDate());
 }
 
+function activeRankSort(a: Pick<LeaderboardRankRow, "rating" | "games_played">, b: Pick<LeaderboardRankRow, "rating" | "games_played">) {
+  if (b.rating !== a.rating) return b.rating - a.rating;
+  return b.games_played - a.games_played;
+}
+
 function describeSupabaseError(error: unknown) {
   if (!error) return "unknown error";
   if (error instanceof Error) return error.message;
@@ -232,6 +237,36 @@ async function fetchEntries(playerId: string): Promise<EntryRow[]> {
   return (data as EntryRow[]) ?? [];
 }
 
+async function fetchActiveDisplayedRank(
+  table: "global_elo_leaderboard" | "regional_elo_leaderboard",
+  regionType: "global" | "state",
+  regionKey: string,
+  playerId: string
+): Promise<number | null> {
+  const rows: LeaderboardRankRow[] = [];
+  for (let offset = 0; offset < 50000; offset += SUPABASE_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from(table)
+      .select("player_id, rating, games_played, last_game_date")
+      .eq("region_type", regionType)
+      .eq("region_key", regionKey)
+      .gte("last_game_date", activePlayerCutoffDate())
+      .order("rating", { ascending: false })
+      .order("games_played", { ascending: false })
+      .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
+
+    if (error) return null;
+    const page = (data as LeaderboardRankRow[]) ?? [];
+    rows.push(...page);
+    if (page.some((row) => row.player_id === playerId)) {
+      return rows.sort(activeRankSort).findIndex((row) => row.player_id === playerId) + 1;
+    }
+    if (page.length < SUPABASE_PAGE_SIZE) break;
+  }
+
+  return null;
+}
+
 async function fetchGlobalEloRank(playerId: string): Promise<LeaderboardRankRow | null> {
   const { data, error } = await supabase
     .from("global_elo_leaderboard")
@@ -250,10 +285,18 @@ async function fetchGlobalEloRank(playerId: string): Promise<LeaderboardRankRow 
       .eq("player_id", playerId)
       .maybeSingle();
 
-    return (fallbackData as LeaderboardRankRow | null) ?? null;
+    const row = (fallbackData as LeaderboardRankRow | null) ?? null;
+    const displayedRank = row
+      ? await fetchActiveDisplayedRank("regional_elo_leaderboard", "global", "ALL", playerId)
+      : null;
+    return displayedRank && row ? { ...row, rank: displayedRank } : row;
   }
 
-  return (data as LeaderboardRankRow | null) ?? null;
+  const row = (data as LeaderboardRankRow | null) ?? null;
+  const displayedRank = row
+    ? await fetchActiveDisplayedRank("global_elo_leaderboard", "global", "ALL", playerId)
+    : null;
+  return displayedRank && row ? { ...row, rank: displayedRank } : row;
 }
 
 async function fetchRegionalRank(playerId: string, regionKey: string): Promise<LeaderboardRankRow | null> {
@@ -276,7 +319,15 @@ async function fetchRegionalRank(playerId: string, regionKey: string): Promise<L
       .eq("player_id", playerId)
       .maybeSingle();
 
-    if (fallbackData) return fallbackData as LeaderboardRankRow;
+    if (fallbackData) {
+      const displayedRank = await fetchActiveDisplayedRank(
+        "global_elo_leaderboard",
+        "state",
+        regionKey,
+        playerId
+      );
+      return displayedRank ? { ...(fallbackData as LeaderboardRankRow), rank: displayedRank } : fallbackData as LeaderboardRankRow;
+    }
 
     const { data: legacyData } = await supabase
       .from("regional_elo_leaderboard")
@@ -286,10 +337,18 @@ async function fetchRegionalRank(playerId: string, regionKey: string): Promise<L
       .eq("player_id", playerId)
       .maybeSingle();
 
-    return (legacyData as LeaderboardRankRow | null) ?? null;
+    const row = (legacyData as LeaderboardRankRow | null) ?? null;
+    const displayedRank = row
+      ? await fetchActiveDisplayedRank("regional_elo_leaderboard", "state", regionKey, playerId)
+      : null;
+    return displayedRank && row ? { ...row, rank: displayedRank } : row;
   }
 
-  return (data as LeaderboardRankRow | null) ?? null;
+  const row = (data as LeaderboardRankRow | null) ?? null;
+  const displayedRank = row
+    ? await fetchActiveDisplayedRank("global_elo_leaderboard", "state", regionKey, playerId)
+    : null;
+  return displayedRank && row ? { ...row, rank: displayedRank } : row;
 }
 
 async function fetchRegionalRanks(playerId: string): Promise<LeaderboardRankRow[]> {
