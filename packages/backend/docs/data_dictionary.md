@@ -143,6 +143,9 @@ erDiagram
   - `win_rate`, `opponent_win_rate`
   - `decklist_url`, `decklist_text`, `decklist_obj`
   - `made_top_cut`, `made_top_16` (Top 4 for tournaments with 34 or fewer players)
+- **TopDeck note**:
+  - league-style standings may expose `successRate` / `opponentSuccessRate` instead of `winRate` / `opponentWinRate`
+  - ingestion should normalize those source fields into `win_rate` / `opponent_win_rate`
 
 ### `games`
 - **Purpose**: individual pod games within a round.
@@ -150,6 +153,8 @@ erDiagram
   - `tournament_id`, `round_number`, `round_name`, `is_bracket`, `table_number`
   - `status`, `is_draw`, `winner_id`
   - `game_key`: deterministic key for idempotent upserts
+- **TopDeck note**:
+  - some league-style events return no `rounds`; those events should be treated as standings-only rather than as missing pod-data failures
 
 ### `game_participants`
 - **Purpose**: each player's seat and result in a game.
