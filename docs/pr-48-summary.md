@@ -8,7 +8,8 @@ This PR shifts Global Elo from state-scoped ratings to a global all-games leader
 - Adds backend computation for assigned-state activity and per-game Elo event rows, populating `regional_elo_state_activity` and `regional_elo_game_events` alongside global ratings.
 - Adds weekly precomputation for compact per-player commander profiles in `player_commander_profiles`, with UI fallbacks for deployments where the migration has not been applied yet.
 - Updates Global Elo UI to query precomputed `regional_elo_regions` and `regional_elo_leaderboard` rows instead of scanning all tournament entries and deriving state/region views during page render.
-- Uses global Elo for ranking while using assigned-state activity to determine each player's primary region and region-filtered leaderboard placement.
+- Uses global Elo for ranking and displayed leaderboard game counts while using assigned-state activity to determine each player's primary region and region-filtered leaderboard placement.
+- Includes tournaments without state metadata in the global Elo source data and player profile totals, with those games grouped as `UNKNOWN country` / `UNKNOWN state` in state assignment.
 - Adds country-level Global Elo rows and updates the filter flow to choose Global or Country, then only show states belonging to the selected country.
 - Expands player drilldown pages with global Elo rank, assigned-state rank, TopDeck rank, active commander, played-commanders summary, region-filtered game summary, paginated opponent records, and paginated game logs.
 - Updates player drilldowns to read precomputed primary-region and region-filtered rank data instead of loading the full global leaderboard to compute one player's state rank.
@@ -19,6 +20,7 @@ This PR shifts Global Elo from state-scoped ratings to a global all-games leader
 - Updates Tournament Prep to use precomputed commander profiles for not-yet-started events, falling back to raw commander history when profiles are unavailable.
 - Removes the old Midseason Invitational page and related home/test navigation references.
 - Improves TopDeck tournament normalization by stripping raw decklist payloads from standings after extracting commander names and TopDeck deck URLs.
+- Improves TopDeck draw normalization by recognizing `_DRAW_` winner IDs from older events.
 - Adds backfill inputs/manifests for missing TopDeck historical tournament IDs and batches `--tids-file` ingestion requests with a configurable `--tids-batch-size`.
 - Updates the weekly backend workflow so the scheduled recompute step explicitly covers global Elo, assigned-state activity, and per-game Elo event data.
 - Removes the forced `--min-players 32` floor from the weekly `ingest.py --days 7` job.

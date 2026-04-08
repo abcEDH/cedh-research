@@ -1,47 +1,28 @@
--- Add country-level Regional Elo slices derived from primary state assignments.
+-- Include tournaments without state metadata in global Elo while keeping region filters assignment-based.
 
-ALTER TABLE regional_elo_state_activity
-  ADD COLUMN IF NOT EXISTS country_key text;
-
-CREATE INDEX IF NOT EXISTS regional_elo_state_activity_country_idx
-  ON regional_elo_state_activity (country_key, region_key, is_primary_state, activity_score DESC);
-
-CREATE OR REPLACE VIEW regional_elo_primary_state_assignments AS
+CREATE OR REPLACE VIEW regional_elo_game_results AS
 SELECT
-  a.region_type,
-  a.region_key,
-  a.country_key,
-  a.player_id,
-  a.games_30d,
-  a.games_90d,
-  a.games_365d,
-  a.games_lifetime,
-  a.wins,
-  a.draws,
-  a.losses,
-  a.last_game_date,
-  a.activity_score,
-  a.updated_at
-FROM regional_elo_state_activity a
-WHERE a.region_type = 'state'
-  AND a.is_primary_state = true;
-
-CREATE OR REPLACE VIEW regional_elo_player_stats AS
-SELECT
-  region_type,
-  region_key,
-  country_key,
-  player_id,
-  games_lifetime AS games_played,
-  wins,
-  draws,
-  losses,
-  last_game_date,
-  activity_score,
-  games_30d,
-  games_90d,
-  games_365d
-FROM regional_elo_primary_state_assignments;
+  g.id AS game_id,
+  g.tournament_id,
+  t.start_date,
+  t.state,
+  t.country,
+  t.city,
+  t.name AS tournament_name,
+  gp.entry_id,
+  te.player_id,
+  p.topdeck_id,
+  p.name AS player_name,
+  gp.result,
+  g.is_draw,
+  g.round_number,
+  g.round_name,
+  g.table_number
+FROM games g
+JOIN game_participants gp ON gp.game_id = g.id
+JOIN tournament_entries te ON gp.entry_id = te.id
+JOIN players p ON te.player_id = p.id
+JOIN tournaments t ON g.tournament_id = t.id;
 
 CREATE OR REPLACE VIEW regional_elo_leaderboard AS
 WITH global_rows AS (
@@ -156,52 +137,8 @@ SELECT * FROM country_rows
 UNION ALL
 SELECT * FROM state_rows;
 
-CREATE OR REPLACE VIEW regional_elo_regions AS
-WITH global_region AS (
-  SELECT
-    'global'::text AS region_type,
-    'ALL'::text AS region_key,
-    NULL::text AS country_key,
-    COUNT(*)::bigint AS player_count,
-    MAX(updated_at) AS updated_at
-  FROM regional_elo_ratings
-  WHERE region_type = 'global'
-    AND region_key = 'ALL'
-),
-country_regions AS (
-  SELECT
-    'country'::text AS region_type,
-    country_key AS region_key,
-    country_key,
-    COUNT(*)::bigint AS player_count,
-    MAX(updated_at) AS updated_at
-  FROM regional_elo_primary_state_assignments
-  WHERE country_key IS NOT NULL
-    AND country_key <> ''
-  GROUP BY country_key
-),
-state_regions AS (
-  SELECT
-    region_type,
-    region_key,
-    country_key,
-    COUNT(*)::bigint AS player_count,
-    MAX(updated_at) AS updated_at
-  FROM regional_elo_primary_state_assignments
-  GROUP BY region_type, region_key, country_key
-)
-SELECT * FROM global_region
-UNION ALL
-SELECT * FROM country_regions
-UNION ALL
-SELECT * FROM state_regions;
-
-ALTER VIEW regional_elo_primary_state_assignments SET (security_invoker = true);
-ALTER VIEW regional_elo_player_stats SET (security_invoker = true);
+ALTER VIEW regional_elo_game_results SET (security_invoker = true);
 ALTER VIEW regional_elo_leaderboard SET (security_invoker = true);
-ALTER VIEW regional_elo_regions SET (security_invoker = true);
 
-GRANT SELECT ON regional_elo_primary_state_assignments TO anon, authenticated;
-GRANT SELECT ON regional_elo_player_stats TO anon, authenticated;
+GRANT SELECT ON regional_elo_game_results TO anon, authenticated;
 GRANT SELECT ON regional_elo_leaderboard TO anon, authenticated;
-GRANT SELECT ON regional_elo_regions TO anon, authenticated;
