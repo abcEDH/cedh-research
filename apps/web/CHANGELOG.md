@@ -1,3 +1,15 @@
+# [1.6.0](https://github.com/abcEDH/cedh-research/compare/v1.5.1...v1.6.0) (2026-04-08)
+
+
+### Bug Fixes
+
+* harden regional elo consistency check ([#58](https://github.com/abcEDH/cedh-research/issues/58)) ([74a9938](https://github.com/abcEDH/cedh-research/commit/74a993821c96c6e05f7a4e213f4fab9fe98c1f5b))
+
+
+### Features
+
+* checkpoint TopDeck compliance and attribution ([#53](https://github.com/abcEDH/cedh-research/issues/53)) ([8a4df51](https://github.com/abcEDH/cedh-research/commit/8a4df51385e78414aec65f0f6c08265c2df05652))
+
 ## [1.5.1](https://github.com/abcEDH/cedh-research/compare/v1.5.0...v1.5.1) (2026-04-07)
 
 
