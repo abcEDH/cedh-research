@@ -337,6 +337,75 @@ def fetch_all(client: SupabaseClient, table: str, params: QueryParams, limit: in
     return rows
 
 
+def in_filter(values: Sequence[str]) -> str:
+    return f"in.({','.join(values)})"
+
+
+def fetch_null_state_game_rows(client: SupabaseClient) -> List[Dict[str, Any]]:
+    """Backfill no-state games until the deployed source view includes them."""
+    games = fetch_all(
+        client,
+        "games",
+        [
+            (
+                "select",
+                "id,tournament_id,is_draw,table_number,tournaments!inner(start_date,state,country)",
+            ),
+            ("tournaments.state", "is.null"),
+            ("order", "id.asc"),
+        ],
+        limit=1000,
+    )
+    if not games:
+        return []
+
+    games_by_id = {row["id"]: row for row in games}
+    participants: List[Dict[str, Any]] = []
+    game_ids = list(games_by_id.keys())
+    for i in range(0, len(game_ids), 250):
+        game_id_chunk = game_ids[i : i + 250]
+        participants.extend(
+            fetch_all(
+                client,
+                "game_participants",
+                [
+                    ("select", "game_id,entry_id,result,tournament_entries(player_id)"),
+                    ("game_id", in_filter(game_id_chunk)),
+                    ("order", "game_id.asc"),
+                ],
+                limit=1000,
+            )
+        )
+
+    rows: List[Dict[str, Any]] = []
+    for participant in participants:
+        game = games_by_id.get(participant.get("game_id"))
+        if not game:
+            continue
+        tournament = game.get("tournaments") or {}
+        entry = participant.get("tournament_entries") or {}
+        player_id = entry.get("player_id")
+        if not player_id:
+            continue
+        rows.append(
+            {
+                "game_id": participant["game_id"],
+                "tournament_id": game["tournament_id"],
+                "entry_id": participant["entry_id"],
+                "player_id": player_id,
+                "start_date": tournament.get("start_date"),
+                "state": tournament.get("state"),
+                "country": tournament.get("country"),
+                "result": participant.get("result"),
+                "is_draw": game.get("is_draw"),
+                "table_number": game.get("table_number"),
+            }
+        )
+
+    print(f"Fetched {len(rows)} no-state game-result rows from raw tables", flush=True)
+    return rows
+
+
 def month_starts(start_year: int, end_year: int) -> Iterable[datetime]:
     for year in range(start_year, end_year + 1):
         for month in range(1, 13):
@@ -375,6 +444,23 @@ def fetch_elo_game_rows(client: SupabaseClient) -> List[Dict[str, Any]]:
         rows.extend(page)
         print(f"Fetched {len(page)} game-result rows for {start:%Y-%m}", flush=True)
 
+    raw_null_state_rows = fetch_null_state_game_rows(client)
+    if raw_null_state_rows:
+        seen_keys = {(row["game_id"], row["entry_id"]) for row in rows}
+        rows.extend(
+            row
+            for row in raw_null_state_rows
+            if (row["game_id"], row["entry_id"]) not in seen_keys
+        )
+
+    rows.sort(
+        key=lambda row: (
+            row.get("start_date") or "",
+            row.get("game_id") or "",
+            row.get("table_number") or 0,
+            row.get("entry_id") or "",
+        )
+    )
     return rows
 
 
@@ -663,7 +749,7 @@ def fetch_commander_usage_rows(client: SupabaseClient) -> Dict[str, List[Command
         [
             (
                 "select",
-                "player_id,topdeck_id,player_name,commander_name,start_date,decklist_url",
+                "player_id,topdeck_id,player_name,commander_name,start_date",
             ),
             ("topdeck_id", "not.is.null"),
             ("commander_name", "not.is.null"),
@@ -688,12 +774,21 @@ def fetch_commander_usage_rows(client: SupabaseClient) -> Dict[str, List[Command
                 player_name=row.get("player_name"),
                 commander_name=commander_name,
                 start_date=str(start_date),
-                decklist_url=row.get("decklist_url"),
             )
         )
 
     print(f"Fetched commander history for {len(by_topdeck_id)} players", flush=True)
     return by_topdeck_id
+
+
+def delete_optional_rows(client: SupabaseClient, table: str, filters: Dict[str, Any]) -> None:
+    try:
+        client.delete(table, filters)
+    except Exception as exc:
+        print(
+            f"Skipping delete for {table}; upsert will replace matching rows. Error: {exc}",
+            flush=True,
+        )
 
 
 def selected_commander_rows(rows: List[CommanderUsage], reference: date) -> List[CommanderUsage]:
@@ -808,11 +903,42 @@ def upsert_rows(client: SupabaseClient, table: str, rows: List[Dict[str, Any]], 
         print(f"Upserted {len(batch)} rows into {table}")
 
 
+def dedupe_rows(rows: List[Dict[str, Any]], keys: Sequence[str]) -> List[Dict[str, Any]]:
+    deduped: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
+    for row in rows:
+        deduped[tuple(row.get(key) for key in keys)] = row
+    return list(deduped.values())
+
+
+def upsert_state_activity_rows(client: SupabaseClient, rows: List[Dict[str, Any]]) -> None:
+    try:
+        upsert_rows(
+            client,
+            "regional_elo_state_activity",
+            rows,
+            on_conflict="region_type,region_key,player_id",
+        )
+    except Exception as exc:
+        print(
+            "Falling back to regional_elo_state_activity without country_key. "
+            f"Apply the country-region migration to store country_key. Error: {exc}",
+            flush=True,
+        )
+        fallback_rows = [{key: value for key, value in row.items() if key != "country_key"} for row in rows]
+        upsert_rows(
+            client,
+            "regional_elo_state_activity",
+            fallback_rows,
+            on_conflict="region_type,region_key,player_id",
+        )
+
+
 def main() -> None:
     supabase_url, supabase_key = load_credentials()
     client = SupabaseClient(supabase_url, supabase_key)
 
     global_stats, state_activity, event_rows = compute_global_elo()
+    event_rows = dedupe_rows(event_rows, ["region_type", "region_key", "game_id", "player_id"])
     rating_rows = build_upsert_rows(GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY, global_stats)
     state_activity_rows = build_state_activity_rows(state_activity)
     commander_profile_rows = build_commander_profile_rows(client)
@@ -823,7 +949,7 @@ def main() -> None:
     print("Deleting existing global Elo, state activity, and event rows")
     client.delete("regional_elo_ratings", {"region_type": f"eq.{GLOBAL_REGION_TYPE}"})
     client.delete("regional_elo_state_activity", {"region_type": f"eq.{STATE_REGION_TYPE}"})
-    client.delete("regional_elo_game_events", {"region_type": f"eq.{GLOBAL_REGION_TYPE}"})
+    delete_optional_rows(client, "regional_elo_game_events", {"region_type": f"eq.{GLOBAL_REGION_TYPE}"})
 
     upsert_rows(
         client,
@@ -831,12 +957,7 @@ def main() -> None:
         rating_rows,
         on_conflict="region_type,region_key,player_id",
     )
-    upsert_rows(
-        client,
-        "regional_elo_state_activity",
-        state_activity_rows,
-        on_conflict="region_type,region_key,player_id",
-    )
+    upsert_state_activity_rows(client, state_activity_rows)
     upsert_rows(
         client,
         "regional_elo_game_events",
