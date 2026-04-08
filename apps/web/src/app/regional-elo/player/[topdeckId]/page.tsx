@@ -1027,12 +1027,30 @@ export default async function RegionalPlayerPage({
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-1">
-                <div className="text-2xl font-semibold text-foreground">
-                  {globalSnapshot?.rank ? `#${globalSnapshot.rank}` : "—"}
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  {globalSnapshot ? `${globalSnapshot.points} points` : "No points snapshot"}
-                </div>
+                {topdeckProfileHref ? (
+                  <a
+                    href={topdeckProfileHref}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block hover:text-primary"
+                  >
+                    <div className="text-2xl font-semibold text-foreground">
+                      {globalSnapshot?.rank ? `#${globalSnapshot.rank}` : "—"}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {globalSnapshot ? `${globalSnapshot.points} points` : "No points snapshot"}
+                    </div>
+                  </a>
+                ) : (
+                  <>
+                    <div className="text-2xl font-semibold text-foreground">
+                      {globalSnapshot?.rank ? `#${globalSnapshot.rank}` : "—"}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {globalSnapshot ? `${globalSnapshot.points} points` : "No points snapshot"}
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
             <Card className="knd-panel">
