@@ -14,6 +14,7 @@ This PR shifts Global Elo from state-scoped ratings to a global all-games leader
 - Uses global Elo for ranking and displayed leaderboard game counts while using assigned-state activity to determine each player's primary region and region-filtered leaderboard placement.
 - Includes tournaments without state metadata in the global Elo source data and player profile totals, with those games grouped as `UNKNOWN` in state assignment.
 - Adds country-level Global Elo rows and updates the filter flow so the View dropdown lists `GLOBAL` plus countries, then only shows states belonging to the selected country.
+- Renames the leaderboard filter label from `View` to `Country` while keeping the same global/country/state selection flow.
 - Expands player drilldown pages with merged TopDeck rank/points, TopDeck profile record totals, global/state ranks, stored Elo, home region, active commander, played-commanders summary, state assignment, and paginated opponent records.
 - Updates player drilldowns to show inactive global/state ranks as `--`, link active global rank to the global leaderboard, and link active home-region/state-rank cards to the matching state leaderboard.
 - Updates player drilldowns to read precomputed active ranks, home region, and state-assignment summaries when available instead of loading/scanning leaderboard rows during page render.
@@ -35,6 +36,7 @@ This PR shifts Global Elo from state-scoped ratings to a global all-games leader
 - Removes the forced `--min-players 32` floor from the weekly `ingest.py --days 7` job.
 - Updates CI/backend validation scripts to check the global `ALL` Elo aggregate instead of state rows and to validate the new Global Elo tables/views.
 - Fixes follow-up CI issues on the branch by importing `Any` for backend type annotations, declaring the `server-only` frontend dependency explicitly, and hardening shared test setup for server-only imports.
+- Fixes follow-up frontend build regressions in `regional-elo/page.tsx` by normalizing `page` search params to a string before parsing and widening the helper input type to match Next.js page `searchParams`.
 - Adds documentation for the Tournament Prep workflow, data sources, forecast algorithm, backtest rationale, and cache behavior.
 
 ## Testing / Validation
@@ -44,5 +46,5 @@ This PR shifts Global Elo from state-scoped ratings to a global all-games leader
 - CI validation now samples global `ALL` Elo rows and compares them to canonical player stats.
 - Backend workflow validation now checks `global_elo_regions`, `global_elo_game_event_log`, `global_elo_state_activity`, `global_elo_game_events`, `global_elo_active_leaderboard`, and `global_elo_player_profile_summaries`.
 - Added a deterministic TopDeck retry test by pinning `Date.now()` in Vitest so the HTTP-date `Retry-After` assertion does not decay over time.
-- Verified after the follow-up fixes with `npm --workspace apps/web run test:ci` and `python3 -m py_compile packages/backend/src/ingest.py packages/backend/src/regional_elo.py packages/backend/src/backfill_moxfield_commanders.py`.
-- A clean PR worktree still needs GitHub Actions secrets for `next build` and backend smoke jobs that touch Supabase; local failures without those secrets are environmental rather than branch regressions.
+- Verified after the follow-up fixes with `npm --workspace apps/web run test:ci`, clean-worktree `next build` through compile and TypeScript, and `python3 -m py_compile packages/backend/src/ingest.py packages/backend/src/regional_elo.py packages/backend/src/backfill_moxfield_commanders.py`.
+- A clean PR worktree still needs GitHub Actions secrets for final page-data collection in `next build` and for backend smoke jobs that touch Supabase; local failures without those secrets are environmental rather than branch regressions.
