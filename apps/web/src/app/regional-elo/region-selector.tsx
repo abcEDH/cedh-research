@@ -51,7 +51,7 @@ export function RegionSelector({
           setRegion("");
         }}
       >
-        <option value="global">Global</option>
+        <option value="global">GLOBAL</option>
         {supportsCountryRegions
           ? countryRegions.map((region) => (
               <option key={region.region_key} value={region.region_key}>
