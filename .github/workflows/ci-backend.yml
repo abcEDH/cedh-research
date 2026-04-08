@@ -17,6 +17,11 @@ env:
   SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
   SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
 
+jobs:
+<<<<<<< HEAD
+=======
+jobs:
+>>>>>>> 72cad51 (chore: drop data dictionary guard)
   ingest-smoke:
     name: Backend ingest and leaderboard smoke
     runs-on: ubuntu-latest
