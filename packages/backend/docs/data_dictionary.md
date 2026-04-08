@@ -1,6 +1,6 @@
 # Data Dictionary
 
-Last reviewed: 2026-04-06
+Last reviewed: 2026-04-08
 Update policy: This file must be updated whenever migrations in `packages/backend/supabase/migrations` change.
 
 This describes the primary tables and analytical views used in the cEDH Analytics database.
@@ -221,6 +221,13 @@ erDiagram
   - `fetch_started`, `fetch_failed`
   - `process_started`, `process_succeeded`, `process_failed`
   - `tournament_skipped`
+
+## Migration 20260408000000_security_hardening_part2
+- **Purpose**: lock down the remaining public-facing regional Elo and ingestion tables while keeping the public leaderboard view accessible through the service role.
+- **Key actions**:
+  - Enables Row-Level Security and service-role-only policies on `regional_elo_game_events`, `ingestion_backfill_batches`, `ingestion_backfill_runs`, and `ingestion_backfill_events`.
+  - Provides `public.is_service_role()` as the shared predicate for all restricted objects.
+  - Converts the regional Elo leaderboard/region/canonical views into `SECURITY INVOKER` forms and revokes `anon/authenticated` grants, while keeping `regional_elo_state_activity` readable via a dedicated policy.
 
 ## Analytical Views
 
