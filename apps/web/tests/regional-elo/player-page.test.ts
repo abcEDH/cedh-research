@@ -271,6 +271,11 @@ vi.mock("@/lib/topdeck", () => ({
       points: 1255,
     },
   ]),
+  fetchTopDeckProfileStats: vi.fn(async (topdeckId: string) =>
+    topdeckId === "CCIQroaCHHQi7EELyNXlHiHQiQy1"
+      ? { tournaments: 1, gamesPlayed: 3, wins: 1, draws: 1, losses: 1 }
+      : null
+  ),
 }));
 
 vi.mock("@/lib/supabase", () => ({
@@ -294,7 +299,7 @@ describe("RegionalPlayerPage", () => {
     expect(html).toContain("Home Region");
     expect(html).toContain("Assigned state");
     expect(html).toContain(
-      "Elo is global. Home region is assigned separately."
+      "TopDeck rank, points, games played, and record come from TopDeck."
     );
     expect(html).toMatch(/Games Played[\s\S]*?>3</);
     expect(html).toMatch(/Record[\s\S]*?>1-1-1</);

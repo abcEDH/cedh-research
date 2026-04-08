@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buildProfiles, selectCommanderForecastRows, type CommanderUsageRow } from "@/lib/meta-prep";
 import { supabase } from "@/lib/supabase";
-import { fetchChampionshipLeaderboard } from "@/lib/topdeck";
+import { fetchChampionshipLeaderboard, fetchTopDeckProfileStats } from "@/lib/topdeck";
 import { buildTopdeckProfileHref } from "@/lib/topdeck-profile";
 import { inferCountryForRegion } from "@/lib/region-countries";
 import { OpponentRecordsTable } from "./opponent-records-table";
@@ -80,6 +80,11 @@ type StateAssignmentRow = {
 type GlobalSnapshotRow = {
   rank: number;
   points: number;
+  tournaments: number | null;
+  gamesPlayed: number | null;
+  wins: number | null;
+  draws: number | null;
+  losses: number | null;
 };
 
 type PlayerCommanderUsageQueryRow = {
@@ -273,12 +278,20 @@ async function fetchRegionalRanks(playerId: string): Promise<LeaderboardRankRow[
 
 async function fetchGlobalSnapshot(topdeckId: string): Promise<GlobalSnapshotRow | null> {
   try {
-    const leaderboard = await fetchChampionshipLeaderboard();
+    const [leaderboard, profileStats] = await Promise.all([
+      fetchChampionshipLeaderboard(),
+      fetchTopDeckProfileStats(topdeckId).catch(() => null),
+    ]);
     const entry = leaderboard.find((row) => row.uid === topdeckId);
-    if (!entry) return null;
+    if (!entry && !profileStats) return null;
     return {
-      rank: entry.rank,
-      points: entry.points,
+      rank: entry?.rank ?? 0,
+      points: entry?.points ?? 0,
+      tournaments: profileStats?.tournaments ?? null,
+      gamesPlayed: profileStats?.gamesPlayed ?? null,
+      wins: profileStats?.wins ?? null,
+      draws: profileStats?.draws ?? null,
+      losses: profileStats?.losses ?? null,
     };
   } catch {
     return null;
@@ -671,10 +684,10 @@ export default async function RegionalPlayerPage({
   }
 
   const { totalGames, totalWins, totalDraws, totalLosses, seatRows, opponentRecords } = summarizePlayerLogs(playerLogs);
-  const canonicalGames = globalEloRank?.games_played ?? totalGames;
-  const canonicalWins = globalEloRank?.wins ?? totalWins;
-  const canonicalDraws = globalEloRank?.draws ?? totalDraws;
-  const canonicalLosses = globalEloRank?.losses ?? totalLosses;
+  const canonicalGames = globalSnapshot?.gamesPlayed ?? globalEloRank?.games_played ?? totalGames;
+  const canonicalWins = globalSnapshot?.wins ?? globalEloRank?.wins ?? totalWins;
+  const canonicalDraws = globalSnapshot?.draws ?? globalEloRank?.draws ?? totalDraws;
+  const canonicalLosses = globalSnapshot?.losses ?? globalEloRank?.losses ?? totalLosses;
   const assignmentRowsByRegion = new Map<string, StateAssignmentRow>();
   const historicalRegionKeys = new Set<string>();
   for (const row of regionalRankRows) {
@@ -731,7 +744,7 @@ export default async function RegionalPlayerPage({
   const homeRegion = globalEloRank?.primary_region_key ?? regionalRanks[0]?.region_key ?? derivedHomeRegion;
   const selectedRegion = regionFilter || homeRegion || "";
   const regionalRank = await fetchRegionalRank(player.id, selectedRegion);
-  const activeRank = regionFilter ? regionalRank : globalEloRank;
+  const activeRank = regionalRank;
   const stateAssignmentRows = Array.from(assignmentRowsByRegion.values()).sort((a, b) => {
     if (a.region_key === homeRegion) return -1;
     if (b.region_key === homeRegion) return 1;
@@ -801,7 +814,7 @@ export default async function RegionalPlayerPage({
             <Link href={backHref} className="text-sm text-muted-foreground hover:text-foreground">
               ← Back to region-filtered leaderboard
             </Link>
-            <p className="knd-chip">Global Elo Player Drilldown</p>
+            <p className="knd-chip">TopDeck Player Profile</p>
             <div className="flex flex-wrap items-end justify-between gap-4">
               <div>
                 <h1 className="text-3xl font-semibold text-foreground md:text-4xl">
@@ -839,7 +852,7 @@ export default async function RegionalPlayerPage({
             <Card className="knd-panel">
               <CardHeader>
                 <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Current Rank
+                  State Rank
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-2xl font-semibold text-foreground">
@@ -849,36 +862,21 @@ export default async function RegionalPlayerPage({
             <Card className="knd-panel">
               <CardHeader>
                 <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Global Rank
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold text-foreground">
-                {globalEloRank ? `#${globalEloRank.rank}` : "—"}
-              </CardContent>
-            </Card>
-            <Card className="knd-panel">
-              <CardHeader>
-                <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
                   TopDeck Rank
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-1">
-                <div className="text-2xl font-semibold text-foreground">
-                  {globalSnapshot ? `#${globalSnapshot.rank}` : "—"}
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  {globalSnapshot ? `${globalSnapshot.points} points` : "No global snapshot"}
-                </div>
+              <CardContent className="text-2xl font-semibold text-foreground">
+                {globalSnapshot?.rank ? `#${globalSnapshot.rank}` : "—"}
               </CardContent>
             </Card>
             <Card className="knd-panel">
               <CardHeader>
                 <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Elo
+                  TopDeck Points
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-2xl font-semibold text-foreground">
-                {globalEloRank ? Math.round(globalEloRank.rating) : "—"}
+                {globalSnapshot ? globalSnapshot.points : "—"}
               </CardContent>
             </Card>
             <Card className="knd-panel">
@@ -914,9 +912,9 @@ export default async function RegionalPlayerPage({
           </div>
 
           <p className="text-sm text-muted-foreground">
-            Elo is global. Home region is assigned separately. The summary cards and game log below
-            include all stored games across regions. The active filter only changes the highlighted
-            state rank.
+            TopDeck rank, points, games played, and record come from TopDeck. Home region is
+            assigned separately from stored game history, and the active filter only changes the
+            highlighted state rank.
           </p>
 
           <Card className="knd-panel">
