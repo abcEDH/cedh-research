@@ -21,6 +21,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
 import requests
 from dateutil import parser as date_parser
@@ -255,6 +256,26 @@ class SupabaseClient:
                     logger.error(f"Delete failed after {max_retries} retries: {e}")
                     raise
 
+    def update(self, table: str, data: dict, filters: dict, max_retries: int = 3) -> list:
+        """Patch rows in a table and return updated representations."""
+        endpoint = f"{self.url}/rest/v1/{table}"
+
+        for attempt in range(max_retries):
+            try:
+                response = requests.patch(endpoint, json=data, headers=self.headers, params=filters, timeout=30)
+                if response.status_code >= 400:
+                    logger.error(f"Supabase update error: {response.text}")
+                    response.raise_for_status()
+                return response.json()
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout, requests.exceptions.ReadTimeout) as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    logger.warning(f"Update error, retrying in {wait_time}s... ({attempt + 1}/{max_retries})")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"Update failed after {max_retries} retries: {e}")
+                    raise
+
 
 class DirectPostgresClient:
     """Direct PostgreSQL client using psycopg2 for high-performance batch operations.
@@ -380,13 +401,76 @@ class DirectPostgresClient:
             raise
 
 
-def extract_commanders(decklist: str) -> list[str]:
-    """Extract commander names from a decklist string."""
-    if not decklist:
+def extract_moxfield_deck_id(decklist: str) -> str | None:
+    """Extract a Moxfield deck id from a URL or imported decklist text."""
+    if not decklist or "moxfield.com" not in decklist.lower():
+        return None
+
+    match = re.search(r"moxfield\.com/decks/([A-Za-z0-9_-]+)", decklist, flags=re.IGNORECASE)
+    if match:
+        return match.group(1)
+
+    try:
+        parsed = urlparse(decklist.strip())
+    except ValueError:
+        return None
+
+    if not parsed.netloc.lower().endswith("moxfield.com"):
+        return None
+
+    parts = [part for part in parsed.path.split("/") if part]
+    if len(parts) >= 2 and parts[0] == "decks":
+        return parts[1]
+    return None
+
+
+def extract_moxfield_commanders(payload: dict) -> list[str]:
+    """Extract commander names from a Moxfield deck API response."""
+    commanders = payload.get("commanders")
+    if not commanders:
         return []
 
-    # Handle Moxfield URLs - can't extract without API call
-    if "moxfield.com" in decklist:
+    values = commanders.values() if isinstance(commanders, dict) else commanders
+    names = []
+    for item in values:
+        if not isinstance(item, dict):
+            continue
+
+        card = item.get("card") if isinstance(item.get("card"), dict) else item
+        name = card.get("name") if isinstance(card, dict) else None
+        if isinstance(name, str) and name.strip():
+            names.append(name.strip())
+
+    return names
+
+
+def fetch_moxfield_commanders(decklist: str, session: requests.Session | None = None) -> list[str]:
+    """Fetch commander names for a public Moxfield deck URL."""
+    deck_id = extract_moxfield_deck_id(decklist)
+    if not deck_id:
+        return []
+
+    http = session or requests.Session()
+    response = http.get(
+        f"https://api.moxfield.com/v2/decks/all/{deck_id}",
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "cedh-research/1.0",
+        },
+        timeout=30,
+    )
+    response.raise_for_status()
+    return extract_moxfield_commanders(response.json())
+
+
+def extract_commanders(
+    decklist: str,
+    *,
+    resolve_moxfield: bool = False,
+    moxfield_session: requests.Session | None = None,
+) -> list[str]:
+    """Extract commander names from a decklist string."""
+    if not decklist:
         return []
 
     # Parse TopDeck format: ~~Commanders~~\n1 Commander Name\n...
@@ -394,7 +478,7 @@ def extract_commanders(decklist: str) -> list[str]:
         try:
             cmd_section = decklist.split("~~Commanders~~")[1].split("~~")[0]
             commanders = []
-            for line in cmd_section.split("\\n"):
+            for line in cmd_section.replace("\\n", "\n").splitlines():
                 line = line.strip()
                 if line and line[0].isdigit():
                     # Remove leading "1 " or similar
@@ -404,6 +488,13 @@ def extract_commanders(decklist: str) -> list[str]:
             return commanders
         except Exception as e:
             logger.warning(f"Failed to parse decklist: {e}")
+            return []
+
+    if resolve_moxfield and extract_moxfield_deck_id(decklist):
+        try:
+            return fetch_moxfield_commanders(decklist, session=moxfield_session)
+        except requests.RequestException as e:
+            logger.warning(f"Failed to fetch Moxfield commanders: {e}")
             return []
 
     return []
