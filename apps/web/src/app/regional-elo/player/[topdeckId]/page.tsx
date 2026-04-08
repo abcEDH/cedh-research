@@ -85,6 +85,17 @@ type StateAssignmentRow = {
   losses: number;
 };
 
+type PlayerProfileSummaryRow = {
+  games_played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  last_game_date: string | null;
+  home_country_key: string | null;
+  home_region_key: string | null;
+  state_assignments: StateAssignmentRow[] | null;
+};
+
 type GlobalSnapshotRow = {
   rank: number;
   points: number;
@@ -275,6 +286,24 @@ async function fetchActiveDisplayedRank(
   return null;
 }
 
+async function fetchActiveRankRow(
+  table: "global_elo_active_leaderboard" | "regional_elo_active_leaderboard",
+  regionType: "global" | "state",
+  regionKey: string,
+  playerId: string
+): Promise<LeaderboardRankRow | null> {
+  const { data, error } = await supabase
+    .from(table)
+    .select("country_key, primary_country_key, primary_region_key, region_key, rank, rating, games_played, wins, draws, losses, last_game_date")
+    .eq("region_type", regionType)
+    .eq("region_key", regionKey)
+    .eq("player_id", playerId)
+    .maybeSingle();
+
+  if (error) return null;
+  return (data as LeaderboardRankRow | null) ?? null;
+}
+
 async function fetchGlobalEloRatingRow(
   table: "global_elo_ratings" | "regional_elo_ratings",
   playerId: string
@@ -293,6 +322,11 @@ async function fetchGlobalEloRatingRow(
 }
 
 async function fetchGlobalEloRank(playerId: string): Promise<LeaderboardRankRow | null> {
+  const activeRow =
+    (await fetchActiveRankRow("global_elo_active_leaderboard", "global", "ALL", playerId)) ??
+    (await fetchActiveRankRow("regional_elo_active_leaderboard", "global", "ALL", playerId));
+  if (activeRow) return activeRow;
+
   const { data, error } = await supabase
     .from("global_elo_leaderboard")
     .select("primary_country_key, primary_region_key, rank, rating, games_played, wins, draws, losses, last_game_date")
@@ -329,6 +363,10 @@ async function fetchGlobalEloRank(playerId: string): Promise<LeaderboardRankRow 
 
 async function fetchRegionalRank(playerId: string, regionKey: string): Promise<LeaderboardRankRow | null> {
   if (!regionKey) return null;
+  const activeRow =
+    (await fetchActiveRankRow("global_elo_active_leaderboard", "state", regionKey, playerId)) ??
+    (await fetchActiveRankRow("regional_elo_active_leaderboard", "state", regionKey, playerId));
+  if (activeRow) return activeRow;
 
   const { data, error } = await supabase
     .from("global_elo_leaderboard")
@@ -421,6 +459,46 @@ async function fetchRegionalRanks(playerId: string): Promise<LeaderboardRankRow[
   });
 }
 
+function parseStateAssignments(value: unknown): StateAssignmentRow[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((row) => {
+      if (!row || typeof row !== "object") return null;
+      const record = row as Partial<StateAssignmentRow>;
+      const regionKey = String(record.region_key ?? "").trim();
+      if (!regionKey) return null;
+      return {
+        country_key: String(record.country_key ?? inferCountryForRegion(regionKey) ?? "UNKNOWN"),
+        region_key: regionKey,
+        games_played: Number(record.games_played ?? 0),
+        wins: Number(record.wins ?? 0),
+        draws: Number(record.draws ?? 0),
+        losses: Number(record.losses ?? 0),
+      };
+    })
+    .filter((row): row is StateAssignmentRow => Boolean(row));
+}
+
+async function fetchPlayerProfileSummary(playerId: string): Promise<PlayerProfileSummaryRow | null> {
+  for (const table of ["global_elo_player_profile_summaries", "regional_elo_player_profile_summaries"]) {
+    const { data, error } = await supabase
+      .from(table)
+      .select("games_played, wins, draws, losses, last_game_date, home_country_key, home_region_key, state_assignments")
+      .eq("player_id", playerId)
+      .maybeSingle();
+
+    if (error) continue;
+    const row = data as Omit<PlayerProfileSummaryRow, "state_assignments"> & { state_assignments: unknown } | null;
+    if (!row) continue;
+    return {
+      ...row,
+      state_assignments: parseStateAssignments(row.state_assignments),
+    };
+  }
+
+  return null;
+}
+
 async function fetchGlobalSnapshot(topdeckId: string): Promise<GlobalSnapshotRow | null> {
   try {
     const [leaderboard, profileStats] = await Promise.all([
@@ -498,7 +576,12 @@ async function fetchPlayerCommanderUsageRows(
     .filter((row) => row.commander_name && row.start_date);
 }
 
-async function fetchActiveCommander(playerId: string, topdeckId: string, playerName: string): Promise<string | null> {
+async function fetchActiveCommander(
+  playerId: string,
+  topdeckId: string,
+  playerName: string,
+  usageRows?: PlayerCommanderUsageRow[]
+): Promise<string | null> {
   const { data: profileRow, error: profileError } = await supabase
     .from("player_commander_profiles")
     .select("active_commander")
@@ -513,8 +596,8 @@ async function fetchActiveCommander(playerId: string, topdeckId: string, playerN
   }
 
   const referenceDate = new Date();
-  const usageRows = await fetchPlayerCommanderUsageRows(playerId, topdeckId, playerName);
-  const forecastRows = selectCommanderForecastRows([topdeckId], usageRows, referenceDate);
+  const commanderUsageRows = usageRows ?? (await fetchPlayerCommanderUsageRows(playerId, topdeckId, playerName));
+  const forecastRows = selectCommanderForecastRows([topdeckId], commanderUsageRows, referenceDate);
   const profiles = buildProfiles(
     [topdeckId],
     forecastRows,
@@ -769,13 +852,15 @@ export default async function RegionalPlayerPage({
     );
   }
 
-  const [globalSnapshot, globalEloRank, regionalRanks, entries, activeCommander] = await Promise.all([
+  const [globalSnapshot, globalEloRank, regionalRanks, profileSummary, entries, commanderUsageRows] = await Promise.all([
     fetchGlobalSnapshot(topdeckId),
     fetchGlobalEloRank(player.id),
     fetchRegionalRanks(player.id),
+    fetchPlayerProfileSummary(player.id),
     fetchEntries(player.id),
-    fetchActiveCommander(player.id, topdeckId, player.name),
+    fetchPlayerCommanderUsageRows(player.id, topdeckId, player.name),
   ]);
+  const activeCommander = await fetchActiveCommander(player.id, topdeckId, player.name, commanderUsageRows);
   const regionalRankRows = regionalRanks.map((row) => ({
     ...row,
     country_key: row.country_key ?? inferCountryForRegion(row.region_key) ?? "UNKNOWN",
@@ -859,55 +944,61 @@ export default async function RegionalPlayerPage({
   }
 
   const { totalGames, totalWins, totalDraws, totalLosses, seatRows, opponentRecords } = summarizePlayerLogs(playerLogs);
-  const canonicalGames = globalSnapshot?.gamesPlayed ?? globalEloRank?.games_played ?? totalGames;
-  const canonicalWins = globalSnapshot?.wins ?? globalEloRank?.wins ?? totalWins;
-  const canonicalDraws = globalSnapshot?.draws ?? globalEloRank?.draws ?? totalDraws;
-  const canonicalLosses = globalSnapshot?.losses ?? globalEloRank?.losses ?? totalLosses;
+  const canonicalGames = globalSnapshot?.gamesPlayed ?? profileSummary?.games_played ?? globalEloRank?.games_played ?? totalGames;
+  const canonicalWins = globalSnapshot?.wins ?? profileSummary?.wins ?? globalEloRank?.wins ?? totalWins;
+  const canonicalDraws = globalSnapshot?.draws ?? profileSummary?.draws ?? globalEloRank?.draws ?? totalDraws;
+  const canonicalLosses = globalSnapshot?.losses ?? profileSummary?.losses ?? globalEloRank?.losses ?? totalLosses;
   const assignmentRowsByRegion = new Map<string, StateAssignmentRow>();
   const historicalRegionKeys = new Set<string>();
-  for (const row of regionalRankRows) {
-    const regionKey = row.region_key ?? "";
-    if (!regionKey) continue;
-    assignmentRowsByRegion.set(regionKey, {
-      country_key: row.country_key ?? inferCountryForRegion(regionKey) ?? "UNKNOWN",
-      region_key: regionKey,
-      games_played: row.games_played,
-      wins: row.wins,
-      draws: row.draws,
-      losses: row.losses,
-    });
-  }
-  for (const log of playerLogs) {
-    const regionKey = (log.state ?? "").trim().toUpperCase() || "UNKNOWN";
-    const existing = assignmentRowsByRegion.get(regionKey);
-    const current =
-      existing && !historicalRegionKeys.has(regionKey)
-        ? {
-            ...existing,
-            games_played: 0,
-            wins: 0,
-            draws: 0,
-            losses: 0,
-          }
-        : existing ?? {
-            country_key: inferCountryForRegion(regionKey) ?? "UNKNOWN",
-            region_key: regionKey,
-            games_played: 0,
-            wins: 0,
-            draws: 0,
-            losses: 0,
-          };
-
-    historicalRegionKeys.add(regionKey);
-    current.games_played += 1;
-    if (log.result === "win") {
-      current.wins += 1;
-    } else if (log.result === "draw") {
-      current.draws += 1;
-    } else if (log.result === "loss") {
-      current.losses += 1;
+  if (profileSummary?.state_assignments?.length) {
+    for (const row of profileSummary.state_assignments) {
+      assignmentRowsByRegion.set(row.region_key, row);
     }
-    assignmentRowsByRegion.set(regionKey, current);
+  } else {
+    for (const row of regionalRankRows) {
+      const regionKey = row.region_key ?? "";
+      if (!regionKey) continue;
+      assignmentRowsByRegion.set(regionKey, {
+        country_key: row.country_key ?? inferCountryForRegion(regionKey) ?? "UNKNOWN",
+        region_key: regionKey,
+        games_played: row.games_played,
+        wins: row.wins,
+        draws: row.draws,
+        losses: row.losses,
+      });
+    }
+    for (const log of playerLogs) {
+      const regionKey = (log.state ?? "").trim().toUpperCase() || "UNKNOWN";
+      const existing = assignmentRowsByRegion.get(regionKey);
+      const current =
+        existing && !historicalRegionKeys.has(regionKey)
+          ? {
+              ...existing,
+              games_played: 0,
+              wins: 0,
+              draws: 0,
+              losses: 0,
+            }
+          : existing ?? {
+              country_key: inferCountryForRegion(regionKey) ?? "UNKNOWN",
+              region_key: regionKey,
+              games_played: 0,
+              wins: 0,
+              draws: 0,
+              losses: 0,
+            };
+
+      historicalRegionKeys.add(regionKey);
+      current.games_played += 1;
+      if (log.result === "win") {
+        current.wins += 1;
+      } else if (log.result === "draw") {
+        current.draws += 1;
+      } else if (log.result === "loss") {
+        current.losses += 1;
+      }
+      assignmentRowsByRegion.set(regionKey, current);
+    }
   }
   const derivedHomeRegion =
     Array.from(assignmentRowsByRegion.values())
@@ -916,7 +1007,7 @@ export default async function RegionalPlayerPage({
         if (b.games_played !== a.games_played) return b.games_played - a.games_played;
         return a.region_key.localeCompare(b.region_key);
       })[0]?.region_key ?? null;
-  const homeRegion = globalEloRank?.primary_region_key ?? regionalRanks[0]?.region_key ?? derivedHomeRegion;
+  const homeRegion = globalEloRank?.primary_region_key ?? profileSummary?.home_region_key ?? regionalRanks[0]?.region_key ?? derivedHomeRegion;
   const selectedRegion = regionFilter || homeRegion || "";
   const regionalRank = await fetchRegionalRank(player.id, selectedRegion);
   const activeRank = regionalRank;
@@ -983,7 +1074,7 @@ export default async function RegionalPlayerPage({
     string,
     { date: string; name: string; url: string | null }
   >();
-  for (const row of await fetchPlayerCommanderUsageRows(player.id, topdeckId, player.name)) {
+  for (const row of commanderUsageRows) {
     const commanderName = row.commander_name;
     if (!isKnownCommanderName(commanderName) || !commanderName || !row.start_date) continue;
     const url = row.decklist_url || row.topdeck_decklist_url;

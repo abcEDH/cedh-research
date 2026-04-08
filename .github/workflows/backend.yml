@@ -284,6 +284,8 @@ jobs:
               ("players", 2000),
               ("global_elo_state_activity", 10),
               ("global_elo_game_events", 100),
+              ("global_elo_active_leaderboard", 10),
+              ("global_elo_player_profile_summaries", 10),
           ]
 
           failed = []

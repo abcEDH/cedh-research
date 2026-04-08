@@ -126,12 +126,11 @@ async function fetchLeaderboardRows(
     const remaining = maxRows - offset;
     const pageEnd = offset + Math.min(pageSize, remaining) - 1;
     let query = supabase
-      .from("global_elo_leaderboard")
+      .from("global_elo_active_leaderboard")
       .select(
         "region_type, region_key, country_key, primary_country_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank"
       )
       .eq("region_type", regionType)
-      .gte("last_game_date", cutoffDate)
       .order("rank", { ascending: true })
       .range(offset, pageEnd);
 
@@ -144,11 +143,7 @@ async function fetchLeaderboardRows(
     const { data, error } = await query;
 
     if (error) {
-      return fetchLegacyLeaderboardRows(
-        regionType === "country" ? "global" : regionType,
-        regionType === "country" ? GLOBAL_REGION_KEY : regionKey,
-        maxRows
-      );
+      return fetchLeaderboardRowsFromView(regionType, regionKey, maxRows, cutoffDate);
     }
     if (!data?.length) break;
     rows.push(...(data as LeaderboardRow[]));
@@ -156,6 +151,35 @@ async function fetchLeaderboardRows(
   }
 
   return rows;
+}
+
+async function fetchLeaderboardRowsFromView(
+  regionType: "global" | "country" | "state",
+  regionKey: string,
+  maxRows: number,
+  cutoffDate: string
+): Promise<LeaderboardRow[]> {
+  const { data, error } = await supabase
+    .from("global_elo_leaderboard")
+    .select(
+      "region_type, region_key, country_key, primary_country_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank"
+    )
+    .eq("region_type", regionType)
+    .eq("region_key", regionKey)
+    .gte("last_game_date", cutoffDate)
+    .order("rating", { ascending: false })
+    .order("games_played", { ascending: false })
+    .range(0, maxRows - 1);
+
+  if (error) {
+    return fetchLegacyLeaderboardRows(
+      regionType === "country" ? "global" : regionType,
+      regionType === "country" ? GLOBAL_REGION_KEY : regionKey,
+      maxRows
+    );
+  }
+
+  return (data as LeaderboardRow[]) ?? [];
 }
 
 async function fetchLegacyLeaderboardRows(

@@ -27,6 +27,7 @@ COMMANDER_PRIMARY_LOOKBACK_MONTHS = 6
 COMMANDER_FALLBACK_LOOKBACK_MONTHS = 12
 COMMANDER_MIN_PRIMARY_ENTRIES = 2
 COMMANDER_RECENCY_HALF_LIFE_DAYS = 15
+ACTIVE_PLAYER_LOOKBACK_MONTHS = 6
 REGION_COUNTRY_BY_STATE = {
     "AGDER": "NORWAY",
     "ALABAMA": "UNITED STATES",
@@ -544,6 +545,7 @@ def process_game(
     rows: List[Dict[str, Any]],
     global_stats: Dict[str, PlayerStats],
     state_activity: Dict[str, Dict[str, StateActivity]],
+    profile_activity: Dict[str, Dict[str, StateActivity]],
     event_rows: List[Dict[str, Any]],
     game_date: str | None,
 ) -> None:
@@ -563,6 +565,8 @@ def process_game(
     age_days = (datetime.utcnow().date() - parsed_game_date).days if parsed_game_date else None
     state_key = normalized_state(rows[0])
     country_key = normalized_country(rows[0])
+    profile_region_key = state_key or "UNKNOWN"
+    profile_country_key = country_key or "UNKNOWN"
 
     equities = {}
     total_equity = 0.0
@@ -594,6 +598,24 @@ def process_game(
         stats.rating += delta
         stats.games += 1
         stats.last_game_date = game_date or stats.last_game_date
+
+        profile_region = profile_activity[player_id][profile_region_key]
+        profile_region.country_key = profile_country_key
+        profile_region.games_lifetime += 1
+        profile_region.last_game_date = game_date or profile_region.last_game_date
+        if is_draw:
+            profile_region.draws += 1
+        elif result == 1.0:
+            profile_region.wins += 1
+        else:
+            profile_region.losses += 1
+        if age_days is not None:
+            if age_days <= 365:
+                profile_region.games_365d += 1
+            if age_days <= 90:
+                profile_region.games_90d += 1
+            if age_days <= 30:
+                profile_region.games_30d += 1
 
         event_rows.append(
             {
@@ -664,7 +686,12 @@ def build_upsert_rows(
     return rows
 
 
-def compute_global_elo() -> tuple[Dict[str, PlayerStats], Dict[str, Dict[str, StateActivity]], List[Dict[str, Any]]]:
+def compute_global_elo() -> tuple[
+    Dict[str, PlayerStats],
+    Dict[str, Dict[str, StateActivity]],
+    Dict[str, Dict[str, StateActivity]],
+    List[Dict[str, Any]],
+]:
     supabase_url, supabase_key = load_credentials()
     client = SupabaseClient(supabase_url, supabase_key)
 
@@ -672,6 +699,7 @@ def compute_global_elo() -> tuple[Dict[str, PlayerStats], Dict[str, Dict[str, St
 
     global_stats: Dict[str, PlayerStats] = defaultdict(PlayerStats)
     state_activity: Dict[str, Dict[str, StateActivity]] = defaultdict(lambda: defaultdict(StateActivity))
+    profile_activity: Dict[str, Dict[str, StateActivity]] = defaultdict(lambda: defaultdict(StateActivity))
     event_rows: List[Dict[str, Any]] = []
     current_game_id: str | None = None
     buffer: List[Dict[str, Any]] = []
@@ -684,7 +712,7 @@ def compute_global_elo() -> tuple[Dict[str, PlayerStats], Dict[str, Dict[str, St
             current_game_date = row.get("start_date")
 
         if game_id != current_game_id:
-            process_game(buffer, global_stats, state_activity, event_rows, current_game_date)
+            process_game(buffer, global_stats, state_activity, profile_activity, event_rows, current_game_date)
             buffer = []
             current_game_id = game_id
             current_game_date = row.get("start_date")
@@ -692,27 +720,47 @@ def compute_global_elo() -> tuple[Dict[str, PlayerStats], Dict[str, Dict[str, St
         buffer.append(row)
 
     if buffer:
-        process_game(buffer, global_stats, state_activity, event_rows, current_game_date)
+        process_game(buffer, global_stats, state_activity, profile_activity, event_rows, current_game_date)
 
-    for player_states in state_activity.values():
+    for activity_group in (state_activity, profile_activity):
+        for player_states in activity_group.values():
+            primary_state: str | None = None
+            primary_sort_key: tuple[float, str, int, int, str] | None = None
+            for region_key, activity in player_states.items():
+                activity.activity_score = bucketed_activity_score(activity)
+                if region_key == "UNKNOWN":
+                    continue
+                sort_key = (
+                    activity.activity_score,
+                    activity.last_game_date or "",
+                    activity.games_30d,
+                    activity.games_lifetime,
+                    region_key,
+                )
+                if primary_sort_key is None or sort_key > primary_sort_key:
+                    primary_sort_key = sort_key
+                    primary_state = region_key
+            if primary_state:
+                player_states[primary_state].is_primary_state = True
+
+    return global_stats, state_activity, profile_activity, event_rows
+
+
+def build_primary_state_by_player(
+    state_activity: Dict[str, Dict[str, StateActivity]]
+) -> Dict[str, Tuple[str, StateActivity]]:
+    primary_by_player: Dict[str, Tuple[str, StateActivity]] = {}
+    for player_id, player_states in state_activity.items():
         primary_state: str | None = None
-        primary_sort_key: tuple[float, str, int, int, str] | None = None
+        primary_activity: StateActivity | None = None
         for region_key, activity in player_states.items():
-            activity.activity_score = bucketed_activity_score(activity)
-            sort_key = (
-                activity.activity_score,
-                activity.last_game_date or "",
-                activity.games_30d,
-                activity.games_lifetime,
-                region_key,
-            )
-            if primary_sort_key is None or sort_key > primary_sort_key:
-                primary_sort_key = sort_key
+            if activity.is_primary_state:
                 primary_state = region_key
-        if primary_state:
-            player_states[primary_state].is_primary_state = True
-
-    return global_stats, state_activity, event_rows
+                primary_activity = activity
+                break
+        if primary_state and primary_activity:
+            primary_by_player[player_id] = (primary_state, primary_activity)
+    return primary_by_player
 
 
 def build_state_activity_rows(state_activity: Dict[str, Dict[str, StateActivity]]) -> List[Dict[str, Any]]:
@@ -739,6 +787,175 @@ def build_state_activity_rows(state_activity: Dict[str, Dict[str, StateActivity]
                     "updated_at": updated_at,
                 }
             )
+    return rows
+
+
+def fetch_players_by_id(client: SupabaseClient, player_ids: Sequence[str]) -> Dict[str, Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for i in range(0, len(player_ids), 250):
+        player_id_chunk = player_ids[i : i + 250]
+        rows.extend(
+            fetch_all(
+                client,
+                "players",
+                [
+                    ("select", "id,name,topdeck_id"),
+                    ("id", in_filter(player_id_chunk)),
+                ],
+                limit=1000,
+            )
+        )
+    return {row["id"]: row for row in rows if row.get("id")}
+
+
+def is_active_player(stats: PlayerStats, cutoff: str) -> bool:
+    return bool(stats.last_game_date and stats.last_game_date >= cutoff)
+
+
+def active_leaderboard_sort_key(row: Dict[str, Any]) -> tuple[float, int, str]:
+    return (
+        -float(row["rating"]),
+        -int(row["games_played"]),
+        str(row["player_name"]),
+    )
+
+
+def rank_active_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    sorted_rows = sorted(rows, key=active_leaderboard_sort_key)
+    for index, row in enumerate(sorted_rows, start=1):
+        row["rank"] = index
+    return sorted_rows
+
+
+def build_active_leaderboard_rows(
+    global_stats: Dict[str, PlayerStats],
+    state_activity: Dict[str, Dict[str, StateActivity]],
+    players_by_id: Dict[str, Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    updated_at = datetime.utcnow().isoformat()
+    cutoff = date_months_ago(datetime.utcnow().date(), ACTIVE_PLAYER_LOOKBACK_MONTHS).isoformat()
+    primary_state_by_player = build_primary_state_by_player(state_activity)
+    rows_by_scope: Dict[Tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
+
+    for player_id, stats in global_stats.items():
+        if not is_active_player(stats, cutoff):
+            continue
+        player = players_by_id.get(player_id) or {}
+        player_name = player.get("name") or "Unknown"
+        topdeck_id = player.get("topdeck_id")
+        primary_region_key: str | None = None
+        primary_country_key: str | None = None
+        primary_activity_score: float | None = None
+        primary = primary_state_by_player.get(player_id)
+        if primary:
+            primary_region_key, primary_activity = primary
+            primary_country_key = primary_activity.country_key
+            primary_activity_score = primary_activity.activity_score
+
+        base_row = {
+            "player_id": player_id,
+            "player_name": player_name,
+            "topdeck_id": topdeck_id,
+            "rating": round(stats.rating, 3),
+            "games_played": stats.games,
+            "wins": stats.wins,
+            "draws": stats.draws,
+            "losses": stats.losses,
+            "last_game_date": stats.last_game_date,
+            "primary_country_key": primary_country_key,
+            "primary_region_key": primary_region_key,
+            "updated_at": updated_at,
+        }
+        rows_by_scope[(GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY)].append(
+            {
+                **base_row,
+                "region_type": GLOBAL_REGION_TYPE,
+                "region_key": GLOBAL_REGION_KEY,
+                "country_key": None,
+                "activity_score": None,
+            }
+        )
+        if primary_region_key and primary_country_key:
+            rows_by_scope[("country", primary_country_key)].append(
+                {
+                    **base_row,
+                    "region_type": "country",
+                    "region_key": primary_country_key,
+                    "country_key": primary_country_key,
+                    "activity_score": primary_activity_score,
+                }
+            )
+            rows_by_scope[(STATE_REGION_TYPE, primary_region_key)].append(
+                {
+                    **base_row,
+                    "region_type": STATE_REGION_TYPE,
+                    "region_key": primary_region_key,
+                    "country_key": primary_country_key,
+                    "activity_score": primary_activity_score,
+                }
+            )
+
+    ranked_rows: List[Dict[str, Any]] = []
+    for rows in rows_by_scope.values():
+        ranked_rows.extend(rank_active_rows(rows))
+    return ranked_rows
+
+
+def build_profile_summary_rows(
+    global_stats: Dict[str, PlayerStats],
+    profile_activity: Dict[str, Dict[str, StateActivity]],
+    players_by_id: Dict[str, Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    updated_at = datetime.utcnow().isoformat()
+    rows: List[Dict[str, Any]] = []
+    for player_id, stats in global_stats.items():
+        player = players_by_id.get(player_id) or {}
+        player_name = player.get("name") or "Unknown"
+        state_rows = []
+        home_region_key: str | None = None
+        home_country_key: str | None = None
+        for region_key, activity in profile_activity.get(player_id, {}).items():
+            state_rows.append(
+                {
+                    "country_key": activity.country_key or "UNKNOWN",
+                    "region_key": region_key,
+                    "games_played": activity.games_lifetime,
+                    "wins": activity.wins,
+                    "draws": activity.draws,
+                    "losses": activity.losses,
+                    "last_game_date": activity.last_game_date,
+                    "activity_score": activity.activity_score,
+                    "is_primary_state": activity.is_primary_state,
+                }
+            )
+            if activity.is_primary_state:
+                home_region_key = region_key
+                home_country_key = activity.country_key
+
+        state_rows.sort(
+            key=lambda row: (
+                row["region_key"] == "UNKNOWN",
+                -int(row["games_played"]),
+                str(row["country_key"]),
+                str(row["region_key"]),
+            )
+        )
+        rows.append(
+            {
+                "player_id": player_id,
+                "topdeck_id": player.get("topdeck_id"),
+                "player_name": player_name,
+                "games_played": stats.games,
+                "wins": stats.wins,
+                "draws": stats.draws,
+                "losses": stats.losses,
+                "last_game_date": stats.last_game_date,
+                "home_country_key": home_country_key,
+                "home_region_key": home_region_key,
+                "state_assignments": state_rows,
+                "updated_at": updated_at,
+            }
+        )
     return rows
 
 
@@ -937,10 +1154,13 @@ def main() -> None:
     supabase_url, supabase_key = load_credentials()
     client = SupabaseClient(supabase_url, supabase_key)
 
-    global_stats, state_activity, event_rows = compute_global_elo()
+    global_stats, state_activity, profile_activity, event_rows = compute_global_elo()
     event_rows = dedupe_rows(event_rows, ["region_type", "region_key", "game_id", "player_id"])
     rating_rows = build_upsert_rows(GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY, global_stats)
     state_activity_rows = build_state_activity_rows(state_activity)
+    players_by_id = fetch_players_by_id(client, list(global_stats.keys()))
+    active_leaderboard_rows = build_active_leaderboard_rows(global_stats, state_activity, players_by_id)
+    profile_summary_rows = build_profile_summary_rows(global_stats, profile_activity, players_by_id)
     commander_profile_rows = build_commander_profile_rows(client)
 
     if not rating_rows:
@@ -964,6 +1184,38 @@ def main() -> None:
         event_rows,
         on_conflict="region_type,region_key,game_id,player_id",
     )
+
+    try:
+        client.delete("global_elo_active_leaderboard", {"region_type": "not.is.null"})
+        upsert_rows(
+            client,
+            "global_elo_active_leaderboard",
+            active_leaderboard_rows,
+            on_conflict="region_type,region_key,player_id",
+        )
+    except Exception as exc:
+        print(
+            "Skipping global_elo_active_leaderboard refresh. "
+            "Apply the active leaderboard migration to enable it. "
+            f"Error: {exc}",
+            flush=True,
+        )
+
+    try:
+        client.delete("global_elo_player_profile_summaries", {"player_id": "not.is.null"})
+        upsert_rows(
+            client,
+            "global_elo_player_profile_summaries",
+            profile_summary_rows,
+            on_conflict="player_id",
+        )
+    except Exception as exc:
+        print(
+            "Skipping global_elo_player_profile_summaries refresh. "
+            "Apply the player profile summary migration to enable it. "
+            f"Error: {exc}",
+            flush=True,
+        )
 
     try:
         client.delete("player_commander_profiles", {"topdeck_id": "not.is.null"})

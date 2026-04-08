@@ -192,6 +192,21 @@ erDiagram
   - `expected_score`, `actual_score`
   - `rating_before`, `rating_delta`, `rating_after`
 
+### `global_elo_active_leaderboard`
+- **Purpose**: precomputed six-month-active leaderboard slices for fast Global Elo and profile rank reads.
+- **Key fields**:
+  - `region_type`, `region_key`, `country_key`, `rank`
+  - `player_id`, `player_name`, `topdeck_id`
+  - `rating`, `games_played`, `wins`, `draws`, `losses`, `last_game_date`
+  - `primary_country_key`, `primary_region_key`, `activity_score`, `updated_at`
+
+### `global_elo_player_profile_summaries`
+- **Purpose**: compact per-player Global Elo/profile summary populated by the backend recompute job.
+- **Key fields**:
+  - `player_id`, `topdeck_id`, `player_name`
+  - `games_played`, `wins`, `draws`, `losses`, `last_game_date`
+  - `home_country_key`, `home_region_key`, `state_assignments`, `updated_at`
+
 ### `player_commander_profiles`
 - **Purpose**: compact per-player commander forecast snapshot populated by the weekly backend job for fast leaderboard, drilldown, and Tournament Prep reads.
 - **Key fields**:

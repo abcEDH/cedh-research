@@ -6,8 +6,10 @@ This PR shifts Global Elo from state-scoped ratings to a global all-games leader
 
 - Replaces state Elo computation with a global `ALL` Elo pipeline, including paged month-by-month reads and a cleanup step before upserting `global_elo_ratings`.
 - Adds backend computation for assigned-state activity and per-game Elo event rows, populating `global_elo_state_activity` and `global_elo_game_events` alongside global ratings.
+- Adds backend computation for `global_elo_active_leaderboard` and `global_elo_player_profile_summaries` so active leaderboard ranks, home region, and state-assignment summaries can be read directly instead of recomputed during page renders.
 - Adds weekly precomputation for compact per-player commander profiles in `player_commander_profiles`, with UI fallbacks for deployments where the migration has not been applied yet.
 - Updates Global Elo UI to query precomputed `global_elo_regions` and `global_elo_leaderboard` rows instead of scanning all tournament entries and deriving state/region views during page render.
+- Updates Global Elo UI to prefer `global_elo_active_leaderboard` rows for six-month-active leaderboard views, with fallbacks to the existing leaderboard views until the new migration is deployed.
 - Uses global Elo for ranking and displayed leaderboard game counts while using assigned-state activity to determine each player's primary region and region-filtered leaderboard placement.
 - Includes tournaments without state metadata in the global Elo source data and player profile totals, with those games grouped as `UNKNOWN` in state assignment.
 - Adds country-level Global Elo rows and updates the filter flow to choose Global or Country, then only show states belonging to the selected country.
@@ -32,5 +34,5 @@ This PR shifts Global Elo from state-scoped ratings to a global all-games leader
 - Updated focused Global Elo player page test coverage for the global leaderboard/assigned-state behavior.
 - Updated E2E home-page expectations after removing the Midseason page link.
 - CI validation now samples global `ALL` Elo rows and compares them to canonical player stats.
-- Backend workflow validation now checks `global_elo_regions`, `global_elo_game_event_log`, `global_elo_state_activity`, and `global_elo_game_events`.
+- Backend workflow validation now checks `global_elo_regions`, `global_elo_game_event_log`, `global_elo_state_activity`, `global_elo_game_events`, `global_elo_active_leaderboard`, and `global_elo_player_profile_summaries`.
 - Verified the performance changes with targeted eslint, focused Global Elo tests, Python compile for `regional_elo.py`, and `git diff --check`.
