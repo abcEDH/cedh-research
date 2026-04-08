@@ -70,14 +70,30 @@ async function fetchTopdeckWithRetry(url: string, apiKey: string, attempts = 3) 
     }
 
     const retryAfterHeader = res.headers.get("Retry-After");
-    const retryAfterSeconds = Number(retryAfterHeader);
-    const waitMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
-      ? retryAfterSeconds * 1000
+    const retryAfterMs = parseRetryAfterHeader(retryAfterHeader);
+    const waitMs = retryAfterMs !== null
+      ? retryAfterMs
       : 5000 * (attempt + 1);
     await new Promise((resolve) => setTimeout(resolve, waitMs));
   }
 
   throw new Error("TopDeck API retry budget exhausted.");
+}
+
+function parseRetryAfterHeader(value: string | null): number | null {
+  if (!value) return null;
+
+  const retryAfterSeconds = Number(value);
+  if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+    return retryAfterSeconds * 1000;
+  }
+
+  const retryAfterDate = Date.parse(value);
+  if (Number.isFinite(retryAfterDate)) {
+    return Math.max(retryAfterDate - Date.now(), 0);
+  }
+
+  return null;
 }
 
 function normalizeStandingRates<T extends TopDeckTournamentResponse>(response: T): T {

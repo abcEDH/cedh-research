@@ -465,12 +465,19 @@ def normalize_rate_value(value: Any) -> Optional[float]:
 
 
 def extract_standing_rates(standing: dict[str, Any]) -> tuple[Optional[float], Optional[float]]:
-    for primary_rate_key, opponent_rate_key in TOPDECK_STANDING_RATE_FIELDS:
+    primary_rate = None
+    for primary_rate_key, _ in TOPDECK_STANDING_RATE_FIELDS:
         primary_rate = normalize_rate_value(standing.get(primary_rate_key))
+        if primary_rate is not None:
+            break
+
+    opponent_rate = None
+    for _, opponent_rate_key in TOPDECK_STANDING_RATE_FIELDS:
         opponent_rate = normalize_rate_value(standing.get(opponent_rate_key))
-        if primary_rate is not None or opponent_rate is not None:
-            return primary_rate, opponent_rate
-    return None, None
+        if opponent_rate is not None:
+            break
+
+    return primary_rate, opponent_rate
 
 
 class DataIngester:
