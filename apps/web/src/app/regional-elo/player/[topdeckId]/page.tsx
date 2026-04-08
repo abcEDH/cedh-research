@@ -939,6 +939,11 @@ export default async function RegionalPlayerPage({
   const backHref = regionFilter
     ? `/regional-elo?scope=state&region=${encodeURIComponent(regionFilter)}`
     : "/regional-elo";
+  const stateLeaderboardHref = homeRegion
+    ? `/regional-elo?scope=country&country=${encodeURIComponent(
+        inferCountryForRegion(homeRegion) ?? "UNITED STATES"
+      )}&region=${encodeURIComponent(homeRegion)}`
+    : null;
 
   return (
     <div className="min-h-screen">
@@ -980,7 +985,13 @@ export default async function RegionalPlayerPage({
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-2xl font-semibold text-foreground">
-                {homeRegion ?? "Unassigned"}
+                {stateLeaderboardHref ? (
+                  <Link href={stateLeaderboardHref} className="hover:text-primary">
+                    {homeRegion}
+                  </Link>
+                ) : (
+                  "Unassigned"
+                )}
               </CardContent>
             </Card>
             <Card className="knd-panel">
@@ -990,7 +1001,13 @@ export default async function RegionalPlayerPage({
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-2xl font-semibold text-foreground">
-                {shouldShowLocalRank && activeRank ? `#${activeRank.rank}` : "--"}
+                {stateLeaderboardHref ? (
+                  <Link href={stateLeaderboardHref} className="hover:text-primary">
+                    {shouldShowLocalRank && activeRank ? `#${activeRank.rank}` : "--"}
+                  </Link>
+                ) : (
+                  "--"
+                )}
               </CardContent>
             </Card>
             <Card className="knd-panel">
