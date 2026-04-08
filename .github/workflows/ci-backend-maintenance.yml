@@ -46,7 +46,7 @@ jobs:
         if: always()
         with:
           name: ingest-logs
-          path: packages/backend/logs/
+          path: logs/
           retention-days: 30
 
   validate-views:
