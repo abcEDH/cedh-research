@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 const GLOBAL_REGION_KEY = "ALL";
 const LEADERBOARD_LIMIT = 50;
 const INITIAL_COMMANDER_LOOKUP_LIMIT = 50;
+const ACTIVE_PLAYER_LOOKBACK_MONTHS = 6;
 
 function readRegionParam(
   params: Awaited<Promise<{ region?: string | string[] }> | { region?: string | string[] }> | undefined
@@ -106,6 +107,12 @@ function formatDate(value: string | null) {
   });
 }
 
+function activePlayerCutoffDate() {
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - ACTIVE_PLAYER_LOOKBACK_MONTHS);
+  return cutoff.toISOString().slice(0, 10);
+}
+
 async function fetchLeaderboardRows(
   regionType: "global" | "country" | "state",
   regionKey: string,
@@ -113,6 +120,7 @@ async function fetchLeaderboardRows(
 ): Promise<LeaderboardRow[]> {
   const pageSize = 1000;
   const rows: LeaderboardRow[] = [];
+  const cutoffDate = activePlayerCutoffDate();
 
   for (let offset = 0; offset < maxRows; offset += pageSize) {
     const remaining = maxRows - offset;
@@ -123,6 +131,7 @@ async function fetchLeaderboardRows(
         "region_type, region_key, country_key, primary_country_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank"
       )
       .eq("region_type", regionType)
+      .gte("last_game_date", cutoffDate)
       .order("rank", { ascending: true })
       .range(offset, pageEnd);
 
@@ -154,6 +163,7 @@ async function fetchLegacyLeaderboardRows(
   regionKey: string,
   maxRows = LEADERBOARD_LIMIT
 ): Promise<LeaderboardRow[]> {
+  const cutoffDate = activePlayerCutoffDate();
   const { data, error } = await supabase
     .from("regional_elo_leaderboard")
     .select(
@@ -161,6 +171,7 @@ async function fetchLegacyLeaderboardRows(
     )
     .eq("region_type", regionType)
     .eq("region_key", regionKey)
+    .gte("last_game_date", cutoffDate)
     .order("rank", { ascending: true })
     .range(0, maxRows - 1);
 
