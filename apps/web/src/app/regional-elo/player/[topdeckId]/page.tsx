@@ -1405,7 +1405,7 @@ export default async function RegionalPlayerPage({
                               {regionKey === "UNKNOWN" ? "UNKNOWN" : regionKey}
                             </Link>
                             {regionKey === homeRegion ? (
-                              <div className="text-[11px] text-primary">Active state</div>
+                              <div className="text-[11px] text-primary">Home region</div>
                             ) : null}
                           </td>
                           <td className="px-2 py-3 text-right font-mono text-muted-foreground">
