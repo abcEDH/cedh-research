@@ -314,7 +314,6 @@ def fetch_entries_by_ids(
     if not entry_ids:
         return []
     select = "id,decklist_url,commanders(name),players(topdeck_id),tournaments(topdeck_tid,start_date)"
-    filters = {}
     if not include_known:
         select = "id,decklist_url,commanders!left(name),players!left(topdeck_id),tournaments!left(topdeck_tid,start_date)"
     ids = ",".join(entry_ids)
