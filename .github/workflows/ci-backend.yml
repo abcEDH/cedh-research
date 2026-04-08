@@ -64,5 +64,10 @@ jobs:
       - name: Check regional Elo aggregate consistency
         run: python packages/backend/src/ci_backend_checks.py regional-elo
 
+      - name: Smoke-test analytics benchmarks
+        run: |
+          python packages/backend/src/ci_backend_checks.py benchmark \
+            --runs 1 --warmups 0
+
       - name: Smoke-test leaderboard recompute
         run: python packages/backend/src/regional_elo.py --smoke-days 30 --dry-run
