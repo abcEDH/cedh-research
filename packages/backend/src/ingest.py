@@ -237,6 +237,8 @@ class SupabaseClient:
                     logger.error(f"Select failed after {max_retries} retries: {e}")
                     raise
 
+        raise RuntimeError("Select failed without raising after retries were exhausted")
+
     def delete(self, table: str, filters: dict, max_retries: int = 3) -> None:
         """Delete data from a table with retry logic."""
         endpoint = f"{self.url}/rest/v1/{table}"
