@@ -350,13 +350,13 @@ describe("RegionalPlayerPage", () => {
     expect(html).toContain("Unique Opponents");
     expect(html).toContain("Global Rank");
     expect(html).toContain("Home Region");
-    expect(html).toContain("Assigned state");
+    expect(html).toContain("Active state");
     expect(html).toContain(
       "TopDeck rank, points, games played, and record come from TopDeck."
     );
     expect(html).toMatch(/Games Played[\s\S]*?>3</);
     expect(html).toMatch(/Record[\s\S]*?>1-1-1</);
-    expect(html).toMatch(/CALIFORNIA[\s\S]*?Assigned state[\s\S]*?>3<[\s\S]*?>1-1-1</);
+    expect(html).toMatch(/CALIFORNIA[\s\S]*?Active state[\s\S]*?>3<[\s\S]*?>1-1-1</);
   });
 
   it("groups unknown-region games for any player profile", async () => {
