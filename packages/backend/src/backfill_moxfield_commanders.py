@@ -230,7 +230,11 @@ def relation_value(row: dict, key: str) -> dict:
 
 def extract_topdeck_deck_page_commanders(page_html: str) -> list[str]:
     names = []
-    for name in re.findall(r'class=["\'][^"\']*commander-card[^"\']*["\'][^>]*data-name=["\']([^"\']+)["\']', page_html):
+    for tag in re.findall(r"<[^>]*commander-card[^>]*>", page_html):
+        match = re.search(r"""data-name=(["'])((?:\\.|(?!\1).)*?)\1""", tag)
+        if not match:
+            continue
+        name = match.group(2)
         decoded = html.unescape(name).strip()
         if decoded and decoded not in names:
             names.append(decoded)

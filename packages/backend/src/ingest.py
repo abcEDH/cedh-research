@@ -576,11 +576,45 @@ DOUBLE_FACED_BACK_FACE_OVERRIDES = {
     "Sephiroth, One-Winged Angel": "Sephiroth, Fabled SOLDIER",
 }
 
+TRUNCATED_APOSTROPHE_NAME_OVERRIDES = {
+    "Abdel Adrian, Gorion": "Abdel Adrian, Gorion's Ward",
+    "Be": "Be'lakor, the Dark Master",
+    "Betor, Ancestor": "Betor, Ancestor's Voice",
+    "Brigid, Clachan": "Brigid, Clachan's Heart",
+    "Caesar, Legion": "Caesar, Legion's Emperor",
+    "Captain N": "Captain N'ghathrod",
+    "Eshki, Temur": "Eshki, Temur's Roar",
+    "Freyalise, Llanowar": "Freyalise, Llanowar's Fury",
+    "Glarb, Calamity": "Glarb, Calamity's Augur",
+    "Go-Shintai of Life": "Go-Shintai of Life's Origin",
+    "Hashaton, Scarab": "Hashaton, Scarab's Fist",
+    "Jace, Vryn": "Jace, Vryn's Prodigy",
+    "Joshua, Phoenix": "Joshua, Phoenix's Dominant",
+    "K": "K'rrik, Son of Yawgmoth",
+    "Kraum, Ludevic": "Kraum, Ludevic's Opus",
+    "Kykar, Wind": "Kykar, Wind's Fury",
+    "Liberator, Urza": "Liberator, Urza's Battlethopter",
+    "Light-Paws, Emperor": "Light-Paws, Emperor's Voice",
+    "Nalia de": "Nalia de'Arnise",
+    "Neyali, Suns": "Neyali, Suns' Vanguard",
+    "Otharri, Suns": "Otharri, Suns' Glory",
+    "Sythis, Harvest": "Sythis, Harvest's Hand",
+    "Temmet, Naktamun": "Temmet, Naktamun's Will",
+    "Teshar, Ancestor": "Teshar, Ancestor's Apostle",
+    "The Balrog, Durin": "The Balrog, Durin's Bane",
+    "Wernog, Rider": "Wernog, Rider's Chaplain",
+    "Yeva, Nature": "Yeva, Nature's Herald",
+    "Yuriko, the Tiger": "Yuriko, the Tiger's Shadow",
+    "Yusri, Fortune": "Yusri, Fortune's Flame",
+    "Zahur, Glory": "Zahur, Glory's Past",
+}
+
 
 def clean_commander_card_name(name: str) -> str:
     """Normalize escaped card-name text from imported decklist sources."""
     cleaned = name.strip().replace("\\'", "'").replace('\\"', '"')
     cleaned = cleaned.split(" // ", 1)[0].strip()
+    cleaned = TRUNCATED_APOSTROPHE_NAME_OVERRIDES.get(cleaned, cleaned)
     return DOUBLE_FACED_BACK_FACE_OVERRIDES.get(cleaned, cleaned)
 
 
