@@ -214,6 +214,7 @@ async function applyGlobalLeaderboardTotals(
   if (regionType === "global" || rows.length === 0) return rows;
 
   const playerIds = rows.map((row) => row.player_id).filter(Boolean);
+  const eventLogTotals = await fetchEventLogTotals(playerIds);
   for (const table of ["global_elo_active_leaderboard", "global_elo_leaderboard", "regional_elo_leaderboard"]) {
     const { data, error } = await supabase
       .from(table)
@@ -229,7 +230,7 @@ async function applyGlobalLeaderboardTotals(
     );
     if (totalsByPlayer.size === 0) continue;
     return rows.map((row) => {
-      const totals = totalsByPlayer.get(row.player_id);
+      const totals = eventLogTotals.get(row.player_id) ?? totalsByPlayer.get(row.player_id);
       return totals
         ? {
             ...row,
@@ -244,6 +245,67 @@ async function applyGlobalLeaderboardTotals(
   }
 
   return rows;
+}
+
+async function fetchEventLogTotals(playerIds: string[]) {
+  const totalsByPlayer = new Map<
+    string,
+    Pick<LeaderboardRow, "player_id" | "games_played" | "wins" | "draws" | "losses" | "last_game_date">
+  >();
+  if (playerIds.length === 0) return totalsByPlayer;
+
+  for (const table of ["global_elo_game_event_log", "regional_elo_game_event_log"]) {
+    let tableHadRows = false;
+    let tableMissing = false;
+    for (const playerIdChunk of chunkArray(playerIds, 10)) {
+      for (let offset = 0; ; offset += 1000) {
+        const { data, error } = await supabase
+          .from(table)
+          .select("player_id, game_result, game_date")
+          .in("player_id", playerIdChunk)
+          .order("player_id", { ascending: true })
+          .order("game_date", { ascending: true })
+          .range(offset, offset + 999);
+
+        if (error) {
+          tableMissing = true;
+          break;
+        }
+        const page = (data as Array<{ player_id: string; game_result: string | null; game_date: string | null }>) ?? [];
+        tableHadRows = tableHadRows || page.length > 0;
+        for (const row of page) {
+          const current = totalsByPlayer.get(row.player_id) ?? {
+            player_id: row.player_id,
+            games_played: 0,
+            wins: 0,
+            draws: 0,
+            losses: 0,
+            last_game_date: null,
+          };
+          current.games_played += 1;
+          if (row.game_result === "win") {
+            current.wins += 1;
+          } else if (row.game_result === "draw") {
+            current.draws += 1;
+          } else if (row.game_result === "loss") {
+            current.losses += 1;
+          }
+          if (row.game_date && (!current.last_game_date || row.game_date > current.last_game_date)) {
+            current.last_game_date = row.game_date;
+          }
+          totalsByPlayer.set(row.player_id, current);
+        }
+        if (page.length < 1000) break;
+      }
+      if (tableMissing) {
+        totalsByPlayer.clear();
+        break;
+      }
+    }
+    if (tableHadRows && !tableMissing) break;
+  }
+
+  return totalsByPlayer;
 }
 
 async function fetchRegionRows(): Promise<{ rows: RegionRow[]; supportsCountry: boolean }> {
