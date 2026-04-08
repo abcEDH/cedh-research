@@ -11,6 +11,7 @@ const tableData: TableData = {
     { id: "player-3", name: "Opponent B", topdeck_id: "opp-b" },
     { id: "player-4", name: "Opponent C", topdeck_id: "opp-c" },
     { id: "player-5", name: "Unknown Region Player", topdeck_id: "unknown-region-player" },
+    { id: "player-6", name: "Inactive Player", topdeck_id: "inactive-player" },
   ],
   global_elo_leaderboard: [
     {
@@ -25,6 +26,7 @@ const tableData: TableData = {
       wins: 1,
       draws: 1,
       losses: 1,
+      last_game_date: "2026-04-03",
     },
     {
       region_type: "state",
@@ -37,6 +39,7 @@ const tableData: TableData = {
       wins: 1,
       draws: 1,
       losses: 1,
+      last_game_date: "2026-04-03",
     },
     {
       region_type: "global",
@@ -49,6 +52,34 @@ const tableData: TableData = {
       wins: 0,
       draws: 1,
       losses: 1,
+      last_game_date: "2026-04-03",
+    },
+    {
+      region_type: "global",
+      region_key: "ALL",
+      player_id: "player-6",
+      topdeck_id: "inactive-player",
+      primary_region_key: "CALIFORNIA",
+      rank: 99,
+      rating: 1600,
+      games_played: 1,
+      wins: 1,
+      draws: 0,
+      losses: 0,
+      last_game_date: "2025-01-01",
+    },
+    {
+      region_type: "state",
+      region_key: "CALIFORNIA",
+      player_id: "player-6",
+      topdeck_id: "inactive-player",
+      rank: 44,
+      rating: 1600,
+      games_played: 1,
+      wins: 1,
+      draws: 0,
+      losses: 0,
+      last_game_date: "2025-01-01",
     },
   ],
   tournament_entries: [
@@ -79,6 +110,7 @@ const tableData: TableData = {
     { id: "entry-7", tournament_id: "tournament-1", player_id: "player-3", commander_id: "cmd-3" },
     { id: "entry-8", tournament_id: "tournament-2", player_id: "player-4", commander_id: "cmd-4" },
     { id: "entry-9", tournament_id: "tournament-4", player_id: "player-5", commander_id: "cmd-1" },
+    { id: "entry-10", tournament_id: "tournament-5", player_id: "player-6", commander_id: "cmd-1" },
   ],
   game_participants: [
     { game_id: "game-1", entry_id: "entry-1", seat_position: 0, result: "win" },
@@ -90,6 +122,7 @@ const tableData: TableData = {
     { game_id: "game-3", entry_id: "entry-3", seat_position: 3, result: "draw" },
     { game_id: "game-3", entry_id: "entry-6", seat_position: 1, result: "draw" },
     { game_id: "game-4", entry_id: "entry-9", seat_position: 0, result: "win" },
+    { game_id: "game-5", entry_id: "entry-10", seat_position: 0, result: "win" },
   ],
   games: [
     {
@@ -128,12 +161,22 @@ const tableData: TableData = {
       is_draw: false,
       winner_id: "entry-9",
     },
+    {
+      id: "game-5",
+      tournament_id: "tournament-5",
+      round_number: 1,
+      round_name: null,
+      table_number: 1,
+      is_draw: false,
+      winner_id: "entry-10",
+    },
   ],
   tournaments: [
     { id: "tournament-1", name: "California Open I", start_date: "2026-04-03", state: "California" },
     { id: "tournament-2", name: "California Open II", start_date: "2026-04-02", state: "California" },
     { id: "tournament-3", name: "California Open III", start_date: "2026-04-01", state: "California" },
     { id: "tournament-4", name: "Unknown Region Open", start_date: "2026-04-04", state: null },
+    { id: "tournament-5", name: "Inactive Open", start_date: "2025-01-01", state: "California" },
   ],
   commanders: [
     { id: "cmd-1", name: "Rograkh / Silas" },
@@ -274,6 +317,8 @@ vi.mock("@/lib/topdeck", () => ({
   fetchTopDeckProfileStats: vi.fn(async (topdeckId: string) =>
     topdeckId === "CCIQroaCHHQi7EELyNXlHiHQiQy1"
       ? { tournaments: 1, gamesPlayed: 3, wins: 1, draws: 1, losses: 1 }
+      : topdeckId === "inactive-player"
+        ? { tournaments: 1, gamesPlayed: 1, wins: 1, draws: 0, losses: 0 }
       : null
   ),
 }));
@@ -296,6 +341,7 @@ describe("RegionalPlayerPage", () => {
 
     expect(html).toContain("Alex Lien");
     expect(html).toContain("TopDeck Rank");
+    expect(html).toContain("Global Rank");
     expect(html).toContain("Home Region");
     expect(html).toContain("Assigned state");
     expect(html).toContain(
@@ -318,5 +364,20 @@ describe("RegionalPlayerPage", () => {
     expect(html).toContain("Unknown Region Player");
     expect(html).toMatch(/Games Played[\s\S]*?>1</);
     expect(html).toContain("UNKNOWN");
+  });
+
+  it("hides inactive player global and state ranks", async () => {
+    const pageModule = await import("@/app/regional-elo/player/[topdeckId]/page");
+    const element = await pageModule.default({
+      params: { topdeckId: "inactive-player" },
+      searchParams: { region: "CALIFORNIA" },
+    });
+
+    const html = renderToStaticMarkup(element);
+
+    expect(html).toContain("Inactive Player");
+    expect(html).toMatch(/State Rank[\s\S]*?>--</);
+    expect(html).toMatch(/Global Rank[\s\S]*?>--</);
+    expect(html).toContain("1600");
   });
 });

@@ -12,6 +12,7 @@ import { summarizePlayerLogs, type PlayerGameLog } from "./player-stats";
 export const dynamic = "force-dynamic";
 const SUPABASE_PAGE_SIZE = 1000;
 const SUPABASE_IN_CHUNK_SIZE = 100;
+const ACTIVE_PLAYER_LOOKBACK_MONTHS = 6;
 
 type PlayerRow = {
   id: string;
@@ -66,6 +67,7 @@ type LeaderboardRankRow = {
   wins: number;
   draws: number;
   losses: number;
+  last_game_date?: string | null;
 };
 
 type StateAssignmentRow = {
@@ -148,6 +150,16 @@ function chunkArray<T>(values: T[], chunkSize: number) {
   return chunks;
 }
 
+function activePlayerCutoffDate() {
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - ACTIVE_PLAYER_LOOKBACK_MONTHS);
+  return cutoff.toISOString().slice(0, 10);
+}
+
+function isActiveRank(row: LeaderboardRankRow | null) {
+  return Boolean(row?.last_game_date && row.last_game_date >= activePlayerCutoffDate());
+}
+
 function describeSupabaseError(error: unknown) {
   if (!error) return "unknown error";
   if (error instanceof Error) return error.message;
@@ -223,7 +235,7 @@ async function fetchEntries(playerId: string): Promise<EntryRow[]> {
 async function fetchGlobalEloRank(playerId: string): Promise<LeaderboardRankRow | null> {
   const { data, error } = await supabase
     .from("global_elo_leaderboard")
-    .select("primary_country_key, primary_region_key, rank, rating, games_played, wins, draws, losses")
+    .select("primary_country_key, primary_region_key, rank, rating, games_played, wins, draws, losses, last_game_date")
     .eq("region_type", "global")
     .eq("region_key", "ALL")
     .eq("player_id", playerId)
@@ -232,7 +244,7 @@ async function fetchGlobalEloRank(playerId: string): Promise<LeaderboardRankRow 
   if (error) {
     const { data: fallbackData } = await supabase
       .from("regional_elo_leaderboard")
-      .select("rank, rating, games_played, wins, draws, losses")
+      .select("rank, rating, games_played, wins, draws, losses, last_game_date")
       .eq("region_type", "global")
       .eq("region_key", "ALL")
       .eq("player_id", playerId)
@@ -249,7 +261,7 @@ async function fetchRegionalRank(playerId: string, regionKey: string): Promise<L
 
   const { data, error } = await supabase
     .from("global_elo_leaderboard")
-    .select("country_key, region_key, rank, rating, games_played, wins, draws, losses")
+    .select("country_key, region_key, rank, rating, games_played, wins, draws, losses, last_game_date")
     .eq("region_type", "state")
     .eq("region_key", regionKey)
     .eq("player_id", playerId)
@@ -258,7 +270,7 @@ async function fetchRegionalRank(playerId: string, regionKey: string): Promise<L
   if (error) {
     const { data: fallbackData } = await supabase
       .from("global_elo_leaderboard")
-      .select("region_key, rank, rating, games_played, wins, draws, losses")
+      .select("region_key, rank, rating, games_played, wins, draws, losses, last_game_date")
       .eq("region_type", "state")
       .eq("region_key", regionKey)
       .eq("player_id", playerId)
@@ -268,7 +280,7 @@ async function fetchRegionalRank(playerId: string, regionKey: string): Promise<L
 
     const { data: legacyData } = await supabase
       .from("regional_elo_leaderboard")
-      .select("region_key, rank, rating, games_played, wins, draws, losses")
+      .select("region_key, rank, rating, games_played, wins, draws, losses, last_game_date")
       .eq("region_type", "state")
       .eq("region_key", regionKey)
       .eq("player_id", playerId)
@@ -283,7 +295,7 @@ async function fetchRegionalRank(playerId: string, regionKey: string): Promise<L
 async function fetchRegionalRanks(playerId: string): Promise<LeaderboardRankRow[]> {
   const { data, error } = await supabase
     .from("global_elo_leaderboard")
-    .select("country_key, region_key, rank, rating, games_played, wins, draws, losses")
+    .select("country_key, region_key, rank, rating, games_played, wins, draws, losses, last_game_date")
     .eq("region_type", "state")
     .eq("player_id", playerId)
     .order("rank", { ascending: true });
@@ -291,7 +303,7 @@ async function fetchRegionalRanks(playerId: string): Promise<LeaderboardRankRow[
   if (error) {
     const { data: fallbackData } = await supabase
       .from("global_elo_leaderboard")
-      .select("region_key, rank, rating, games_played, wins, draws, losses")
+      .select("region_key, rank, rating, games_played, wins, draws, losses, last_game_date")
       .eq("region_type", "state")
       .eq("player_id", playerId)
       .order("rank", { ascending: true });
@@ -305,7 +317,7 @@ async function fetchRegionalRanks(playerId: string): Promise<LeaderboardRankRow[
 
     const { data: legacyData } = await supabase
       .from("regional_elo_leaderboard")
-      .select("region_key, rank, rating, games_played, wins, draws, losses")
+      .select("region_key, rank, rating, games_played, wins, draws, losses, last_game_date")
       .eq("region_type", "state")
       .eq("player_id", playerId)
       .order("rank", { ascending: true });
@@ -806,6 +818,8 @@ export default async function RegionalPlayerPage({
   const selectedRegion = regionFilter || homeRegion || "";
   const regionalRank = await fetchRegionalRank(player.id, selectedRegion);
   const activeRank = regionalRank;
+  const shouldShowGlobalRank = isActiveRank(globalEloRank);
+  const shouldShowLocalRank = isActiveRank(activeRank);
   const stateAssignmentRows = Array.from(assignmentRowsByRegion.values()).sort((a, b) => {
     if (a.region_key === homeRegion) return -1;
     if (b.region_key === homeRegion) return 1;
@@ -917,7 +931,17 @@ export default async function RegionalPlayerPage({
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-2xl font-semibold text-foreground">
-                {activeRank ? `#${activeRank.rank}` : "—"}
+                {shouldShowLocalRank && activeRank ? `#${activeRank.rank}` : "--"}
+              </CardContent>
+            </Card>
+            <Card className="knd-panel">
+              <CardHeader>
+                <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                  Global Rank
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-2xl font-semibold text-foreground">
+                {shouldShowGlobalRank && globalEloRank ? `#${globalEloRank.rank}` : "--"}
               </CardContent>
             </Card>
             <Card className="knd-panel">
