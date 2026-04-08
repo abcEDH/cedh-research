@@ -211,13 +211,25 @@ async function fetchEntries(playerId: string): Promise<EntryRow[]> {
 }
 
 async function fetchGlobalEloRank(playerId: string): Promise<LeaderboardRankRow | null> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("global_elo_leaderboard")
     .select("primary_country_key, primary_region_key, rank, rating, games_played, wins, draws, losses")
     .eq("region_type", "global")
     .eq("region_key", "ALL")
     .eq("player_id", playerId)
     .maybeSingle();
+
+  if (error) {
+    const { data: fallbackData } = await supabase
+      .from("regional_elo_leaderboard")
+      .select("rank, rating, games_played, wins, draws, losses")
+      .eq("region_type", "global")
+      .eq("region_key", "ALL")
+      .eq("player_id", playerId)
+      .maybeSingle();
+
+    return (fallbackData as LeaderboardRankRow | null) ?? null;
+  }
 
   return (data as LeaderboardRankRow | null) ?? null;
 }
@@ -242,7 +254,17 @@ async function fetchRegionalRank(playerId: string, regionKey: string): Promise<L
       .eq("player_id", playerId)
       .maybeSingle();
 
-    return (fallbackData as LeaderboardRankRow | null) ?? null;
+    if (fallbackData) return fallbackData as LeaderboardRankRow;
+
+    const { data: legacyData } = await supabase
+      .from("regional_elo_leaderboard")
+      .select("region_key, rank, rating, games_played, wins, draws, losses")
+      .eq("region_type", "state")
+      .eq("region_key", regionKey)
+      .eq("player_id", playerId)
+      .maybeSingle();
+
+    return (legacyData as LeaderboardRankRow | null) ?? null;
   }
 
   return (data as LeaderboardRankRow | null) ?? null;
@@ -264,7 +286,21 @@ async function fetchRegionalRanks(playerId: string): Promise<LeaderboardRankRow[
       .eq("player_id", playerId)
       .order("rank", { ascending: true });
 
-    return ((fallbackData as LeaderboardRankRow[]) ?? []).sort((a, b) => {
+    if (fallbackData) {
+      return ((fallbackData as LeaderboardRankRow[]) ?? []).sort((a, b) => {
+        if (a.rank !== b.rank) return a.rank - b.rank;
+        return (a.region_key ?? "").localeCompare(b.region_key ?? "");
+      });
+    }
+
+    const { data: legacyData } = await supabase
+      .from("regional_elo_leaderboard")
+      .select("region_key, rank, rating, games_played, wins, draws, losses")
+      .eq("region_type", "state")
+      .eq("player_id", playerId)
+      .order("rank", { ascending: true });
+
+    return ((legacyData as LeaderboardRankRow[]) ?? []).sort((a, b) => {
       if (a.rank !== b.rank) return a.rank - b.rank;
       return (a.region_key ?? "").localeCompare(b.region_key ?? "");
     });
@@ -877,6 +913,16 @@ export default async function RegionalPlayerPage({
               </CardHeader>
               <CardContent className="text-2xl font-semibold text-foreground">
                 {globalSnapshot ? globalSnapshot.points : "—"}
+              </CardContent>
+            </Card>
+            <Card className="knd-panel">
+              <CardHeader>
+                <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                  Elo
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-2xl font-semibold text-foreground">
+                {globalEloRank ? Math.round(globalEloRank.rating) : "—"}
               </CardContent>
             </Card>
             <Card className="knd-panel">
