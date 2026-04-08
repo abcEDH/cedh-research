@@ -11,46 +11,45 @@ A Next.js 14 dashboard for competitive Magic: The Gathering (cEDH) tournament an
 - **Styling:** Tailwind CSS + shadcn/ui components
 - **Database:** Supabase (PostgreSQL with materialized views)
 - **Deployment:** Vercel
-- **Charts:** Recharts (planned)
+- **Charts:** Recharts
 
 ## Database Views Available
 | View | Description | Used In |
 |------|-------------|---------|
 | `commander_stats` | Commander performance summary | /commanders, / |
-| `seat_position_stats` | Win rate by turn order | /turn-order |
-| `card_frequencies_global` | Global card inclusion rates | /cards |
 | `card_frequencies_by_commander` | Per-commander card rates | /commanders/[id] |
 | `commander_card_report` | Cards with synergy scores | /commanders/[id] |
-| `card_performance_by_commander` | Win rate correlation | Planned |
-| `card_performance_global` | Global card win rates | Planned |
+| `card_performance_by_commander` | Win rate correlation | /commanders/[id] |
+| `card_performance_global` | Global card win rates | Internal analysis |
 | `trap_cards_report` | Popular underperformers | /trap-spice |
 | `spice_cards_report` | Rare overperformers | /trap-spice |
 | `commander_head_to_head` | Matchup data | Planned (empty) |
-| `round_win_rates` | Win rate by round | Planned |
 | `commander_meta_share` | Meta representation | Planned |
 | `commander_momentum` | Trending commanders | Planned |
 | `commander_monthly_trends` | Time series | Planned |
-| `player_seat_distribution` | Player seat patterns | Planned |
 | `player_tournament_journey` | Player progression | Planned |
 | `pod_composition` | Pod makeup analysis | Planned |
-| `seat_by_tournament_size` | Seat advantage by size | Planned |
 
 ## Current Pages
 | Route | Status | Description |
 |-------|--------|-------------|
 | `/` | Live | Landing with key metrics |
 | `/commanders` | Live | Commander rankings table |
-| `/commanders/[id]` | Live | Detail with card frequencies |
-| `/cards` | Live | Global card frequency analysis |
-| `/turn-order` | Live | Seat position fairness stats |
+| `/commanders/[id]` | Live | Detail with card frequencies, performance, players, and matchups |
+| `/commanders/trends` | Live | Commander trendlines |
 | `/trap-spice` | Live | Trap and spice cards |
+| `/tournament-likelihood` | Live | Tournament finish probability tooling |
+| `/regional-elo` | Live | Regional Elo leaderboards |
+| `/regional-elo/player/[topdeckId]` | Live | Player regional Elo profile |
+| `/midseason-invitational` | Live | Invitational event page |
+| `/about` | Live | Project context and attribution |
+| `/limitations` | Live | Caveats and methodology notes |
 
 ## Key Data Insights
 - **52 tournaments** tracked
 - **290 commanders** with stats
 - **2,874 decks** analyzed
 - **5,650 games** with seat data
-- **Turn order effect:** Seat 1 wins 23.6%, Seat 4 wins 13.2% (large effect)
 - **Top trap card:** The One Ring (-1.64% win delta at 45% inclusion)
 
 ## Files Structure
@@ -61,8 +60,9 @@ src/
 │   ├── commanders/
 │   │   ├── page.tsx             # Commander rankings
 │   │   └── [id]/page.tsx        # Commander detail
-│   ├── cards/page.tsx           # Card frequencies
-│   ├── turn-order/page.tsx      # Turn order analysis
+│   │   └── trends/page.tsx      # Commander trendlines
+│   ├── regional-elo/            # Regional Elo leaderboard + player pages
+│   ├── tournament-likelihood/   # Tournament probability tools
 │   └── trap-spice/page.tsx      # Trap & spice cards
 ├── components/ui/               # shadcn components
 └── lib/
@@ -90,12 +90,9 @@ TOPDECK_API_KEY=<server-only>
 - **Text secondary:** #a1a1aa
 
 ## Pending Improvements
-1. **Survival Analysis** - Round-by-round survival curves
-2. **Statistical Significance** - Show confidence intervals on win rates
-3. **Notable Players** - Track top performers per commander
-4. **Commander Groupings** - Show which commanders use cards/trap-spice
-5. **Tie Rates** - Add draw analysis to turn-order
-6. **Card-Commander Links** - Bidirectional navigation
+1. **Reviewability** - Keep supported-surface docs and CI checks aligned
+2. **League Validation** - Confirm TopDeck league payload support with authenticated samples
+3. **Observability** - Add PostHog for supported surfaces only
 
 ## Reference Sites
 - **cedh.io** - Metagame statistics, deck analysis tools

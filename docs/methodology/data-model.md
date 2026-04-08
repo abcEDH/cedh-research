@@ -156,11 +156,6 @@ erDiagram
 - `pod_composition`: Full pod lineups with seat and result.
 - `player_seat_distribution`: Seat distribution and win rate by player.
 
-### Survival Analysis
-
-- `get_survival_curve` (RPC): Cumulative survival curve by round.
-- `survival_curves_by_seat` (view): Survival by seat position and round.
-
 ### Regional Elo
 
 - `regional_elo_ratings`: Per-player rating state at a region granularity.
@@ -184,7 +179,6 @@ The Next.js app reads from Supabase views for most pages to keep the anon role s
 
 - Rankings: `commander_stats`, `commander_weekly_trends`, `commander_monthly_trends`
 - Card analytics: `card_frequencies_*`, `card_performance_*`
-- Turn order: `seat_position_stats`, `survival_curves_by_seat`
 - Regional Elo: `regional_elo_leaderboard`, `regional_elo_regions`
 - Meta prep: `player_commander_entries`
 

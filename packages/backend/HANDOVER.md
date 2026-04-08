@@ -3,6 +3,11 @@
 ## Project Overview
 Python-based data ingestion and PostgreSQL analytics for competitive Magic: The Gathering (cEDH) tournament data.
 
+## Supported Surfaces
+
+- `Cards`, `Turn Order`, and `Survival` are retired surfaces.
+- New backend work should assume those surfaces are no longer active product areas.
+
 **Frontend:** https://cedh-analytics-frontend.vercel.app
 **Frontend Repo:** ~/Documents/Repositories/personal/cedh-analytics-frontend
 
@@ -20,9 +25,6 @@ Python-based data ingestion and PostgreSQL analytics for competitive Magic: The 
 | Object | Type | Status | Frontend Usage |
 |--------|------|--------|----------------|
 | `commander_stats` | View | Working | /commanders, / |
-| `seat_position_stats` | View | Working | /turn-order |
-| `commander_seat_stats` | MView | Working | /turn-order (commander grouping) |
-| `card_frequencies_global` | MView | Working | /cards |
 | `card_frequencies_by_commander` | MView | Working | /commanders/[id] |
 | `commander_card_report` | View | Working | /commanders/[id] |
 | `card_performance_by_commander` | MView | Working | /commanders/[id] Card Performance tab |
@@ -32,15 +34,11 @@ Python-based data ingestion and PostgreSQL analytics for competitive Magic: The 
 | `commander_head_to_head` | View | Empty | Needs investigation |
 | `get_notable_players_for_commander` | Func | Working | /commanders/[id] Players tab |
 | `get_commander_matchups` | Func | Working | /commanders/[id] Matchups tab |
-| `get_commanders_for_card` | Func | Working | /cards commander column |
-| `round_win_rates` | View | Working | Planned |
 
 ## Pending Backend Work
 
-### 1. Survival Analysis Views (Priority: High)
-Comprehensive research complete in `docs/SURVIVAL_ANALYSIS_PLAN.md` (on `feat/survival-analysis` branch).
-Includes 5 materialized views for Kaplan-Meier style survival curves.
-Ready for review and merge.
+### 1. Surface retirement cleanup
+Cards, Turn Order, and Survival have been deleted in the frontend. Backend follow-up is to keep migrations, validation, and docs from silently re-introducing their retired SQL surfaces.
 
 ### 2. ~~Fix commander_head_to_head~~ Resolved (2026-01-21)
 **Root cause:** The `commander_matchups` table (0 rows) was never populated by ingestion.
@@ -48,11 +46,9 @@ Ready for review and merge.
 **Future option:** Could add ingestion logic to populate `commander_matchups` for better query performance, but the function is sufficient for now.
 
 ### 3. ~~Frontend-Required Functions~~ ✅ DONE (2026-01-21)
-All 4 functions/views created and verified:
+Supported functions/views created and verified:
 - `get_notable_players_for_commander(UUID, limit, offset)` - Players tab (with pagination)
 - `get_commander_matchups(UUID, limit, offset, min_games)` - Matchups tab (with pagination + stats)
-- `commander_seat_stats` - Turn order commander grouping
-- `get_commanders_for_card(TEXT)` - Cards page commander column
 
 ### 4. Matchup Enhancements ✅ DONE (2026-01-21)
 Enhanced `get_commander_matchups` now returns:
@@ -76,8 +72,8 @@ This is real data where commander wasn't identified from source. Options:
 2. Try to backfill from decklist parsing
 3. Filter from frontend queries
 
-### Draw Rate in Seat Stats
-Draws are tracked but win_rate calculation doesn't include them. Added win_plus_draw_rate to proposed views.
+### Retired Surface Artifacts
+If you see `seat_position_stats`, `commander_seat_stats`, `get_commanders_for_card`, or the survival-analysis views referenced in CI or docs, treat that as cleanup debt rather than active product support.
 
 ## Environment
 
@@ -97,7 +93,6 @@ Draws are tracked but win_rate calculation doesn't include them. Added win_plus_
 ```
 supabase/migrations/
 ├── 20260110000001_initial_schema.sql
-├── 20260111100000_survival_analysis_views.sql (empty placeholder)
 ├── 20260111110000_analysis_snapshots.sql
 └── ... (additional migrations)
 ```
@@ -115,11 +110,6 @@ python src/ingest.py --card-report <commander>
 ```
 
 ## Next Steps
-1. ~~Review survival analysis research output~~ ✅ Done (PR #2)
-2. ~~Create commander_seat_stats view~~ ✅ Done
-3. ~~Create commander_notable_players view~~ ✅ Done
-4. ~~Add card_name index to card_frequencies_by_commander~~ ✅ Done
-5. ~~Investigate commander_head_to_head empty results~~ ✅ Resolved
-6. Merge PR #2 (survival analysis) and PR #3 (matchup enhancements)
-7. Frontend: Update matchups page to use pagination and show statistical significance
-8. Frontend: Add player profile links using topdeck_id
+1. Remove retired surface references from backend views, CI checks, and docs.
+2. Keep TopDeck attribution visible in the frontend.
+3. Document and enforce the supported-surface policy for future migrations.

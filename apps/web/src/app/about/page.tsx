@@ -146,54 +146,6 @@ export default function AboutPage() {
           </CardContent>
         </Card>
 
-        {/* Survival Analysis */}
-        <Card className="bg-card/60 border-border/60 mb-8">
-          <CardHeader>
-            <CardTitle className="text-primary">Survival Analysis</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4 text-muted-foreground">
-            <p>
-              Survival analysis tracks the probability of a player &quot;surviving&quot;
-              (remaining in contention) through successive rounds of a tournament.
-              This is inspired by Kaplan-Meier survival curves used in medical
-              research and reliability engineering.
-            </p>
-
-            <StatisticSection
-              title="Survival Probability"
-              formula="S(r) = P(remaining at round r) = (Players at r) / (Total starting players)"
-              description="The survival probability at round r represents the fraction of original players who are still in the tournament at that point. Players 'drop' when they accumulate enough losses or voluntarily withdraw."
-            />
-
-            <StatisticSection
-              title="Cumulative Survival"
-              formula="S(r) = S(r-1) × (1 - drop_rate(r))"
-              description="Each round's survival builds on the previous round. If 90% survive round 1 and 85% of those survive round 2, the cumulative survival at round 2 is 0.90 × 0.85 = 76.5%."
-            />
-
-            <div className="p-4 bg-muted/30 rounded-lg">
-              <h4 className="text-foreground font-medium mb-2">Interpreting Survival Curves</h4>
-              <ul className="list-disc list-inside space-y-1 text-sm">
-                <li>
-                  <strong className="text-primary">Steeper drop</strong> = Higher
-                  elimination rate at that round
-                </li>
-                <li>
-                  <strong className="text-[hsl(var(--knd-amber))]">Flat sections</strong> = Most
-                  players surviving that phase
-                </li>
-                <li>
-                  Compare seat positions to identify turn order advantages
-                </li>
-                <li>
-                  Compare commanders to see which have better long-term tournament
-                  staying power
-                </li>
-              </ul>
-            </div>
-          </CardContent>
-        </Card>
-
         {/* Statistical Significance */}
         <Card className="bg-card/60 border-border/60 mb-8">
           <CardHeader>
@@ -240,50 +192,6 @@ export default function AboutPage() {
           </CardContent>
         </Card>
 
-        {/* Chi-Square Test */}
-        <Card className="bg-card/60 border-border/60 mb-8">
-          <CardHeader>
-            <CardTitle className="text-[hsl(var(--knd-amber))]">Chi-Square Test</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4 text-muted-foreground">
-            <p>
-              The Chi-square (χ²) test is used to determine whether observed
-              frequencies differ significantly from expected frequencies. We use
-              it to analyze turn order fairness and categorical distributions.
-            </p>
-
-            <StatisticSection
-              title="Chi-Square Formula"
-              formula="χ² = Σ [(Observed - Expected)² / Expected]"
-              description="For each category (e.g., each seat position), we calculate the squared difference between observed and expected values, divided by the expected value. The sum across all categories gives us the chi-square statistic."
-              example="If seat 1 has 28% wins (expected 25%), and we have 1000 games, χ² contribution = (280-250)²/250 = 3.6"
-            />
-
-            <div className="p-4 bg-muted/30 rounded-lg">
-              <h4 className="text-foreground font-medium mb-2">Turn Order Analysis</h4>
-              <p className="text-sm mb-3">
-                We use chi-square tests to determine if turn order creates a
-                statistically significant advantage:
-              </p>
-              <ul className="list-disc list-inside space-y-1 text-sm">
-                <li>
-                  <strong>Null hypothesis:</strong> All seat positions have equal
-                  25% win rate
-                </li>
-                <li>
-                  <strong>Alternative:</strong> At least one seat position differs
-                  significantly
-                </li>
-                <li>
-                  <strong>Degrees of freedom:</strong> df = (number of seats - 1) = 3
-                </li>
-                <li>
-                  <strong>Critical value:</strong> χ² &gt; 7.815 at p &lt; 0.05
-                </li>
-              </ul>
-            </div>
-          </CardContent>
-        </Card>
 
         {/* Trap and Spice Methodology */}
         <Card className="bg-card/60 border-border/60 mb-8">

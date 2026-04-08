@@ -44,13 +44,10 @@ test.describe("Home Page", () => {
   });
 
   test("feature cards link to correct pages", async ({ page }) => {
-    // Prefer the feature card link (not the nav link)
-    const survivalCard = page.getByRole("link", { name: /Survival Analysis/i }).first();
-    await expect(survivalCard).toBeVisible();
-
-    // Click and verify navigation
-    await survivalCard.click();
-    await expect(page).toHaveURL(/\/survival/);
+    const trapSpiceCard = page.getByRole("link", { name: /Trap & Spice Cards/i }).first();
+    await expect(trapSpiceCard).toBeVisible();
+    await trapSpiceCard.click();
+    await expect(page).toHaveURL(/\/trap-spice/);
   });
 
   test("tool links on home are valid when present", async ({ page }) => {
