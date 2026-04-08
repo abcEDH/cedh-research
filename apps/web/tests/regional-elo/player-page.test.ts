@@ -12,7 +12,7 @@ const tableData: TableData = {
     { id: "player-4", name: "Opponent C", topdeck_id: "opp-c" },
     { id: "player-5", name: "Unknown Region Player", topdeck_id: "unknown-region-player" },
   ],
-  regional_elo_leaderboard: [
+  global_elo_leaderboard: [
     {
       region_type: "global",
       region_key: "ALL",

@@ -4,10 +4,10 @@
 
 This PR shifts Global Elo from state-scoped ratings to a global all-games leaderboard, then layers precomputed assigned-state and country-filtered views on top of that global rating set. It also expands the player drilldown, updates Tournament Prep to use the same player-region and commander-forecasting logic, and moves expensive leaderboard derivation out of request-time rendering.
 
-- Replaces state Elo computation with a global `ALL` Elo pipeline, including paged month-by-month reads and a cleanup step before upserting `regional_elo_ratings`.
-- Adds backend computation for assigned-state activity and per-game Elo event rows, populating `regional_elo_state_activity` and `regional_elo_game_events` alongside global ratings.
+- Replaces state Elo computation with a global `ALL` Elo pipeline, including paged month-by-month reads and a cleanup step before upserting `global_elo_ratings`.
+- Adds backend computation for assigned-state activity and per-game Elo event rows, populating `global_elo_state_activity` and `global_elo_game_events` alongside global ratings.
 - Adds weekly precomputation for compact per-player commander profiles in `player_commander_profiles`, with UI fallbacks for deployments where the migration has not been applied yet.
-- Updates Global Elo UI to query precomputed `regional_elo_regions` and `regional_elo_leaderboard` rows instead of scanning all tournament entries and deriving state/region views during page render.
+- Updates Global Elo UI to query precomputed `global_elo_regions` and `global_elo_leaderboard` rows instead of scanning all tournament entries and deriving state/region views during page render.
 - Uses global Elo for ranking and displayed leaderboard game counts while using assigned-state activity to determine each player's primary region and region-filtered leaderboard placement.
 - Includes tournaments without state metadata in the global Elo source data and player profile totals, with those games grouped as `UNKNOWN country` / `UNKNOWN state` in state assignment.
 - Adds country-level Global Elo rows and updates the filter flow to choose Global or Country, then only show states belonging to the selected country.
@@ -32,5 +32,5 @@ This PR shifts Global Elo from state-scoped ratings to a global all-games leader
 - Updated focused Global Elo player page test coverage for the global leaderboard/assigned-state behavior.
 - Updated E2E home-page expectations after removing the Midseason page link.
 - CI validation now samples global `ALL` Elo rows and compares them to canonical player stats.
-- Backend workflow validation now checks `regional_elo_regions`, `regional_elo_game_event_log`, `regional_elo_state_activity`, and `regional_elo_game_events`.
+- Backend workflow validation now checks `global_elo_regions`, `global_elo_game_event_log`, `global_elo_state_activity`, and `global_elo_game_events`.
 - Verified the performance changes with targeted eslint, focused Global Elo tests, Python compile for `regional_elo.py`, and `git diff --check`.

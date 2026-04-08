@@ -26,7 +26,7 @@ Tournament prep uses three main sources:
 
 - TopDeck tournament API: event metadata, start time, standings, points, rounds, and submitted deck data when available.
 - `tournament_entries`: historical player commander usage, tournament dates, and TopDeck tournament slugs for decklist links.
-- `regional_elo_leaderboard`: attendee global Elo rating.
+- `global_elo_leaderboard`: attendee global Elo rating.
 
 The TopDeck API response does not explicitly identify league events. The page infers behavior from available data:
 

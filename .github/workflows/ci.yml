@@ -73,7 +73,7 @@ jobs:
 
           player = get("players", {"select": "id,name,topdeck_id", "topdeck_id": f"eq.{topdeck_id}"})[0]
           leaderboard_rows = get(
-            "regional_elo_leaderboard",
+            "global_elo_leaderboard",
             {
               "select": "region_key,rank,rating,games_played,wins,draws,losses",
               "region_type": "eq.global",
@@ -82,7 +82,7 @@ jobs:
             },
           )
           rating_rows = get(
-            "regional_elo_ratings",
+            "global_elo_ratings",
             {
               "select": "player_id,games_played,wins,draws,losses",
               "region_type": "eq.global",
@@ -92,12 +92,12 @@ jobs:
           )
           if not leaderboard_rows:
             raise SystemExit(
-              f"No regional_elo_leaderboard row for player_id={player['id']} "
+              f"No global_elo_leaderboard row for player_id={player['id']} "
               f"topdeck_id={topdeck_id} region={region}; rating={rating_rows[0] if rating_rows else None}"
             )
           if not rating_rows:
             raise SystemExit(
-              f"No regional_elo_ratings row for player_id={player['id']} "
+              f"No global_elo_ratings row for player_id={player['id']} "
               f"topdeck_id={topdeck_id} region={region}; leaderboard={leaderboard_rows[0]}"
             )
 

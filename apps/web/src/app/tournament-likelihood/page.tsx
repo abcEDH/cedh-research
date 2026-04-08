@@ -112,7 +112,7 @@ async function fetchBestEloRows(topdeckIds: string[]): Promise<EloRow[]> {
   if (topdeckIds.length === 0) return [];
 
   const { data, error } = await supabase
-    .from("regional_elo_leaderboard")
+    .from("global_elo_leaderboard")
     .select("topdeck_id, player_name, rating, games_played, primary_region_key, region_key, rank")
     .in("topdeck_id", topdeckIds)
     .eq("region_type", "global")

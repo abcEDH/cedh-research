@@ -136,10 +136,10 @@ jobs:
               ("commander_momentum", 1),
               ("commander_first_appearances", 10),
               ("survival_summary", 10),
-              ("regional_elo_player_stats", 10),
-              ("regional_elo_leaderboard", 10),
-              ("regional_elo_regions", 2),
-              ("regional_elo_game_event_log", 100),
+              ("global_elo_player_stats", 10),
+              ("global_elo_leaderboard", 10),
+              ("global_elo_regions", 2),
+              ("global_elo_game_event_log", 100),
           ]
 
           # RPC functions to validate
@@ -282,8 +282,8 @@ jobs:
               ("games", 5000),
               ("game_participants", 15000),
               ("players", 2000),
-              ("regional_elo_state_activity", 10),
-              ("regional_elo_game_events", 100),
+              ("global_elo_state_activity", 10),
+              ("global_elo_game_events", 100),
           ]
 
           failed = []
@@ -379,7 +379,7 @@ jobs:
           }
 
           leaderboard_url = (
-              f"{SUPABASE_URL}/rest/v1/regional_elo_leaderboard"
+              f"{SUPABASE_URL}/rest/v1/global_elo_leaderboard"
               "?select=region_type,region_key,player_id,games_played,wins,draws,losses"
               "&region_type=eq.global&region_key=eq.ALL&games_played=gt.0&limit=25"
           )
@@ -394,7 +394,7 @@ jobs:
           failures = []
           for row in leaderboard_rows:
               stats_url = (
-                  f"{SUPABASE_URL}/rest/v1/regional_elo_ratings"
+                  f"{SUPABASE_URL}/rest/v1/global_elo_ratings"
                   f"?select=games_played,wins,draws,losses"
                   f"&region_type=eq.{row['region_type']}"
                   f"&region_key=eq.{row['region_key']}"

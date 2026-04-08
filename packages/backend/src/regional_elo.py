@@ -429,7 +429,7 @@ def fetch_elo_game_rows(client: SupabaseClient) -> List[Dict[str, Any]]:
         end = next_month(start)
         page = fetch_all(
             client,
-            "regional_elo_game_results",
+            "global_elo_game_results",
             [
                 (
                     "select",
@@ -914,20 +914,20 @@ def upsert_state_activity_rows(client: SupabaseClient, rows: List[Dict[str, Any]
     try:
         upsert_rows(
             client,
-            "regional_elo_state_activity",
+            "global_elo_state_activity",
             rows,
             on_conflict="region_type,region_key,player_id",
         )
     except Exception as exc:
         print(
-            "Falling back to regional_elo_state_activity without country_key. "
+            "Falling back to global_elo_state_activity without country_key. "
             f"Apply the country-region migration to store country_key. Error: {exc}",
             flush=True,
         )
         fallback_rows = [{key: value for key, value in row.items() if key != "country_key"} for row in rows]
         upsert_rows(
             client,
-            "regional_elo_state_activity",
+            "global_elo_state_activity",
             fallback_rows,
             on_conflict="region_type,region_key,player_id",
         )
@@ -947,20 +947,20 @@ def main() -> None:
         raise SystemExit("Refusing to clear Regional Elo rows because no global rating rows were computed.")
 
     print("Deleting existing global Elo, state activity, and event rows")
-    client.delete("regional_elo_ratings", {"region_type": f"eq.{GLOBAL_REGION_TYPE}"})
-    client.delete("regional_elo_state_activity", {"region_type": f"eq.{STATE_REGION_TYPE}"})
-    delete_optional_rows(client, "regional_elo_game_events", {"region_type": f"eq.{GLOBAL_REGION_TYPE}"})
+    client.delete("global_elo_ratings", {"region_type": f"eq.{GLOBAL_REGION_TYPE}"})
+    client.delete("global_elo_state_activity", {"region_type": f"eq.{STATE_REGION_TYPE}"})
+    delete_optional_rows(client, "global_elo_game_events", {"region_type": f"eq.{GLOBAL_REGION_TYPE}"})
 
     upsert_rows(
         client,
-        "regional_elo_ratings",
+        "global_elo_ratings",
         rating_rows,
         on_conflict="region_type,region_key,player_id",
     )
     upsert_state_activity_rows(client, state_activity_rows)
     upsert_rows(
         client,
-        "regional_elo_game_events",
+        "global_elo_game_events",
         event_rows,
         on_conflict="region_type,region_key,game_id,player_id",
     )

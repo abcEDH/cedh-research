@@ -207,7 +207,7 @@ async function fetchEntries(playerId: string): Promise<EntryRow[]> {
 
 async function fetchGlobalEloRank(playerId: string): Promise<LeaderboardRankRow | null> {
   const { data } = await supabase
-    .from("regional_elo_leaderboard")
+    .from("global_elo_leaderboard")
     .select("primary_country_key, primary_region_key, rank, rating, games_played, wins, draws, losses")
     .eq("region_type", "global")
     .eq("region_key", "ALL")
@@ -221,7 +221,7 @@ async function fetchRegionalRank(playerId: string, regionKey: string): Promise<L
   if (!regionKey) return null;
 
   const { data, error } = await supabase
-    .from("regional_elo_leaderboard")
+    .from("global_elo_leaderboard")
     .select("country_key, region_key, rank, rating, games_played, wins, draws, losses")
     .eq("region_type", "state")
     .eq("region_key", regionKey)
@@ -230,7 +230,7 @@ async function fetchRegionalRank(playerId: string, regionKey: string): Promise<L
 
   if (error) {
     const { data: fallbackData } = await supabase
-      .from("regional_elo_leaderboard")
+      .from("global_elo_leaderboard")
       .select("region_key, rank, rating, games_played, wins, draws, losses")
       .eq("region_type", "state")
       .eq("region_key", regionKey)
@@ -245,7 +245,7 @@ async function fetchRegionalRank(playerId: string, regionKey: string): Promise<L
 
 async function fetchRegionalRanks(playerId: string): Promise<LeaderboardRankRow[]> {
   const { data, error } = await supabase
-    .from("regional_elo_leaderboard")
+    .from("global_elo_leaderboard")
     .select("country_key, region_key, rank, rating, games_played, wins, draws, losses")
     .eq("region_type", "state")
     .eq("player_id", playerId)
@@ -253,7 +253,7 @@ async function fetchRegionalRanks(playerId: string): Promise<LeaderboardRankRow[
 
   if (error) {
     const { data: fallbackData } = await supabase
-      .from("regional_elo_leaderboard")
+      .from("global_elo_leaderboard")
       .select("region_key, rank, rating, games_played, wins, draws, losses")
       .eq("region_type", "state")
       .eq("player_id", playerId)
@@ -489,7 +489,7 @@ async function fetchCommandersById(commanderIds: string[]): Promise<Map<string, 
 
 async function fetchPlayerEventLogs(playerId: string, regionFilter: string): Promise<PlayerGameLog[]> {
   let query = supabase
-    .from("regional_elo_game_event_log")
+    .from("global_elo_game_event_log")
     .select(
       "game_id, game_date, tournament_name, state, round_number, round_name, table_number, seat_position, commander_name, game_result"
     )
@@ -514,7 +514,7 @@ async function fetchPlayerEventLogs(playerId: string, regionFilter: string): Pro
   const opponentRows: PlayerEventOpponentRow[] = [];
   for (const gameIdChunk of chunkArray(gameIds, 250)) {
     const { data: opponentData, error: opponentError } = await supabase
-      .from("regional_elo_game_event_log")
+      .from("global_elo_game_event_log")
       .select("game_id, player_id, player_name, topdeck_id, seat_position, commander_name, game_result")
       .in("game_id", gameIdChunk)
       .neq("player_id", playerId)

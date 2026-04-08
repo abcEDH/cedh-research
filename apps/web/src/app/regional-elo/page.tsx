@@ -135,7 +135,7 @@ async function fetchLeaderboardRows(
     const remaining = maxRows - offset;
     const pageEnd = offset + Math.min(pageSize, remaining) - 1;
     let query = supabase
-      .from("regional_elo_leaderboard")
+      .from("global_elo_leaderboard")
       .select(
         "region_type, region_key, country_key, primary_country_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank"
       )
@@ -169,7 +169,7 @@ async function fetchLegacyLeaderboardRows(
   maxRows = LEADERBOARD_LIMIT
 ): Promise<LeaderboardRow[]> {
   const { data, error } = await supabase
-    .from("regional_elo_leaderboard")
+    .from("global_elo_leaderboard")
     .select(
       "region_type, region_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank"
     )
@@ -188,7 +188,7 @@ async function fetchLegacyLeaderboardRows(
 
 async function fetchRegionRows(): Promise<{ rows: RegionRow[]; supportsCountry: boolean }> {
   const { data, error } = await supabase
-    .from("regional_elo_regions")
+    .from("global_elo_regions")
     .select("region_type, region_key, country_key, player_count, updated_at")
     .order("region_type", { ascending: true })
     .order("region_key", { ascending: true });
@@ -198,7 +198,7 @@ async function fetchRegionRows(): Promise<{ rows: RegionRow[]; supportsCountry: 
   }
 
   const { data: fallbackData, error: fallbackError } = await supabase
-    .from("regional_elo_regions")
+    .from("global_elo_regions")
     .select("region_type, region_key, player_count, updated_at")
     .order("region_type", { ascending: true })
     .order("region_key", { ascending: true });
@@ -324,7 +324,7 @@ async function fetchRegionalValidity(): Promise<RegionalValidityRow[]> {
   }
 
   const { data, error } = await supabase
-    .from("regional_elo_data_validity")
+    .from("global_elo_data_validity")
     .select(
       [
         "region_type",
@@ -523,7 +523,7 @@ export default async function RegionalEloPage({
                 {!hasValidityData ? (
                   <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
                     Validity stats are unavailable in this deployment. The backend view
-                    <span className="mx-1 font-mono text-foreground">regional_elo_data_validity</span>
+                    <span className="mx-1 font-mono text-foreground">global_elo_data_validity</span>
                     likely has not been applied yet.
                   </div>
                 ) : null}
