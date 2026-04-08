@@ -277,6 +277,8 @@ class SupabaseClient:
                     logger.error(f"Update failed after {max_retries} retries: {e}")
                     raise
 
+        raise RuntimeError("Update failed without returning a response")
+
 
 class DirectPostgresClient:
     """Direct PostgreSQL client using psycopg2 for high-performance batch operations.
