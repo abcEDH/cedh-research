@@ -955,6 +955,16 @@ export default async function RegionalPlayerPage({
     if (b.latestDate !== a.latestDate) return b.latestDate.localeCompare(a.latestDate);
     return a.commander.localeCompare(b.commander);
   });
+  const latestDecklistByCommander = new Map<string, { date: string; url: string }>();
+  for (const row of await fetchPlayerCommanderUsageRows(player.id, topdeckId, player.name)) {
+    if (!isKnownCommanderName(row.commander_name) || !row.start_date) continue;
+    const url = row.decklist_url || row.topdeck_decklist_url;
+    if (!url) continue;
+    const existing = latestDecklistByCommander.get(row.commander_name);
+    if (!existing || row.start_date > existing.date) {
+      latestDecklistByCommander.set(row.commander_name, { date: row.start_date, url });
+    }
+  }
   const topdeckProfileHref = buildTopdeckProfileHref(topdeckId);
   const backHref = regionFilter
     ? `/regional-elo?scope=state&region=${encodeURIComponent(regionFilter)}`
@@ -1149,12 +1159,32 @@ export default async function RegionalPlayerPage({
                   <tbody>
                     {commanderRows.map((row) => {
                       const isActive = activeCommander === row.commander;
+                      const decklistUrl =
+                        row.commander === "Unknown Commander"
+                          ? null
+                          : latestDecklistByCommander.get(row.commander)?.url ?? null;
+                      const commanderLabel = row.commander === "Unknown Commander" ? "Unknown" : row.commander;
                       return (
                         <tr key={row.commander} className="border-t border-border/60">
                           <td className="px-2 py-3">
-                            <span className={isActive ? "font-semibold text-foreground" : "text-foreground"}>
-                              {row.commander === "Unknown Commander" ? "Unknown" : row.commander}
-                            </span>
+                            {decklistUrl ? (
+                              <a
+                                href={decklistUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className={
+                                  isActive
+                                    ? "font-semibold text-foreground hover:text-primary"
+                                    : "text-foreground hover:text-primary"
+                                }
+                              >
+                                {commanderLabel}
+                              </a>
+                            ) : (
+                              <span className={isActive ? "font-semibold text-foreground" : "text-foreground"}>
+                                {commanderLabel}
+                              </span>
+                            )}
                             {isActive ? (
                               <div className="text-[11px] text-primary">Active commander</div>
                             ) : null}
