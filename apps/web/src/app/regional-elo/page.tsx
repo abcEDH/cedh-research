@@ -596,7 +596,6 @@ export default async function RegionalEloPage({
                   selectedCountry={selectedCountry}
                   selectedRegion={selectedRegion}
                   supportsCountryRegions={hasCountryOptions}
-                  playerSearch={playerSearch}
                 />
                 <div className="text-xs text-muted-foreground">
                   Updated {updatedAt ? formatDate(updatedAt) : "—"}
@@ -607,13 +606,41 @@ export default async function RegionalEloPage({
           </div>
 
           <Card className="knd-panel">
-            <CardHeader>
-              <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
-                Top Players
-              </CardTitle>
-              <p className="text-xs text-muted-foreground">
-                Active view: {activeRegionType === "global" ? "Global" : activeRegionKey || "—"}
-              </p>
+            <CardHeader className="gap-4 md:flex-row md:items-end md:justify-between">
+              <div className="space-y-2">
+                <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
+                  Top Players
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Active view: {activeRegionType === "global" ? "Global" : activeRegionKey || "—"}
+                </p>
+              </div>
+              <form action="/regional-elo" method="get" className="flex w-full flex-col gap-2 md:max-w-sm md:flex-row">
+                <input type="hidden" name="scope" value={selectedScope} />
+                {selectedScope === "country" && selectedCountry ? (
+                  <input type="hidden" name="country" value={selectedCountry} />
+                ) : null}
+                {selectedScope === "country" && selectedRegion ? (
+                  <input type="hidden" name="region" value={selectedRegion} />
+                ) : null}
+                <label className="sr-only" htmlFor="leaderboard-player-search">
+                  Player search
+                </label>
+                <input
+                  id="leaderboard-player-search"
+                  type="search"
+                  name="q"
+                  defaultValue={playerSearch}
+                  className="knd-input"
+                  placeholder="Search player name"
+                />
+                <button
+                  type="submit"
+                  className="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-background"
+                >
+                  Search
+                </button>
+              </form>
             </CardHeader>
             <CardContent>
               <RegionalLeaderboardTable
