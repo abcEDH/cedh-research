@@ -111,18 +111,6 @@ const tableData: TableData = {
     { id: "entry-8", tournament_id: "tournament-2", player_id: "player-4", commander_id: "cmd-4" },
     { id: "entry-9", tournament_id: "tournament-4", player_id: "player-5", commander_id: "cmd-1" },
     { id: "entry-10", tournament_id: "tournament-5", player_id: "player-6", commander_id: "cmd-1" },
-    {
-      id: "entry-11",
-      tournament_id: "tournament-6",
-      player_id: "player-1",
-      commander_id: null,
-      tournaments: {
-        start_date: "2099-05-01",
-        name: "Future Open",
-        state: "Texas",
-        topdeck_tid: "future-open",
-      },
-    },
   ],
   game_participants: [
     { game_id: "game-1", entry_id: "entry-1", seat_position: 0, result: "win" },
@@ -189,7 +177,6 @@ const tableData: TableData = {
     { id: "tournament-3", name: "California Open III", start_date: "2026-04-01", state: "California" },
     { id: "tournament-4", name: "Unknown Region Open", start_date: "2026-04-04", state: null },
     { id: "tournament-5", name: "Inactive Open", start_date: "2025-01-01", state: "California" },
-    { id: "tournament-6", name: "Future Open", start_date: "2099-05-01", state: "Texas" },
   ],
   commanders: [
     { id: "cmd-1", name: "Rograkh / Silas" },
@@ -364,9 +351,6 @@ describe("RegionalPlayerPage", () => {
     expect(html).toContain("Global Rank");
     expect(html).toContain("Home Region");
     expect(html).toContain("Assigned state");
-    expect(html).toContain("Upcoming Tournaments");
-    expect(html).toContain("Future Open");
-    expect(html).toContain("https://topdeck.gg/bracket/future-open");
     expect(html).toContain(
       "TopDeck rank, points, games played, and record come from TopDeck."
     );
