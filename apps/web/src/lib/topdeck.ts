@@ -81,6 +81,7 @@ const CHAMPIONSHIP_LEADERBOARD_URL =
 export function extractTournamentSlug(input: string): string {
   const value = input.trim();
   if (!value) return "";
+  if (!value.includes("/") && !value.includes(".")) return value;
 
   try {
     const normalized = value.startsWith("http://") || value.startsWith("https://")

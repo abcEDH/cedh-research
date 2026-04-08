@@ -76,6 +76,10 @@ function chunkArray<T>(values: T[], chunkSize = 250) {
   return chunks;
 }
 
+function buildTopdeckTournamentUrl(slug: string) {
+  return slug ? `https://topdeck.gg/bracket/${slug}` : null;
+}
+
 function readStringParam(
   params:
     | Record<string, string | string[] | undefined>
@@ -430,6 +434,7 @@ export default async function TournamentLikelihoodPage({
   const topFiveCombinedShare = fieldShareRows
     .slice(0, 5)
     .reduce((sum, row) => sum + row.fieldShare, 0);
+  const tournamentHref = buildTopdeckTournamentUrl(slug);
 
   const profileByPlayer = new Map(profiles.players.map((player) => [player.topdeckId, player]));
   const standingByPlayer = new Map(standings.map((player) => [player.id, player]));
@@ -534,7 +539,15 @@ export default async function TournamentLikelihoodPage({
               <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <div className="rounded-md border border-border/60 bg-muted/20 p-4">
                   <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Tournament</p>
-                  <p className="mt-2 text-lg font-semibold text-foreground">{tournament.name}</p>
+                  <p className="mt-2 text-lg font-semibold text-foreground">
+                    {tournamentHref ? (
+                      <a href={tournamentHref} target="_blank" rel="noreferrer" className="hover:text-primary">
+                        {tournament.name}
+                      </a>
+                    ) : (
+                      tournament.name
+                    )}
+                  </p>
                   <p className="mt-1 text-sm text-muted-foreground">
                     {tournament.format} | {formatStartTime(tournament.startDate)}
                   </p>
