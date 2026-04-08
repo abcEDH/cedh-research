@@ -567,9 +567,21 @@ def extract_commanders(
     return []
 
 
+DOUBLE_FACED_BACK_FACE_OVERRIDES = {
+    "Brigid, Doun's Mind": "Brigid, Clachan's Heart",
+    "Etali, Primal Sickness": "Etali, Primal Conqueror",
+    "Heliod, the Warped Eclipse": "Heliod, the Radiant Dawn",
+    "Kefka, Ruler of Ruin": "Kefka, Court Mage",
+    "Ral, Leyline Prodigy": "Ral, Monsoon Mage",
+    "Sephiroth, One-Winged Angel": "Sephiroth, Fabled SOLDIER",
+}
+
+
 def clean_commander_card_name(name: str) -> str:
     """Normalize escaped card-name text from imported decklist sources."""
-    return name.strip().replace("\\'", "'").replace('\\"', '"')
+    cleaned = name.strip().replace("\\'", "'").replace('\\"', '"')
+    cleaned = cleaned.split(" // ", 1)[0].strip()
+    return DOUBLE_FACED_BACK_FACE_OVERRIDES.get(cleaned, cleaned)
 
 
 def normalize_commander_name(commanders: list[str]) -> str:
