@@ -57,7 +57,7 @@ uv run python src/export_all_time_tids.py --out data/all_time_tids.txt
 
 ### 3. Moxfield Decklists
 **Problem:** Some decklists are just Moxfield URLs, no card data
-**Current:** Imported Moxfield deck text with `~~Commanders~~` can be backfilled with `src/backfill_moxfield_commanders.py --embedded-only`. Pure Moxfield URLs require `--resolve-moxfield-api` from an environment that can reach Moxfield without Cloudflare blocking.
+**Current:** Imported Moxfield deck text with `~~Commanders~~` can be backfilled with `src/backfill_moxfield_commanders.py --embedded-only`. Pure Moxfield URLs require `--resolve-moxfield-api` or `--resolve-moxfield-page` from an environment that can reach Moxfield without Cloudflare blocking.
 
 ## Data Model Highlights
 

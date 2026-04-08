@@ -12,6 +12,7 @@ Usage:
 """
 
 import argparse
+import html
 import json
 import logging
 import os
@@ -444,23 +445,88 @@ def extract_moxfield_commanders(payload: dict) -> list[str]:
     return names
 
 
-def fetch_moxfield_commanders(decklist: str, session: requests.Session | None = None) -> list[str]:
+def extract_moxfield_commanders_from_html(page_html: str) -> list[str]:
+    """Extract commander names from embedded JSON in a Moxfield deck page."""
+    script_pattern = re.compile(
+        r"<script[^>]+type=[\"']application/json[\"'][^>]*>(.*?)</script>",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+
+    def find_commanders(value: object) -> list[str]:
+        if isinstance(value, dict):
+            commanders = extract_moxfield_commanders(value)
+            if commanders:
+                return commanders
+            for child in value.values():
+                commanders = find_commanders(child)
+                if commanders:
+                    return commanders
+        elif isinstance(value, list):
+            for child in value:
+                commanders = find_commanders(child)
+                if commanders:
+                    return commanders
+        return []
+
+    for match in script_pattern.finditer(page_html):
+        raw_json = html.unescape(match.group(1).strip())
+        if not raw_json or "commander" not in raw_json.lower():
+            continue
+        try:
+            payload = json.loads(raw_json)
+        except json.JSONDecodeError:
+            continue
+        commanders = find_commanders(payload)
+        if commanders:
+            return commanders
+
+    return []
+
+
+def fetch_moxfield_commanders(
+    decklist: str,
+    session: requests.Session | None = None,
+    source: str = "api",
+) -> list[str]:
     """Fetch commander names for a public Moxfield deck URL."""
     deck_id = extract_moxfield_deck_id(decklist)
     if not deck_id:
         return []
 
     http = session or requests.Session()
-    response = http.get(
-        f"https://api.moxfield.com/v2/decks/all/{deck_id}",
-        headers={
-            "Accept": "application/json",
-            "User-Agent": "cedh-research/1.0",
-        },
-        timeout=30,
-    )
-    response.raise_for_status()
-    return extract_moxfield_commanders(response.json())
+    headers = {
+        "Accept": "application/json,text/html",
+        "User-Agent": "cedh-research/1.0",
+    }
+
+    if source in {"api", "auto"}:
+        try:
+            response = http.get(
+                f"https://api.moxfield.com/v2/decks/all/{deck_id}",
+                headers=headers,
+                timeout=30,
+            )
+            response.raise_for_status()
+            commanders = extract_moxfield_commanders(response.json())
+            if commanders or source == "api":
+                return commanders
+        except requests.RequestException:
+            if source == "api":
+                raise
+
+    if source in {"page", "auto"}:
+        response = http.get(
+            f"https://www.moxfield.com/decks/{deck_id}",
+            headers={
+                **headers,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+        return extract_moxfield_commanders_from_html(response.text)
+
+    return []
 
 
 def extract_commanders(
@@ -468,6 +534,7 @@ def extract_commanders(
     *,
     resolve_moxfield: bool = False,
     moxfield_session: requests.Session | None = None,
+    moxfield_source: str = "api",
 ) -> list[str]:
     """Extract commander names from a decklist string."""
     if not decklist:
@@ -492,7 +559,7 @@ def extract_commanders(
 
     if resolve_moxfield and extract_moxfield_deck_id(decklist):
         try:
-            return fetch_moxfield_commanders(decklist, session=moxfield_session)
+            return fetch_moxfield_commanders(decklist, session=moxfield_session, source=moxfield_source)
         except requests.RequestException as e:
             logger.warning(f"Failed to fetch Moxfield commanders: {e}")
             return []

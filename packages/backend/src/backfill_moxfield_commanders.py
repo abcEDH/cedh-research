@@ -94,10 +94,20 @@ def main() -> None:
     parser.add_argument("--include-known", action="store_true", help="Update rows that already have non-placeholder commanders")
     parser.add_argument("--embedded-only", action="store_true", help="Only process imported deck text with embedded commander sections")
     parser.add_argument("--resolve-moxfield-api", action="store_true", help="Fetch pure Moxfield URLs from the Moxfield API")
-    parser.add_argument("--max-api-requests", type=int, help="Stop after this many Moxfield API requests")
-    parser.add_argument("--sleep", type=float, default=0.2, help="Seconds to sleep between Moxfield API requests")
+    parser.add_argument("--resolve-moxfield-page", action="store_true", help="Scrape pure Moxfield URLs from public deck pages")
+    parser.add_argument("--max-moxfield-requests", type=int, help="Stop after this many Moxfield URL requests")
+    parser.add_argument("--max-api-requests", type=int, help="Deprecated alias for --max-moxfield-requests")
+    parser.add_argument("--sleep", type=float, default=0.2, help="Seconds to sleep between Moxfield URL requests")
     parser.add_argument("--dry-run", action="store_true", help="Do not write changes")
     args = parser.parse_args()
+    max_moxfield_requests = args.max_moxfield_requests
+    if max_moxfield_requests is None:
+        max_moxfield_requests = args.max_api_requests
+    moxfield_source = "api"
+    if args.resolve_moxfield_api and args.resolve_moxfield_page:
+        moxfield_source = "auto"
+    elif args.resolve_moxfield_page:
+        moxfield_source = "page"
 
     supabase_url, supabase_key = load_credentials()
     client = SupabaseClient(supabase_url, supabase_key)
@@ -107,7 +117,7 @@ def main() -> None:
     updated = 0
     skipped_known = 0
     unresolved = 0
-    api_requests = 0
+    moxfield_requests = 0
     offset = args.offset
 
     while True:
@@ -133,23 +143,24 @@ def main() -> None:
 
             decklist = row.get("decklist_url") or ""
             if (
-                args.max_api_requests is not None
-                and api_requests >= args.max_api_requests
+                max_moxfield_requests is not None
+                and moxfield_requests >= max_moxfield_requests
                 and "~~Commanders~~" not in decklist
             ):
                 break
 
-            should_resolve_api = args.resolve_moxfield_api
-            if args.max_api_requests is not None and api_requests >= args.max_api_requests:
-                should_resolve_api = False
+            should_resolve_moxfield = args.resolve_moxfield_api or args.resolve_moxfield_page
+            if max_moxfield_requests is not None and moxfield_requests >= max_moxfield_requests:
+                should_resolve_moxfield = False
 
             commanders = extract_commanders(
                 decklist,
-                resolve_moxfield=should_resolve_api,
+                resolve_moxfield=should_resolve_moxfield,
                 moxfield_session=http,
+                moxfield_source=moxfield_source,
             )
-            if should_resolve_api and "~~Commanders~~" not in decklist:
-                api_requests += 1
+            if should_resolve_moxfield and "~~Commanders~~" not in decklist:
+                moxfield_requests += 1
                 time.sleep(args.sleep)
 
             commander_name = normalize_commander_name(commanders)
@@ -184,12 +195,12 @@ def main() -> None:
 
         print(
             f"scanned={scanned} updated={updated} unresolved={unresolved} "
-            f"skipped_known={skipped_known} api_requests={api_requests}"
+            f"skipped_known={skipped_known} moxfield_requests={moxfield_requests}"
         )
 
         if args.limit and updated >= args.limit:
             break
-        if args.max_api_requests is not None and api_requests >= args.max_api_requests and not args.embedded_only:
+        if max_moxfield_requests is not None and moxfield_requests >= max_moxfield_requests and not args.embedded_only:
             break
 
         if args.dry_run or args.include_known or not pending_updates:
@@ -197,7 +208,7 @@ def main() -> None:
 
     print(
         f"Done. scanned={scanned} updated={updated} unresolved={unresolved} "
-        f"skipped_known={skipped_known} api_requests={api_requests} dry_run={args.dry_run}"
+        f"skipped_known={skipped_known} moxfield_requests={moxfield_requests} dry_run={args.dry_run}"
     )
 
 
