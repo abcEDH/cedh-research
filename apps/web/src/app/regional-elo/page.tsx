@@ -60,6 +60,21 @@ function readScopeParam(
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
 }
 
+function readSearchParam(
+  params: Awaited<Promise<{ q?: string | string[] }> | { q?: string | string[] }> | undefined
+) {
+  const anyParams = params as
+    | Record<string, string | string[] | undefined>
+    | URLSearchParams
+    | undefined;
+  if (!anyParams) return "";
+  if (typeof (anyParams as URLSearchParams).get === "function") {
+    return (anyParams as URLSearchParams).get("q") ?? "";
+  }
+  const value = (anyParams as Record<string, string | string[] | undefined>).q;
+  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+}
+
 type RegionRow = {
   region_type: string;
   region_key: string;
@@ -116,11 +131,13 @@ function activePlayerCutoffDate() {
 async function fetchLeaderboardRows(
   regionType: "global" | "country" | "state",
   regionKey: string,
-  maxRows = LEADERBOARD_LIMIT
+  maxRows = LEADERBOARD_LIMIT,
+  searchQuery = ""
 ): Promise<LeaderboardRow[]> {
   const pageSize = 1000;
   const rows: LeaderboardRow[] = [];
   const cutoffDate = activePlayerCutoffDate();
+  const normalizedSearch = searchQuery.trim();
 
   for (let offset = 0; offset < maxRows; offset += pageSize) {
     const remaining = maxRows - offset;
@@ -134,6 +151,10 @@ async function fetchLeaderboardRows(
       .order("rank", { ascending: true })
       .range(offset, pageEnd);
 
+    if (normalizedSearch) {
+      query = query.ilike("player_name", `%${normalizedSearch}%`);
+    }
+
     if (regionType === "global") {
       query = query.eq("region_key", GLOBAL_REGION_KEY);
     } else {
@@ -143,7 +164,7 @@ async function fetchLeaderboardRows(
     const { data, error } = await query;
 
     if (error) {
-      return fetchLeaderboardRowsFromView(regionType, regionKey, maxRows, cutoffDate);
+      return fetchLeaderboardRowsFromView(regionType, regionKey, maxRows, cutoffDate, normalizedSearch);
     }
     if (!data?.length) break;
     rows.push(...(data as LeaderboardRow[]));
@@ -157,9 +178,10 @@ async function fetchLeaderboardRowsFromView(
   regionType: "global" | "country" | "state",
   regionKey: string,
   maxRows: number,
-  cutoffDate: string
+  cutoffDate: string,
+  searchQuery = ""
 ): Promise<LeaderboardRow[]> {
-  const { data, error } = await supabase
+  let query = supabase
     .from("global_elo_leaderboard")
     .select(
       "region_type, region_key, country_key, primary_country_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank"
@@ -171,11 +193,18 @@ async function fetchLeaderboardRowsFromView(
     .order("games_played", { ascending: false })
     .range(0, maxRows - 1);
 
+  if (searchQuery) {
+    query = query.ilike("player_name", `%${searchQuery}%`);
+  }
+
+  const { data, error } = await query;
+
   if (error) {
     return fetchLegacyLeaderboardRows(
       regionType === "country" ? "global" : regionType,
       regionType === "country" ? GLOBAL_REGION_KEY : regionKey,
-      maxRows
+      maxRows,
+      searchQuery
     );
   }
 
@@ -185,10 +214,11 @@ async function fetchLeaderboardRowsFromView(
 async function fetchLegacyLeaderboardRows(
   regionType: "global" | "state",
   regionKey: string,
-  maxRows = LEADERBOARD_LIMIT
+  maxRows = LEADERBOARD_LIMIT,
+  searchQuery = ""
 ): Promise<LeaderboardRow[]> {
   const cutoffDate = activePlayerCutoffDate();
-  const { data, error } = await supabase
+  let query = supabase
     .from("regional_elo_leaderboard")
     .select(
       "region_type, region_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank"
@@ -198,6 +228,12 @@ async function fetchLegacyLeaderboardRows(
     .gte("last_game_date", cutoffDate)
     .order("rank", { ascending: true })
     .range(0, maxRows - 1);
+
+  if (searchQuery) {
+    query = query.ilike("player_name", `%${searchQuery}%`);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     console.error("Error fetching legacy leaderboard rows:", error);
@@ -444,8 +480,8 @@ export default async function RegionalEloPage({
   searchParams,
 }: {
   searchParams?:
-    | { country?: string | string[]; region?: string | string[]; scope?: string | string[] }
-    | Promise<{ country?: string | string[]; region?: string | string[]; scope?: string | string[] }>;
+    | { country?: string | string[]; q?: string | string[]; region?: string | string[]; scope?: string | string[] }
+    | Promise<{ country?: string | string[]; q?: string | string[]; region?: string | string[]; scope?: string | string[] }>;
 }) {
   const resolvedSearchParams = await Promise.resolve(searchParams);
   const regionResult = await fetchRegionRows();
@@ -455,6 +491,7 @@ export default async function RegionalEloPage({
   const requestedScope = readScopeParam(resolvedSearchParams).trim().toLowerCase();
   const requestedCountry = decodeURIComponent(readCountryParam(resolvedSearchParams)).trim();
   const requestedRegion = decodeURIComponent(readRegionParam(resolvedSearchParams)).trim();
+  const playerSearch = decodeURIComponent(readSearchParam(resolvedSearchParams)).trim();
   const countryRegions = regions.filter((region) => region.region_type === "country");
   const hasCountryOptions = countryRegions.length > 0;
   const selectedScope: "global" | "country" =
@@ -484,10 +521,17 @@ export default async function RegionalEloPage({
   const leaderboard =
     activeRegionKey
       ? supportsCountryRegions
-        ? await fetchLeaderboardRows(activeRegionType, activeRegionKey)
+        ? await fetchLeaderboardRows(
+            activeRegionType,
+            activeRegionKey,
+            playerSearch ? 250 : LEADERBOARD_LIMIT,
+            playerSearch
+          )
         : await fetchLegacyLeaderboardRows(
             activeRegionType === "state" ? "state" : "global",
-            activeRegionType === "state" ? activeRegionKey : GLOBAL_REGION_KEY
+            activeRegionType === "state" ? activeRegionKey : GLOBAL_REGION_KEY,
+            playerSearch ? 250 : LEADERBOARD_LIMIT,
+            playerSearch
           )
       : [];
 
@@ -552,6 +596,7 @@ export default async function RegionalEloPage({
                   selectedCountry={selectedCountry}
                   selectedRegion={selectedRegion}
                   supportsCountryRegions={hasCountryOptions}
+                  playerSearch={playerSearch}
                 />
                 <div className="text-xs text-muted-foreground">
                   Updated {updatedAt ? formatDate(updatedAt) : "—"}

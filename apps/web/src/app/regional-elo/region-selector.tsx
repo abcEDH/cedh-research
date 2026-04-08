@@ -14,12 +14,14 @@ export function RegionSelector({
   selectedScope,
   selectedCountry,
   selectedRegion,
+  playerSearch,
   supportsCountryRegions = true,
 }: {
   regions: RegionOption[];
   selectedScope: "global" | "country";
   selectedCountry?: string;
   selectedRegion?: string;
+  playerSearch?: string;
   supportsCountryRegions?: boolean;
 }) {
   const [isLoading, setIsLoading] = useState(false);
@@ -82,6 +84,14 @@ export function RegionSelector({
           </select>
         </>
       ) : null}
+      <label className="text-sm text-muted-foreground">Player search</label>
+      <input
+        type="search"
+        name="q"
+        defaultValue={playerSearch ?? ""}
+        className="knd-input"
+        placeholder="Search player name"
+      />
       <button
         type="submit"
         disabled={isLoading}
