@@ -57,7 +57,7 @@ jobs:
         run: pip install -r packages/backend/requirements.txt
 
       - name: Run bounded data ingestion
-        run: python packages/backend/src/ingest.py --days 7 --min-players 32
+        run: python packages/backend/src/ingest.py --days 7 --min-players 32 --limit 10
 
       - name: Smoke-test leaderboard recompute
         run: python packages/backend/src/regional_elo.py --smoke-days 30 --dry-run

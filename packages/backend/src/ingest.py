@@ -1259,6 +1259,7 @@ def main():
         help="Include all candidate IDs for ambiguous name matches",
     )
     parser.add_argument("--dry-run", action="store_true", help="Don't write to database")
+    parser.add_argument("--limit", type=int, default=0, help="Maximum number of tournaments to process")
     parser.add_argument(
         "--direct",
         action="store_true",
@@ -1461,6 +1462,10 @@ def main():
         if start_dt and end_dt and end_dt < start_dt:
             logger.error("--end-date must be on or after --start-date")
             sys.exit(1)
+
+        if args.limit > 0 and len(tids) > args.limit:
+            logger.info(f"Limiting to {args.limit} tournaments (from {len(tids)})")
+            tids = tids[: args.limit]
 
         batches = chunk_items(tids, args.batch_size)
         logger.info(f"Prepared {len(batches)} batches from {len(tids)} tournaments (batch_size={args.batch_size})")
@@ -1842,6 +1847,10 @@ def main():
             tournaments = topdeck.search_tournaments(
                 days=args.days, min_players=args.min_players
             )
+
+        if args.limit > 0 and len(tournaments) > args.limit:
+            logger.info(f"Limiting to {args.limit} tournaments (from {len(tournaments)})")
+            tournaments = tournaments[: args.limit]
 
         for t in tournaments:
             if ingester:
