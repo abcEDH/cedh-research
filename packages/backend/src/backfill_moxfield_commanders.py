@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import argparse
 import csv
+import html
 import os
+import re
 import time
 from pathlib import Path
 
@@ -53,16 +55,19 @@ def fetch_moxfield_entries(
     offset: int,
     embedded_only: bool,
     include_known: bool,
+    player_topdeck_id: str | None = None,
 ) -> list[dict]:
     decklist_filter = "ilike.*moxfield.com*"
     if embedded_only:
         decklist_filter = "ilike.*~~Commanders~~*moxfield.com*"
 
-    select = "id,decklist_url,commanders(name)"
+    select = "id,decklist_url,commanders(name),players(topdeck_id),tournaments(topdeck_tid)"
     filters = {}
     if not include_known:
-        select = "id,decklist_url,commanders!inner(name)"
+        select = "id,decklist_url,commanders!inner(name),players!inner(topdeck_id),tournaments(topdeck_tid)"
         filters["commanders.name"] = 'in.("Unknown Commander","Moxfield Deck")'
+    if player_topdeck_id:
+        filters["players.topdeck_id"] = f"eq.{player_topdeck_id}"
 
     return client.select(
         "tournament_entries",
@@ -121,6 +126,7 @@ def export_unresolved_csv(
                 offset=offset,
                 embedded_only=False,
                 include_known=False,
+                player_topdeck_id=None,
             )
             if not rows:
                 break
@@ -191,6 +197,39 @@ def import_resolved_csv(
     print(f"Imported {updated} resolved rows from {input_path}; skipped={skipped} dry_run={dry_run}")
 
 
+def relation_value(row: dict, key: str) -> dict:
+    value = row.get(key)
+    if isinstance(value, list):
+        return value[0] if value else {}
+    return value if isinstance(value, dict) else {}
+
+
+def extract_topdeck_deck_page_commanders(page_html: str) -> list[str]:
+    names = []
+    for name in re.findall(r'class=["\'][^"\']*commander-card[^"\']*["\'][^>]*data-name=["\']([^"\']+)["\']', page_html):
+        decoded = html.unescape(name).strip()
+        if decoded and decoded not in names:
+            names.append(decoded)
+    return names
+
+
+def fetch_topdeck_deck_page_commanders(
+    tournament_id: str,
+    player_identifier: str,
+    session: requests.Session,
+) -> list[str]:
+    response = session.get(
+        f"https://topdeck.gg/deck/{tournament_id}/{player_identifier}",
+        headers={
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "User-Agent": "cedh-research/1.0",
+        },
+        timeout=30,
+    )
+    response.raise_for_status()
+    return extract_topdeck_deck_page_commanders(response.text)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Backfill commanders for Moxfield decklist entries")
     parser.add_argument("--limit", type=int, help="Maximum rows to update")
@@ -200,7 +239,10 @@ def main() -> None:
     parser.add_argument("--embedded-only", action="store_true", help="Only process imported deck text with embedded commander sections")
     parser.add_argument("--resolve-moxfield-api", action="store_true", help="Fetch pure Moxfield URLs from the Moxfield API")
     parser.add_argument("--resolve-moxfield-page", action="store_true", help="Scrape pure Moxfield URLs from public deck pages")
+    parser.add_argument("--resolve-topdeck-deck-page", action="store_true", help="Scrape TopDeck's /deck/{tournament}/{player} page")
+    parser.add_argument("--player-topdeck-id", help="Only process entries for one TopDeck player id")
     parser.add_argument("--max-moxfield-requests", type=int, help="Stop after this many Moxfield URL requests")
+    parser.add_argument("--max-topdeck-requests", type=int, help="Stop after this many TopDeck deck page requests")
     parser.add_argument("--max-api-requests", type=int, help="Deprecated alias for --max-moxfield-requests")
     parser.add_argument("--sleep", type=float, default=0.2, help="Seconds to sleep between Moxfield URL requests")
     parser.add_argument("--export-unresolved-csv", type=Path, help="Write unresolved Moxfield entries to CSV")
@@ -245,6 +287,7 @@ def main() -> None:
     skipped_known = 0
     unresolved = 0
     moxfield_requests = 0
+    topdeck_requests = 0
     offset = args.offset
 
     while True:
@@ -254,6 +297,7 @@ def main() -> None:
             offset=offset,
             embedded_only=args.embedded_only,
             include_known=args.include_known,
+            player_topdeck_id=args.player_topdeck_id,
         )
         if not rows:
             break
@@ -291,6 +335,19 @@ def main() -> None:
                 time.sleep(args.sleep)
 
             commander_name = normalize_commander_name(commanders)
+            if commander_name in PLACEHOLDER_COMMANDERS and args.resolve_topdeck_deck_page:
+                if args.max_topdeck_requests is not None and topdeck_requests >= args.max_topdeck_requests:
+                    break
+                player_topdeck_id = relation_value(row, "players").get("topdeck_id")
+                tournament_topdeck_id = relation_value(row, "tournaments").get("topdeck_tid")
+                if player_topdeck_id and tournament_topdeck_id:
+                    try:
+                        commanders = fetch_topdeck_deck_page_commanders(tournament_topdeck_id, player_topdeck_id, http)
+                    except requests.RequestException as exc:
+                        print(f"TopDeck deck page fetch failed for entry {row['id']}: {exc}")
+                    topdeck_requests += 1
+                    commander_name = normalize_commander_name(commanders)
+
             if commander_name in PLACEHOLDER_COMMANDERS:
                 unresolved += 1
                 continue
@@ -314,12 +371,14 @@ def main() -> None:
 
         print(
             f"scanned={scanned} updated={updated} unresolved={unresolved} "
-            f"skipped_known={skipped_known} moxfield_requests={moxfield_requests}"
+            f"skipped_known={skipped_known} moxfield_requests={moxfield_requests} topdeck_requests={topdeck_requests}"
         )
 
         if args.limit and updated >= args.limit:
             break
         if max_moxfield_requests is not None and moxfield_requests >= max_moxfield_requests and not args.embedded_only:
+            break
+        if args.max_topdeck_requests is not None and topdeck_requests >= args.max_topdeck_requests:
             break
 
         if args.dry_run or args.include_known or not pending_updates:
@@ -327,7 +386,8 @@ def main() -> None:
 
     print(
         f"Done. scanned={scanned} updated={updated} unresolved={unresolved} "
-        f"skipped_known={skipped_known} moxfield_requests={moxfield_requests} dry_run={args.dry_run}"
+        f"skipped_known={skipped_known} moxfield_requests={moxfield_requests} "
+        f"topdeck_requests={topdeck_requests} dry_run={args.dry_run}"
     )
 
 
