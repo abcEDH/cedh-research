@@ -148,6 +148,16 @@ function chunkArray<T>(values: T[], chunkSize: number) {
   return chunks;
 }
 
+function describeSupabaseError(error: unknown) {
+  if (!error) return "unknown error";
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object") {
+    const details = error as { message?: string; code?: string; details?: string; hint?: string };
+    return [details.message, details.code, details.details, details.hint].filter(Boolean).join(" | ") || JSON.stringify(error);
+  }
+  return String(error);
+}
+
 function toRoundLabel(game: GameRow) {
   if (game.round_name) return game.round_name;
   if (game.round_number !== null) return `Round ${game.round_number}`;
@@ -537,40 +547,55 @@ async function fetchCommandersById(commanderIds: string[]): Promise<Map<string, 
 }
 
 async function fetchPlayerEventLogs(playerId: string, regionFilter: string): Promise<PlayerGameLog[]> {
-  let query = supabase
-    .from("global_elo_game_event_log")
-    .select(
-      "game_id, game_date, tournament_name, state, round_number, round_name, table_number, seat_position, commander_name, game_result"
-    )
-    .eq("player_id", playerId)
-    .order("game_date", { ascending: false })
-    .range(0, 499);
+  const eventLogTables = ["global_elo_game_event_log", "regional_elo_game_event_log"];
+  let eventRows: PlayerEventLogRow[] = [];
+  let eventLogTable = eventLogTables[0];
+  let lastEventError: unknown = null;
 
-  if (regionFilter) {
-    query = query.ilike("state", regionFilter);
+  for (const table of eventLogTables) {
+    let query = supabase
+      .from(table)
+      .select(
+        "game_id, game_date, tournament_name, state, round_number, round_name, table_number, seat_position, commander_name, game_result"
+      )
+      .eq("player_id", playerId)
+      .order("game_date", { ascending: false })
+      .range(0, 499);
+
+    if (regionFilter) {
+      query = query.ilike("state", regionFilter);
+    }
+
+    const { data, error } = await query;
+    if (!error) {
+      eventRows = (data as PlayerEventLogRow[]) ?? [];
+      eventLogTable = table;
+      break;
+    }
+    lastEventError = error;
   }
 
-  const { data, error } = await query;
-  if (error) {
-    console.error("Error fetching precomputed player event log:", error);
+  if (lastEventError && eventRows.length === 0 && eventLogTable === eventLogTables[0]) {
+    console.error("Error fetching precomputed player event log:", describeSupabaseError(lastEventError));
     return [];
   }
-
-  const eventRows = (data as PlayerEventLogRow[]) ?? [];
   if (eventRows.length === 0) return [];
 
   const gameIds = Array.from(new Set(eventRows.map((row) => row.game_id)));
   const opponentRows: PlayerEventOpponentRow[] = [];
   for (const gameIdChunk of chunkArray(gameIds, 250)) {
     const { data: opponentData, error: opponentError } = await supabase
-      .from("global_elo_game_event_log")
+      .from(eventLogTable)
       .select("game_id, player_id, player_name, topdeck_id, seat_position, commander_name, game_result")
       .in("game_id", gameIdChunk)
       .neq("player_id", playerId)
       .range(0, 499);
 
     if (opponentError) {
-      console.error("Error fetching precomputed player event opponents:", opponentError);
+      console.error(
+        "Error fetching precomputed player event opponents:",
+        describeSupabaseError(opponentError)
+      );
       continue;
     }
     opponentRows.push(...((opponentData as PlayerEventOpponentRow[]) ?? []));
