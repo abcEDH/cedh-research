@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import os
 import time
 from pathlib import Path
@@ -86,6 +87,110 @@ def commander_name_for_entry(entry: dict) -> str | None:
     return name if isinstance(name, str) else None
 
 
+def upsert_commanders(client: SupabaseClient, commander_data: dict[str, list[str]]) -> dict[str, str]:
+    if not commander_data:
+        return {}
+
+    result = client.upsert(
+        "commanders",
+        [
+            {"name": name, "commander_names": names or [name]}
+            for name, names in commander_data.items()
+        ],
+        on_conflict="name",
+    )
+    return {row["name"]: row["id"] for row in result}
+
+
+def export_unresolved_csv(
+    client: SupabaseClient,
+    *,
+    output_path: Path,
+    page_size: int,
+    limit: int | None,
+) -> None:
+    written = 0
+    offset = 0
+    with output_path.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["entry_id", "decklist_url", "commander_names"])
+        writer.writeheader()
+        while True:
+            rows = fetch_moxfield_entries(
+                client,
+                limit=page_size,
+                offset=offset,
+                embedded_only=False,
+                include_known=False,
+            )
+            if not rows:
+                break
+
+            for row in rows:
+                writer.writerow({
+                    "entry_id": row["id"],
+                    "decklist_url": row.get("decklist_url") or "",
+                    "commander_names": "",
+                })
+                written += 1
+                if limit and written >= limit:
+                    print(f"Exported {written} unresolved Moxfield rows to {output_path}")
+                    return
+
+            offset += len(rows)
+
+    print(f"Exported {written} unresolved Moxfield rows to {output_path}")
+
+
+def import_resolved_csv(
+    client: SupabaseClient,
+    *,
+    input_path: Path,
+    commander_delimiter: str,
+    dry_run: bool,
+) -> None:
+    rows_to_update: list[tuple[str, str]] = []
+    commander_data: dict[str, list[str]] = {}
+    skipped = 0
+
+    with input_path.open(newline="") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            entry_id = (row.get("entry_id") or "").strip()
+            raw_commander_names = (row.get("commander_names") or "").strip()
+            if not entry_id or not raw_commander_names:
+                skipped += 1
+                continue
+
+            commanders = [
+                commander.strip()
+                for commander in raw_commander_names.split(commander_delimiter)
+                if commander.strip()
+            ]
+            commander_name = normalize_commander_name(commanders)
+            if commander_name in PLACEHOLDER_COMMANDERS:
+                skipped += 1
+                continue
+
+            commander_data[commander_name] = commanders
+            rows_to_update.append((entry_id, commander_name))
+
+    commander_ids = {} if dry_run else upsert_commanders(client, commander_data)
+    updated = 0
+    for entry_id, commander_name in rows_to_update:
+        if dry_run:
+            updated += 1
+            continue
+
+        commander_id = commander_ids.get(commander_name)
+        if not commander_id:
+            skipped += 1
+            continue
+        client.update("tournament_entries", {"commander_id": commander_id}, {"id": f"eq.{entry_id}"})
+        updated += 1
+
+    print(f"Imported {updated} resolved rows from {input_path}; skipped={skipped} dry_run={dry_run}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Backfill commanders for Moxfield decklist entries")
     parser.add_argument("--limit", type=int, help="Maximum rows to update")
@@ -98,6 +203,9 @@ def main() -> None:
     parser.add_argument("--max-moxfield-requests", type=int, help="Stop after this many Moxfield URL requests")
     parser.add_argument("--max-api-requests", type=int, help="Deprecated alias for --max-moxfield-requests")
     parser.add_argument("--sleep", type=float, default=0.2, help="Seconds to sleep between Moxfield URL requests")
+    parser.add_argument("--export-unresolved-csv", type=Path, help="Write unresolved Moxfield entries to CSV")
+    parser.add_argument("--import-resolved-csv", type=Path, help="Read resolved commander mappings from CSV")
+    parser.add_argument("--commander-delimiter", default="|", help="Delimiter for commander_names in import CSV")
     parser.add_argument("--dry-run", action="store_true", help="Do not write changes")
     args = parser.parse_args()
     max_moxfield_requests = args.max_moxfield_requests
@@ -111,6 +219,25 @@ def main() -> None:
 
     supabase_url, supabase_key = load_credentials()
     client = SupabaseClient(supabase_url, supabase_key)
+
+    if args.export_unresolved_csv:
+        export_unresolved_csv(
+            client,
+            output_path=args.export_unresolved_csv,
+            page_size=args.page_size,
+            limit=args.limit,
+        )
+        return
+
+    if args.import_resolved_csv:
+        import_resolved_csv(
+            client,
+            input_path=args.import_resolved_csv,
+            commander_delimiter=args.commander_delimiter,
+            dry_run=args.dry_run,
+        )
+        return
+
     http = requests.Session()
 
     scanned = 0
@@ -175,15 +302,7 @@ def main() -> None:
                 break
 
         if commander_data and not args.dry_run:
-            result = client.upsert(
-                "commanders",
-                [
-                    {"name": name, "commander_names": names or [name]}
-                    for name, names in commander_data.items()
-                ],
-                on_conflict="name",
-            )
-            commander_ids = {row["name"]: row["id"] for row in result}
+            commander_ids = upsert_commanders(client, commander_data)
             for entry_id, commander_name in pending_updates:
                 commander_id = commander_ids.get(commander_name)
                 if not commander_id:
