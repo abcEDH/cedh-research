@@ -588,14 +588,10 @@ export default async function RegionalPlayerPage({
     fetchEntries(player.id),
     fetchActiveCommander(player.id, topdeckId, player.name),
   ]);
-  const homeRegion = globalEloRank?.primary_region_key ?? regionalRanks[0]?.region_key ?? null;
   const regionalRankRows = regionalRanks.map((row) => ({
     ...row,
     country_key: row.country_key ?? inferCountryForRegion(row.region_key) ?? "UNKNOWN",
   }));
-  const selectedRegion = regionFilter || homeRegion || "";
-  const regionalRank = await fetchRegionalRank(player.id, selectedRegion);
-  const activeRank = regionFilter ? regionalRank : globalEloRank;
   let playerLogs = await fetchPlayerEventLogs(player.id, "");
 
   if (playerLogs.length === 0) {
@@ -725,6 +721,17 @@ export default async function RegionalPlayerPage({
     }
     assignmentRowsByRegion.set(regionKey, current);
   }
+  const derivedHomeRegion =
+    Array.from(assignmentRowsByRegion.values())
+      .filter((row) => row.region_key !== "UNKNOWN")
+      .sort((a, b) => {
+        if (b.games_played !== a.games_played) return b.games_played - a.games_played;
+        return a.region_key.localeCompare(b.region_key);
+      })[0]?.region_key ?? null;
+  const homeRegion = globalEloRank?.primary_region_key ?? regionalRanks[0]?.region_key ?? derivedHomeRegion;
+  const selectedRegion = regionFilter || homeRegion || "";
+  const regionalRank = await fetchRegionalRank(player.id, selectedRegion);
+  const activeRank = regionFilter ? regionalRank : globalEloRank;
   const stateAssignmentRows = Array.from(assignmentRowsByRegion.values()).sort((a, b) => {
     if (a.region_key === homeRegion) return -1;
     if (b.region_key === homeRegion) return 1;
