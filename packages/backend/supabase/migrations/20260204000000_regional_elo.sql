@@ -40,8 +40,7 @@ FROM games g
 JOIN game_participants gp ON gp.game_id = g.id
 JOIN tournament_entries te ON gp.entry_id = te.id
 JOIN players p ON te.player_id = p.id
-JOIN tournaments t ON g.tournament_id = t.id
-WHERE t.state IS NOT NULL AND t.state <> '';
+JOIN tournaments t ON g.tournament_id = t.id;
 
 CREATE OR REPLACE VIEW regional_elo_leaderboard AS
 SELECT

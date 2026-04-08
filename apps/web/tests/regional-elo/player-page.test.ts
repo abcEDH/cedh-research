@@ -10,52 +10,107 @@ const tableData: TableData = {
     { id: "player-2", name: "Opponent A", topdeck_id: "opp-a" },
     { id: "player-3", name: "Opponent B", topdeck_id: "opp-b" },
     { id: "player-4", name: "Opponent C", topdeck_id: "opp-c" },
+    { id: "player-5", name: "Unknown Region Player", topdeck_id: "unknown-region-player" },
+    { id: "player-6", name: "Inactive Player", topdeck_id: "inactive-player" },
   ],
-  regional_elo_leaderboard: [
+  global_elo_leaderboard: [
     {
       region_type: "global",
       region_key: "ALL",
+      player_id: "player-1",
+      topdeck_id: "CCIQroaCHHQi7EELyNXlHiHQiQy1",
       primary_region_key: "CALIFORNIA",
-      player_id: "player-1",
-      rank: 22,
-      rating: 1797.364,
-      games_played: 5,
-      wins: 2,
-      draws: 1,
-      losses: 2,
-    },
-    {
-      region_type: "state",
-      region_key: "CALIFORNIA",
-      player_id: "player-1",
       rank: 6,
       rating: 1734.864,
       games_played: 3,
       wins: 1,
       draws: 1,
       losses: 1,
+      last_game_date: "2026-04-03",
     },
     {
       region_type: "state",
-      region_key: "TEXAS",
+      region_key: "CALIFORNIA",
       player_id: "player-1",
+      topdeck_id: "CCIQroaCHHQi7EELyNXlHiHQiQy1",
+      rank: 3,
+      rating: 1734.864,
+      games_played: 3,
+      wins: 1,
+      draws: 1,
+      losses: 1,
+      last_game_date: "2026-04-03",
+    },
+    {
+      region_type: "global",
+      region_key: "ALL",
+      player_id: "player-2",
+      topdeck_id: "opp-a",
       rank: 176,
       rating: 1518.476,
       games_played: 2,
       wins: 0,
       draws: 1,
       losses: 1,
+      last_game_date: "2026-04-03",
+    },
+    {
+      region_type: "global",
+      region_key: "ALL",
+      player_id: "player-6",
+      topdeck_id: "inactive-player",
+      primary_region_key: "CALIFORNIA",
+      rank: 99,
+      rating: 1600,
+      games_played: 1,
+      wins: 1,
+      draws: 0,
+      losses: 0,
+      last_game_date: "2025-01-01",
+    },
+    {
+      region_type: "state",
+      region_key: "CALIFORNIA",
+      player_id: "player-6",
+      topdeck_id: "inactive-player",
+      rank: 44,
+      rating: 1600,
+      games_played: 1,
+      wins: 1,
+      draws: 0,
+      losses: 0,
+      last_game_date: "2025-01-01",
     },
   ],
   tournament_entries: [
-    { id: "entry-1", tournament_id: "tournament-1", player_id: "player-1", commander_id: "cmd-1" },
-    { id: "entry-2", tournament_id: "tournament-2", player_id: "player-1", commander_id: "cmd-1" },
-    { id: "entry-3", tournament_id: "tournament-3", player_id: "player-1", commander_id: "cmd-1" },
+    {
+      id: "entry-1",
+      tournament_id: "tournament-1",
+      player_id: "player-1",
+      commander_id: "cmd-1",
+      tournaments: { start_date: "2026-04-03", state: "California", player_count: 32 },
+    },
+    {
+      id: "entry-2",
+      tournament_id: "tournament-2",
+      player_id: "player-1",
+      commander_id: "cmd-1",
+      tournaments: { start_date: "2026-04-02", state: "California", player_count: 32 },
+    },
+    {
+      id: "entry-3",
+      tournament_id: "tournament-3",
+      player_id: "player-1",
+      commander_id: "cmd-1",
+      tournaments: { start_date: "2026-04-01", state: "California", player_count: 32 },
+    },
     { id: "entry-4", tournament_id: "tournament-1", player_id: "player-2", commander_id: "cmd-2" },
     { id: "entry-5", tournament_id: "tournament-2", player_id: "player-2", commander_id: "cmd-2" },
     { id: "entry-6", tournament_id: "tournament-3", player_id: "player-3", commander_id: "cmd-3" },
     { id: "entry-7", tournament_id: "tournament-1", player_id: "player-3", commander_id: "cmd-3" },
     { id: "entry-8", tournament_id: "tournament-2", player_id: "player-4", commander_id: "cmd-4" },
+    { id: "entry-9", tournament_id: "tournament-4", player_id: "player-5", commander_id: "cmd-1" },
+    { id: "entry-10", tournament_id: "tournament-5", player_id: "player-6", commander_id: "cmd-1" },
   ],
   game_participants: [
     { game_id: "game-1", entry_id: "entry-1", seat_position: 0, result: "win" },
@@ -66,6 +121,8 @@ const tableData: TableData = {
     { game_id: "game-2", entry_id: "entry-8", seat_position: 3, result: "loss" },
     { game_id: "game-3", entry_id: "entry-3", seat_position: 3, result: "draw" },
     { game_id: "game-3", entry_id: "entry-6", seat_position: 1, result: "draw" },
+    { game_id: "game-4", entry_id: "entry-9", seat_position: 0, result: "win" },
+    { game_id: "game-5", entry_id: "entry-10", seat_position: 0, result: "win" },
   ],
   games: [
     {
@@ -95,11 +152,31 @@ const tableData: TableData = {
       is_draw: true,
       winner_id: null,
     },
+    {
+      id: "game-4",
+      tournament_id: "tournament-4",
+      round_number: 1,
+      round_name: null,
+      table_number: 1,
+      is_draw: false,
+      winner_id: "entry-9",
+    },
+    {
+      id: "game-5",
+      tournament_id: "tournament-5",
+      round_number: 1,
+      round_name: null,
+      table_number: 1,
+      is_draw: false,
+      winner_id: "entry-10",
+    },
   ],
   tournaments: [
     { id: "tournament-1", name: "California Open I", start_date: "2026-04-03", state: "California" },
     { id: "tournament-2", name: "California Open II", start_date: "2026-04-02", state: "California" },
     { id: "tournament-3", name: "California Open III", start_date: "2026-04-01", state: "California" },
+    { id: "tournament-4", name: "Unknown Region Open", start_date: "2026-04-04", state: null },
+    { id: "tournament-5", name: "Inactive Open", start_date: "2025-01-01", state: "California" },
   ],
   commanders: [
     { id: "cmd-1", name: "Rograkh / Silas" },
@@ -133,8 +210,32 @@ class MockQuery {
     return this;
   }
 
+  neq(column: string, value: unknown) {
+    this.filters.push((row) => row[column] !== value);
+    return this;
+  }
+
+  gte(column: string, value: unknown) {
+    this.filters.push((row) => String(row[column] ?? "") >= String(value));
+    return this;
+  }
+
+  not(column: string, operator: string, value: unknown) {
+    if (column.includes(".")) return this;
+    if (operator === "is" && value === null) {
+      this.filters.push((row) => row[column] !== null && row[column] !== undefined);
+    }
+    return this;
+  }
+
   in(column: string, values: unknown[]) {
     this.filters.push((row) => values.includes(row[column]));
+    return this;
+  }
+
+  ilike(column: string, value: string) {
+    const normalized = value.toLowerCase();
+    this.filters.push((row) => String(row[column] ?? "").toLowerCase() === normalized);
     return this;
   }
 
@@ -204,6 +305,12 @@ vi.mock("next/link", () => ({
     React.createElement("a", { href, ...props }, children),
 }));
 
+vi.mock("next/cache", () => ({
+  unstable_cache: <T extends (...args: never[]) => unknown>(callback: T) => callback,
+}));
+
+vi.mock("server-only", () => ({}));
+
 vi.mock("@/lib/topdeck", () => ({
   fetchChampionshipLeaderboard: vi.fn(async () => [
     {
@@ -212,6 +319,13 @@ vi.mock("@/lib/topdeck", () => ({
       points: 1255,
     },
   ]),
+  fetchTopDeckProfileStats: vi.fn(async (topdeckId: string) =>
+    topdeckId === "CCIQroaCHHQi7EELyNXlHiHQiQy1"
+      ? { tournaments: 1, gamesPlayed: 3, wins: 1, draws: 1, losses: 1 }
+      : topdeckId === "inactive-player"
+        ? { tournaments: 1, gamesPlayed: 1, wins: 1, draws: 0, losses: 0 }
+      : null
+  ),
 }));
 
 vi.mock("@/lib/supabase", () => ({
@@ -221,31 +335,9 @@ vi.mock("@/lib/supabase", () => ({
 }));
 
 describe("RegionalPlayerPage", () => {
-  it("defaults to the global view while still showing the assigned home region", async () => {
-    const module = await import("@/app/regional-elo/player/[topdeckId]/page");
-    const element = await module.default({
-      params: { topdeckId: "CCIQroaCHHQi7EELyNXlHiHQiQy1" },
-      searchParams: {},
-    });
-
-    const html = renderToStaticMarkup(element);
-
-    expect(html).toContain("Alex Lien");
-    expect(html).toContain("Home Region");
-    expect(html).toContain("CALIFORNIA");
-    expect(html).toContain("View Filter");
-    expect(html).toContain(">ALL<");
-    expect(html).toContain(
-      "Home region is assigned from recent and sustained activity, but this page defaults to the global view."
-    );
-    expect(html).toMatch(/Current Rank[\s\S]*?>#22</);
-    expect(html).toMatch(/Counted Games[\s\S]*?>5</);
-    expect(html).toMatch(/Record[\s\S]*?>2-2-1</);
-  });
-
-  it("renders summary cards and the assigned state record from the same canonical counts", async () => {
-    const module = await import("@/app/regional-elo/player/[topdeckId]/page");
-    const element = await module.default({
+  it("renders summary cards and regional rankings from the same canonical counts", async () => {
+    const pageModule = await import("@/app/regional-elo/player/[topdeckId]/page");
+    const element = await pageModule.default({
       params: { topdeckId: "CCIQroaCHHQi7EELyNXlHiHQiQy1" },
       searchParams: { region: "CALIFORNIA" },
     });
@@ -253,10 +345,46 @@ describe("RegionalPlayerPage", () => {
     const html = renderToStaticMarkup(element);
 
     expect(html).toContain("Alex Lien");
-    expect(html).toContain("TopDeck Global");
-    expect(html).toContain("Assigned state");
-    expect(html).toMatch(/Counted Games[\s\S]*?>3</);
+    expect(html).toContain("TopDeck");
+    expect(html).toContain("1255 points");
+    expect(html).toContain("Unique Opponents");
+    expect(html).toContain("Global Rank");
+    expect(html).toContain("Home Region");
+    expect(html).toContain("Home region");
+    expect(html).toContain(
+      "TopDeck rank, points, games played, and record come from TopDeck."
+    );
+    expect(html).toMatch(/Games Played[\s\S]*?>3</);
     expect(html).toMatch(/Record[\s\S]*?>1-1-1</);
-    expect(html).toMatch(/CALIFORNIA[\s\S]*?Assigned state[\s\S]*?>#6<[\s\S]*?>1735<[\s\S]*?>3<[\s\S]*?>1-1-1</);
+    expect(html).toMatch(/CALIFORNIA[\s\S]*?Home region[\s\S]*?>3<[\s\S]*?>1-1-1</);
+  });
+
+  it("groups unknown-region games for any player profile", async () => {
+    const pageModule = await import("@/app/regional-elo/player/[topdeckId]/page");
+    const element = await pageModule.default({
+      params: { topdeckId: "unknown-region-player" },
+      searchParams: {},
+    });
+
+    const html = renderToStaticMarkup(element);
+
+    expect(html).toContain("Unknown Region Player");
+    expect(html).toMatch(/Games Played[\s\S]*?>1</);
+    expect(html).toContain("UNKNOWN");
+  });
+
+  it("hides inactive player global and state ranks", async () => {
+    const pageModule = await import("@/app/regional-elo/player/[topdeckId]/page");
+    const element = await pageModule.default({
+      params: { topdeckId: "inactive-player" },
+      searchParams: { region: "CALIFORNIA" },
+    });
+
+    const html = renderToStaticMarkup(element);
+
+    expect(html).toContain("Inactive Player");
+    expect(html).toMatch(/State Rank[\s\S]*?>--</);
+    expect(html).toMatch(/Global Rank[\s\S]*?>--</);
+    expect(html).toContain("1600");
   });
 });

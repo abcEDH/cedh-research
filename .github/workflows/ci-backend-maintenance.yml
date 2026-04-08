@@ -36,9 +36,9 @@ jobs:
         run: pip install -r packages/backend/requirements.txt
 
       - name: Run data ingestion
-        run: python packages/backend/src/ingest.py --days 7 --min-players 32
+        run: python packages/backend/src/ingest.py --days 7
 
-      - name: Recompute leaderboard data
+      - name: Recompute global Elo, state activity, game events, and commander profiles
         run: python packages/backend/src/regional_elo.py
 
       - name: Upload logs
@@ -64,7 +64,138 @@ jobs:
         run: pip install requests
 
       - name: Validate backend views and functions
-        run: python packages/backend/src/ci_backend_checks.py views
+        run: |
+          python << 'SCRIPT'
+          import requests
+          import sys
+          import time
+
+          SUPABASE_URL = "${{ secrets.SUPABASE_URL }}"
+          SUPABASE_KEY = "${{ secrets.SUPABASE_SERVICE_KEY }}"
+
+          headers = {
+              "apikey": SUPABASE_KEY,
+              "Authorization": f"Bearer {SUPABASE_KEY}",
+              "Content-Type": "application/json"
+          }
+
+          def request_with_retry(method, url, **kwargs):
+              last_response = None
+              for attempt in range(3):
+                  response = requests.request(method, url, **kwargs)
+                  last_response = response
+                  if response.status_code < 500:
+                      return response
+                  if attempt < 2:
+                      time.sleep(2 ** attempt)
+              return last_response
+
+          def response_failure(response):
+              body = response.text[:500] if response.text else "<empty body>"
+              return f"HTTP {response.status_code}: {body}"
+
+          views = [
+              ("commander_stats", 10),
+              ("seat_position_stats", 4),
+              ("commander_seat_stats", 10),
+              ("card_frequencies_global", 100),
+              ("card_frequencies_by_commander", 100),
+              ("trap_cards_report", 1),
+              ("spice_cards_report", 1),
+              ("seat_survival_by_commander", 10),
+              ("seat_survival_by_round", 4),
+              ("commander_survival_curve", 10),
+              ("commander_tournament_depth", 10),
+              ("player_survival_stats", 10),
+              ("commander_meta_monthly", 5),
+              ("commander_momentum", 1),
+              ("commander_first_appearances", 10),
+              ("survival_summary", 10),
+              ("global_elo_player_stats", 10),
+              ("global_elo_leaderboard", 10),
+              ("global_elo_regions", 2),
+              ("global_elo_game_event_log", 100),
+          ]
+
+          rpc_functions = [
+              ("get_notable_players_for_commander", {"p_commander_id": "00000000-0000-0000-0000-000000000000"}, False),
+              ("get_commander_matchups", {"p_commander_id": "00000000-0000-0000-0000-000000000000"}, False),
+              ("get_commanders_for_card", {"p_card_name": "Sol Ring"}, True),
+          ]
+
+          failed = []
+          passed = []
+
+          print("=" * 60)
+          print("VALIDATING VIEWS")
+          print("=" * 60)
+
+          for view_name, min_rows in views:
+              try:
+                  url = f"{SUPABASE_URL}/rest/v1/{view_name}?select=*&limit=100"
+                  resp = request_with_retry("GET", url, headers=headers, timeout=30)
+
+                  if resp.status_code == 200:
+                      data = resp.json()
+                      row_count = len(data)
+                      if row_count >= min_rows:
+                          print(f"✓ {view_name}: {row_count} rows (expected >= {min_rows})")
+                          passed.append(view_name)
+                      else:
+                          print(f"✗ {view_name}: {row_count} rows (expected >= {min_rows})")
+                          failed.append((view_name, f"Only {row_count} rows"))
+                  else:
+                      reason = response_failure(resp)
+                      print(f"✗ {view_name}: {reason}")
+                      failed.append((view_name, reason))
+              except Exception as e:
+                  print(f"✗ {view_name}: {str(e)}")
+                  failed.append((view_name, str(e)))
+
+          print()
+          print("=" * 60)
+          print("VALIDATING RPC FUNCTIONS")
+          print("=" * 60)
+
+          for func_name, params, expect_data in rpc_functions:
+              try:
+                  url = f"{SUPABASE_URL}/rest/v1/rpc/{func_name}"
+                  resp = request_with_retry("POST", url, headers=headers, json=params, timeout=30)
+
+                  if resp.status_code == 200:
+                      data = resp.json()
+                      row_count = len(data) if isinstance(data, list) else 1
+
+                      if expect_data and row_count == 0:
+                          print(f"✗ {func_name}: Expected data but got empty result")
+                          failed.append((func_name, "Expected data but got empty"))
+                      else:
+                          print(f"✓ {func_name}: {row_count} rows returned")
+                          passed.append(func_name)
+                  else:
+                      reason = response_failure(resp)
+                      print(f"✗ {func_name}: {reason}")
+                      failed.append((func_name, reason))
+              except Exception as e:
+                  print(f"✗ {func_name}: {str(e)}")
+                  failed.append((func_name, str(e)))
+
+          print()
+          print("=" * 60)
+          print("SUMMARY")
+          print("=" * 60)
+          print(f"Passed: {len(passed)}")
+          print(f"Failed: {len(failed)}")
+
+          if failed:
+              print("\nFailed items:")
+              for item, reason in failed:
+                  print(f"  - {item}: {reason}")
+              sys.exit(1)
+          else:
+              print("\nAll validations passed!")
+              sys.exit(0)
+          SCRIPT
 
   validate-data-integrity:
     runs-on: ubuntu-latest
@@ -81,9 +212,119 @@ jobs:
         run: pip install requests
 
       - name: Check data integrity
-        run: python packages/backend/src/ci_backend_checks.py data-integrity
+        run: |
+          python << 'SCRIPT'
+          import requests
+          import sys
+          import time
 
-  validate-regional-elo-consistency:
+          SUPABASE_URL = "${{ secrets.SUPABASE_URL }}"
+          SUPABASE_KEY = "${{ secrets.SUPABASE_SERVICE_KEY }}"
+
+          headers = {
+              "apikey": SUPABASE_KEY,
+              "Authorization": f"Bearer {SUPABASE_KEY}",
+              "Content-Type": "application/json",
+              "Prefer": "count=exact"
+          }
+
+          def request_with_retry(method, url, **kwargs):
+              last_response = None
+              for attempt in range(3):
+                  response = requests.request(method, url, **kwargs)
+                  last_response = response
+                  if response.status_code < 500:
+                      return response
+                  if attempt < 2:
+                      time.sleep(2 ** attempt)
+              return last_response
+
+          def response_failure(response):
+              details = [f"HTTP {response.status_code}"]
+              content_range = response.headers.get("content-range")
+              if content_range:
+                  details.append(f"content-range={content_range}")
+              if response.text:
+                  details.append(response.text[:500])
+              return ": ".join(details)
+
+          tables = [
+              ("tournaments", 50),
+              ("commanders", 100),
+              ("tournament_entries", 3000),
+              ("games", 5000),
+              ("game_participants", 15000),
+              ("players", 2000),
+              ("global_elo_state_activity", 10),
+              ("global_elo_game_events", 100),
+              ("global_elo_active_leaderboard", 10),
+              ("global_elo_player_profile_summaries", 10),
+          ]
+
+          failed = []
+
+          print("=" * 60)
+          print("DATA INTEGRITY CHECK")
+          print("=" * 60)
+
+          def get_table_count(table_name):
+              methods = [
+                  ("HEAD", "count=exact", f"{SUPABASE_URL}/rest/v1/{table_name}?select=count", None),
+                  ("GET", "count=exact", f"{SUPABASE_URL}/rest/v1/{table_name}?select=id", {"limit": 1}),
+                  ("GET", "count=planned", f"{SUPABASE_URL}/rest/v1/{table_name}?select=id", {"limit": 1}),
+                  ("GET", "count=estimated", f"{SUPABASE_URL}/rest/v1/{table_name}?select=id", {"limit": 1}),
+              ]
+
+              errors = []
+              for method, prefer, url, params in methods:
+                  try:
+                      attempt_headers = headers.copy()
+                      attempt_headers["Prefer"] = prefer
+                      resp = requests.request(
+                          method,
+                          url,
+                          headers=attempt_headers,
+                          params=params,
+                          timeout=30,
+                      )
+                      if resp.status_code not in (200, 206):
+                          errors.append(f"{method} {prefer}: HTTP {resp.status_code}")
+                          continue
+
+                      content_range = resp.headers.get("content-range", "0-0/0")
+                      count = int(content_range.split("/")[1])
+                      return count, f"{method} {prefer}"
+                  except Exception as exc:
+                      errors.append(f"{method} {prefer}: {exc}")
+
+              raise RuntimeError("; ".join(errors))
+
+          for table_name, min_count in tables:
+              try:
+                  count, strategy = get_table_count(table_name)
+                  status = "✓" if count >= min_count else "✗"
+                  print(
+                      f"{status} {table_name}: {count:,} rows "
+                      f"(expected >= {min_count:,}; via {strategy})"
+                  )
+                  if count < min_count:
+                      failed.append((table_name, f"{count} < {min_count} via {strategy}"))
+              except Exception as e:
+                  print(f"✗ {table_name}: {str(e)}")
+                  failed.append((table_name, str(e)))
+
+          print()
+          if failed:
+              print(f"Data integrity issues found: {len(failed)}")
+              for item, reason in failed:
+                  print(f"  - {item}: {reason}")
+              sys.exit(1)
+          else:
+              print("Data integrity check passed!")
+              sys.exit(0)
+          SCRIPT
+
+  validate-global-elo-consistency:
     runs-on: ubuntu-latest
     needs: ingest
     steps:
@@ -97,5 +338,88 @@ jobs:
       - name: Install dependencies
         run: pip install requests
 
-      - name: Check regional Elo aggregate consistency
-        run: python packages/backend/src/ci_backend_checks.py regional-elo
+      - name: Check global Elo aggregate consistency
+        run: |
+          python << 'SCRIPT'
+          import requests
+          import sys
+          import time
+
+          SUPABASE_URL = "${{ secrets.SUPABASE_URL }}"
+          SUPABASE_KEY = "${{ secrets.SUPABASE_SERVICE_KEY }}"
+
+          headers = {
+              "apikey": SUPABASE_KEY,
+              "Authorization": f"Bearer {SUPABASE_KEY}",
+              "Content-Type": "application/json"
+          }
+
+          def request_with_retry(url, *, params):
+              last_response = None
+              for attempt in range(3):
+                  response = requests.get(url, headers=headers, params=params, timeout=30)
+                  last_response = response
+                  if response.status_code < 500:
+                      return response
+                  if attempt < 2:
+                      time.sleep(2 ** attempt)
+              return last_response
+
+          def response_failure(response):
+              body = response.text[:500] if response.text else "<empty body>"
+              return f"HTTP {response.status_code}: {body}"
+
+          leaderboard_resp = request_with_retry(
+              f"{SUPABASE_URL}/rest/v1/global_elo_leaderboard",
+              params={
+                  "select": "region_type,region_key,player_id,games_played,wins,draws,losses",
+                  "region_type": "eq.global",
+                  "region_key": "eq.ALL",
+                  "games_played": "gt.0",
+                  "limit": 25,
+              },
+          )
+          if leaderboard_resp.status_code != 200:
+              print(f"Failed to fetch global Elo leaderboard sample: {response_failure(leaderboard_resp)}")
+              sys.exit(1)
+
+          leaderboard_rows = leaderboard_resp.json()
+
+          if not leaderboard_rows:
+              print("No global Elo leaderboard rows found to validate.")
+              sys.exit(1)
+
+          failures = []
+          for row in leaderboard_rows:
+              stats_resp = request_with_retry(
+                  f"{SUPABASE_URL}/rest/v1/global_elo_ratings",
+                  params={
+                      "select": "games_played,wins,draws,losses",
+                      "region_type": f"eq.{row['region_type']}",
+                      "region_key": f"eq.{row['region_key']}",
+                      "player_id": f"eq.{row['player_id']}",
+                  },
+              )
+              if stats_resp.status_code != 200:
+                  failures.append((row, f"failed to fetch canonical stats: {response_failure(stats_resp)}"))
+                  continue
+
+              stats_rows = stats_resp.json()
+              if not stats_rows:
+                  failures.append((row, "missing canonical stats row"))
+                  continue
+
+              stats = stats_rows[0]
+              for field in ("games_played", "wins", "draws", "losses"):
+                  if row[field] != stats[field]:
+                      failures.append((row, f"{field}: leaderboard={row[field]} canonical={stats[field]}"))
+                      break
+
+          if failures:
+              print("Global Elo aggregate consistency check failed:")
+              for row, reason in failures:
+                  print(f"  - {row['region_key']} / {row['player_id']}: {reason}")
+              sys.exit(1)
+
+          print(f"Validated {len(leaderboard_rows)} global Elo rows against canonical stats.")
+          SCRIPT

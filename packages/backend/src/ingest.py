@@ -12,7 +12,7 @@ Usage:
 """
 
 import argparse
-import hashlib
+import html
 import json
 import logging
 import os
@@ -22,6 +22,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 import requests
 from dateutil import parser as date_parser
@@ -49,6 +50,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+DRAW_WINNER_VALUES = {"draw", "_draw_"}
 TOPDECK_STANDING_RATE_FIELDS = (
     ("winRate", "opponentWinRate"),
     ("successRate", "opponentSuccessRate"),
@@ -111,22 +113,9 @@ US_STATE_BY_ABBREV = {
 }
 
 
-def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def canonicalize_state_value(value: Any) -> str | None:
-    if value is None:
-        return None
-    state = str(value).strip()
-    if not state:
-        return None
-    upper_state = state.upper()
-    if upper_state in US_STATE_BY_ABBREV:
-        return US_STATE_BY_ABBREV[upper_state]
-    if state == upper_state:
-        return state.title()
-    return state
+def is_draw_winner(value: object) -> bool:
+    """Return true for TopDeck draw sentinels from winner or winner_id fields."""
+    return isinstance(value, str) and value.strip().lower() in DRAW_WINNER_VALUES
 
 
 class TopDeckClient:
@@ -138,35 +127,19 @@ class TopDeckClient:
         self.api_key = api_key
         self.session = requests.Session()
         self.session.headers.update({"Authorization": api_key})
-        self.min_request_interval_seconds = float(os.getenv("TOPDECK_MIN_REQUEST_INTERVAL_SECONDS", "0.75"))
-        self._last_request_monotonic = 0.0
 
     def _request(self, method: str, url: str, *, json_payload: dict | None = None, max_retries: int = 3):
         """HTTP request with basic retry for transient upstream errors."""
         for attempt in range(max_retries):
             try:
-                if self.min_request_interval_seconds > 0 and self._last_request_monotonic:
-                    elapsed = time.monotonic() - self._last_request_monotonic
-                    if elapsed < self.min_request_interval_seconds:
-                        time.sleep(self.min_request_interval_seconds - elapsed)
                 response = self.session.request(method, url, json=json_payload, timeout=60)
-                self._last_request_monotonic = time.monotonic()
-                if response.status_code in (429, 502, 503, 504):
+                if response.status_code in (502, 503, 504):
                     raise requests.exceptions.HTTPError(f"{response.status_code} Server Error", response=response)
                 response.raise_for_status()
                 return response
             except (requests.exceptions.ConnectionError, requests.exceptions.Timeout, requests.exceptions.HTTPError) as e:
                 if attempt < max_retries - 1:
-                    response = getattr(e, "response", None)
-                    status_code = response.status_code if response is not None else None
-                    if status_code == 429:
-                        retry_after = response.headers.get("Retry-After") if response is not None else None
-                        try:
-                            wait_time = max(float(retry_after), 5.0) if retry_after else float(5 * (2 ** attempt))
-                        except ValueError:
-                            wait_time = float(5 * (2 ** attempt))
-                    else:
-                        wait_time = float(2 ** attempt)
+                    wait_time = 2 ** attempt
                     logger.warning(f"TopDeck request error, retrying in {wait_time}s... ({attempt + 1}/{max_retries})")
                     time.sleep(wait_time)
                 else:
@@ -209,7 +182,7 @@ class TopDeckClient:
                     "winRate",
                 ],
                 "rounds": True,
-                "tables": ["table", "players", "winner", "status"],
+                "tables": ["table", "players", "winner", "winner_id", "status"],
                 "players": ["name", "id", "decklist"],
             }
 
@@ -224,6 +197,38 @@ class TopDeckClient:
         logger.info(f"Fetching tournament: {tid}")
         response = self._request("GET", f"{self.BASE_URL}/v2/tournaments/{tid}")
         return response.json()
+
+    def get_tournaments_by_ids(self, tids: list[str]) -> list[dict]:
+        """Get full tournament details for IDs using the search endpoint.
+
+        Some older TopDeck events return incomplete metadata from GET
+        /v2/tournaments/{TID}, while POST /v2/tournaments with TID still
+        returns the historical search payload with startDate and standings.
+        """
+        if not tids:
+            return []
+
+        logger.info(f"Fetching {len(tids)} tournaments by TID batch")
+        payload = {
+            "TID": tids if len(tids) > 1 else tids[0],
+            "game": "Magic: The Gathering",
+            "format": "EDH",
+            "columns": [
+                "name",
+                "decklist",
+                "wins",
+                "draws",
+                "losses",
+                "id",
+                "winRate",
+            ],
+            "rounds": True,
+            "tables": ["table", "players", "winner", "winner_id", "status"],
+            "players": ["name", "id", "decklist"],
+        }
+        response = self._request("POST", f"{self.BASE_URL}/v2/tournaments", json_payload=payload)
+        tournaments = response.json()
+        return tournaments if isinstance(tournaments, list) else [tournaments]
 
 
 class SupabaseClient:
@@ -266,17 +271,24 @@ class SupabaseClient:
                     logger.error(f"Failed after {max_retries} retries: {e}")
                     raise
 
-    def select(self, table: str, filters: dict = None, max_retries: int = 3) -> list:
+    def select(self, table: str, filters: dict = None, max_retries: int = 8) -> list:
         """Select data from a table with retry logic."""
         endpoint = f"{self.url}/rest/v1/{table}"
         params = filters or {}
 
         for attempt in range(max_retries):
             try:
-                response = requests.get(endpoint, headers=self.headers, params=params, timeout=30)
+                response = requests.get(endpoint, headers=self.headers, params=params, timeout=60)
+                if response.status_code >= 500:
+                    raise requests.exceptions.HTTPError(f"{response.status_code} Server Error", response=response)
                 response.raise_for_status()
                 return response.json()
-            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout, requests.exceptions.ReadTimeout) as e:
+            except (
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+                requests.exceptions.ReadTimeout,
+                requests.exceptions.HTTPError,
+            ) as e:
                 if attempt < max_retries - 1:
                     wait_time = 2 ** attempt
                     logger.warning(f"Select error, retrying in {wait_time}s... ({attempt + 1}/{max_retries})")
@@ -284,6 +296,50 @@ class SupabaseClient:
                 else:
                     logger.error(f"Select failed after {max_retries} retries: {e}")
                     raise
+
+        raise RuntimeError("Select failed without raising after retries were exhausted")
+
+    def delete(self, table: str, filters: dict, max_retries: int = 3) -> None:
+        """Delete data from a table with retry logic."""
+        endpoint = f"{self.url}/rest/v1/{table}"
+
+        for attempt in range(max_retries):
+            try:
+                response = requests.delete(endpoint, headers=self.headers, params=filters, timeout=30)
+                if response.status_code >= 400:
+                    logger.error(f"Supabase delete error: {response.text}")
+                    response.raise_for_status()
+                return
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout, requests.exceptions.ReadTimeout) as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    logger.warning(f"Delete error, retrying in {wait_time}s... ({attempt + 1}/{max_retries})")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"Delete failed after {max_retries} retries: {e}")
+                    raise
+
+    def update(self, table: str, data: dict, filters: dict, max_retries: int = 3) -> list:
+        """Patch rows in a table and return updated representations."""
+        endpoint = f"{self.url}/rest/v1/{table}"
+
+        for attempt in range(max_retries):
+            try:
+                response = requests.patch(endpoint, json=data, headers=self.headers, params=filters, timeout=30)
+                if response.status_code >= 400:
+                    logger.error(f"Supabase update error: {response.text}")
+                    response.raise_for_status()
+                return response.json()
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout, requests.exceptions.ReadTimeout) as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    logger.warning(f"Update error, retrying in {wait_time}s... ({attempt + 1}/{max_retries})")
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"Update failed after {max_retries} retries: {e}")
+                    raise
+
+        raise RuntimeError("Update failed without returning a response")
 
 
 class DirectPostgresClient:
@@ -410,13 +466,142 @@ class DirectPostgresClient:
             raise
 
 
-def extract_commanders(decklist: str) -> list[str]:
-    """Extract commander names from a decklist string."""
-    if not decklist:
+def extract_moxfield_deck_id(decklist: str) -> str | None:
+    """Extract a Moxfield deck id from a URL or imported decklist text."""
+    if not decklist or "moxfield.com" not in decklist.lower():
+        return None
+
+    match = re.search(r"moxfield\.com/decks/([A-Za-z0-9_-]+)", decklist, flags=re.IGNORECASE)
+    if match:
+        return match.group(1)
+
+    try:
+        parsed = urlparse(decklist.strip())
+    except ValueError:
+        return None
+
+    if not parsed.netloc.lower().endswith("moxfield.com"):
+        return None
+
+    parts = [part for part in parsed.path.split("/") if part]
+    if len(parts) >= 2 and parts[0] == "decks":
+        return parts[1]
+    return None
+
+
+def extract_moxfield_commanders(payload: dict) -> list[str]:
+    """Extract commander names from a Moxfield deck API response."""
+    commanders = payload.get("commanders")
+    if not commanders:
         return []
 
-    # Handle Moxfield URLs - can't extract without API call
-    if "moxfield.com" in decklist:
+    values = commanders.values() if isinstance(commanders, dict) else commanders
+    names = []
+    for item in values:
+        if not isinstance(item, dict):
+            continue
+
+        card = item.get("card") if isinstance(item.get("card"), dict) else item
+        name = card.get("name") if isinstance(card, dict) else None
+        if isinstance(name, str) and name.strip():
+            names.append(name.strip())
+
+    return names
+
+
+def extract_moxfield_commanders_from_html(page_html: str) -> list[str]:
+    """Extract commander names from embedded JSON in a Moxfield deck page."""
+    script_pattern = re.compile(
+        r"<script[^>]+type=[\"']application/json[\"'][^>]*>(.*?)</script>",
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+
+    def find_commanders(value: object) -> list[str]:
+        if isinstance(value, dict):
+            commanders = extract_moxfield_commanders(value)
+            if commanders:
+                return commanders
+            for child in value.values():
+                commanders = find_commanders(child)
+                if commanders:
+                    return commanders
+        elif isinstance(value, list):
+            for child in value:
+                commanders = find_commanders(child)
+                if commanders:
+                    return commanders
+        return []
+
+    for match in script_pattern.finditer(page_html):
+        raw_json = html.unescape(match.group(1).strip())
+        if not raw_json or "commander" not in raw_json.lower():
+            continue
+        try:
+            payload = json.loads(raw_json)
+        except json.JSONDecodeError:
+            continue
+        commanders = find_commanders(payload)
+        if commanders:
+            return commanders
+
+    return []
+
+
+def fetch_moxfield_commanders(
+    decklist: str,
+    session: requests.Session | None = None,
+    source: str = "api",
+) -> list[str]:
+    """Fetch commander names for a public Moxfield deck URL."""
+    deck_id = extract_moxfield_deck_id(decklist)
+    if not deck_id:
+        return []
+
+    http = session or requests.Session()
+    headers = {
+        "Accept": "application/json,text/html",
+        "User-Agent": "cedh-research/1.0",
+    }
+
+    if source in {"api", "auto"}:
+        try:
+            response = http.get(
+                f"https://api.moxfield.com/v2/decks/all/{deck_id}",
+                headers=headers,
+                timeout=30,
+            )
+            response.raise_for_status()
+            commanders = extract_moxfield_commanders(response.json())
+            if commanders or source == "api":
+                return commanders
+        except requests.RequestException:
+            if source == "api":
+                raise
+
+    if source in {"page", "auto"}:
+        response = http.get(
+            f"https://www.moxfield.com/decks/{deck_id}",
+            headers={
+                **headers,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+        return extract_moxfield_commanders_from_html(response.text)
+
+    return []
+
+
+def extract_commanders(
+    decklist: str,
+    *,
+    resolve_moxfield: bool = False,
+    moxfield_session: requests.Session | None = None,
+    moxfield_source: str = "api",
+) -> list[str]:
+    """Extract commander names from a decklist string."""
+    if not decklist:
         return []
 
     # Parse TopDeck format: ~~Commanders~~\n1 Commander Name\n...
@@ -424,7 +609,7 @@ def extract_commanders(decklist: str) -> list[str]:
         try:
             cmd_section = decklist.split("~~Commanders~~")[1].split("~~")[0]
             commanders = []
-            for line in cmd_section.split("\\n"):
+            for line in cmd_section.replace("\\n", "\n").splitlines():
                 line = line.strip()
                 if line and line[0].isdigit():
                     # Remove leading "1 " or similar
@@ -436,32 +621,216 @@ def extract_commanders(decklist: str) -> list[str]:
             logger.warning(f"Failed to parse decklist: {e}")
             return []
 
+    if resolve_moxfield and extract_moxfield_deck_id(decklist):
+        try:
+            return fetch_moxfield_commanders(decklist, session=moxfield_session, source=moxfield_source)
+        except requests.RequestException as e:
+            logger.warning(f"Failed to fetch Moxfield commanders: {e}")
+            return []
+
     return []
+
+
+DOUBLE_FACED_BACK_FACE_OVERRIDES = {
+    "Brigid, Doun's Mind": "Brigid, Clachan's Heart",
+    "Etali, Primal Sickness": "Etali, Primal Conqueror",
+    "Heliod, the Warped Eclipse": "Heliod, the Radiant Dawn",
+    "Kefka, Ruler of Ruin": "Kefka, Court Mage",
+    "Ral, Leyline Prodigy": "Ral, Monsoon Mage",
+    "Sephiroth, One-Winged Angel": "Sephiroth, Fabled SOLDIER",
+}
+
+TRUNCATED_APOSTROPHE_NAME_OVERRIDES = {
+    "Abdel Adrian, Gorion": "Abdel Adrian, Gorion's Ward",
+    "Be": "Be'lakor, the Dark Master",
+    "Betor, Ancestor": "Betor, Ancestor's Voice",
+    "Brigid, Clachan": "Brigid, Clachan's Heart",
+    "Caesar, Legion": "Caesar, Legion's Emperor",
+    "Captain N": "Captain N'ghathrod",
+    "Eshki, Temur": "Eshki, Temur's Roar",
+    "Freyalise, Llanowar": "Freyalise, Llanowar's Fury",
+    "Glarb, Calamity": "Glarb, Calamity's Augur",
+    "Go-Shintai of Life": "Go-Shintai of Life's Origin",
+    "Hashaton, Scarab": "Hashaton, Scarab's Fist",
+    "Jace, Vryn": "Jace, Vryn's Prodigy",
+    "Joshua, Phoenix": "Joshua, Phoenix's Dominant",
+    "K": "K'rrik, Son of Yawgmoth",
+    "Kraum, Ludevic": "Kraum, Ludevic's Opus",
+    "Kykar, Wind": "Kykar, Wind's Fury",
+    "Liberator, Urza": "Liberator, Urza's Battlethopter",
+    "Light-Paws, Emperor": "Light-Paws, Emperor's Voice",
+    "Nalia de": "Nalia de'Arnise",
+    "Neyali, Suns": "Neyali, Suns' Vanguard",
+    "Otharri, Suns": "Otharri, Suns' Glory",
+    "Sythis, Harvest": "Sythis, Harvest's Hand",
+    "Temmet, Naktamun": "Temmet, Naktamun's Will",
+    "Teshar, Ancestor": "Teshar, Ancestor's Apostle",
+    "The Balrog, Durin": "The Balrog, Durin's Bane",
+    "Wernog, Rider": "Wernog, Rider's Chaplain",
+    "Yeva, Nature": "Yeva, Nature's Herald",
+    "Yuriko, the Tiger": "Yuriko, the Tiger's Shadow",
+    "Yusri, Fortune": "Yusri, Fortune's Flame",
+    "Zahur, Glory": "Zahur, Glory's Past",
+}
+
+
+def clean_commander_card_name(name: str) -> str:
+    """Normalize escaped card-name text from imported decklist sources."""
+    cleaned = name.strip().replace("\\'", "'").replace('\\"', '"')
+    cleaned = cleaned.split(" // ", 1)[0].strip()
+    cleaned = TRUNCATED_APOSTROPHE_NAME_OVERRIDES.get(cleaned, cleaned)
+    return DOUBLE_FACED_BACK_FACE_OVERRIDES.get(cleaned, cleaned)
 
 
 def normalize_commander_name(commanders: list[str]) -> str:
     """Create a normalized commander name (sorted for partners)."""
-    if not commanders:
+    cleaned_commanders = [clean_commander_card_name(commander) for commander in commanders if commander.strip()]
+    if not cleaned_commanders:
         return "Unknown Commander"
 
     # Sort for consistency (e.g., "Kraum / Tymna" = "Tymna / Kraum")
-    sorted_cmds = sorted(commanders)
+    sorted_cmds = sorted(cleaned_commanders)
     return " / ".join(sorted_cmds)
 
 
-def normalize_rate_value(value: Any) -> Optional[float]:
-    """Normalize TopDeck rate fields into 0-1 decimal form for NUMERIC(5,4)."""
-    if value is None:
+US_STATE_NAMES = {
+    "AL": "Alabama",
+    "AR": "Arkansas",
+    "AZ": "Arizona",
+    "CA": "California",
+    "CO": "Colorado",
+    "CT": "Connecticut",
+    "DC": "District of Columbia",
+    "DE": "Delaware",
+    "FL": "Florida",
+    "GA": "Georgia",
+    "HI": "Hawaii",
+    "IA": "Iowa",
+    "ID": "Idaho",
+    "IL": "Illinois",
+    "IN": "Indiana",
+    "KS": "Kansas",
+    "KY": "Kentucky",
+    "LA": "Louisiana",
+    "MA": "Massachusetts",
+    "MD": "Maryland",
+    "ME": "Maine",
+    "MI": "Michigan",
+    "MN": "Minnesota",
+    "MO": "Missouri",
+    "MS": "Mississippi",
+    "NC": "North Carolina",
+    "NE": "Nebraska",
+    "NH": "New Hampshire",
+    "NJ": "New Jersey",
+    "NM": "New Mexico",
+    "NV": "Nevada",
+    "NY": "New York",
+    "OH": "Ohio",
+    "OK": "Oklahoma",
+    "OR": "Oregon",
+    "PA": "Pennsylvania",
+    "RI": "Rhode Island",
+    "SC": "South Carolina",
+    "SD": "South Dakota",
+    "TN": "Tennessee",
+    "TX": "Texas",
+    "UT": "Utah",
+    "VA": "Virginia",
+    "VT": "Vermont",
+    "WA": "Washington",
+    "WI": "Wisconsin",
+    "WV": "West Virginia",
+}
+
+
+CANADIAN_PROVINCE_NAMES = {
+    "AB": "Alberta",
+    "BC": "British Columbia",
+    "MB": "Manitoba",
+    "NB": "New Brunswick",
+    "ON": "Ontario",
+    "PE": "Prince Edward Island",
+    "QC": "Quebec",
+}
+
+
+OTHER_REGION_NAMES = {
+    "AN": "Andalusia",
+    "BW": "Baden-Wurttemberg",
+    "BY": "Bavaria",
+    "GP": "Gauteng",
+    "HE": "Hesse",
+    "HH": "Hamburg",
+    "HR": "Haryana",
+    "PV": "Basque Country",
+    "RP": "Rhineland-Palatinate",
+    "SH": "Schleswig-Holstein",
+    "SL": "Saarland",
+    "SN": "Saxony",
+    "SP": "Sao Paulo",
+    "VC": "Valencian Community",
+    "WB": "West Bengal",
+    "WC": "Western Cape",
+}
+
+
+def normalize_region_name(state: str | None, *, city: str | None = None, country: str | None = None, venue: str | None = None) -> str | None:
+    """Expand known state/province abbreviations using location context."""
+    if not state:
         return None
-    try:
-        numeric = float(value)
-    except (TypeError, ValueError):
+
+    value = state.strip()
+    code = value.upper()
+    if len(code) != 2 or not code.isalpha():
+        return value
+
+    haystack = " ".join(part or "" for part in [city, country, venue]).lower()
+    if "canada" in haystack and code in CANADIAN_PROVINCE_NAMES:
+        return CANADIAN_PROVINCE_NAMES[code]
+    if ("usa" in haystack or "united states" in haystack) and code in US_STATE_NAMES:
+        return US_STATE_NAMES[code]
+    if code == "BE":
+        if "suisse" in haystack or "switzerland" in haystack or "interlaken" in haystack:
+            return "Bern"
+        if "germany" in haystack or "deutschland" in haystack or "berlin" in haystack:
+            return "Berlin"
+    if code == "GE" and ("netherlands" in haystack or "nederland" in haystack or "tiel" in haystack):
+        return "Gelderland"
+    if code == "NB" and ("netherlands" in haystack or "nederland" in haystack or "hertogenbosch" in haystack):
+        return "North Brabant"
+    if code == "NH":
+        if "netherlands" in haystack or "nederland" in haystack or "haarlem" in haystack:
+            return "North Holland"
+        if "usa" in haystack or "united states" in haystack:
+            return "New Hampshire"
+    if code in US_STATE_NAMES:
+        return US_STATE_NAMES[code]
+    if code in CANADIAN_PROVINCE_NAMES:
+        return CANADIAN_PROVINCE_NAMES[code]
+    if code in OTHER_REGION_NAMES:
+        return OTHER_REGION_NAMES[code]
+
+    return value
+
+
+def parse_datetime(value) -> datetime | None:
+    """Parse TopDeck/database timestamps into comparable aware datetimes."""
+    if not value:
         return None
-    if numeric > 1:
-        numeric = numeric / 100.0
-    if numeric < 0 or numeric > 1:
-        return None
-    return numeric
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, (int, float)):
+        parsed = datetime.fromtimestamp(value, tz=timezone.utc)
+    else:
+        try:
+            parsed = date_parser.parse(str(value))
+        except (TypeError, ValueError):
+            return None
+
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
 
 
 def extract_standing_rates(standing: dict[str, Any]) -> tuple[Optional[float], Optional[float]]:
@@ -490,36 +859,6 @@ class DataIngester:
         self.commander_cache = {}  # name -> id
         self.player_cache = {}  # topdeck_id -> id
 
-    def fetch_existing_tournament(self, tid: str) -> dict | None:
-        existing = self.supabase.select(
-            "tournaments",
-            {
-                "select": "id,city,state,country,venue,latitude,longitude,header_image_url",
-                "topdeck_tid": f"eq.{tid}",
-                "limit": 1,
-            },
-        )
-        return existing[0] if existing else None
-
-    @staticmethod
-    def extract_event_data(tournament: dict, info: dict | None = None) -> dict:
-        info = info or {}
-        event_data = tournament.get("eventData") or info.get("eventData") or {}
-        if not isinstance(event_data, dict):
-            event_data = {}
-
-        return {
-            "city": event_data.get("city") or event_data.get("town") or event_data.get("municipality"),
-            "state": canonicalize_state_value(
-                event_data.get("state") or event_data.get("province") or event_data.get("region")
-            ),
-            "country": event_data.get("country"),
-            "venue": event_data.get("location") or event_data.get("venue") or event_data.get("address"),
-            "latitude": event_data.get("lat") if event_data.get("lat") is not None else event_data.get("latitude"),
-            "longitude": event_data.get("lng") if event_data.get("lng") is not None else event_data.get("longitude"),
-            "header_image_url": event_data.get("headerImage") or event_data.get("header_image_url"),
-        }
-
     def get_or_create_commander(self, name: str, commander_names: list[str]) -> str:
         """Get or create a commander entry, return UUID. (Legacy - use batch method)"""
         if name in self.commander_cache:
@@ -534,7 +873,7 @@ class DataIngester:
         # Create new
         data = {
             "name": name,
-            "commander_names": commander_names or [name],
+            "commander_names": [clean_commander_card_name(value) for value in (commander_names or [name])],
         }
         result = self.supabase.upsert("commanders", data, on_conflict="name")
         if result:
@@ -571,7 +910,10 @@ class DataIngester:
 
         # Build batch data
         batch = [
-            {"name": name, "commander_names": names or [name]}
+            {
+                "name": name,
+                "commander_names": [clean_commander_card_name(value) for value in (names or [name])],
+            }
             for name, names in commander_data.items()
             if name not in self.commander_cache
         ]
@@ -585,17 +927,71 @@ class DataIngester:
 
         return self.commander_cache.copy()
 
-    def batch_upsert_players(self, player_data: dict[str, str]) -> dict[str, str]:
+    def latest_player_tournament_dates(self, player_ids: list[str]) -> dict[str, datetime]:
+        """Return latest known tournament start date per player ID."""
+        if not player_ids:
+            return {}
+
+        try:
+            rows = self.supabase.select(
+                "tournament_entries",
+                {
+                    "select": "player_id,tournaments!inner(start_date)",
+                    "player_id": f"in.({','.join(player_ids)})",
+                },
+            )
+        except Exception as exc:
+            logger.warning(f"Could not fetch latest player tournament dates: {exc}")
+            return {}
+
+        latest: dict[str, datetime] = {}
+        for row in rows:
+            tournament = row.get("tournaments")
+            if isinstance(tournament, list):
+                tournament = tournament[0] if tournament else None
+            seen_at = parse_datetime(tournament.get("start_date") if tournament else None)
+            player_id = row.get("player_id")
+            if not player_id or not seen_at:
+                continue
+            if player_id not in latest or seen_at > latest[player_id]:
+                latest[player_id] = seen_at
+
+        return latest
+
+    def batch_upsert_players(self, player_data: dict[str, str], name_seen_at=None) -> dict[str, str]:
         """Batch upsert players and return topdeck_id -> id mapping."""
         if not player_data:
             return {}
 
-        # Build batch data (only new players)
-        batch = [
-            {"topdeck_id": tid, "name": name}
-            for tid, name in player_data.items()
-            if tid and tid not in self.player_cache
-        ]
+        topdeck_ids = [tid for tid in player_data if tid and tid not in self.player_cache]
+        existing_by_topdeck_id = {}
+        if topdeck_ids:
+            existing_rows = self.supabase.select("players", {"topdeck_id": f"in.({','.join(topdeck_ids)})"})
+            for player in existing_rows:
+                topdeck_id = player.get("topdeck_id")
+                if topdeck_id:
+                    existing_by_topdeck_id[topdeck_id] = player
+                    self.player_cache[topdeck_id] = player["id"]
+
+        incoming_seen_at = parse_datetime(name_seen_at)
+        latest_by_player_id = self.latest_player_tournament_dates(
+            [player["id"] for player in existing_by_topdeck_id.values()]
+        )
+
+        batch = []
+        for tid, name in player_data.items():
+            if not tid:
+                continue
+            existing = existing_by_topdeck_id.get(tid)
+            if not existing:
+                batch.append({"topdeck_id": tid, "name": name})
+                continue
+
+            # Only let a tournament rename an existing player when it is as
+            # recent as or newer than the player's latest known tournament.
+            latest_seen_at = latest_by_player_id.get(existing["id"])
+            if incoming_seen_at and (not latest_seen_at or incoming_seen_at >= latest_seen_at):
+                batch.append({"topdeck_id": tid, "name": name})
 
         if batch:
             logger.info(f"Batch upserting {len(batch)} players...")
@@ -611,26 +1007,17 @@ class DataIngester:
         if not entries:
             return {}
 
-        deduped_entries: list[dict] = []
-        seen_entry_keys: set[tuple[str, str]] = set()
-        duplicate_count = 0
+        deduped_entries = {}
         for entry in entries:
-            entry_key = (entry["tournament_id"], entry["player_id"])
-            if entry_key in seen_entry_keys:
-                duplicate_count += 1
+            key = (entry.get("tournament_id"), entry.get("player_id"))
+            if key in deduped_entries:
+                logger.warning(f"Skipping duplicate tournament entry for tournament/player {key}")
                 continue
-            seen_entry_keys.add(entry_key)
-            deduped_entries.append(entry)
+            deduped_entries[key] = entry
 
-        if duplicate_count:
-            logger.warning(
-                f"Skipped {duplicate_count} duplicate tournament entry rows before upsert"
-            )
-
-        logger.info(f"Batch upserting {len(deduped_entries)} tournament entries...")
-        result = self.supabase.upsert(
-            "tournament_entries", deduped_entries, on_conflict="tournament_id,player_id"
-        )
+        entries = list(deduped_entries.values())
+        logger.info(f"Batch upserting {len(entries)} tournament entries...")
+        result = self.supabase.upsert("tournament_entries", entries, on_conflict="tournament_id,player_id")
 
         entry_map = {}
         if result:
@@ -678,8 +1065,8 @@ class DataIngester:
         if isinstance(start_date, (int, float)):
             start_date = datetime.fromtimestamp(start_date).isoformat()
 
-        existing_tournament = self.fetch_existing_tournament(tid)
-        location_data = self.extract_event_data(tournament, info)
+        # Get location data
+        event_data = tournament.get("eventData", {})
 
         # Upsert tournament
         tournament_data = {
@@ -692,21 +1079,17 @@ class DataIngester:
             "average_elo": int(tournament.get("averageElo")) if tournament.get("averageElo") else None,
             "median_elo": int(tournament.get("medianElo")) if tournament.get("medianElo") else None,
             "top_elo": int(tournament.get("topElo")) if tournament.get("topElo") else None,
-            "city": location_data["city"] or (existing_tournament or {}).get("city"),
-            "state": location_data["state"] or (existing_tournament or {}).get("state"),
-            "country": location_data["country"] or (existing_tournament or {}).get("country"),
-            "venue": location_data["venue"] or (existing_tournament or {}).get("venue"),
-            "latitude": (
-                location_data["latitude"]
-                if location_data["latitude"] is not None
-                else (existing_tournament or {}).get("latitude")
+            "city": event_data.get("city"),
+            "state": normalize_region_name(
+                event_data.get("state"),
+                city=event_data.get("city"),
+                country=event_data.get("country"),
+                venue=event_data.get("location"),
             ),
-            "longitude": (
-                location_data["longitude"]
-                if location_data["longitude"] is not None
-                else (existing_tournament or {}).get("longitude")
-            ),
-            "header_image_url": location_data["header_image_url"] or (existing_tournament or {}).get("header_image_url"),
+            "venue": event_data.get("location"),
+            "latitude": event_data.get("lat"),
+            "longitude": event_data.get("lng"),
+            "header_image_url": event_data.get("headerImage"),
         }
 
         result = self.supabase.upsert("tournaments", tournament_data, on_conflict="topdeck_tid")
@@ -727,8 +1110,6 @@ class DataIngester:
         standing_info = []  # [{idx, topdeck_id, commander_name, decklist, ...}]
 
         for idx, standing in enumerate(standings):
-            if not isinstance(standing, dict):
-                continue
             player_topdeck_id = standing.get("id")
             player_name = standing.get("name", "Unknown")
             decklist = standing.get("decklist") or ""
@@ -758,7 +1139,7 @@ class DataIngester:
         self.batch_upsert_commanders(commander_data)
 
         # Step 3: Batch upsert players (1 API call)
-        self.batch_upsert_players(player_data)
+        self.batch_upsert_players(player_data, name_seen_at=start_date)
 
         # Step 4: Build all entry records with resolved IDs
         entries = []
@@ -819,8 +1200,6 @@ class DataIngester:
             is_bracket = isinstance(round_num, str) and not round_num.isdigit()
 
             for table in round_data.get("tables", []):
-                if not isinstance(table, dict):
-                    continue
                 table_num = table.get("table")
                 if table_num == "Byes":
                     continue
@@ -835,12 +1214,10 @@ class DataIngester:
 
                 # Determine winner player_id
                 winner_player_id = None
-                is_draw = winner_id_raw == "Draw" or winner_name is None
+                is_draw = is_draw_winner(winner_id_raw) or is_draw_winner(winner_name) or winner_name is None
 
                 if not is_draw:
                     for p in players:
-                        if not isinstance(p, dict):
-                            continue
                         if p.get("id") == winner_id_raw or p.get("name") == winner_name:
                             winner_player_id = self.player_cache.get(p.get("id"))
                             break
@@ -866,8 +1243,6 @@ class DataIngester:
                 # Build participants info for this game
                 participants_info = []
                 for seat, player in enumerate(players):
-                    if not isinstance(player, dict):
-                        continue
                     player_topdeck_id = player.get("id")
                     if not player_topdeck_id or player_topdeck_id not in entry_map:
                         continue
@@ -924,13 +1299,7 @@ class DataIngester:
 
             except Exception as e:
                 logger.error(f"Failed to batch create games: {e}")
-                return {
-                    "tournament_id": tournament_id,
-                    "name": name,
-                    "players": player_count,
-                    "entries_created": len(entry_map),
-                    "games_created": 0,
-                }
+                return {"tournament_id": tournament_id, "name": name, "entries": len(entry_map), "games": 0}
 
         games_created = len(games_data)
         logger.info(f"Created {games_created} games for {name}")
@@ -1003,241 +1372,6 @@ def extract_name_and_tid(tournament: dict) -> tuple[Optional[str], Optional[str]
     return name, tid
 
 
-def dedupe_preserve_order(values: list[str]) -> list[str]:
-    seen: set[str] = set()
-    deduped: list[str] = []
-    for value in values:
-        if value in seen:
-            continue
-        seen.add(value)
-        deduped.append(value)
-    return deduped
-
-
-def load_tids(path: Path) -> list[str]:
-    return dedupe_preserve_order([
-        line.strip()
-        for line in path.read_text().splitlines()
-        if line.strip() and not line.strip().startswith("#")
-    ])
-
-
-def write_tids(path: Path, tids: list[str], *, header_lines: Optional[list[str]] = None) -> None:
-    lines = [*(header_lines or []), "", *tids, ""]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines))
-
-
-def chunk_items(items: list[str], batch_size: int) -> list[list[str]]:
-    if batch_size <= 0:
-        raise ValueError("batch_size must be positive")
-    return [items[i : i + batch_size] for i in range(0, len(items), batch_size)]
-
-
-def fetch_existing_tids(client: Any, tids: list[str]) -> set[str]:
-    existing: set[str] = set()
-    if not tids:
-        return existing
-
-    chunk_size = 200
-    for i in range(0, len(tids), chunk_size):
-        chunk = tids[i : i + chunk_size]
-        quoted = ",".join(f'"{tid}"' for tid in chunk)
-        rows = client.select(
-            "tournaments",
-            {
-                "select": "topdeck_tid",
-                "topdeck_tid": f"in.({quoted})",
-            },
-        )
-        existing.update(
-            row["topdeck_tid"]
-            for row in rows
-            if row.get("topdeck_tid")
-        )
-    return existing
-
-
-def fetch_failed_tids_for_run(client: Any, run_key: str) -> list[str]:
-    run_rows = client.select(
-        "ingestion_backfill_runs",
-        {
-            "select": "id",
-            "run_key": f"eq.{run_key}",
-            "limit": 1,
-        },
-    )
-    if not run_rows:
-        raise SystemExit(f"No backfill run found for run_key={run_key}")
-
-    run_id = run_rows[0]["id"]
-    event_rows = client.select(
-        "ingestion_backfill_events",
-        {
-            "select": "tid,created_at",
-            "run_id": f"eq.{run_id}",
-            "event_type": "eq.process_failed",
-            "order": "created_at.asc",
-            "limit": 10000,
-        },
-    )
-    return dedupe_preserve_order([
-        row["tid"]
-        for row in event_rows
-        if row.get("tid")
-    ])
-
-
-def compute_file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def default_backfill_run_key(tids_path: Path, batch_size: int) -> str:
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-    return f"{tids_path.stem}-{batch_size}-{timestamp}"
-
-
-def ensure_backfill_run_status(status: str) -> str:
-    if status not in BACKFILL_RUN_STATUSES:
-        raise ValueError(f"invalid backfill run status: {status}")
-    return status
-
-
-def ensure_backfill_batch_status(status: str) -> str:
-    if status not in BACKFILL_BATCH_STATUSES:
-        raise ValueError(f"invalid backfill batch status: {status}")
-    return status
-
-
-def upsert_backfill_run(
-    client: Any,
-    *,
-    run_key: str,
-    tids_path: Path,
-    batch_size: int,
-    total_tournaments: int,
-    total_batches: int,
-    start_date: Optional[str],
-    end_date: Optional[str],
-    status: str,
-) -> Optional[dict]:
-    status = ensure_backfill_run_status(status)
-    payload = {
-        "run_key": run_key,
-        "manifest_path": str(tids_path),
-        "manifest_sha256": compute_file_sha256(tids_path),
-        "requested_start_date": start_date,
-        "requested_end_date": end_date,
-        "batch_size": batch_size,
-        "discovered_tournament_count": total_tournaments,
-        "total_batches": total_batches,
-        "status": status,
-        "heartbeat_at": utc_now_iso(),
-        "updated_at": utc_now_iso(),
-    }
-    result = client.upsert("ingestion_backfill_runs", payload, on_conflict="run_key")
-    return result[0] if result else None
-
-
-def upsert_backfill_batch(
-    client: Any,
-    *,
-    run_id: str,
-    batch_index: int,
-    batch_start: int,
-    batch_end: int,
-    tournament_count: int,
-    status: str,
-    error_text: Optional[str] = None,
-) -> None:
-    status = ensure_backfill_batch_status(status)
-    now = utc_now_iso()
-    payload = {
-        "run_id": run_id,
-        "batch_index": batch_index,
-        "batch_start": batch_start,
-        "batch_end": batch_end,
-        "tournament_count": tournament_count,
-        "status": status,
-        "error_text": error_text,
-        "updated_at": now,
-        "started_at": now if status == "running" else None,
-        "finished_at": now if status in {"completed", "failed"} else None,
-    }
-    client.upsert("ingestion_backfill_batches", payload, on_conflict="run_id,batch_index")
-
-
-def update_backfill_run_progress(
-    client: Any,
-    *,
-    run_row: dict,
-    processed_count: int,
-    succeeded_count: int,
-    failed_count: int,
-    status: str,
-    current_batch_index: Optional[int] = None,
-    current_tid: Optional[str] = None,
-    last_completed_tid: Optional[str] = None,
-    current_batch_processed_count: Optional[int] = None,
-    current_batch_succeeded_count: Optional[int] = None,
-    current_batch_failed_count: Optional[int] = None,
-    last_success_at: Optional[str] = None,
-    heartbeat_at: Optional[str] = None,
-) -> Optional[dict]:
-    status = ensure_backfill_run_status(status)
-    payload = {
-        "run_key": run_row["run_key"],
-        "manifest_path": run_row["manifest_path"],
-        "manifest_sha256": run_row["manifest_sha256"],
-        "requested_start_date": run_row.get("requested_start_date"),
-        "requested_end_date": run_row.get("requested_end_date"),
-        "batch_size": run_row["batch_size"],
-        "discovered_tournament_count": run_row["discovered_tournament_count"],
-        "total_batches": run_row["total_batches"],
-        "processed_tournament_count": processed_count,
-        "succeeded_tournament_count": succeeded_count,
-        "failed_tournament_count": failed_count,
-        "current_batch_index": current_batch_index,
-        "current_tid": current_tid,
-        "last_completed_tid": last_completed_tid,
-        "current_batch_processed_count": current_batch_processed_count or 0,
-        "current_batch_succeeded_count": current_batch_succeeded_count or 0,
-        "current_batch_failed_count": current_batch_failed_count or 0,
-        "last_success_at": last_success_at,
-        "heartbeat_at": heartbeat_at or utc_now_iso(),
-        "status": status,
-        "updated_at": utc_now_iso(),
-    }
-    result = client.upsert("ingestion_backfill_runs", payload, on_conflict="run_key")
-    return result[0] if result else None
-
-
-def append_backfill_event(
-    client: Any,
-    *,
-    run_id: str,
-    batch_index: int,
-    event_type: str,
-    tid: Optional[str] = None,
-    payload: Optional[dict[str, Any]] = None,
-) -> None:
-    client.upsert(
-        "ingestion_backfill_events",
-        {
-            "run_id": run_id,
-            "batch_index": batch_index,
-            "tid": tid,
-            "event_type": event_type,
-            "payload": payload or {},
-            "created_at": utc_now_iso(),
-        },
-    )
-
-
 def main():
     parser = argparse.ArgumentParser(description="cEDH Analytics Data Ingestion")
     parser.add_argument("--days", type=int, default=7, help="Days back to search")
@@ -1246,34 +1380,7 @@ def main():
     parser.add_argument("--min-players", type=int, default=16, help="Minimum players")
     parser.add_argument("--tournament-id", type=str, help="Process specific tournament")
     parser.add_argument("--tids-file", type=str, help="Path to file with one tournament ID per line")
-    parser.add_argument("--batch-size", type=int, default=50, help="Tournament batch size when processing --tids-file")
-    parser.add_argument("--batch-index", type=int, help="0-based batch index to process from --tids-file")
-    parser.add_argument("--run-key", type=str, help="Stable identifier for recording a historical backfill run")
-    parser.add_argument(
-        "--skip-existing-tids",
-        action="store_true",
-        help="When using --tids-file, skip TIDs already present in tournaments.topdeck_tid before batching",
-    )
-    parser.add_argument(
-        "--only-failed-from-run-key",
-        type=str,
-        help="When using --tids-file, keep only TIDs that previously emitted process_failed in the specified run",
-    )
-    parser.add_argument(
-        "--selected-tids-out",
-        type=str,
-        help="Write the final post-filter TID list to this path before processing",
-    )
-    parser.add_argument(
-        "--record-backfill",
-        action="store_true",
-        help="Persist backfill run and batch status to ingestion_backfill_runs/_batches",
-    )
-    parser.add_argument(
-        "--stop-on-error",
-        action="store_true",
-        help="Fail fast instead of continuing to later tournaments after an error in --tids-file mode",
-    )
+    parser.add_argument("--tids-batch-size", type=int, default=50, help="Batch size for --tids-file TopDeck fetches")
     parser.add_argument("--names-file", type=str, help="Path to file with one tournament name per line")
     parser.add_argument("--resolve-days", type=int, default=120, help="Days back to search when resolving names to IDs")
     parser.add_argument("--resolve-min-players", type=int, default=0, help="Min players for name resolution search")
@@ -1322,17 +1429,7 @@ def main():
 
     if args.dry_run:
         logger.info("DRY RUN - not writing to database")
-        if (
-            args.only_failed_from_run_key
-            or args.skip_existing_tids
-            or args.record_backfill
-        ):
-            if not supabase_url or not supabase_key:
-                logger.error("SUPABASE_URL or SUPABASE_SERVICE_KEY not set")
-                sys.exit(1)
-            db_client = SupabaseClient(supabase_url, supabase_key)
-        else:
-            db_client = None
+        db_client = None
     elif args.direct:
         # Use direct Postgres connection for ~10x faster batch operations
         if not supabase_db_url:
@@ -1439,47 +1536,12 @@ def main():
         if not tids_path.exists():
             logger.error(f"TIDs file not found: {tids_path}")
             sys.exit(1)
-        tids = load_tids(tids_path)
-        logger.info(f"Loaded {len(tids)} unique tournament IDs from {tids_path}")
-
-        if args.only_failed_from_run_key:
-            if not ingester:
-                logger.error("--only-failed-from-run-key requires a readable database client")
-                sys.exit(1)
-            failed_tids = set(fetch_failed_tids_for_run(ingester.supabase, args.only_failed_from_run_key))
-            original_count = len(tids)
-            tids = [tid for tid in tids if tid in failed_tids]
-            logger.info(
-                f"Filtered manifest to {len(tids)} failed tids from run_key={args.only_failed_from_run_key} "
-                f"(from {original_count})"
-            )
-
-        if args.skip_existing_tids:
-            if not ingester:
-                logger.error("--skip-existing-tids requires a readable database client")
-                sys.exit(1)
-            existing_tids = fetch_existing_tids(ingester.supabase, tids)
-            original_count = len(tids)
-            tids = [tid for tid in tids if tid not in existing_tids]
-            logger.info(
-                f"Skipped {original_count - len(tids)} tids already present in tournaments.topdeck_tid; "
-                f"{len(tids)} remaining"
-            )
-
-        if args.selected_tids_out:
-            selected_path = Path(args.selected_tids_out)
-            header_lines = [
-                "# Selected tournament IDs after ingest.py pre-batch filtering",
-                f"# Source manifest: {tids_path}",
-                f"# only_failed_from_run_key: {args.only_failed_from_run_key or ''}",
-                f"# skip_existing_tids: {args.skip_existing_tids}",
-            ]
-            write_tids(selected_path, tids, header_lines=header_lines)
-            logger.info(f"Wrote {len(tids)} selected tids to {selected_path}")
-
-        if args.batch_size <= 0:
-            logger.error("--batch-size must be positive")
-            sys.exit(1)
+        tids = [
+            line.strip()
+            for line in tids_path.read_text().splitlines()
+            if line.strip() and not line.strip().startswith("#")
+        ]
+        logger.info(f"Loaded {len(tids)} tournament IDs from {tids_path}")
 
         start_dt = date_parser.parse(args.start_date) if args.start_date else None
         end_dt = date_parser.parse(args.end_date) if args.end_date else None
@@ -1487,360 +1549,39 @@ def main():
             logger.error("--end-date must be on or after --start-date")
             sys.exit(1)
 
-        batches = chunk_items(tids, args.batch_size)
-        logger.info(f"Prepared {len(batches)} batches from {len(tids)} tournaments (batch_size={args.batch_size})")
+        for index in range(0, len(tids), max(args.tids_batch_size, 1)):
+            tid_batch = tids[index:index + max(args.tids_batch_size, 1)]
+            try:
+                tournaments = topdeck.get_tournaments_by_ids(tid_batch)
+            except Exception as e:
+                logger.error(f"Failed to fetch TID batch {tid_batch[0]}..{tid_batch[-1]}: {e}")
+                continue
 
-        if args.batch_index is not None and (args.batch_index < 0 or args.batch_index >= len(batches)):
-            logger.error(f"--batch-index must be between 0 and {max(len(batches) - 1, 0)}")
-            sys.exit(1)
-
-        selected_batches = (
-            [(args.batch_index, batches[args.batch_index])]
-            if args.batch_index is not None
-            else list(enumerate(batches))
-        )
-
-        run_key = args.run_key or default_backfill_run_key(tids_path, args.batch_size)
-        processed_count = 0
-        succeeded_count = 0
-        failed_count = 0
-        run_row = None
-        if args.record_backfill:
-            if not ingester:
-                logger.error("--record-backfill requires a writable database client")
-                sys.exit(1)
-            run_row = upsert_backfill_run(
-                ingester.supabase,
-                run_key=run_key,
-                tids_path=tids_path,
-                batch_size=args.batch_size,
-                total_tournaments=len(tids),
-                total_batches=len(batches),
-                start_date=start_dt.date().isoformat() if start_dt else None,
-                end_date=end_dt.date().isoformat() if end_dt else None,
-                status="running",
-            )
-            if not run_row:
-                logger.error("Failed to initialize ingestion_backfill_runs row")
-                sys.exit(1)
-
-        for batch_index, batch_tids in selected_batches:
-            batch_start = batch_index * args.batch_size
-            batch_end = batch_start + len(batch_tids) - 1
-            logger.info(
-                f"Processing batch {batch_index + 1}/{len(batches)} "
-                f"(batch_index={batch_index}, tids={batch_start}-{batch_end})"
-            )
-            if args.record_backfill and run_row:
-                upsert_backfill_batch(
-                    ingester.supabase,
-                    run_id=run_row["id"],
-                    batch_index=batch_index,
-                    batch_start=batch_start,
-                    batch_end=batch_end,
-                    tournament_count=len(batch_tids),
-                    status="running",
-                )
-                append_backfill_event(
-                    ingester.supabase,
-                    run_id=run_row["id"],
-                    batch_index=batch_index,
-                    event_type="batch_started",
-                    payload={
-                        "batch_start": batch_start,
-                        "batch_end": batch_end,
-                        "tournament_count": len(batch_tids),
-                    },
-                )
-                update_backfill_run_progress(
-                    ingester.supabase,
-                    run_row=run_row,
-                    processed_count=processed_count,
-                    succeeded_count=succeeded_count,
-                    failed_count=failed_count,
-                    status="running",
-                    current_batch_index=batch_index,
-                    current_batch_processed_count=0,
-                    current_batch_succeeded_count=0,
-                    current_batch_failed_count=0,
-                )
-
-            batch_failed = False
-            batch_error_text = None
-            batch_processed_count = 0
-            batch_succeeded_count = 0
-            batch_failed_count = 0
-            for tid in batch_tids:
-                processed_count += 1
-                batch_processed_count += 1
-                if args.record_backfill and run_row:
-                    append_backfill_event(
-                        ingester.supabase,
-                        run_id=run_row["id"],
-                        batch_index=batch_index,
-                        tid=tid,
-                        event_type="fetch_started",
-                    )
-                    update_backfill_run_progress(
-                        ingester.supabase,
-                        run_row=run_row,
-                        processed_count=processed_count,
-                        succeeded_count=succeeded_count,
-                        failed_count=failed_count,
-                        status="running",
-                        current_batch_index=batch_index,
-                        current_tid=tid,
-                        current_batch_processed_count=batch_processed_count,
-                        current_batch_succeeded_count=batch_succeeded_count,
-                        current_batch_failed_count=batch_failed_count,
-                    )
-                try:
-                    tournament = topdeck.get_tournament(tid)
-                except Exception as e:
-                    failed_count += 1
-                    batch_failed_count += 1
-                    batch_failed = True
-                    batch_error_text = f"fetch {tid}: {e}"
-                    logger.error(f"Failed to fetch {tid}: {e}")
-                    if args.record_backfill and run_row:
-                        append_backfill_event(
-                            ingester.supabase,
-                            run_id=run_row["id"],
-                            batch_index=batch_index,
-                            tid=tid,
-                            event_type="fetch_failed",
-                            payload={"error": str(e)},
-                        )
-                        update_backfill_run_progress(
-                            ingester.supabase,
-                            run_row=run_row,
-                            processed_count=processed_count,
-                            succeeded_count=succeeded_count,
-                            failed_count=failed_count,
-                            status="running",
-                            current_batch_index=batch_index,
-                            current_tid=tid,
-                            last_completed_tid=tid,
-                            current_batch_processed_count=batch_processed_count,
-                            current_batch_succeeded_count=batch_succeeded_count,
-                            current_batch_failed_count=batch_failed_count,
-                        )
-                    if args.stop_on_error:
-                        break
+            for tournament in tournaments:
+                _, tid = extract_name_and_tid(tournament)
+                if not tid:
+                    logger.warning(f"Skipping tournament payload without TID: {tournament.get('tournamentName')}")
                     continue
 
-                tournament["TID"] = tid
                 ts = parse_tournament_start_date(tournament)
                 if ts is None:
                     logger.warning(f"Skipping {tid}: missing start date")
-                    if args.record_backfill and run_row:
-                        append_backfill_event(
-                            ingester.supabase,
-                            run_id=run_row["id"],
-                            batch_index=batch_index,
-                            tid=tid,
-                            event_type="tournament_skipped",
-                            payload={"reason": "missing start date"},
-                        )
-                        update_backfill_run_progress(
-                            ingester.supabase,
-                            run_row=run_row,
-                            processed_count=processed_count,
-                            succeeded_count=succeeded_count,
-                            failed_count=failed_count,
-                            status="running",
-                            current_batch_index=batch_index,
-                            current_tid=tid,
-                            last_completed_tid=tid,
-                            current_batch_processed_count=batch_processed_count,
-                            current_batch_succeeded_count=batch_succeeded_count,
-                            current_batch_failed_count=batch_failed_count,
-                        )
                     continue
 
                 if start_dt and ts.date() < start_dt.date():
-                    logger.info(f"Skipping {tid}: before start-date filter")
-                    if args.record_backfill and run_row:
-                        append_backfill_event(
-                            ingester.supabase,
-                            run_id=run_row["id"],
-                            batch_index=batch_index,
-                            tid=tid,
-                            event_type="tournament_skipped",
-                            payload={"reason": "before start-date filter"},
-                        )
-                        update_backfill_run_progress(
-                            ingester.supabase,
-                            run_row=run_row,
-                            processed_count=processed_count,
-                            succeeded_count=succeeded_count,
-                            failed_count=failed_count,
-                            status="running",
-                            current_batch_index=batch_index,
-                            current_tid=tid,
-                            last_completed_tid=tid,
-                            current_batch_processed_count=batch_processed_count,
-                            current_batch_succeeded_count=batch_succeeded_count,
-                            current_batch_failed_count=batch_failed_count,
-                        )
                     continue
                 if end_dt and ts.date() > end_dt.date():
-                    logger.info(f"Skipping {tid}: after end-date filter")
-                    if args.record_backfill and run_row:
-                        append_backfill_event(
-                            ingester.supabase,
-                            run_id=run_row["id"],
-                            batch_index=batch_index,
-                            tid=tid,
-                            event_type="tournament_skipped",
-                            payload={"reason": "after end-date filter"},
-                        )
-                        update_backfill_run_progress(
-                            ingester.supabase,
-                            run_row=run_row,
-                            processed_count=processed_count,
-                            succeeded_count=succeeded_count,
-                            failed_count=failed_count,
-                            status="running",
-                            current_batch_index=batch_index,
-                            current_tid=tid,
-                            last_completed_tid=tid,
-                            current_batch_processed_count=batch_processed_count,
-                            current_batch_succeeded_count=batch_succeeded_count,
-                            current_batch_failed_count=batch_failed_count,
-                        )
                     continue
 
                 if ingester:
                     try:
-                        if args.record_backfill and run_row:
-                            append_backfill_event(
-                                ingester.supabase,
-                                run_id=run_row["id"],
-                                batch_index=batch_index,
-                                tid=tid,
-                                event_type="process_started",
-                            )
                         result = ingester.process_tournament(tournament)
                         if result:
-                            succeeded_count += 1
-                            batch_succeeded_count += 1
-                            logger.info(f"Processed: {result['name']}")
-                            if args.record_backfill and run_row:
-                                last_success_at = utc_now_iso()
-                                append_backfill_event(
-                                    ingester.supabase,
-                                    run_id=run_row["id"],
-                                    batch_index=batch_index,
-                                    tid=tid,
-                                    event_type="process_succeeded",
-                                    payload=result,
-                                )
-                                update_backfill_run_progress(
-                                    ingester.supabase,
-                                    run_row=run_row,
-                                    processed_count=processed_count,
-                                    succeeded_count=succeeded_count,
-                                    failed_count=failed_count,
-                                    status="running",
-                                    current_batch_index=batch_index,
-                                    current_tid=tid,
-                                    last_completed_tid=tid,
-                                    current_batch_processed_count=batch_processed_count,
-                                    current_batch_succeeded_count=batch_succeeded_count,
-                                    current_batch_failed_count=batch_failed_count,
-                                    last_success_at=last_success_at,
-                                    heartbeat_at=last_success_at,
-                                )
+                            logger.info(f"Processed: {result.get('name', tid)}")
                     except Exception as e:
-                        failed_count += 1
-                        batch_failed_count += 1
-                        batch_failed = True
-                        batch_error_text = f"process {tid}: {e}"
                         logger.error(f"Failed to process {tid}: {e}")
-                        if args.record_backfill and run_row:
-                            append_backfill_event(
-                                ingester.supabase,
-                                run_id=run_row["id"],
-                                batch_index=batch_index,
-                                tid=tid,
-                                event_type="process_failed",
-                                payload={"error": str(e)},
-                            )
-                            update_backfill_run_progress(
-                                ingester.supabase,
-                                run_row=run_row,
-                                processed_count=processed_count,
-                                succeeded_count=succeeded_count,
-                                failed_count=failed_count,
-                                status="running",
-                                current_batch_index=batch_index,
-                                current_tid=tid,
-                                last_completed_tid=tid,
-                                current_batch_processed_count=batch_processed_count,
-                                current_batch_succeeded_count=batch_succeeded_count,
-                                current_batch_failed_count=batch_failed_count,
-                            )
-                        if args.stop_on_error:
-                            break
                 else:
                     logger.info(f"Would process: {tournament.get('tournamentName')} ({len(tournament.get('standings', []))} players)")
-
-            if args.record_backfill and run_row:
-                append_backfill_event(
-                    ingester.supabase,
-                    run_id=run_row["id"],
-                    batch_index=batch_index,
-                    event_type="batch_failed" if batch_failed else "batch_completed",
-                    payload={
-                        "processed_count": batch_processed_count,
-                        "succeeded_count": batch_succeeded_count,
-                        "failed_count": batch_failed_count,
-                        "error_text": batch_error_text,
-                    },
-                )
-                upsert_backfill_batch(
-                    ingester.supabase,
-                    run_id=run_row["id"],
-                    batch_index=batch_index,
-                    batch_start=batch_start,
-                    batch_end=batch_end,
-                    tournament_count=len(batch_tids),
-                    status="failed" if batch_failed else "completed",
-                    error_text=batch_error_text,
-                )
-                update_backfill_run_progress(
-                    ingester.supabase,
-                    run_row=run_row,
-                    processed_count=processed_count,
-                    succeeded_count=succeeded_count,
-                    failed_count=failed_count,
-                    status="running",
-                    current_batch_index=batch_index,
-                    current_tid=None,
-                    current_batch_processed_count=batch_processed_count,
-                    current_batch_succeeded_count=batch_succeeded_count,
-                    current_batch_failed_count=batch_failed_count,
-                )
-
-            if batch_failed and args.stop_on_error:
-                break
-
-        if args.record_backfill and run_row:
-            final_status = "completed_with_errors" if failed_count else "completed"
-            update_backfill_run_progress(
-                ingester.supabase,
-                run_row=run_row,
-                processed_count=processed_count,
-                succeeded_count=succeeded_count,
-                failed_count=failed_count,
-                status=final_status,
-                current_batch_index=None,
-                current_tid=None,
-                current_batch_processed_count=0,
-                current_batch_succeeded_count=0,
-                current_batch_failed_count=0,
-            )
     else:
         if args.start_date:
             start_dt = date_parser.parse(args.start_date)
@@ -1873,7 +1614,7 @@ def main():
                 try:
                     result = ingester.process_tournament(t)
                     if result:
-                        logger.info(f"Processed: {result['name']}")
+                        logger.info(f"Processed: {result.get('name', t.get('tournamentName', 'unknown'))}")
                 except Exception as e:
                     logger.error(f"Failed to process {t.get('tournamentName')}: {e}")
             else:

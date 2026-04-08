@@ -57,8 +57,7 @@ uv run python src/export_all_time_tids.py --out data/all_time_tids.txt
 
 ### 3. Moxfield Decklists
 **Problem:** Some decklists are just Moxfield URLs, no card data
-**Current:** Store URL in `decklist_url`, commander marked as "Unknown"
-**TODO:** Add Moxfield API integration to fetch commander names
+**Current:** Imported Moxfield deck text with `~~Commanders~~` can be backfilled with `src/backfill_moxfield_commanders.py --embedded-only`. Pure Moxfield URLs require `--resolve-moxfield-api` or `--resolve-moxfield-page` from an environment that can reach Moxfield without Cloudflare blocking. When Moxfield blocks the runtime, export unresolved rows with `--export-unresolved-csv`, fill `commander_names` with `|`-delimited commanders, then import with `--import-resolved-csv`.
 
 ## Data Model Highlights
 

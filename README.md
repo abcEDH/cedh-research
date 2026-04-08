@@ -41,9 +41,9 @@ Safe templates live in:
 ## CI
 - Frontend workflows run on `apps/web/**` changes
 - Backend workflows run on `packages/backend/**` changes
-- `ci.yml` provides a tight regression loop for Regional Elo changes:
+- `ci.yml` provides a tight regression loop for Global Elo changes:
   - frontend regression tests
-  - canonical regional aggregate proof
+  - canonical global aggregate proof
   - uploaded evidence artifact for human review
 - Release ownership: semantic release runs from `.github/workflows/frontend.yml`; production aliasing runs from `.github/workflows/cd.yml`; `.github/workflows/release.yml` remains a manual fallback only
 
