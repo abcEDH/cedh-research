@@ -123,6 +123,32 @@ type PlayerCommanderUsageQueryRow = {
     | null;
 };
 
+type UpcomingTournamentQueryRow = {
+  tournament_id: string;
+  tournaments:
+    | {
+        name: string | null;
+        start_date: string | null;
+        state: string | null;
+        topdeck_tid: string | null;
+      }
+    | Array<{
+        name: string | null;
+        start_date: string | null;
+        state: string | null;
+        topdeck_tid: string | null;
+      }>
+    | null;
+};
+
+type UpcomingTournamentRow = {
+  tournament_id: string;
+  name: string;
+  start_date: string;
+  state: string | null;
+  topdeck_tid: string | null;
+};
+
 type PlayerCommanderProfileRow = {
   active_commander: string | null;
 };
@@ -162,6 +188,10 @@ function activePlayerCutoffDate() {
   const cutoff = new Date();
   cutoff.setMonth(cutoff.getMonth() - ACTIVE_PLAYER_LOOKBACK_MONTHS);
   return cutoff.toISOString().slice(0, 10);
+}
+
+function todayDateKey() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 function isActiveRank(row: LeaderboardRankRow | null) {
@@ -243,6 +273,38 @@ async function fetchEntries(playerId: string): Promise<EntryRow[]> {
     .eq("player_id", playerId);
 
   return (data as EntryRow[]) ?? [];
+}
+
+async function fetchUpcomingTournaments(playerId: string): Promise<UpcomingTournamentRow[]> {
+  const { data, error } = await supabase
+    .from("tournament_entries")
+    .select("tournament_id, tournaments(name, start_date, state, topdeck_tid)")
+    .eq("player_id", playerId);
+
+  if (error) {
+    throw new Error(`Error fetching upcoming player tournaments: ${error.message}`);
+  }
+
+  const today = todayDateKey();
+  const rowsByTournament = new Map<string, UpcomingTournamentRow>();
+  for (const row of ((data as UpcomingTournamentQueryRow[]) ?? [])) {
+    const tournament = Array.isArray(row.tournaments) ? row.tournaments[0] : row.tournaments;
+    if (!tournament?.start_date || tournament.start_date < today) continue;
+    const tournamentId = row.tournament_id || tournament.topdeck_tid || `${tournament.name}:${tournament.start_date}`;
+    if (rowsByTournament.has(tournamentId)) continue;
+    rowsByTournament.set(tournamentId, {
+      tournament_id: tournamentId,
+      name: tournament.name ?? "Unknown tournament",
+      start_date: tournament.start_date,
+      state: tournament.state ?? null,
+      topdeck_tid: tournament.topdeck_tid ?? null,
+    });
+  }
+
+  return Array.from(rowsByTournament.values()).sort((a, b) => {
+    if (a.start_date !== b.start_date) return a.start_date.localeCompare(b.start_date);
+    return a.name.localeCompare(b.name);
+  });
 }
 
 async function fetchActiveDisplayedRank(
@@ -769,12 +831,13 @@ export default async function RegionalPlayerPage({
     );
   }
 
-  const [globalSnapshot, globalEloRank, regionalRanks, entries, activeCommander] = await Promise.all([
+  const [globalSnapshot, globalEloRank, regionalRanks, entries, activeCommander, upcomingTournaments] = await Promise.all([
     fetchGlobalSnapshot(topdeckId),
     fetchGlobalEloRank(player.id),
     fetchRegionalRanks(player.id),
     fetchEntries(player.id),
     fetchActiveCommander(player.id, topdeckId, player.name),
+    fetchUpcomingTournaments(player.id),
   ]);
   const regionalRankRows = regionalRanks.map((row) => ({
     ...row,
@@ -1172,6 +1235,66 @@ export default async function RegionalPlayerPage({
             assigned separately from stored game history, and the active filter only changes the
             highlighted state rank.
           </p>
+
+          <Card className="knd-panel">
+            <CardHeader>
+              <CardTitle className="text-sm uppercase tracking-[0.2em] text-muted-foreground">
+                Upcoming Tournaments
+              </CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Future tournaments this player is signed up for in stored TopDeck entries.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-auto">
+                <table className="w-full text-sm">
+                  <thead className="text-left text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                    <tr>
+                      <th className="px-2 py-3">Date</th>
+                      <th className="px-2 py-3">Tournament</th>
+                      <th className="px-2 py-3">Region</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {upcomingTournaments.map((tournament) => {
+                      const tournamentHref = buildTopdeckTournamentUrl(tournament.topdeck_tid);
+                      return (
+                        <tr key={tournament.tournament_id} className="border-t border-border/60">
+                          <td className="px-2 py-3 font-mono text-muted-foreground">
+                            {formatShortDate(tournament.start_date)}
+                          </td>
+                          <td className="px-2 py-3 text-foreground">
+                            {tournamentHref ? (
+                              <a
+                                href={tournamentHref}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="hover:text-primary"
+                              >
+                                {tournament.name}
+                              </a>
+                            ) : (
+                              tournament.name
+                            )}
+                          </td>
+                          <td className="px-2 py-3 text-muted-foreground">
+                            {tournament.state?.trim() ? tournament.state.trim().toUpperCase() : "UNKNOWN"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {upcomingTournaments.length === 0 ? (
+                      <tr>
+                        <td colSpan={3} className="px-2 py-6 text-center text-sm text-muted-foreground">
+                          No upcoming tournaments found for this player.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
 
           <Card className="knd-panel">
             <CardHeader>
