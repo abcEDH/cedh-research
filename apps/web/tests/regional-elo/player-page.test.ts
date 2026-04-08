@@ -345,7 +345,9 @@ describe("RegionalPlayerPage", () => {
     const html = renderToStaticMarkup(element);
 
     expect(html).toContain("Alex Lien");
-    expect(html).toContain("TopDeck Rank");
+    expect(html).toContain("TopDeck");
+    expect(html).toContain("1255 points");
+    expect(html).toContain("Unique Opponents");
     expect(html).toContain("Global Rank");
     expect(html).toContain("Home Region");
     expect(html).toContain("Assigned state");

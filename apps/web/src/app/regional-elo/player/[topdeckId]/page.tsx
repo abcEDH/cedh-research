@@ -1006,21 +1006,16 @@ export default async function RegionalPlayerPage({
             <Card className="knd-panel">
               <CardHeader>
                 <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  TopDeck Rank
+                  TopDeck
                 </CardTitle>
               </CardHeader>
-              <CardContent className="text-2xl font-semibold text-foreground">
-                {globalSnapshot?.rank ? `#${globalSnapshot.rank}` : "—"}
-              </CardContent>
-            </Card>
-            <Card className="knd-panel">
-              <CardHeader>
-                <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  TopDeck Points
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold text-foreground">
-                {globalSnapshot ? globalSnapshot.points : "—"}
+              <CardContent className="space-y-1">
+                <div className="text-2xl font-semibold text-foreground">
+                  {globalSnapshot?.rank ? `#${globalSnapshot.rank}` : "—"}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  {globalSnapshot ? `${globalSnapshot.points} points` : "No points snapshot"}
+                </div>
               </CardContent>
             </Card>
             <Card className="knd-panel">
@@ -1056,7 +1051,7 @@ export default async function RegionalPlayerPage({
             <Card className="knd-panel">
               <CardHeader>
                 <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Opponents
+                  Unique Opponents
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-2xl font-semibold text-foreground">
