@@ -179,7 +179,7 @@ async function fetchLeaderboardRowsFromView(
     );
   }
 
-  return (data as LeaderboardRow[]) ?? [];
+  return applyGlobalLeaderboardTotals(regionType, (data as LeaderboardRow[]) ?? []);
 }
 
 async function fetchLegacyLeaderboardRows(
@@ -204,7 +204,46 @@ async function fetchLegacyLeaderboardRows(
     return [];
   }
 
-  return (data as LeaderboardRow[]) ?? [];
+  return applyGlobalLeaderboardTotals(regionType, (data as LeaderboardRow[]) ?? []);
+}
+
+async function applyGlobalLeaderboardTotals(
+  regionType: "global" | "country" | "state",
+  rows: LeaderboardRow[]
+): Promise<LeaderboardRow[]> {
+  if (regionType === "global" || rows.length === 0) return rows;
+
+  const playerIds = rows.map((row) => row.player_id).filter(Boolean);
+  for (const table of ["global_elo_active_leaderboard", "global_elo_leaderboard", "regional_elo_leaderboard"]) {
+    const { data, error } = await supabase
+      .from(table)
+      .select("player_id, games_played, wins, draws, losses, last_game_date")
+      .eq("region_type", "global")
+      .eq("region_key", GLOBAL_REGION_KEY)
+      .in("player_id", playerIds);
+
+    if (error) continue;
+    const totalsByPlayer = new Map(
+      ((data as Array<Pick<LeaderboardRow, "player_id" | "games_played" | "wins" | "draws" | "losses" | "last_game_date">>) ?? [])
+        .map((row) => [row.player_id, row])
+    );
+    if (totalsByPlayer.size === 0) continue;
+    return rows.map((row) => {
+      const totals = totalsByPlayer.get(row.player_id);
+      return totals
+        ? {
+            ...row,
+            games_played: totals.games_played,
+            wins: totals.wins,
+            draws: totals.draws,
+            losses: totals.losses,
+            last_game_date: totals.last_game_date,
+          }
+        : row;
+    });
+  }
+
+  return rows;
 }
 
 async function fetchRegionRows(): Promise<{ rows: RegionRow[]; supportsCountry: boolean }> {
