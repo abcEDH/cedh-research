@@ -363,23 +363,35 @@ jobs:
               body = response.text[:500] if response.text else "<empty body>"
               return f"HTTP {response.status_code}: {body}"
 
-          leaderboard_resp = request_with_retry(
-              f"{SUPABASE_URL}/rest/v1/regional_elo_leaderboard",
-              params={
-                  "select": "region_type,region_key,player_id,games_played,wins,draws,losses",
-                  "order": "games_played.desc",
-                  "limit": 100,
-              },
-          )
-          if leaderboard_resp.status_code != 200:
-              print(f"Failed to fetch regional Elo leaderboard sample: {response_failure(leaderboard_resp)}")
-              sys.exit(1)
+          leaderboard_rows = []
+          offset = 0
+          page_size = 100
+          while len(leaderboard_rows) < 25:
+              leaderboard_resp = request_with_retry(
+                  f"{SUPABASE_URL}/rest/v1/regional_elo_leaderboard",
+                  params={
+                      "select": "region_type,region_key,player_id,games_played,wins,draws,losses",
+                      "order": "games_played.desc",
+                      "limit": page_size,
+                      "offset": offset,
+                  },
+              )
+              if leaderboard_resp.status_code != 200:
+                  print(f"Failed to fetch regional Elo leaderboard sample: {response_failure(leaderboard_resp)}")
+                  sys.exit(1)
 
-          # Read the view without server-side filters, then sample state rows locally.
-          leaderboard_rows = [
-              row for row in leaderboard_resp.json()
-              if row.get("region_type") == "state" and row.get("games_played", 0) > 0
-          ][:25]
+              page_rows = leaderboard_resp.json()
+              leaderboard_rows.extend(
+                  row for row in page_rows
+                  if row.get("region_type") == "state" and row.get("games_played", 0) > 0
+              )
+
+              if len(page_rows) < page_size:
+                  break
+
+              offset += page_size
+
+          leaderboard_rows = leaderboard_rows[:25]
 
           if not leaderboard_rows:
               print("No regional Elo leaderboard rows found to validate.")
