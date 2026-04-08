@@ -172,6 +172,7 @@ erDiagram
 - Analytics generally filter to tournaments with `player_count >= 32`.
 - Partner commanders are stored as a single combined commander entity.
 - “Unknown Commander” entries can appear when deck data is missing and are typically filtered from analytics.
+- Some TopDeck league-style events only expose standings-level rates (`successRate`, `opponentSuccessRate`) and no pod rounds. Those events should be treated as standings-only, not pod-level analytics inputs.
 
 ## Frontend Consumption
 

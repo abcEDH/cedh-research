@@ -51,6 +51,66 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 DRAW_WINNER_VALUES = {"draw", "_draw_"}
+TOPDECK_STANDING_RATE_FIELDS = (
+    ("winRate", "opponentWinRate"),
+    ("successRate", "opponentSuccessRate"),
+)
+
+BACKFILL_RUN_STATUSES = {"pending", "running", "completed", "completed_with_errors", "failed"}
+BACKFILL_BATCH_STATUSES = {"pending", "running", "completed", "failed"}
+US_STATE_BY_ABBREV = {
+    "AL": "Alabama",
+    "AK": "Alaska",
+    "AZ": "Arizona",
+    "AR": "Arkansas",
+    "CA": "California",
+    "CO": "Colorado",
+    "CT": "Connecticut",
+    "DE": "Delaware",
+    "FL": "Florida",
+    "GA": "Georgia",
+    "HI": "Hawaii",
+    "ID": "Idaho",
+    "IL": "Illinois",
+    "IN": "Indiana",
+    "IA": "Iowa",
+    "KS": "Kansas",
+    "KY": "Kentucky",
+    "LA": "Louisiana",
+    "ME": "Maine",
+    "MD": "Maryland",
+    "MA": "Massachusetts",
+    "MI": "Michigan",
+    "MN": "Minnesota",
+    "MS": "Mississippi",
+    "MO": "Missouri",
+    "MT": "Montana",
+    "NE": "Nebraska",
+    "NV": "Nevada",
+    "NH": "New Hampshire",
+    "NJ": "New Jersey",
+    "NM": "New Mexico",
+    "NY": "New York",
+    "NC": "North Carolina",
+    "ND": "North Dakota",
+    "OH": "Ohio",
+    "OK": "Oklahoma",
+    "OR": "Oregon",
+    "PA": "Pennsylvania",
+    "RI": "Rhode Island",
+    "SC": "South Carolina",
+    "SD": "South Dakota",
+    "TN": "Tennessee",
+    "TX": "Texas",
+    "UT": "Utah",
+    "VT": "Vermont",
+    "VA": "Virginia",
+    "WA": "Washington",
+    "WV": "West Virginia",
+    "WI": "Wisconsin",
+    "WY": "Wyoming",
+    "DC": "District of Columbia",
+}
 
 
 def is_draw_winner(value: object) -> bool:
@@ -773,6 +833,22 @@ def parse_datetime(value) -> datetime | None:
     return parsed
 
 
+def extract_standing_rates(standing: dict[str, Any]) -> tuple[Optional[float], Optional[float]]:
+    primary_rate = None
+    for primary_rate_key, _ in TOPDECK_STANDING_RATE_FIELDS:
+        primary_rate = normalize_rate_value(standing.get(primary_rate_key))
+        if primary_rate is not None:
+            break
+
+    opponent_rate = None
+    for _, opponent_rate_key in TOPDECK_STANDING_RATE_FIELDS:
+        opponent_rate = normalize_rate_value(standing.get(opponent_rate_key))
+        if opponent_rate is not None:
+            break
+
+    return primary_rate, opponent_rate
+
+
 class DataIngester:
     """Main ingestion orchestrator."""
 
@@ -1077,6 +1153,7 @@ class DataIngester:
             standing = info["standing"]
             final_standing = info["idx"] + 1
             decklist = info["decklist"]
+            win_rate, opponent_win_rate = extract_standing_rates(standing)
 
             top_16_cutoff = 4 if player_count <= 34 else 16
             entries.append({
@@ -1084,12 +1161,12 @@ class DataIngester:
                 "player_id": player_id,
                 "commander_id": commander_id,
                 "final_standing": final_standing,
-                "points": standing.get("points", 0),
-                "wins": standing.get("wins", 0),
-                "losses": standing.get("losses", 0),
-                "draws": standing.get("draws", 0),
-                "win_rate": standing.get("winRate"),
-                "opponent_win_rate": standing.get("opponentWinRate"),
+                "points": int(standing.get("points") or 0),
+                "wins": int(standing.get("wins") or 0),
+                "losses": int(standing.get("losses") or 0),
+                "draws": int(standing.get("draws") or 0),
+                "win_rate": win_rate,
+                "opponent_win_rate": opponent_win_rate,
                 "decklist_url": decklist if decklist and "http" in decklist else None,
                 "decklist_text": decklist if decklist and "http" not in decklist else None,
                 "made_top_cut": final_standing <= effective_top_cut if effective_top_cut > 0 else False,
@@ -1102,8 +1179,17 @@ class DataIngester:
 
         # === BATCH PROCESSING FOR GAMES ===
         if not rounds:
-            logger.warning(f"No rounds data for {name}")
-            return {"tournament_id": tournament_id, "name": name, "entries": len(entry_map), "games": 0}
+            logger.info(
+                "No rounds data returned for %s; keeping standings-level ingest only",
+                name,
+            )
+            return {
+                "tournament_id": tournament_id,
+                "name": name,
+                "players": player_count,
+                "entries_created": len(entry_map),
+                "games_created": 0,
+            }
 
         # Step 1: Pre-process all rounds/tables to build game data
         logger.info(f"Pre-processing {len(rounds)} rounds for games...")

@@ -2,7 +2,7 @@ name: CI Backend Maintenance
 
 on:
   schedule:
-    - cron: "0 9 * * 1"
+    - cron: "0 9 * * 3"
   workflow_dispatch:
   push:
     branches: [main]
@@ -324,7 +324,7 @@ jobs:
               sys.exit(0)
           SCRIPT
 
-  validate-regional-elo-consistency:
+  validate-global-elo-consistency:
     runs-on: ubuntu-latest
     needs: ingest
     steps:
@@ -343,6 +343,7 @@ jobs:
           python << 'SCRIPT'
           import requests
           import sys
+          import time
 
           SUPABASE_URL = "${{ secrets.SUPABASE_URL }}"
           SUPABASE_KEY = "${{ secrets.SUPABASE_SERVICE_KEY }}"
@@ -353,13 +354,35 @@ jobs:
               "Content-Type": "application/json"
           }
 
-          leaderboard_url = (
-              f"{SUPABASE_URL}/rest/v1/global_elo_leaderboard"
-              "?select=region_type,region_key,player_id,games_played,wins,draws,losses"
-              "&region_type=eq.global&region_key=eq.ALL&games_played=gt.0&limit=25"
+          def request_with_retry(url, *, params):
+              last_response = None
+              for attempt in range(3):
+                  response = requests.get(url, headers=headers, params=params, timeout=30)
+                  last_response = response
+                  if response.status_code < 500:
+                      return response
+                  if attempt < 2:
+                      time.sleep(2 ** attempt)
+              return last_response
+
+          def response_failure(response):
+              body = response.text[:500] if response.text else "<empty body>"
+              return f"HTTP {response.status_code}: {body}"
+
+          leaderboard_resp = request_with_retry(
+              f"{SUPABASE_URL}/rest/v1/global_elo_leaderboard",
+              params={
+                  "select": "region_type,region_key,player_id,games_played,wins,draws,losses",
+                  "region_type": "eq.global",
+                  "region_key": "eq.ALL",
+                  "games_played": "gt.0",
+                  "limit": 25,
+              },
           )
-          leaderboard_resp = requests.get(leaderboard_url, headers=headers, timeout=30)
-          leaderboard_resp.raise_for_status()
+          if leaderboard_resp.status_code != 200:
+              print(f"Failed to fetch global Elo leaderboard sample: {response_failure(leaderboard_resp)}")
+              sys.exit(1)
+
           leaderboard_rows = leaderboard_resp.json()
 
           if not leaderboard_rows:
@@ -368,24 +391,28 @@ jobs:
 
           failures = []
           for row in leaderboard_rows:
-              stats_url = (
-                  f"{SUPABASE_URL}/rest/v1/global_elo_ratings"
-                  f"?select=games_played,wins,draws,losses"
-                  f"&region_type=eq.{row['region_type']}"
-                  f"&region_key=eq.{row['region_key']}"
-                  f"&player_id=eq.{row['player_id']}"
+              stats_resp = request_with_retry(
+                  f"{SUPABASE_URL}/rest/v1/global_elo_ratings",
+                  params={
+                      "select": "games_played,wins,draws,losses",
+                      "region_type": f"eq.{row['region_type']}",
+                      "region_key": f"eq.{row['region_key']}",
+                      "player_id": f"eq.{row['player_id']}",
+                  },
               )
-              stats_resp = requests.get(stats_url, headers=headers, timeout=30)
-              stats_resp.raise_for_status()
+              if stats_resp.status_code != 200:
+                  failures.append((row, f"failed to fetch canonical stats: {response_failure(stats_resp)}"))
+                  continue
+
               stats_rows = stats_resp.json()
               if not stats_rows:
-                  failures.append((row, "missing rating row"))
+                  failures.append((row, "missing canonical stats row"))
                   continue
 
               stats = stats_rows[0]
               for field in ("games_played", "wins", "draws", "losses"):
                   if row[field] != stats[field]:
-                      failures.append((row, f"{field}: leaderboard={row[field]} rating={stats[field]}"))
+                      failures.append((row, f"{field}: leaderboard={row[field]} canonical={stats[field]}"))
                       break
 
           if failures:
@@ -394,5 +421,5 @@ jobs:
                   print(f"  - {row['region_key']} / {row['player_id']}: {reason}")
               sys.exit(1)
 
-          print(f"Validated {len(leaderboard_rows)} global Global Elo rows against rating rows.")
+          print(f"Validated {len(leaderboard_rows)} global Elo rows against canonical stats.")
           SCRIPT

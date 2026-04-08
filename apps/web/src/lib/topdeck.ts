@@ -48,8 +48,10 @@ type TopDeckTournamentResponse = {
     username?: string | null;
     standing: number;
     points: number;
-    winRate: number;
-    opponentWinRate: number;
+    winRate?: number | null;
+    opponentWinRate?: number | null;
+    successRate?: number | null;
+    opponentSuccessRate?: number | null;
     wins: number;
     draws: number;
     losses: number;
@@ -77,6 +79,57 @@ type TopDeckRound = {
 
 const CHAMPIONSHIP_LEADERBOARD_URL =
   "https://topdeck.gg/championship-series-2026/leaderboard";
+
+async function fetchTopdeckWithRetry(url: string, apiKey: string, attempts = 3) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const res = await fetch(url, {
+      headers: { Authorization: apiKey },
+      cache: "no-store",
+    });
+
+    if (res.ok) return res;
+
+    if (res.status !== 429 || attempt === attempts - 1) {
+      throw new Error(`TopDeck API failed (${res.status}). TOPDECK_API_KEY is set, so fallback was skipped.`);
+    }
+
+    const retryAfterHeader = res.headers.get("Retry-After");
+    const retryAfterMs = parseRetryAfterHeader(retryAfterHeader);
+    const waitMs = retryAfterMs !== null
+      ? retryAfterMs
+      : 5000 * (attempt + 1);
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+  }
+
+  throw new Error("TopDeck API retry budget exhausted.");
+}
+
+function parseRetryAfterHeader(value: string | null): number | null {
+  if (!value) return null;
+
+  const retryAfterSeconds = Number(value);
+  if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+    return retryAfterSeconds * 1000;
+  }
+
+  const retryAfterDate = Date.parse(value);
+  if (Number.isFinite(retryAfterDate)) {
+    return Math.max(retryAfterDate - Date.now(), 0);
+  }
+
+  return null;
+}
+
+function normalizeStandingRates<T extends TopDeckTournamentResponse>(response: T): T {
+  return {
+    ...response,
+    standings: response.standings.map((standing) => ({
+      ...standing,
+      winRate: standing.winRate ?? standing.successRate ?? 0,
+      opponentWinRate: standing.opponentWinRate ?? standing.opponentSuccessRate ?? 0,
+    })),
+  };
+}
 
 export function extractTournamentSlug(input: string): string {
   const value = input.trim();
@@ -222,18 +275,11 @@ function withActualDecklists(response: TopDeckTournamentResponse, slug: string):
 export async function fetchTournamentBySlug(slug: string): Promise<TopDeckTournamentResponse> {
   const apiKey = process.env.TOPDECK_API_KEY;
   if (apiKey) {
-    const res = await fetch(`https://topdeck.gg/api/v2/tournaments/${slug}`.trim(), {
-      headers: {
-        Authorization: apiKey,
-      },
-      cache: "no-store",
-    });
-    if (!res.ok) {
-      throw new Error(
-        `TopDeck API failed (${res.status}). TOPDECK_API_KEY is set, so fallback was skipped.`
-      );
-    }
-    return withActualDecklists(withTournamentRecords((await res.json()) as TopDeckTournamentResponse), slug);
+    const res = await fetchTopdeckWithRetry(`https://topdeck.gg/api/v2/tournaments/${slug}`.trim(), apiKey);
+    return withActualDecklists(
+      withTournamentRecords(normalizeStandingRates((await res.json()) as TopDeckTournamentResponse)),
+      slug
+    );
   }
 
   const [bracketResponse, playersResponse] = await Promise.all([
@@ -272,6 +318,8 @@ export async function fetchTournamentBySlug(slug: string): Promise<TopDeckTourna
         points: 0,
         winRate: 0,
         opponentWinRate: 0,
+        successRate: null,
+        opponentSuccessRate: null,
         wins: 0,
         draws: 0,
         losses: 0,
