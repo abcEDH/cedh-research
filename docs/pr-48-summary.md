@@ -9,7 +9,7 @@ This PR shifts Global Elo from state-scoped ratings to a global all-games leader
 - Adds weekly precomputation for compact per-player commander profiles in `player_commander_profiles`, with UI fallbacks for deployments where the migration has not been applied yet.
 - Updates Global Elo UI to query precomputed `global_elo_regions` and `global_elo_leaderboard` rows instead of scanning all tournament entries and deriving state/region views during page render.
 - Uses global Elo for ranking and displayed leaderboard game counts while using assigned-state activity to determine each player's primary region and region-filtered leaderboard placement.
-- Includes tournaments without state metadata in the global Elo source data and player profile totals, with those games grouped as `UNKNOWN country` / `UNKNOWN state` in state assignment.
+- Includes tournaments without state metadata in the global Elo source data and player profile totals, with those games grouped as `UNKNOWN` in state assignment.
 - Adds country-level Global Elo rows and updates the filter flow to choose Global or Country, then only show states belonging to the selected country.
 - Expands player drilldown pages with global Elo rank, assigned-state rank, TopDeck rank, active commander, played-commanders summary, region-filtered game summary, paginated opponent records, and paginated game logs.
 - Updates player drilldowns to read precomputed primary-region and region-filtered rank data instead of loading the full global leaderboard to compute one player's state rank.

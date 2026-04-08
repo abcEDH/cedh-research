@@ -312,7 +312,6 @@ describe("RegionalPlayerPage", () => {
 
     expect(html).toContain("Unknown Region Player");
     expect(html).toMatch(/Games Played[\s\S]*?>1</);
-    expect(html).toContain("UNKNOWN country");
-    expect(html).toContain("UNKNOWN state");
+    expect(html).toContain("UNKNOWN");
   });
 });
