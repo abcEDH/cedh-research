@@ -267,6 +267,23 @@ async function fetchActiveDisplayedRank(
   return null;
 }
 
+async function fetchGlobalEloRatingRow(
+  table: "global_elo_ratings" | "regional_elo_ratings",
+  playerId: string
+): Promise<LeaderboardRankRow | null> {
+  const { data, error } = await supabase
+    .from(table)
+    .select("rating, games_played, wins, draws, losses, last_game_date")
+    .eq("region_type", "global")
+    .eq("region_key", "ALL")
+    .eq("player_id", playerId)
+    .maybeSingle();
+
+  if (error) return null;
+  const row = data as Omit<LeaderboardRankRow, "rank"> | null;
+  return row ? { ...row, rank: 0 } : null;
+}
+
 async function fetchGlobalEloRank(playerId: string): Promise<LeaderboardRankRow | null> {
   const { data, error } = await supabase
     .from("global_elo_leaderboard")
@@ -277,7 +294,7 @@ async function fetchGlobalEloRank(playerId: string): Promise<LeaderboardRankRow 
     .maybeSingle();
 
   if (error) {
-    const { data: fallbackData } = await supabase
+    const { data: fallbackData, error: fallbackError } = await supabase
       .from("regional_elo_leaderboard")
       .select("rank, rating, games_played, wins, draws, losses, last_game_date")
       .eq("region_type", "global")
@@ -285,7 +302,10 @@ async function fetchGlobalEloRank(playerId: string): Promise<LeaderboardRankRow 
       .eq("player_id", playerId)
       .maybeSingle();
 
-    const row = (fallbackData as LeaderboardRankRow | null) ?? null;
+    const row =
+      !fallbackError && fallbackData
+        ? (fallbackData as LeaderboardRankRow)
+        : await fetchGlobalEloRatingRow("regional_elo_ratings", playerId);
     const displayedRank = row
       ? await fetchActiveDisplayedRank("regional_elo_leaderboard", "global", "ALL", playerId)
       : null;
@@ -1001,9 +1021,9 @@ export default async function RegionalPlayerPage({
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-2xl font-semibold text-foreground">
-                {stateLeaderboardHref ? (
+                {stateLeaderboardHref && shouldShowLocalRank && activeRank ? (
                   <Link href={stateLeaderboardHref} className="hover:text-primary">
-                    {shouldShowLocalRank && activeRank ? `#${activeRank.rank}` : "--"}
+                    #{activeRank.rank}
                   </Link>
                 ) : (
                   "--"
@@ -1017,7 +1037,13 @@ export default async function RegionalPlayerPage({
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-2xl font-semibold text-foreground">
-                {shouldShowGlobalRank && globalEloRank ? `#${globalEloRank.rank}` : "--"}
+                {shouldShowGlobalRank && globalEloRank ? (
+                  <Link href="/regional-elo" className="hover:text-primary">
+                    #{globalEloRank.rank}
+                  </Link>
+                ) : (
+                  "--"
+                )}
               </CardContent>
             </Card>
             <Card className="knd-panel">
