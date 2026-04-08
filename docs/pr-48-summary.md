@@ -4,7 +4,7 @@
 
 This PR shifts Global Elo from state-scoped ratings to a global all-games leaderboard, then layers precomputed assigned-state and country-filtered views on top of that global rating set. It also expands the player drilldown, updates Tournament Prep to use the same player-region and commander-forecasting logic, and moves expensive leaderboard derivation out of request-time rendering.
 
-- Replaces state Elo computation with a global `ALL` Elo pipeline, including paged month-by-month reads and a cleanup step before upserting `global_elo_ratings`.
+- Replaces state Elo computation with a global `ALL` Elo pipeline, including paged month-by-month reads, compatibility fallback to legacy source views, and a cleanup step before upserting `global_elo_ratings`.
 - Adds backend computation for assigned-state activity and per-game Elo event rows, populating `global_elo_state_activity` and `global_elo_game_events` alongside global ratings.
 - Adds backend computation for `global_elo_active_leaderboard` and `global_elo_player_profile_summaries` so active leaderboard ranks, home region, and state-assignment summaries can be read directly instead of recomputed during page renders.
 - Adds weekly precomputation for compact per-player commander profiles in `player_commander_profiles`, with UI fallbacks for deployments where the migration has not been applied yet.
@@ -26,11 +26,12 @@ This PR shifts Global Elo from state-scoped ratings to a global all-games leader
 - Updates Tournament Prep to use precomputed commander profiles for not-yet-started events, falling back to raw commander history when profiles are unavailable.
 - Updates Tournament Prep to use the latest stored player name consistently across profiles, leaderboards, and prep tables.
 - Links the Tournament Prep snapshot tournament name to the corresponding TopDeck bracket and fixes raw-slug parsing for inputs like `cardart-weekly-44`.
-- Removes the old Midseason Invitational page and related home/test navigation references.
+- Removes the old Midseason Invitational page and related home/test navigation references, and stays compatible with `main`'s retired surface cleanup for cards, survival, and turn-order pages.
 - Improves TopDeck tournament normalization by stripping raw decklist payloads from standings after extracting commander names and TopDeck deck URLs.
 - Improves TopDeck draw normalization by recognizing `_DRAW_` winner IDs from older events.
 - Adds backfill inputs/manifests for missing TopDeck historical tournament IDs and batches `--tids-file` ingestion requests with a configurable `--tids-batch-size`.
 - Updates the weekly backend workflow so the scheduled recompute step explicitly covers global Elo, assigned-state activity, active leaderboard rows, player profile summaries, commander profiles, and per-game Elo event data.
+- Adopts `main`'s split backend/frontend CI workflow structure and keeps the Global Elo backend smoke command (`regional_elo.py --smoke-days 30 --dry-run`) working for pull request checks.
 - Removes the forced `--min-players 32` floor from the weekly `ingest.py --days 7` job.
 - Updates CI/backend validation scripts to check the global `ALL` Elo aggregate instead of state rows and to validate the new Global Elo tables/views.
 - Adds documentation for the Tournament Prep workflow, data sources, forecast algorithm, backtest rationale, and cache behavior.
@@ -38,7 +39,7 @@ This PR shifts Global Elo from state-scoped ratings to a global all-games leader
 ## Testing / Validation
 
 - Updated focused Global Elo player page test coverage for global leaderboard/assigned-state behavior, inactive-rank hiding, and unknown-region player profile handling.
-- Updated E2E home-page expectations after removing the Midseason page link.
+- Updated E2E home-page expectations after removing the Midseason page link and after merging `main`'s retired-surface navigation changes.
 - CI validation now samples global `ALL` Elo rows and compares them to canonical player stats.
 - Backend workflow validation now checks `global_elo_regions`, `global_elo_game_event_log`, `global_elo_state_activity`, `global_elo_game_events`, `global_elo_active_leaderboard`, and `global_elo_player_profile_summaries`.
-- Verified the performance changes with targeted eslint, focused Global Elo tests, Python compile for `regional_elo.py`, and `git diff --check`.
+- Verified the performance/conflict-resolution changes with targeted eslint, focused Global Elo tests, production web build, Python compile for `regional_elo.py`, backend CLI smoke help, and `git diff --check`.
