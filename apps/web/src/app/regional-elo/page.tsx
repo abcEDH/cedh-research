@@ -135,8 +135,11 @@ async function fetchLeaderboardRows(
     const { data, error } = await query;
 
     if (error) {
-      console.error("Error fetching leaderboard rows:", error);
-      break;
+      return fetchLegacyLeaderboardRows(
+        regionType === "country" ? "global" : regionType,
+        regionType === "country" ? GLOBAL_REGION_KEY : regionKey,
+        maxRows
+      );
     }
     if (!data?.length) break;
     rows.push(...(data as LeaderboardRow[]));
@@ -152,7 +155,7 @@ async function fetchLegacyLeaderboardRows(
   maxRows = LEADERBOARD_LIMIT
 ): Promise<LeaderboardRow[]> {
   const { data, error } = await supabase
-    .from("global_elo_leaderboard")
+    .from("regional_elo_leaderboard")
     .select(
       "region_type, region_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank"
     )
@@ -181,7 +184,7 @@ async function fetchRegionRows(): Promise<{ rows: RegionRow[]; supportsCountry: 
   }
 
   const { data: fallbackData, error: fallbackError } = await supabase
-    .from("global_elo_regions")
+    .from("regional_elo_regions")
     .select("region_type, region_key, player_count, updated_at")
     .order("region_type", { ascending: true })
     .order("region_key", { ascending: true });
