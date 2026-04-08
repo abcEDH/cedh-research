@@ -7,8 +7,7 @@ import { inferCountryForRegion } from "@/lib/region-countries";
 
 export const dynamic = "force-dynamic";
 const GLOBAL_REGION_KEY = "ALL";
-const LEADERBOARD_LIMIT = 50;
-const INITIAL_COMMANDER_LOOKUP_LIMIT = 50;
+const LEADERBOARD_PAGE_SIZE = 50;
 const ACTIVE_PLAYER_LOOKBACK_MONTHS = 6;
 
 function readRegionParam(
@@ -75,6 +74,24 @@ function readSearchParam(
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
 }
 
+function readPageParam(
+  params: Awaited<Promise<{ page?: string | string[] }> | { page?: string | string[] }> | undefined
+) {
+  const anyParams = params as
+    | Record<string, string | string[] | undefined>
+    | URLSearchParams
+    | undefined;
+  if (!anyParams) return 1;
+  const rawValue =
+    typeof (anyParams as URLSearchParams).get === "function"
+      ? (anyParams as URLSearchParams).get("page") ?? ""
+      : Array.isArray((anyParams as Record<string, string | string[] | undefined>).page)
+        ? ((anyParams as Record<string, string | string[] | undefined>).page?.[0] ?? "")
+        : ((anyParams as Record<string, string | string[] | undefined>).page ?? "");
+  const parsed = Number.parseInt(rawValue, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
+
 type RegionRow = {
   region_type: string;
   region_key: string;
@@ -108,6 +125,11 @@ type LatestCommanderRow = {
   latest_commander_date: string | null;
 };
 
+type LeaderboardPage = {
+  rows: LeaderboardRow[];
+  totalCount: number;
+};
+
 function isKnownCommander(commanderName: string | null | undefined) {
   const normalized = (commanderName ?? "").trim().toLowerCase();
   return normalized.length > 0 && normalized !== "unknown commander";
@@ -131,116 +153,129 @@ function activePlayerCutoffDate() {
 async function fetchLeaderboardRows(
   regionType: "global" | "country" | "state",
   regionKey: string,
-  maxRows = LEADERBOARD_LIMIT,
+  page: number,
+  pageSize: number,
   searchQuery = ""
-): Promise<LeaderboardRow[]> {
-  const pageSize = 1000;
-  const rows: LeaderboardRow[] = [];
+): Promise<LeaderboardPage> {
   const cutoffDate = activePlayerCutoffDate();
   const normalizedSearch = searchQuery.trim();
+  const pageStart = (page - 1) * pageSize;
+  const pageEnd = pageStart + pageSize - 1;
 
-  for (let offset = 0; offset < maxRows; offset += pageSize) {
-    const remaining = maxRows - offset;
-    const pageEnd = offset + Math.min(pageSize, remaining) - 1;
-    let query = supabase
-      .from("global_elo_active_leaderboard")
-      .select(
-        "region_type, region_key, country_key, primary_country_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank"
-      )
-      .eq("region_type", regionType)
-      .order("rank", { ascending: true })
-      .range(offset, pageEnd);
+  let query = supabase
+    .from("global_elo_active_leaderboard")
+    .select(
+      "region_type, region_key, country_key, primary_country_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank",
+      { count: "exact" }
+    )
+    .eq("region_type", regionType)
+    .order("rank", { ascending: true })
+    .range(pageStart, pageEnd);
 
-    if (normalizedSearch) {
-      query = query.ilike("player_name", `%${normalizedSearch}%`);
-    }
-
-    if (regionType === "global") {
-      query = query.eq("region_key", GLOBAL_REGION_KEY);
-    } else {
-      query = query.eq("region_key", regionKey);
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      return fetchLeaderboardRowsFromView(regionType, regionKey, maxRows, cutoffDate, normalizedSearch);
-    }
-    if (!data?.length) break;
-    rows.push(...(data as LeaderboardRow[]));
-    if (data.length < pageSize || rows.length >= maxRows) break;
+  if (normalizedSearch) {
+    query = query.ilike("player_name", `%${normalizedSearch}%`);
   }
 
-  return rows;
+  if (regionType === "global") {
+    query = query.eq("region_key", GLOBAL_REGION_KEY);
+  } else {
+    query = query.eq("region_key", regionKey);
+  }
+
+  const { data, error, count } = await query;
+
+  if (error) {
+    return fetchLeaderboardRowsFromView(regionType, regionKey, page, pageSize, cutoffDate, normalizedSearch);
+  }
+
+  return {
+    rows: (data as LeaderboardRow[]) ?? [],
+    totalCount: count ?? 0,
+  };
 }
 
 async function fetchLeaderboardRowsFromView(
   regionType: "global" | "country" | "state",
   regionKey: string,
-  maxRows: number,
+  page: number,
+  pageSize: number,
   cutoffDate: string,
   searchQuery = ""
-): Promise<LeaderboardRow[]> {
+): Promise<LeaderboardPage> {
+  const pageStart = (page - 1) * pageSize;
+  const pageEnd = pageStart + pageSize - 1;
   let query = supabase
     .from("global_elo_leaderboard")
     .select(
-      "region_type, region_key, country_key, primary_country_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank"
+      "region_type, region_key, country_key, primary_country_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank",
+      { count: "exact" }
     )
     .eq("region_type", regionType)
     .eq("region_key", regionKey)
     .gte("last_game_date", cutoffDate)
     .order("rating", { ascending: false })
     .order("games_played", { ascending: false })
-    .range(0, maxRows - 1);
+    .range(pageStart, pageEnd);
 
   if (searchQuery) {
     query = query.ilike("player_name", `%${searchQuery}%`);
   }
 
-  const { data, error } = await query;
+  const { data, error, count } = await query;
 
   if (error) {
     return fetchLegacyLeaderboardRows(
       regionType === "country" ? "global" : regionType,
       regionType === "country" ? GLOBAL_REGION_KEY : regionKey,
-      maxRows,
+      page,
+      pageSize,
       searchQuery
     );
   }
 
-  return applyGlobalLeaderboardTotals(regionType, (data as LeaderboardRow[]) ?? []);
+  return {
+    rows: await applyGlobalLeaderboardTotals(regionType, (data as LeaderboardRow[]) ?? []),
+    totalCount: count ?? 0,
+  };
 }
 
 async function fetchLegacyLeaderboardRows(
   regionType: "global" | "state",
   regionKey: string,
-  maxRows = LEADERBOARD_LIMIT,
+  page: number,
+  pageSize: number,
   searchQuery = ""
-): Promise<LeaderboardRow[]> {
+): Promise<LeaderboardPage> {
   const cutoffDate = activePlayerCutoffDate();
+  const pageStart = (page - 1) * pageSize;
+  const pageEnd = pageStart + pageSize - 1;
   let query = supabase
     .from("regional_elo_leaderboard")
     .select(
-      "region_type, region_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank"
+      "region_type, region_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank",
+      { count: "exact" }
     )
     .eq("region_type", regionType)
     .eq("region_key", regionKey)
     .gte("last_game_date", cutoffDate)
     .order("rank", { ascending: true })
-    .range(0, maxRows - 1);
+    .range(pageStart, pageEnd);
 
   if (searchQuery) {
     query = query.ilike("player_name", `%${searchQuery}%`);
   }
 
-  const { data, error } = await query;
+  const { data, error, count } = await query;
 
   if (error) {
     console.error("Error fetching legacy leaderboard rows:", error);
-    return [];
+    return { rows: [], totalCount: 0 };
   }
 
-  return applyGlobalLeaderboardTotals(regionType, (data as LeaderboardRow[]) ?? []);
+  return {
+    rows: await applyGlobalLeaderboardTotals(regionType, (data as LeaderboardRow[]) ?? []),
+    totalCount: count ?? 0,
+  };
 }
 
 async function applyGlobalLeaderboardTotals(
@@ -492,6 +527,7 @@ export default async function RegionalEloPage({
   const requestedCountry = decodeURIComponent(readCountryParam(resolvedSearchParams)).trim();
   const requestedRegion = decodeURIComponent(readRegionParam(resolvedSearchParams)).trim();
   const playerSearch = decodeURIComponent(readSearchParam(resolvedSearchParams)).trim();
+  const requestedPage = readPageParam(resolvedSearchParams);
   const countryRegions = regions.filter((region) => region.region_type === "country");
   const hasCountryOptions = countryRegions.length > 0;
   const selectedScope: "global" | "country" =
@@ -518,25 +554,51 @@ export default async function RegionalEloPage({
   const activeRegionKey =
     selectedScope === "global" ? GLOBAL_REGION_KEY : selectedRegion || selectedCountry || "";
 
-  const leaderboard =
+  const leaderboardPage =
     activeRegionKey
       ? supportsCountryRegions
         ? await fetchLeaderboardRows(
             activeRegionType,
             activeRegionKey,
-            playerSearch ? 250 : LEADERBOARD_LIMIT,
+            requestedPage,
+            LEADERBOARD_PAGE_SIZE,
             playerSearch
           )
         : await fetchLegacyLeaderboardRows(
             activeRegionType === "state" ? "state" : "global",
             activeRegionType === "state" ? activeRegionKey : GLOBAL_REGION_KEY,
-            playerSearch ? 250 : LEADERBOARD_LIMIT,
+            requestedPage,
+            LEADERBOARD_PAGE_SIZE,
             playerSearch
           )
-      : [];
+      : { rows: [], totalCount: 0 };
+
+  const totalPages = Math.max(Math.ceil(leaderboardPage.totalCount / LEADERBOARD_PAGE_SIZE), 1);
+  const currentPage = Math.min(requestedPage, totalPages);
+  const leaderboard =
+    currentPage === requestedPage
+      ? leaderboardPage.rows
+      : activeRegionKey
+        ? (
+            supportsCountryRegions
+              ? await fetchLeaderboardRows(
+                  activeRegionType,
+                  activeRegionKey,
+                  currentPage,
+                  LEADERBOARD_PAGE_SIZE,
+                  playerSearch
+                )
+              : await fetchLegacyLeaderboardRows(
+                  activeRegionType === "state" ? "state" : "global",
+                  activeRegionType === "state" ? activeRegionKey : GLOBAL_REGION_KEY,
+                  currentPage,
+                  LEADERBOARD_PAGE_SIZE,
+                  playerSearch
+                )
+          ).rows
+        : [];
 
   const topdeckIds = leaderboard
-    .slice(0, INITIAL_COMMANDER_LOOKUP_LIMIT)
     .map((row) => row.topdeck_id)
     .filter((value): value is string => Boolean(value));
   const latestByPlayer = await fetchLatestCommanders(topdeckIds);
@@ -623,6 +685,7 @@ export default async function RegionalEloPage({
                 {selectedScope === "country" && selectedRegion ? (
                   <input type="hidden" name="region" value={selectedRegion} />
                 ) : null}
+                <input type="hidden" name="page" value="1" />
                 <label className="sr-only" htmlFor="leaderboard-player-search">
                   Player search
                 </label>
@@ -646,6 +709,13 @@ export default async function RegionalEloPage({
               <RegionalLeaderboardTable
                 latestByPlayer={latestByPlayerRecord}
                 leaderboard={leaderboard}
+                currentPage={currentPage}
+                totalCount={leaderboardPage.totalCount}
+                pageSize={LEADERBOARD_PAGE_SIZE}
+                selectedScope={selectedScope}
+                selectedCountry={selectedCountry}
+                selectedRegion={selectedRegion}
+                playerSearch={playerSearch}
               />
             </CardContent>
           </Card>

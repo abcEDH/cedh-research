@@ -34,6 +34,7 @@ This PR shifts Global Elo from state-scoped ratings to a global all-games leader
 - Adopts `main`'s split backend/frontend CI workflow structure and keeps the Global Elo backend smoke command (`regional_elo.py --smoke-days 30 --dry-run`) working for pull request checks.
 - Removes the forced `--min-players 32` floor from the weekly `ingest.py --days 7` job.
 - Updates CI/backend validation scripts to check the global `ALL` Elo aggregate instead of state rows and to validate the new Global Elo tables/views.
+- Fixes follow-up CI issues on the branch by importing `Any` for backend type annotations, declaring the `server-only` frontend dependency explicitly, and hardening shared test setup for server-only imports.
 - Adds documentation for the Tournament Prep workflow, data sources, forecast algorithm, backtest rationale, and cache behavior.
 
 ## Testing / Validation
@@ -42,4 +43,6 @@ This PR shifts Global Elo from state-scoped ratings to a global all-games leader
 - Updated E2E home-page expectations after removing the Midseason page link and after merging `main`'s retired-surface navigation changes.
 - CI validation now samples global `ALL` Elo rows and compares them to canonical player stats.
 - Backend workflow validation now checks `global_elo_regions`, `global_elo_game_event_log`, `global_elo_state_activity`, `global_elo_game_events`, `global_elo_active_leaderboard`, and `global_elo_player_profile_summaries`.
-- Verified the performance/conflict-resolution changes with targeted eslint, focused Global Elo tests, production web build, Python compile for `regional_elo.py`, backend CLI smoke help, and `git diff --check`.
+- Added a deterministic TopDeck retry test by pinning `Date.now()` in Vitest so the HTTP-date `Retry-After` assertion does not decay over time.
+- Verified after the follow-up fixes with `npm --workspace apps/web run test:ci` and `python3 -m py_compile packages/backend/src/ingest.py packages/backend/src/regional_elo.py packages/backend/src/backfill_moxfield_commanders.py`.
+- A clean PR worktree still needs GitHub Actions secrets for `next build` and backend smoke jobs that touch Supabase; local failures without those secrets are environmental rather than branch regressions.

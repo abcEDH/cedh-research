@@ -1,9 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { startTransition, useState } from "react";
-
-const PAGE_SIZE = 50;
 
 type LeaderboardRow = {
   region_type: string;
@@ -39,20 +36,44 @@ function formatDate(value: string | null) {
 export function RegionalLeaderboardTable({
   latestByPlayer,
   leaderboard,
+  currentPage,
+  totalCount,
+  pageSize,
+  selectedScope,
+  selectedCountry,
+  selectedRegion,
+  playerSearch,
 }: {
   latestByPlayer: Record<string, LatestCommanderRow>;
   leaderboard: LeaderboardRow[];
+  currentPage: number;
+  totalCount: number;
+  pageSize: number;
+  selectedScope: "global" | "country";
+  selectedCountry?: string;
+  selectedRegion?: string;
+  playerSearch: string;
 }) {
-  const [page, setPage] = useState(1);
-  const totalPages = Math.max(Math.ceil(leaderboard.length / PAGE_SIZE), 1);
-  const start = leaderboard.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
-  const end = Math.min(page * PAGE_SIZE, leaderboard.length);
-  const visibleRows = leaderboard.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalPages = Math.max(Math.ceil(totalCount / pageSize), 1);
+  const start = totalCount === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const end = Math.min(currentPage * pageSize, totalCount);
 
-  function setBoundedPage(nextPage: number) {
-    startTransition(() => {
-      setPage(Math.min(Math.max(nextPage, 1), totalPages));
-    });
+  function buildPageHref(nextPage: number) {
+    const params = new URLSearchParams();
+    params.set("scope", selectedScope);
+    if (selectedScope === "country" && selectedCountry) {
+      params.set("country", selectedCountry);
+    }
+    if (selectedScope === "country" && selectedRegion) {
+      params.set("region", selectedRegion);
+    }
+    if (playerSearch) {
+      params.set("q", playerSearch);
+    }
+    if (nextPage > 1) {
+      params.set("page", String(nextPage));
+    }
+    return `/regional-elo?${params.toString()}`;
   }
 
   return (
@@ -70,9 +91,9 @@ export function RegionalLeaderboardTable({
             </tr>
           </thead>
           <tbody>
-            {visibleRows.map((row, index) => {
+            {leaderboard.map((row, index) => {
               const latestCommander = row.topdeck_id ? latestByPlayer[row.topdeck_id] : undefined;
-              const displayRank = (page - 1) * PAGE_SIZE + index + 1;
+              const displayRank = (currentPage - 1) * pageSize + index + 1;
               const playerHref =
                 row.topdeck_id && row.region_type === "state"
                   ? `/regional-elo/player/${row.topdeck_id}?region=${encodeURIComponent(row.region_key)}`
@@ -110,7 +131,7 @@ export function RegionalLeaderboardTable({
                 </tr>
               );
             })}
-            {visibleRows.length === 0 && (
+            {leaderboard.length === 0 && (
               <tr>
                 <td colSpan={6} className="py-6 text-center text-sm text-muted-foreground">
                   No Global Elo data yet. Run the Global Elo job to populate this leaderboard.
@@ -122,28 +143,28 @@ export function RegionalLeaderboardTable({
       </div>
       <div className="mt-4 flex flex-col gap-3 border-t border-border/60 pt-4 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
         <div>
-          Showing {start}-{end} of {leaderboard.length}
+          Showing {start}-{end} of {totalCount}
         </div>
         <div className="flex items-center gap-2">
-          <button
+          <Link
+            href={buildPageHref(currentPage - 1)}
             className="knd-chip border border-border/70 px-3 py-2 text-foreground transition hover:text-primary disabled:pointer-events-none disabled:opacity-50"
-            disabled={page <= 1}
-            onClick={() => setBoundedPage(page - 1)}
-            type="button"
+            aria-disabled={currentPage <= 1}
+            tabIndex={currentPage <= 1 ? -1 : 0}
           >
             Previous
-          </button>
+          </Link>
           <span>
-            Page {page} of {totalPages}
+            Page {currentPage} of {totalPages}
           </span>
-          <button
+          <Link
+            href={buildPageHref(currentPage + 1)}
             className="knd-chip border border-border/70 px-3 py-2 text-foreground transition hover:text-primary disabled:pointer-events-none disabled:opacity-50"
-            disabled={page >= totalPages}
-            onClick={() => setBoundedPage(page + 1)}
-            type="button"
+            aria-disabled={currentPage >= totalPages}
+            tabIndex={currentPage >= totalPages ? -1 : 0}
           >
             Next
-          </button>
+          </Link>
         </div>
       </div>
     </>
