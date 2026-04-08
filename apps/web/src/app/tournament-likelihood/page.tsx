@@ -68,6 +68,14 @@ type PrecomputedCommanderProfileRow = {
   commander_predictions: PrecomputedCommanderPrediction[] | null;
 };
 
+function chunkArray<T>(values: T[], chunkSize = 250) {
+  const chunks: T[][] = [];
+  for (let index = 0; index < values.length; index += chunkSize) {
+    chunks.push(values.slice(index, index + chunkSize));
+  }
+  return chunks;
+}
+
 function readStringParam(
   params:
     | Record<string, string | string[] | undefined>
@@ -111,18 +119,26 @@ function hasTournamentStarted(startDate: string | number | null | undefined) {
 async function fetchBestEloRows(topdeckIds: string[]): Promise<EloRow[]> {
   if (topdeckIds.length === 0) return [];
 
-  const { data, error } = await supabase
-    .from("global_elo_leaderboard")
-    .select("topdeck_id, player_name, rating, games_played, primary_region_key, region_key, rank")
-    .in("topdeck_id", topdeckIds)
-    .eq("region_type", "global")
-    .eq("region_key", "ALL");
-
-  if (error) {
-    throw new Error(`Error fetching Elo rows: ${error.message}`);
+  async function fetchRows(table: "global_elo_leaderboard" | "regional_elo_leaderboard") {
+    return supabase
+      .from(table)
+      .select("topdeck_id, player_name, rating, games_played, primary_region_key, region_key, rank")
+      .in("topdeck_id", topdeckIds)
+      .eq("region_type", "global")
+      .eq("region_key", "ALL");
   }
 
-  return ((data ?? []) as RegionalLeaderboardQueryRow[])
+  const { data, error } = await fetchRows("global_elo_leaderboard");
+  const rows =
+    error
+      ? await fetchRows("regional_elo_leaderboard")
+      : { data, error };
+
+  if (rows.error) {
+    throw new Error(`Error fetching Elo rows: ${rows.error.message}`);
+  }
+
+  return ((rows.data ?? []) as RegionalLeaderboardQueryRow[])
     .map((row) => ({
       topdeck_id: row.topdeck_id,
       player_name: row.player_name,
@@ -131,6 +147,41 @@ async function fetchBestEloRows(topdeckIds: string[]): Promise<EloRow[]> {
       region_key: row.primary_region_key ?? row.region_key,
     }))
     .sort((a, b) => b.rating - a.rating);
+}
+
+async function fetchLatestPlayerNames(topdeckIds: string[]): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  const uniqueTopdeckIds = Array.from(new Set(topdeckIds.filter(Boolean)));
+  for (const topdeckIdChunk of chunkArray(uniqueTopdeckIds)) {
+    const { data, error } = await supabase
+      .from("players")
+      .select("topdeck_id, name")
+      .in("topdeck_id", topdeckIdChunk);
+
+    if (error) {
+      continue;
+    }
+
+    for (const row of (data ?? []) as Array<{ topdeck_id: string | null; name: string | null }>) {
+      if (row.topdeck_id && row.name) {
+        names.set(row.topdeck_id, row.name);
+      }
+    }
+  }
+  return names;
+}
+
+function applyLatestPlayerNamesToProfiles(
+  profiles: { players: PlayerCommanderProfile[]; metaShare: MetaShareRow[] },
+  latestPlayerNames: Map<string, string>
+) {
+  return {
+    ...profiles,
+    players: profiles.players.map((profile) => ({
+      ...profile,
+      playerName: latestPlayerNames.get(profile.topdeckId) ?? profile.playerName,
+    })),
+  };
 }
 
 async function fetchPrecomputedProfiles(
@@ -221,17 +272,29 @@ const getCachedTournamentAnalysis = unstable_cache(
     const lookbackStart = lookbackStartDate(lookbackMonths, referenceDate);
     const fallbackLookbackStart = lookbackStartDate(COMMANDER_FALLBACK_LOOKBACK_MONTHS, referenceDate);
     const lookbackEnd = anchorToStartDate ? referenceDate.toISOString().slice(0, 10) : undefined;
-    const [precomputedProfiles, decklistRows, eloRows] = await Promise.all([
+    const [precomputedProfiles, decklistRows, eloRows, latestPlayerNames] = await Promise.all([
       anchorToStartDate ? Promise.resolve(null) : fetchPrecomputedProfiles(topdeckIds),
       getCommanderDecklistRows(topdeckIds, lookbackEnd),
       fetchBestEloRows(topdeckIds),
+      fetchLatestPlayerNames(topdeckIds),
     ]);
+    const latestStandings = standings.map((standing) => ({
+      ...standing,
+      name: latestPlayerNames.get(standing.id) ?? standing.name,
+    }));
+    const latestEloRows = eloRows.map((row) => ({
+      ...row,
+      player_name: row.topdeck_id ? latestPlayerNames.get(row.topdeck_id) ?? row.player_name : row.player_name,
+    }));
     if (precomputedProfiles) {
       return {
         tournament: response.data,
-        standings,
-        profiles: attachLatestDecklistUrls(precomputedProfiles, decklistRows),
-        eloRows,
+        standings: latestStandings,
+        profiles: applyLatestPlayerNamesToProfiles(
+          attachLatestDecklistUrls(precomputedProfiles, decklistRows),
+          latestPlayerNames
+        ),
+        eloRows: latestEloRows,
         hasRounds: (response.rounds ?? []).length > 0,
       };
     }
@@ -264,9 +327,12 @@ const getCachedTournamentAnalysis = unstable_cache(
 
     return {
       tournament: response.data,
-      standings,
-      profiles: attachLatestDecklistUrls(profiles, decklistRows),
-      eloRows,
+      standings: latestStandings,
+      profiles: applyLatestPlayerNamesToProfiles(
+        attachLatestDecklistUrls(profiles, decklistRows),
+        latestPlayerNames
+      ),
+      eloRows: latestEloRows,
       hasRounds: (response.rounds ?? []).length > 0,
     };
   },

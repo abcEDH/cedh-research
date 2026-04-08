@@ -57,6 +57,7 @@ type TournamentRow = {
 };
 
 type LeaderboardRankRow = {
+  player_id?: string;
   country_key?: string | null;
   primary_country_key?: string | null;
   primary_region_key?: string | null;
@@ -957,12 +958,13 @@ export default async function RegionalPlayerPage({
   });
   const latestDecklistByCommander = new Map<string, { date: string; url: string }>();
   for (const row of await fetchPlayerCommanderUsageRows(player.id, topdeckId, player.name)) {
-    if (!isKnownCommanderName(row.commander_name) || !row.start_date) continue;
+    const commanderName = row.commander_name;
+    if (!isKnownCommanderName(commanderName) || !commanderName || !row.start_date) continue;
     const url = row.decklist_url || row.topdeck_decklist_url;
     if (!url) continue;
-    const existing = latestDecklistByCommander.get(row.commander_name);
+    const existing = latestDecklistByCommander.get(commanderName);
     if (!existing || row.start_date > existing.date) {
-      latestDecklistByCommander.set(row.commander_name, { date: row.start_date, url });
+      latestDecklistByCommander.set(commanderName, { date: row.start_date, url });
     }
   }
   const topdeckProfileHref = buildTopdeckProfileHref(topdeckId);
