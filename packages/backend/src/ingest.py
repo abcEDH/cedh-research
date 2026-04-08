@@ -48,6 +48,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+DRAW_WINNER_VALUES = {"draw", "_draw_"}
+
+
+def is_draw_winner(value: object) -> bool:
+    """Return true for TopDeck draw sentinels from winner or winner_id fields."""
+    return isinstance(value, str) and value.strip().lower() in DRAW_WINNER_VALUES
+
 
 class TopDeckClient:
     """Client for TopDeck.gg API V2."""
@@ -113,7 +120,7 @@ class TopDeckClient:
                     "winRate",
                 ],
                 "rounds": True,
-                "tables": ["table", "players", "winner", "status"],
+                "tables": ["table", "players", "winner", "winner_id", "status"],
                 "players": ["name", "id", "decklist"],
             }
 
@@ -154,7 +161,7 @@ class TopDeckClient:
                 "winRate",
             ],
             "rounds": True,
-            "tables": ["table", "players", "winner", "status"],
+            "tables": ["table", "players", "winner", "winner_id", "status"],
             "players": ["name", "id", "decklist"],
         }
         response = self._request("POST", f"{self.BASE_URL}/v2/tournaments", json_payload=payload)
@@ -904,7 +911,7 @@ class DataIngester:
 
                 # Determine winner player_id
                 winner_player_id = None
-                is_draw = winner_id_raw == "Draw" or winner_name is None
+                is_draw = is_draw_winner(winner_id_raw) or is_draw_winner(winner_name) or winner_name is None
 
                 if not is_draw:
                     for p in players:
