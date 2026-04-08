@@ -31,3 +31,21 @@ backend-ingest:
 
 backend-help:
 	python packages/backend/src/ingest.py --help
+
+check:
+	@echo "Running all checks..."
+	npm run docs:hygiene
+	npm run docs:check
+	npm --workspace apps/web run lint
+	npm --workspace apps/web run test:ci
+	@if command -v ruff >/dev/null; then \
+		ruff check packages/backend/src; \
+	else \
+		echo "Skipping ruff (not installed)"; \
+	fi
+	@if command -v mypy >/dev/null; then \
+		mypy packages/backend/src; \
+	else \
+		echo "Skipping mypy (not installed)"; \
+	fi
+	PYTHONPATH=packages/backend/src python3 -m unittest discover packages/backend/tests

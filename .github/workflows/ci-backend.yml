@@ -41,33 +41,62 @@ jobs:
 
           echo "Data dictionary check passed."
 
+  lint-and-test:
+    name: Backend quality and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv pip install -r packages/backend/requirements.txt
+
+      - name: Run Ruff check
+        run: uv run ruff check packages/backend/src
+
+      - name: Run Ruff format
+        run: uv run ruff format --check packages/backend/src
+
+      - name: Run MyPy type checking
+        run: uv run mypy packages/backend/src
+
+      - name: Run unit tests
+        run: |
+          PYTHONPATH=packages/backend/src uv run python -m unittest discover packages/backend/tests
+
   backend-validation:
     name: Backend validation and consistency checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
+          enable-cache: true
 
       - name: Install dependencies
-        run: pip install -r packages/backend/requirements.txt
+        run: uv pip install -r packages/backend/requirements.txt
 
       - name: Validate backend views and functions
-        run: python packages/backend/src/ci_backend_checks.py views
+        run: uv run python packages/backend/src/ci_backend_checks.py views
 
       - name: Check data integrity
-        run: python packages/backend/src/ci_backend_checks.py data-integrity
+        run: uv run python packages/backend/src/ci_backend_checks.py data-integrity
 
       - name: Check regional Elo aggregate consistency
-        run: python packages/backend/src/ci_backend_checks.py regional-elo
+        run: uv run python packages/backend/src/ci_backend_checks.py regional-elo
 
       - name: Smoke-test analytics benchmarks
         run: |
-          python packages/backend/src/ci_backend_checks.py benchmark \
+          uv run python packages/backend/src/ci_backend_checks.py benchmark \
             --runs 1 --warmups 0
 
       - name: Smoke-test leaderboard recompute
-        run: python packages/backend/src/regional_elo.py --smoke-days 30 --dry-run
+        run: uv run python packages/backend/src/regional_elo.py --smoke-days 30 --dry-run

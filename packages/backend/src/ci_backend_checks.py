@@ -95,6 +95,7 @@ class BenchmarkOutcome:
     worst_ms: float
     passed: bool
     notes: tuple[str, ...] = ()
+    error: str | None = None
 
 
 BENCHMARK_RUNS_DEFAULT = 3
@@ -145,25 +146,86 @@ def _fetch_json(
 def resolve_benchmark_fixture(supabase_url: str, headers: dict[str, str]) -> BenchmarkFixture:
     session = requests.Session()
 
-    commander_resp = _fetch_json(
-        session,
-        "GET",
-        _rest_url(supabase_url, "commander_stats"),
-        headers=headers,
-        params=_select_params("commander_id,commander_name,total_entries", limit=1, order="total_entries.desc"),
-    )
-    if commander_resp.status_code != 200:
-        raise RuntimeError(f"Unable to resolve benchmark commander fixture: {response_failure(commander_resp)}")
+    candidate_sources = [
+        (
+            "commander_weekly_trends",
+            _select_params("commander_id,commander_name,entries", limit=25, order="entries.desc"),
+        ),
+        (
+            "commander_monthly_trends",
+            _select_params("commander_id,commander_name,entries", limit=25, order="entries.desc"),
+        ),
+        (
+            "commander_stats",
+            _select_params("commander_id,commander_name,total_entries", limit=25, order="total_entries.desc"),
+        ),
+    ]
 
-    commander_rows = commander_resp.json()
+    commander_rows: list[dict[str, Any]] = []
+    for source, params in candidate_sources:
+        commander_resp = _fetch_json(
+            session,
+            "GET",
+            _rest_url(supabase_url, source),
+            headers=headers,
+            params=params,
+        )
+        if commander_resp.status_code != 200:
+            raise RuntimeError(f"Unable to resolve benchmark commander fixture from {source}: {response_failure(commander_resp)}")
+        commander_rows = commander_resp.json()
+        if commander_rows:
+            break
+
     if not commander_rows:
-        raise RuntimeError("Unable to resolve benchmark commander fixture: commander_stats returned no rows")
+        raise RuntimeError("Unable to resolve benchmark commander fixture: no commander sources returned rows")
 
     preferred_commander_rows = [
         row for row in commander_rows if str(row.get("commander_name", "")).strip().lower() != "unknown commander"
     ]
     if preferred_commander_rows:
         commander_rows = preferred_commander_rows
+
+    chosen_commander: dict[str, Any] | None = None
+    for commander_row in commander_rows:
+        commander_id = str(commander_row["commander_id"])
+        notable_resp = _fetch_json(
+            session,
+            "POST",
+            _rest_url(supabase_url, "rpc/get_notable_players_for_commander"),
+            headers=headers,
+            json_body={"p_commander_id": commander_id},
+        )
+        matchups_resp = _fetch_json(
+            session,
+            "POST",
+            _rest_url(supabase_url, "rpc/get_commander_matchups"),
+            headers=headers,
+            json_body={"p_commander_id": commander_id},
+        )
+        performance_resp = _fetch_json(
+            session,
+            "GET",
+            _rest_url(supabase_url, "card_performance_by_commander"),
+            headers=headers,
+            params=_select_params(
+                "commander_id,commander,card_name,deck_count,total_decks,inclusion_rate,avg_win_rate,baseline_win_rate,win_rate_delta,std_win_rate,top_16_count,top_cut_count,top_16_rate,avg_standing,performance_tier",
+                limit=1,
+                order="win_rate_delta.desc",
+            ) | {"commander_id": f"eq.{commander_id}"},
+        )
+        if (
+            notable_resp.status_code == 200
+            and matchups_resp.status_code == 200
+            and performance_resp.status_code == 200
+            and notable_resp.json()
+            and matchups_resp.json()
+            and performance_resp.json()
+        ):
+            chosen_commander = commander_row
+            break
+
+    if chosen_commander is None:
+        chosen_commander = commander_rows[0]
 
     card_resp = _fetch_json(
         session,
@@ -196,7 +258,7 @@ def resolve_benchmark_fixture(supabase_url: str, headers: dict[str, str]) -> Ben
     if not regional_rows:
         raise RuntimeError("Unable to resolve benchmark regional fixture: no state leaderboard rows found")
 
-    commander_row = commander_rows[0]
+    commander_row = chosen_commander
     card_row = card_rows[0]
     regional_row = regional_rows[0]
     return BenchmarkFixture(
@@ -621,46 +683,52 @@ def benchmark_queries(
         row_count = 0
         actual_columns: tuple[str, ...] = ()
         sample_notes: list[str] = []
+        error_message: str | None = None
 
-        for _ in range(warmups):
-            elapsed_ms, data = _run_benchmark_request(session, request, headers)
-            if not data:
-                raise SystemExit(f"{spec.name}: warmup returned no data")
+        try:
+            for _ in range(warmups):
+                elapsed_ms, data = _run_benchmark_request(session, request, headers)
+                if not data:
+                    raise RuntimeError("warmup returned no data")
 
-        for _ in range(runs):
-            elapsed_ms, data = _run_benchmark_request(session, request, headers)
-            run_times.append(elapsed_ms)
-            if not data:
-                sample_notes.append("empty result set")
-                continue
-            row_count = len(data)
-            actual_columns = _benchmark_response_columns(data)
+            for _ in range(runs):
+                elapsed_ms, data = _run_benchmark_request(session, request, headers)
+                run_times.append(elapsed_ms)
+                if not data:
+                    sample_notes.append("empty result set")
+                    continue
+                row_count = len(data)
+                actual_columns = _benchmark_response_columns(data)
+        except Exception as exc:
+            error_message = str(exc)
+            failures.append(f"{spec.name}: {error_message}")
 
-        passed = True
-        if row_count < spec.min_rows:
-            passed = False
-            failures.append(f"{spec.name}: row count {row_count} < expected minimum {spec.min_rows}")
-        if actual_columns != spec.expected_columns:
-            passed = False
-            failures.append(
-                f"{spec.name}: column drift current={list(actual_columns)} expected={list(spec.expected_columns)}"
-            )
+        passed = error_message is None
+        if error_message is None:
+            if row_count < spec.min_rows:
+                passed = False
+                failures.append(f"{spec.name}: row count {row_count} < expected minimum {spec.min_rows}")
+            if actual_columns != spec.expected_columns:
+                passed = False
+                failures.append(
+                    f"{spec.name}: column drift current={list(actual_columns)} expected={list(spec.expected_columns)}"
+                )
 
-        if not run_times:
-            passed = False
-            failures.append(f"{spec.name}: no benchmark runs completed")
-            continue
+            if not run_times:
+                passed = False
+                failures.append(f"{spec.name}: no benchmark runs completed")
 
         outcome = BenchmarkOutcome(
             name=spec.name,
             runs=len(run_times),
             row_count=row_count,
             columns=actual_columns,
-            best_ms=min(run_times),
-            median_ms=median(run_times),
-            worst_ms=max(run_times),
+            best_ms=min(run_times) if run_times else 0.0,
+            median_ms=median(run_times) if run_times else 0.0,
+            worst_ms=max(run_times) if run_times else 0.0,
             passed=passed,
             notes=tuple(sample_notes),
+            error=error_message,
         )
         outcomes.append(outcome)
 
@@ -675,6 +743,8 @@ def benchmark_queries(
             f"{outcome.name[:36]:36} {outcome.row_count:6d} "
             f"{outcome.best_ms:10.1f} {outcome.median_ms:10.1f} {outcome.worst_ms:10.1f}  {status}"
         )
+        if outcome.error:
+            print(f"{'':36} {'':6} {'':10} {'':10} {'':10}  error: {outcome.error}")
         if outcome.notes:
             for note in outcome.notes:
                 print(f"{'':36} {'':6} {'':10} {'':10} {'':10}  note: {note}")
