@@ -567,13 +567,19 @@ def extract_commanders(
     return []
 
 
+def clean_commander_card_name(name: str) -> str:
+    """Normalize escaped card-name text from imported decklist sources."""
+    return name.strip().replace("\\'", "'").replace('\\"', '"')
+
+
 def normalize_commander_name(commanders: list[str]) -> str:
     """Create a normalized commander name (sorted for partners)."""
-    if not commanders:
+    cleaned_commanders = [clean_commander_card_name(commander) for commander in commanders if commander.strip()]
+    if not cleaned_commanders:
         return "Unknown Commander"
 
     # Sort for consistency (e.g., "Kraum / Tymna" = "Tymna / Kraum")
-    sorted_cmds = sorted(commanders)
+    sorted_cmds = sorted(cleaned_commanders)
     return " / ".join(sorted_cmds)
 
 
@@ -741,7 +747,7 @@ class DataIngester:
         # Create new
         data = {
             "name": name,
-            "commander_names": commander_names or [name],
+            "commander_names": [clean_commander_card_name(value) for value in (commander_names or [name])],
         }
         result = self.supabase.upsert("commanders", data, on_conflict="name")
         if result:
@@ -778,7 +784,10 @@ class DataIngester:
 
         # Build batch data
         batch = [
-            {"name": name, "commander_names": names or [name]}
+            {
+                "name": name,
+                "commander_names": [clean_commander_card_name(value) for value in (names or [name])],
+            }
             for name, names in commander_data.items()
             if name not in self.commander_cache
         ]

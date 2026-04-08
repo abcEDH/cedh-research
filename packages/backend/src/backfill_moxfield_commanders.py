@@ -15,6 +15,7 @@ import requests
 
 from ingest import (
     SupabaseClient,
+    clean_commander_card_name,
     extract_commanders,
     normalize_commander_name,
 )
@@ -56,25 +57,41 @@ def fetch_moxfield_entries(
     embedded_only: bool,
     include_known: bool,
     player_topdeck_id: str | None = None,
+    order_by: str = "tournament-date",
+    order_direction: str = "desc",
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> list[dict]:
     decklist_filter = "ilike.*moxfield.com*"
     if embedded_only:
         decklist_filter = "ilike.*~~Commanders~~*moxfield.com*"
 
-    select = "id,decklist_url,commanders(name),players(topdeck_id),tournaments(topdeck_tid)"
+    select = "id,decklist_url,commanders(name),players(topdeck_id),tournaments(topdeck_tid,start_date)"
     filters = {}
     if not include_known:
-        select = "id,decklist_url,commanders!inner(name),players!inner(topdeck_id),tournaments(topdeck_tid)"
+        select = "id,decklist_url,commanders!inner(name),players!inner(topdeck_id),tournaments!inner(topdeck_tid,start_date)"
         filters["commanders.name"] = 'in.("Unknown Commander","Moxfield Deck")'
     if player_topdeck_id:
         filters["players.topdeck_id"] = f"eq.{player_topdeck_id}"
+    date_filters = []
+    if start_date:
+        date_filters.append(f"gte.{start_date}")
+    if end_date:
+        date_filters.append(f"lte.{end_date}")
+    if date_filters:
+        filters["tournaments.start_date"] = date_filters
+
+    if order_by == "tournament-date":
+        order = f"tournaments(start_date).{order_direction}"
+    else:
+        order = f"created_at.{order_direction}"
 
     return client.select(
         "tournament_entries",
         {
             "select": select,
             "decklist_url": decklist_filter,
-            "order": "created_at.asc",
+            "order": order,
             "limit": limit,
             "offset": offset,
             **filters,
@@ -99,7 +116,10 @@ def upsert_commanders(client: SupabaseClient, commander_data: dict[str, list[str
     result = client.upsert(
         "commanders",
         [
-            {"name": name, "commander_names": names or [name]}
+            {
+                "name": name,
+                "commander_names": [clean_commander_card_name(value) for value in (names or [name])],
+            }
             for name, names in commander_data.items()
         ],
         on_conflict="name",
@@ -127,6 +147,10 @@ def export_unresolved_csv(
                 embedded_only=False,
                 include_known=False,
                 player_topdeck_id=None,
+                order_by="tournament-date",
+                order_direction="desc",
+                start_date=None,
+                end_date=None,
             )
             if not rows:
                 break
@@ -168,7 +192,7 @@ def import_resolved_csv(
                 continue
 
             commanders = [
-                commander.strip()
+                clean_commander_card_name(commander)
                 for commander in raw_commander_names.split(commander_delimiter)
                 if commander.strip()
             ]
@@ -217,6 +241,7 @@ def fetch_topdeck_deck_page_commanders(
     tournament_id: str,
     player_identifier: str,
     session: requests.Session,
+    timeout: float,
 ) -> list[str]:
     response = session.get(
         f"https://topdeck.gg/deck/{tournament_id}/{player_identifier}",
@@ -224,7 +249,7 @@ def fetch_topdeck_deck_page_commanders(
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "User-Agent": "cedh-research/1.0",
         },
-        timeout=30,
+        timeout=timeout,
     )
     response.raise_for_status()
     return extract_topdeck_deck_page_commanders(response.text)
@@ -235,6 +260,20 @@ def main() -> None:
     parser.add_argument("--limit", type=int, help="Maximum rows to update")
     parser.add_argument("--page-size", type=int, default=250, help="Supabase page size")
     parser.add_argument("--offset", type=int, default=0, help="Initial row offset")
+    parser.add_argument("--start-date", help="Only process tournaments on or after this date")
+    parser.add_argument("--end-date", help="Only process tournaments on or before this date")
+    parser.add_argument(
+        "--order-by",
+        choices=["tournament-date", "created-at"],
+        default="tournament-date",
+        help="Order unresolved rows for processing",
+    )
+    parser.add_argument(
+        "--order-direction",
+        choices=["asc", "desc"],
+        default="desc",
+        help="Sort direction for unresolved rows",
+    )
     parser.add_argument("--include-known", action="store_true", help="Update rows that already have non-placeholder commanders")
     parser.add_argument("--embedded-only", action="store_true", help="Only process imported deck text with embedded commander sections")
     parser.add_argument("--resolve-moxfield-api", action="store_true", help="Fetch pure Moxfield URLs from the Moxfield API")
@@ -243,6 +282,7 @@ def main() -> None:
     parser.add_argument("--player-topdeck-id", help="Only process entries for one TopDeck player id")
     parser.add_argument("--max-moxfield-requests", type=int, help="Stop after this many Moxfield URL requests")
     parser.add_argument("--max-topdeck-requests", type=int, help="Stop after this many TopDeck deck page requests")
+    parser.add_argument("--topdeck-timeout", type=float, default=10, help="Seconds before a TopDeck deck page request times out")
     parser.add_argument("--max-api-requests", type=int, help="Deprecated alias for --max-moxfield-requests")
     parser.add_argument("--sleep", type=float, default=0.2, help="Seconds to sleep between Moxfield URL requests")
     parser.add_argument("--export-unresolved-csv", type=Path, help="Write unresolved Moxfield entries to CSV")
@@ -286,9 +326,11 @@ def main() -> None:
     updated = 0
     skipped_known = 0
     unresolved = 0
+    repeated_unresolved = 0
     moxfield_requests = 0
     topdeck_requests = 0
     offset = args.offset
+    attempted_unresolved_ids: set[str] = set()
 
     while True:
         rows = fetch_moxfield_entries(
@@ -298,18 +340,31 @@ def main() -> None:
             embedded_only=args.embedded_only,
             include_known=args.include_known,
             player_topdeck_id=args.player_topdeck_id,
+            order_by=args.order_by,
+            order_direction=args.order_direction,
+            start_date=args.start_date,
+            end_date=args.end_date,
         )
         if not rows:
             break
 
         commander_data: dict[str, list[str]] = {}
         pending_updates: list[tuple[str, str]] = []
+        page_skipped = 0
+        page_unresolved = 0
+        page_processed = 0
 
         for row in rows:
             scanned += 1
+            page_processed += 1
             existing_name = commander_name_for_entry(row)
             if existing_name not in PLACEHOLDER_COMMANDERS and not args.include_known:
                 skipped_known += 1
+                page_skipped += 1
+                continue
+            if row["id"] in attempted_unresolved_ids:
+                repeated_unresolved += 1
+                page_skipped += 1
                 continue
 
             decklist = row.get("decklist_url") or ""
@@ -342,14 +397,21 @@ def main() -> None:
                 tournament_topdeck_id = relation_value(row, "tournaments").get("topdeck_tid")
                 if player_topdeck_id and tournament_topdeck_id:
                     try:
-                        commanders = fetch_topdeck_deck_page_commanders(tournament_topdeck_id, player_topdeck_id, http)
+                        commanders = fetch_topdeck_deck_page_commanders(
+                            tournament_topdeck_id,
+                            player_topdeck_id,
+                            http,
+                            args.topdeck_timeout,
+                        )
                     except requests.RequestException as exc:
                         print(f"TopDeck deck page fetch failed for entry {row['id']}: {exc}")
                     topdeck_requests += 1
                     commander_name = normalize_commander_name(commanders)
 
             if commander_name in PLACEHOLDER_COMMANDERS:
+                attempted_unresolved_ids.add(row["id"])
                 unresolved += 1
+                page_unresolved += 1
                 continue
 
             commander_data[commander_name] = commanders
@@ -371,7 +433,9 @@ def main() -> None:
 
         print(
             f"scanned={scanned} updated={updated} unresolved={unresolved} "
-            f"skipped_known={skipped_known} moxfield_requests={moxfield_requests} topdeck_requests={topdeck_requests}"
+            f"repeated_unresolved={repeated_unresolved} skipped_known={skipped_known} "
+            f"moxfield_requests={moxfield_requests} topdeck_requests={topdeck_requests}",
+            flush=True,
         )
 
         if args.limit and updated >= args.limit:
@@ -381,13 +445,16 @@ def main() -> None:
         if args.max_topdeck_requests is not None and topdeck_requests >= args.max_topdeck_requests:
             break
 
-        if args.dry_run or args.include_known or not pending_updates:
-            offset += len(rows)
+        if args.dry_run or args.include_known:
+            offset += page_processed
+        else:
+            offset += page_unresolved + page_skipped
 
     print(
         f"Done. scanned={scanned} updated={updated} unresolved={unresolved} "
-        f"skipped_known={skipped_known} moxfield_requests={moxfield_requests} "
-        f"topdeck_requests={topdeck_requests} dry_run={args.dry_run}"
+        f"repeated_unresolved={repeated_unresolved} skipped_known={skipped_known} moxfield_requests={moxfield_requests} "
+        f"topdeck_requests={topdeck_requests} dry_run={args.dry_run}",
+        flush=True,
     )
 
 
