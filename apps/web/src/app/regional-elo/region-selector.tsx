@@ -42,7 +42,7 @@ export function RegionSelector({
       className="space-y-3"
       onSubmit={() => setIsLoading(true)}
     >
-      <label className="text-sm text-muted-foreground">View</label>
+      <label className="text-sm text-muted-foreground">Country</label>
       <select
         value={view}
         className="knd-input"

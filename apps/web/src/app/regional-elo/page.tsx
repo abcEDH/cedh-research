@@ -75,19 +75,21 @@ function readSearchParam(
 }
 
 function readPageParam(
-  params: Awaited<Promise<{ page?: string | string[] }> | { page?: string | string[] }> | undefined
+  params:
+    | Awaited<Promise<Record<string, string | string[] | undefined>> | Record<string, string | string[] | undefined>>
+    | URLSearchParams
+    | undefined
 ) {
   const anyParams = params as
     | Record<string, string | string[] | undefined>
     | URLSearchParams
     | undefined;
   if (!anyParams) return 1;
-  const rawValue =
+  const pageValue =
     typeof (anyParams as URLSearchParams).get === "function"
-      ? (anyParams as URLSearchParams).get("page") ?? ""
-      : Array.isArray((anyParams as Record<string, string | string[] | undefined>).page)
-        ? ((anyParams as Record<string, string | string[] | undefined>).page?.[0] ?? "")
-        : ((anyParams as Record<string, string | string[] | undefined>).page ?? "");
+      ? (anyParams as URLSearchParams).get("page")
+      : (anyParams as Record<string, string | string[] | undefined>).page;
+  const rawValue = Array.isArray(pageValue) ? pageValue[0] ?? "" : pageValue ?? "";
   const parsed = Number.parseInt(rawValue, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
 }
