@@ -45,6 +45,7 @@ Safe templates live in:
   - frontend regression tests
   - canonical global aggregate proof
   - uploaded evidence artifact for human review
+- Release ownership: semantic release runs from `.github/workflows/frontend.yml`; production aliasing runs from `.github/workflows/cd.yml`; `.github/workflows/release.yml` remains a manual fallback only
 
 ## QA
 - Release lessons: `docs/release-lessons-2026-04-05-regional-elo.md`

@@ -251,9 +251,6 @@ erDiagram
 - **Purpose**: commander performance summary with win rates and conversion rates.
 - **Filters**: only tournaments with `player_count >= 32`.
 
-### `seat_position_stats` (view)
-- **Purpose**: win rate by seat position across all games.
-
 ### `player_tournament_journey` (view)
 - **Purpose**: per-player round-by-round journey through a tournament.
 
@@ -262,9 +259,6 @@ erDiagram
 
 ### `player_seat_distribution` (view)
 - **Purpose**: distribution and win rate by seat for each player.
-
-### `commander_seat_stats` (materialized view)
-- **Purpose**: commander performance split by seat position.
 
 ### `player_commander_entries` (view)
 - **Purpose**: normalized player commander history for meta prep and tournament likelihood tools.
@@ -301,4 +295,5 @@ erDiagram
 - **Discovery caveat**: `data/all_time_tids.txt` is a stable replay manifest, not a guaranteed source of all discoverable TopDeck tournaments. Known misses should be curated into supplemental manifests.
 - **Unknown commanders**: some queries exclude `commander_name = 'Unknown Commander'`.
 - **Win rate**: computed as `wins / (wins + losses + draws)`; if total results are 0, win rate is `NULL`.
+- **Retired surfaces (checkpoint)**: standalone Cards, Turn Order, and Survival pages are being removed; page-specific SQL helpers for those surfaces should not be treated as active product contracts.
 - **Security hardening (2026-03-29)**: exposed `public` views are configured to run with `security_invoker`, and `public` functions pin `search_path` to `public, extensions` to satisfy Supabase Advisor requirements.

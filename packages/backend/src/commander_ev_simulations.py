@@ -231,14 +231,17 @@ def fetch_diagnostics(client: SupabaseClient, commander_name: str, min_games: in
     commander["name"] = normalize_name(commander["name"])
     cid = commander["id"]
 
-    seat = client.select(
-        "commander_seat_stats",
-        select="seat_position,games,wins,losses,draws,win_rate,draw_rate,win_plus_draw_rate",
-        params={
-            "commander_id": f"eq.{cid}",
-            "order": "seat_position.asc",
-        },
-    )
+    try:
+        seat = client.select(
+            "commander_seat_stats",
+            select="seat_position,games,wins,losses,draws,win_rate,draw_rate,win_plus_draw_rate",
+            params={
+                "commander_id": f"eq.{cid}",
+                "order": "seat_position.asc",
+            },
+        )
+    except Exception:
+        seat = []
     matchups = client.rpc("get_commander_matchups", {"p_commander_id": cid})
     valid = [
         m for m in matchups

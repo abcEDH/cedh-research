@@ -20,14 +20,34 @@ test.describe("Home Page", () => {
     expect(count).toBeGreaterThan(0);
   });
 
-  test("feature cards link to correct pages", async ({ page }) => {
-    // Prefer the feature card link (not the nav link)
-    const survivalCard = page.getByRole("link", { name: /Survival Analysis/i }).first();
-    await expect(survivalCard).toBeVisible();
+  test("displays top 3 popular commanders widget when data loads", async ({ page }) => {
+    await expect(page.getByTestId("top-popular-commanders")).toBeVisible();
+    await expect(page.getByText("Top 3 most popular commanders")).toBeVisible();
 
-    // Click and verify navigation
-    await survivalCard.click();
-    await expect(page).toHaveURL(/\/survival/);
+    await page.waitForTimeout(2000);
+    const widgetLinks = page.getByTestId("top-popular-commanders").locator('a[href^="/commanders/"]');
+    const widgetCommanderCount = await widgetLinks.count();
+    expect(widgetCommanderCount).toBeGreaterThanOrEqual(1);
+    expect(widgetCommanderCount).toBeLessThanOrEqual(3);
+  });
+
+  test("displays rising popularity widget when positive 2-week deltas exist", async ({ page }) => {
+    await page.waitForTimeout(2000);
+    const rising = page.getByTestId("top-rising-commanders");
+    if ((await rising.count()) === 0) return;
+
+    await expect(rising.getByText("Biggest popularity gain (2 weeks)")).toBeVisible();
+    const risingLinks = rising.locator('a[href^="/commanders/"]');
+    const n = await risingLinks.count();
+    expect(n).toBeGreaterThanOrEqual(1);
+    expect(n).toBeLessThanOrEqual(3);
+  });
+
+  test("feature cards link to correct pages", async ({ page }) => {
+    const trapSpiceCard = page.getByRole("link", { name: /Trap & Spice Cards/i }).first();
+    await expect(trapSpiceCard).toBeVisible();
+    await trapSpiceCard.click();
+    await expect(page).toHaveURL(/\/trap-spice/);
   });
 
   test("tool links on home are valid when present", async ({ page }) => {

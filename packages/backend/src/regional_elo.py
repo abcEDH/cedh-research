@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import os
 import time
+import argparse
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
 
 from ingest import SupabaseClient
@@ -342,19 +343,23 @@ def in_filter(values: Sequence[str]) -> str:
     return f"in.({','.join(values)})"
 
 
-def fetch_null_state_game_rows(client: SupabaseClient) -> List[Dict[str, Any]]:
+def fetch_null_state_game_rows(client: SupabaseClient, start_date: str | None = None) -> List[Dict[str, Any]]:
     """Backfill no-state games until the deployed source view includes them."""
+    filters: QueryParams = [
+        (
+            "select",
+            "id,tournament_id,is_draw,table_number,tournaments!inner(start_date,state,country)",
+        ),
+        ("tournaments.state", "is.null"),
+        ("order", "id.asc"),
+    ]
+    if start_date:
+        filters = [*filters, ("tournaments.start_date", f"gte.{start_date}")]
+
     games = fetch_all(
         client,
         "games",
-        [
-            (
-                "select",
-                "id,tournament_id,is_draw,table_number,tournaments!inner(start_date,state,country)",
-            ),
-            ("tournaments.state", "is.null"),
-            ("order", "id.asc"),
-        ],
+        filters,
         limit=1000,
     )
     if not games:
@@ -419,33 +424,37 @@ def next_month(value: datetime) -> datetime:
     return datetime(value.year, value.month + 1, 1)
 
 
-def fetch_elo_game_rows(client: SupabaseClient) -> List[Dict[str, Any]]:
+def fetch_elo_game_rows(client: SupabaseClient, smoke_days: int | None = None) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
     current_month = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     end_month = next_month(current_month)
+    start_cutoff = (datetime.utcnow().date() - timedelta(days=smoke_days)).isoformat() if smoke_days else None
 
     for start in month_starts(2022, end_month.year):
         if start >= end_month:
             break
         end = next_month(start)
-        page = fetch_all(
-            client,
-            "global_elo_game_results",
-            [
-                (
-                    "select",
-                    "game_id,tournament_id,entry_id,player_id,start_date,state,country,result,is_draw,table_number",
-                ),
-                ("order", "start_date.asc,game_id.asc,table_number.asc"),
-                ("start_date", f"gte.{start.date().isoformat()}"),
-                ("start_date", f"lt.{end.date().isoformat()}"),
-            ],
-            limit=250,
-        )
+        query_start = max(start.date().isoformat(), start_cutoff) if start_cutoff else start.date().isoformat()
+        if query_start >= end.date().isoformat():
+            continue
+        query_params = [
+            (
+                "select",
+                "game_id,tournament_id,entry_id,player_id,start_date,state,country,result,is_draw,table_number",
+            ),
+            ("order", "start_date.asc,game_id.asc,table_number.asc"),
+            ("start_date", f"gte.{query_start}"),
+            ("start_date", f"lt.{end.date().isoformat()}"),
+        ]
+        try:
+            page = fetch_all(client, "global_elo_game_results", query_params, limit=250)
+        except Exception as exc:
+            print(f"Falling back to regional_elo_game_results for {start:%Y-%m}. Error: {exc}", flush=True)
+            page = fetch_all(client, "regional_elo_game_results", query_params, limit=250)
         rows.extend(page)
         print(f"Fetched {len(page)} game-result rows for {start:%Y-%m}", flush=True)
 
-    raw_null_state_rows = fetch_null_state_game_rows(client)
+    raw_null_state_rows = fetch_null_state_game_rows(client, start_cutoff)
     if raw_null_state_rows:
         seen_keys = {(row["game_id"], row["entry_id"]) for row in rows}
         rows.extend(
@@ -686,7 +695,7 @@ def build_upsert_rows(
     return rows
 
 
-def compute_global_elo() -> tuple[
+def compute_global_elo(smoke_days: int | None = None) -> tuple[
     Dict[str, PlayerStats],
     Dict[str, Dict[str, StateActivity]],
     Dict[str, Dict[str, StateActivity]],
@@ -695,7 +704,7 @@ def compute_global_elo() -> tuple[
     supabase_url, supabase_key = load_credentials()
     client = SupabaseClient(supabase_url, supabase_key)
 
-    rows = fetch_elo_game_rows(client)
+    rows = fetch_elo_game_rows(client, smoke_days=smoke_days)
 
     global_stats: Dict[str, PlayerStats] = defaultdict(PlayerStats)
     state_activity: Dict[str, Dict[str, StateActivity]] = defaultdict(lambda: defaultdict(StateActivity))
@@ -1151,20 +1160,46 @@ def upsert_state_activity_rows(client: SupabaseClient, rows: List[Dict[str, Any]
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Compute global Elo and derived state activity leaderboards")
+    parser.add_argument(
+        "--smoke-days",
+        type=int,
+        default=None,
+        help="Limit recompute inputs to tournaments from the last N days for PR-safe smoke checks.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Compute output rows without writing leaderboard tables back to Supabase.",
+    )
+    args = parser.parse_args()
+
     supabase_url, supabase_key = load_credentials()
     client = SupabaseClient(supabase_url, supabase_key)
 
-    global_stats, state_activity, profile_activity, event_rows = compute_global_elo()
+    global_stats, state_activity, profile_activity, event_rows = compute_global_elo(smoke_days=args.smoke_days)
     event_rows = dedupe_rows(event_rows, ["region_type", "region_key", "game_id", "player_id"])
     rating_rows = build_upsert_rows(GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY, global_stats)
     state_activity_rows = build_state_activity_rows(state_activity)
     players_by_id = fetch_players_by_id(client, list(global_stats.keys()))
     active_leaderboard_rows = build_active_leaderboard_rows(global_stats, state_activity, players_by_id)
     profile_summary_rows = build_profile_summary_rows(global_stats, profile_activity, players_by_id)
-    commander_profile_rows = build_commander_profile_rows(client)
 
     if not rating_rows:
         raise SystemExit("Refusing to clear Regional Elo rows because no global rating rows were computed.")
+
+    if args.dry_run:
+        print(
+            "regional_elo dry-run:",
+            f"ratings={len(rating_rows)}",
+            f"state_rows={len(state_activity_rows)}",
+            f"event_rows={len(event_rows)}",
+            f"active_leaderboard_rows={len(active_leaderboard_rows)}",
+            f"profile_summary_rows={len(profile_summary_rows)}",
+        )
+        return
+
+    commander_profile_rows = build_commander_profile_rows(client)
 
     print("Deleting existing global Elo, state activity, and event rows")
     client.delete("global_elo_ratings", {"region_type": f"eq.{GLOBAL_REGION_TYPE}"})

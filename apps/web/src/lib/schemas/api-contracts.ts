@@ -54,45 +54,6 @@ export const NotablePlayersResponseSchema = z.array(NotablePlayerSchema);
 export type NotablePlayer = z.infer<typeof NotablePlayerSchema>;
 
 // ============================================
-// Survival Curve RPC: get_survival_curve
-// ============================================
-export const SurvivalPointSchema = z.object({
-  round_number: z.number().int().positive(),
-  players_at_risk: z.number().int().nonnegative(),
-  players_survived: z.number().int().nonnegative(),
-  survival_rate: z.union([z.number(), z.string()]).transform((v) =>
-    typeof v === "string" ? parseFloat(v) : v
-  ),
-  cumulative_survival: z.union([z.number(), z.string()]).transform((v) =>
-    typeof v === "string" ? parseFloat(v) : v
-  ),
-});
-
-export const SurvivalCurveResponseSchema = z.array(SurvivalPointSchema);
-
-export type SurvivalPoint = z.infer<typeof SurvivalPointSchema>;
-
-// ============================================
-// Survival Curves by Seat View: survival_curves_by_seat
-// ============================================
-export const SeatSurvivalPointSchema = z.object({
-  seat_position: z.number().int().min(0).max(3),
-  round_number: z.number().int().positive(),
-  players_at_risk: z.number().int().nonnegative(),
-  players_survived: z.number().int().nonnegative(),
-  survival_rate: z.union([z.number(), z.string()]).transform((v) =>
-    typeof v === "string" ? parseFloat(v) : v
-  ),
-  cumulative_survival: z.union([z.number(), z.string()]).transform((v) =>
-    typeof v === "string" ? parseFloat(v) : v
-  ),
-});
-
-export const SeatSurvivalResponseSchema = z.array(SeatSurvivalPointSchema);
-
-export type SeatSurvivalPoint = z.infer<typeof SeatSurvivalPointSchema>;
-
-// ============================================
 // Commander Stats View: commander_stats
 // ============================================
 export const CommanderStatsSchema = z.object({

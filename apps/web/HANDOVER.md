@@ -25,10 +25,11 @@ Join latest vs previous week/month to compute WoW/MoM deltas for entries (%) and
 If you add these, we can swap the UI to read directly from the materialized views instead of scanning `tournament_entries`.
 
 ## Release/versioning automation
-- Semantic Release runs on push to `main` via `.github/workflows/release.yml`.
-- It updates `CHANGELOG.md`, bumps `package.json` version, creates a git tag, and publishes a GitHub Release.
-- After Semantic Release completes, a deploy tag `deploy-YYYYMMDD-HHMMSS` is pushed to mark each deploy/push.
-- Requires GitHub Actions permissions: `contents: write` (already set in workflow).
+- Semantic Release runs on push to `main` via `.github/workflows/frontend.yml` and also remains available as a manual fallback in `.github/workflows/release.yml`.
+- The semantic release step updates `CHANGELOG.md`, bumps `package.json` version, creates a git tag, and publishes a GitHub Release.
+- Production aliasing is owned by `.github/workflows/cd.yml`, which resolves the matching Vercel deployment for the current `main` commit and points `cedh-research.vercel.app` at it.
+- Deploy tags were removed; deploy state is tracked by Vercel deployment metadata and GitHub release history instead.
+- Requires GitHub Actions permissions: `contents: write` for release tagging and `VERCEL_TOKEN` for production aliasing.
 
 ## 2026-01-26 — Trend views wiring
 - Frontend trends now read from `commander_wow_mom` (WoW/MoM deltas) and `commander_weekly_trends` (sparklines).

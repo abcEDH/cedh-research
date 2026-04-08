@@ -24,29 +24,206 @@ interface TopCommander {
   avg_win_rate: number;
   conversion_rate_top_16: number;
   color_identity: string[] | null;
+  /** Share of all `commander_stats` entries (32+ player events); set on home widgets only. */
+  meta_share_pct?: number;
+}
+
+interface RisingCommander {
+  commander_id: string;
+  commander_name: string;
+  entries_delta: number;
+  meta_share_delta: number;
+  recent_entries: number;
+  prior_entries: number;
+  total_entries: number;
+  avg_win_rate: number;
+  color_identity: string[] | null;
+  /** Share of all `commander_stats` entries (32+ player events). */
+  meta_share_pct?: number;
+}
+
+/** Sum of `total_entries` across `commander_stats` (equals all large-event tournament entries). */
+async function sumMetaEntriesFromCommanderStats(): Promise<number> {
+  try {
+    const pageSize = 1000;
+    let sum = 0;
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error } = await supabase
+        .from("commander_stats")
+        .select("total_entries")
+        .range(offset, offset + pageSize - 1);
+      if (error) {
+        console.error("Meta entry total sum error:", error);
+        return 0;
+      }
+      const rows = data ?? [];
+      if (rows.length === 0) break;
+      for (const row of rows) {
+        sum += Number(row.total_entries) || 0;
+      }
+      if (rows.length < pageSize) break;
+    }
+    return sum;
+  } catch (e) {
+    console.error("Meta entry total sum unexpected error:", e);
+    return 0;
+  }
+}
+
+function addDaysIso(isoDate: string, days: number): string {
+  const d = new Date(`${isoDate}T12:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Orders commanders by the largest gain in weekly tournament entries: sums the two most recent
+ * ISO weeks from `commander_weekly_trends` and subtracts the sum for the two weeks before that
+ * (32+ player events; same filter as the materialized view).
+ */
+async function getTopRisingCommandersByTwoWeekTrend(): Promise<RisingCommander[]> {
+  try {
+    const { data: maxRows, error: maxErr } = await supabase
+      .from("commander_weekly_trends")
+      .select("week_start_date")
+      .order("week_start_date", { ascending: false })
+      .limit(1);
+
+    if (maxErr || !maxRows?.[0]?.week_start_date) {
+      if (maxErr) console.error("Rising commanders: max week query error:", maxErr);
+      return [];
+    }
+
+    const latestWeek = maxRows[0].week_start_date as string;
+    const windowStart = addDaysIso(latestWeek, -35);
+
+    const { data: trendRows, error: trendErr } = await supabase
+      .from("commander_weekly_trends")
+      .select("commander_id, commander_name, week_start_date, entries")
+      .gte("week_start_date", windowStart)
+      .lte("week_start_date", latestWeek);
+
+    if (trendErr || !trendRows?.length) {
+      if (trendErr) console.error("Rising commanders: trends window query error:", trendErr);
+      return [];
+    }
+
+    const weekSet = [...new Set(trendRows.map((r) => r.week_start_date as string))].sort((a, b) =>
+      b.localeCompare(a)
+    );
+
+    if (weekSet.length < 2) return [];
+
+    const recentWeekDates = weekSet.slice(0, 2);
+    let priorWeekDates: string[];
+    if (weekSet.length >= 4) {
+      priorWeekDates = weekSet.slice(2, 4);
+    } else if (weekSet.length === 3) {
+      priorWeekDates = weekSet.slice(2, 3);
+    } else {
+      priorWeekDates = [];
+    }
+
+    const recentKey = new Set(recentWeekDates);
+    const priorKey = new Set(priorWeekDates);
+
+    let recentTotal = 0;
+    let priorTotal = 0;
+    const totals = new Map<string, { name: string; recent: number; prior: number }>();
+    for (const row of trendRows) {
+      const id = row.commander_id as string;
+      const wk = row.week_start_date as string;
+      const n = row.entries ?? 0;
+      const cur = totals.get(id) ?? { name: row.commander_name as string, recent: 0, prior: 0 };
+      if (recentKey.has(wk)) {
+        cur.recent += n;
+        recentTotal += n;
+      }
+      if (priorKey.has(wk)) {
+        cur.prior += n;
+        priorTotal += n;
+      }
+      totals.set(id, cur);
+    }
+
+    const scored = [...totals.entries()]
+      .map(([commander_id, v]) => ({
+        commander_id,
+        commander_name: v.name,
+        entries_delta: v.recent - v.prior,
+        meta_share_delta: (v.recent / recentTotal) - (v.prior / priorTotal),
+        recent_entries: v.recent,
+        prior_entries: v.prior,
+      }))
+      .filter((x) => x.commander_name?.toLowerCase() !== "unknown commander")
+      .filter((x) => x.meta_share_delta > 0)
+      .sort((a, b) => b.meta_share_delta - a.meta_share_delta)
+      .slice(0, 3);
+
+    if (scored.length === 0) return [];
+
+    const { data: metaRows, error: metaErr } = await supabase
+      .from("commander_stats")
+      .select("commander_id, color_identity, avg_win_rate, total_entries")
+      .in(
+        "commander_id",
+        scored.map((s) => s.commander_id)
+      );
+
+    if (metaErr) {
+      console.error("Rising commanders: commander_stats enrich error:", metaErr);
+    }
+
+    const metaById = new Map((metaRows ?? []).map((m) => [m.commander_id as string, m]));
+
+    return scored.map((s) => {
+      const meta = metaById.get(s.commander_id);
+      const wr = meta?.avg_win_rate;
+      const avg_win_rate = typeof wr === "number" ? wr : Number(wr ?? 0);
+      const te = meta?.total_entries;
+      const total_entries = typeof te === "number" ? te : Number(te ?? 0);
+      return {
+        ...s,
+        total_entries: Number.isFinite(total_entries) ? total_entries : 0,
+        color_identity: (meta?.color_identity as string[] | null) ?? null,
+        avg_win_rate: Number.isFinite(avg_win_rate) ? avg_win_rate : 0,
+      };
+    });
+  } catch (e) {
+    console.error("Rising commanders: unexpected error:", e);
+    return [];
+  }
 }
 
 async function getStats() {
   try {
-    const [tournamentResult, commanderResult, topCommandersResult, topWinRateResult] =
-      await Promise.all([
-        supabase.from("tournaments").select("*", { count: "exact", head: true }),
-        supabase.from("commanders").select("*", { count: "exact", head: true }),
-        supabase
-          .from("commander_stats")
-          .select("commander_id, commander_name, total_entries, avg_win_rate, conversion_rate_top_16, color_identity")
-          .gt("total_entries", 20)
-          .not("commander_name", "ilike", "unknown commander")
-          .order("total_entries", { ascending: false })
-          .limit(21),
-        supabase
-          .from("commander_stats")
-          .select("commander_id, commander_name, total_entries, avg_win_rate, conversion_rate_top_16, color_identity")
-          .gt("total_entries", 30)
-          .not("commander_name", "ilike", "unknown commander")
-          .order("avg_win_rate", { ascending: false })
-          .limit(10),
-      ]);
+    const [
+      tournamentResult,
+      commanderResult,
+      topCommandersResult,
+      topWinRateResult,
+      topRisingCommanders,
+      metaEntryTotal,
+    ] = await Promise.all([
+      supabase.from("tournaments").select("*", { count: "exact", head: true }),
+      supabase.from("commanders").select("*", { count: "exact", head: true }),
+      supabase
+        .from("commander_stats")
+        .select("commander_id, commander_name, total_entries, avg_win_rate, conversion_rate_top_16, color_identity")
+        .gt("total_entries", 20)
+        .not("commander_name", "ilike", "unknown commander")
+        .order("total_entries", { ascending: false })
+        .limit(21),
+      supabase
+        .from("commander_stats")
+        .select("commander_id, commander_name, total_entries, avg_win_rate, conversion_rate_top_16, color_identity")
+        .gt("total_entries", 30)
+        .not("commander_name", "ilike", "unknown commander")
+        .order("avg_win_rate", { ascending: false })
+        .limit(10),
+      getTopRisingCommandersByTwoWeekTrend(),
+      sumMetaEntriesFromCommanderStats(),
+    ]);
 
     if (tournamentResult.error) {
       console.error("Tournament query error:", tournamentResult.error);
@@ -70,6 +247,8 @@ async function getStats() {
       commanderCount: commanderResult.count ?? 0,
       topCommanders: (topCommandersResult.data ?? []) as TopCommander[],
       topWinRate: (topWinRateResult.data ?? []) as TopCommander[],
+      topRisingCommanders,
+      metaEntryTotal,
       topPlayers,
     };
   } catch (error) {
@@ -79,13 +258,28 @@ async function getStats() {
       commanderCount: 0,
       topCommanders: [],
       topWinRate: [],
+      topRisingCommanders: [],
+      metaEntryTotal: 0,
       topPlayers: [],
     };
   }
 }
 
+function metaSharePercent(totalEntries: number, metaEntryTotal: number): number | undefined {
+  if (metaEntryTotal <= 0 || !Number.isFinite(totalEntries)) return undefined;
+  return (100 * totalEntries) / metaEntryTotal;
+}
+
 export default async function Home() {
-  const { topCommanders, topWinRate, topPlayers } = await getStats();
+  const { topCommanders, topWinRate, topRisingCommanders, metaEntryTotal, topPlayers } = await getStats();
+  const topThreePopular: TopCommander[] = topCommanders.slice(0, 3).map((c) => ({
+    ...c,
+    meta_share_pct: metaSharePercent(c.total_entries, metaEntryTotal),
+  }));
+  const topRisingWithMeta: RisingCommander[] = topRisingCommanders.map((c) => ({
+    ...c,
+    meta_share_pct: metaSharePercent(c.total_entries, metaEntryTotal),
+  }));
 
   return (
     <div className="min-h-screen">
@@ -98,15 +292,6 @@ export default async function Home() {
             <nav className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
               <Link className="transition hover:text-foreground" href="/commanders">
                 Commanders
-              </Link>
-              <Link className="transition hover:text-foreground" href="/cards">
-                Cards
-              </Link>
-              <Link className="transition hover:text-foreground" href="/turn-order">
-                Turn Order
-              </Link>
-              <Link className="transition hover:text-foreground" href="/survival">
-                Survival
               </Link>
               <Link className="transition hover:text-foreground" href="/tournament-likelihood">
                 Tournament Prep
@@ -150,6 +335,51 @@ export default async function Home() {
             </div>
           </div>
         </section>
+
+        {topThreePopular.length > 0 || topRisingWithMeta.length > 0 ? (
+          <section className="mt-12 grid gap-6 lg:grid-cols-2">
+            {topThreePopular.length > 0 ? (
+              <Card data-testid="top-popular-commanders" className="min-w-0">
+                <CardHeader className="knd-panel-header">
+                  <CardTitle className="text-lg">Top 3 most popular commanders</CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Ranked by total entries in large events—same metric as the performance table below. Meta share is
+                    each commander&apos;s percent of all entries in 32+ player events.
+                  </p>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-3">
+                  {topThreePopular.map((commander, index) => (
+                    <CommanderRow
+                      key={commander.commander_id}
+                      commander={commander}
+                      rank={index + 1}
+                    />
+                  ))}
+                </CardContent>
+              </Card>
+            ) : null}
+            {topRisingWithMeta.length > 0 ? (
+              <Card data-testid="top-rising-commanders" className="min-w-0">
+                <CardHeader className="knd-panel-header">
+                  <CardTitle className="text-lg">Biggest popularity gain (2 weeks)</CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Extra tournament entries in the latest two ISO weeks vs the stretch before that (32+ player events).
+                    Raw meta share is overall large-event share, not the 2-week slice.
+                  </p>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-3">
+                  {topRisingWithMeta.map((commander, index) => (
+                    <RisingCommanderRow
+                      key={commander.commander_id}
+                      commander={commander}
+                      rank={index + 1}
+                    />
+                  ))}
+                </CardContent>
+              </Card>
+            ) : null}
+          </section>
+        ) : null}
 
         <section className="mt-12 grid gap-6 lg:grid-cols-[1.4fr_0.6fr]">
           <Card>
@@ -266,28 +496,10 @@ export default async function Home() {
             color="hsl(var(--knd-cyan))"
           />
           <FeatureCard
-            href="/cards"
-            title="Card Frequency"
-            description="Global card inclusion rates and tiers"
-            color="hsl(var(--knd-amber))"
-          />
-          <FeatureCard
-            href="/turn-order"
-            title="Turn Order Fairness"
-            description="Statistical analysis of seat position advantage"
-            color="hsl(var(--knd-cyan))"
-          />
-          <FeatureCard
             href="/trap-spice"
             title="Trap & Spice Cards"
             description="Find overrated and underrated cards"
             color="hsl(var(--knd-amber))"
-          />
-          <FeatureCard
-            href="/survival"
-            title="Survival Analysis"
-            description="Track survival probability through tournament rounds"
-            color="hsl(var(--knd-cyan))"
           />
           <FeatureCard
             href="/tournament-likelihood"
@@ -313,6 +525,49 @@ export default async function Home() {
   );
 }
 
+function RisingCommanderRow({
+  commander,
+  rank,
+}: {
+  commander: RisingCommander;
+  rank: number;
+}) {
+  const winRate = (commander.avg_win_rate * 100).toFixed(1);
+  const isAboveExpected = commander.avg_win_rate > 0.25;
+
+  return (
+    <Link
+      href={`/commanders/${commander.commander_id}`}
+      className="flex w-full min-w-0 items-start gap-3 rounded-lg border border-border/60 bg-muted/30 px-3 py-3 transition hover:border-primary/40 hover:bg-muted/50"
+    >
+      <span className="shrink-0 pt-0.5 font-mono text-xs text-muted-foreground">#{rank}</span>
+      <div className="flex shrink-0 flex-wrap gap-1 pt-0.5">
+        {commander.color_identity?.filter(Boolean).map((color: string) => (
+          <ColorBadge key={color} color={color} />
+        ))}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="break-words text-sm font-medium text-foreground">
+          {normalizeDisplayString(commander.commander_name)}
+        </p>
+        <p className="break-words text-xs text-muted-foreground">
+          {commander.recent_entries} latest stretch · prior {commander.prior_entries} ·{" "}
+          <span className={isAboveExpected ? "text-primary" : undefined}>{winRate}%</span> win
+          {commander.meta_share_pct != null && (
+            <>
+              {" · "}
+              {commander.meta_share_pct.toFixed(1)}% meta
+            </>
+          )}
+        </p>
+      </div>
+      <div className="shrink-0 self-start text-right">
+        <p className="font-mono text-sm text-primary">+{(commander.meta_share_delta * 100).toFixed(2)}%</p>
+        <p className="text-xs text-muted-foreground">meta share</p>
+      </div>
+    </Link>
+  );
+}
 function CommanderRow({
   commander,
   rank,
@@ -326,23 +581,29 @@ function CommanderRow({
   return (
     <Link
       href={`/commanders/${commander.commander_id}`}
-      className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/30 px-3 py-3 transition hover:border-primary/40 hover:bg-muted/50"
+      className="flex w-full min-w-0 items-start gap-3 rounded-lg border border-border/60 bg-muted/30 px-3 py-3 transition hover:border-primary/40 hover:bg-muted/50"
     >
-      <div className="flex items-center gap-3">
-        <span className="w-6 font-mono text-xs text-muted-foreground">#{rank}</span>
-        <div className="flex gap-1">
-          {commander.color_identity?.filter(Boolean).map((color: string) => (
-            <ColorBadge key={color} color={color} />
-          ))}
-        </div>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium text-foreground">
-            {normalizeDisplayString(commander.commander_name)}
-          </p>
-          <p className="text-xs text-muted-foreground">{commander.total_entries} entries</p>
-        </div>
+      <span className="shrink-0 pt-0.5 font-mono text-xs text-muted-foreground">#{rank}</span>
+      <div className="flex shrink-0 flex-wrap gap-1 pt-0.5">
+        {commander.color_identity?.filter(Boolean).map((color: string) => (
+          <ColorBadge key={color} color={color} />
+        ))}
       </div>
-      <div className="text-right">
+      <div className="min-w-0 flex-1">
+        <p className="break-words text-sm font-medium text-foreground">
+          {normalizeDisplayString(commander.commander_name)}
+        </p>
+        <p className="break-words text-xs text-muted-foreground">
+          {commander.total_entries} entries
+          {commander.meta_share_pct != null && (
+            <>
+              {" · "}
+              {commander.meta_share_pct.toFixed(1)}% meta
+            </>
+          )}
+        </p>
+      </div>
+      <div className="shrink-0 self-start text-right">
         <p className={`font-mono text-sm ${isAboveExpected ? "text-primary" : "text-muted-foreground"}`}>
           {winRate}%
         </p>
