@@ -65,8 +65,13 @@
 - Reworked the profile summary cards so:
   - `Country Rank` shows the rank prominently with country as secondary text
   - `State Rank` shows the rank prominently with state as secondary text
+  - `Global Rank` now shows `EARTH` as the secondary line
   - `TopDeck` was renamed to `TopDeck Rank`
 - Renamed the profile regions table from `State Assignment` to `Played Regions` and renamed its `Region` column to `State`.
+- Updated `Seat Distribution` to include:
+  - an `Overall` row above the per-seat rows
+  - `Score:` percentages using `(wins + 0.2 × draws) / games`
+  - a short static formula description under the section title
 - Removed extra profile-page copy including:
   - `TopDeck Player Profile`
   - the old global/state-slice explainer under the player name
