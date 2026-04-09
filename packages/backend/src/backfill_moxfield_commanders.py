@@ -168,12 +168,29 @@ def effective_start_date(row: dict) -> str:
     return start_date if isinstance(start_date, str) else ""
 
 
+def row_within_date_window(
+    row: dict,
+    *,
+    start_date: str | None,
+    end_date: str | None,
+) -> bool:
+    row_start_date = effective_start_date(row)
+    if not row_start_date:
+        return False
+    if start_date and row_start_date < start_date:
+        return False
+    if end_date and row_start_date > end_date:
+        return False
+    return True
+
+
 def find_resume_end_date(
     client: SupabaseClient,
     attempt_cache: dict[str, dict[str, str]],
     *,
     embedded_only: bool,
     include_known: bool,
+    require_topdeck_ids: bool,
     player_topdeck_id: str | None,
     order_by: str,
     order_direction: str,
@@ -191,6 +208,7 @@ def find_resume_end_date(
             offset=offset,
             embedded_only=embedded_only,
             include_known=include_known,
+            require_topdeck_ids=require_topdeck_ids,
             player_topdeck_id=player_topdeck_id,
             order_by=order_by,
             order_direction=order_direction,
@@ -200,6 +218,8 @@ def find_resume_end_date(
         if not rows:
             return None
         for row in rows:
+            if not row_within_date_window(row, start_date=start_date, end_date=end_date):
+                continue
             existing_name = commander_name_for_entry(row)
             if existing_name not in PLACEHOLDER_COMMANDERS and not include_known:
                 continue
@@ -235,6 +255,12 @@ def cached_ids_for_statuses(
     )
 
 
+def load_entry_ids(entry_ids_path: Path) -> list[str]:
+    if not entry_ids_path.exists():
+        raise SystemExit(f"Error: entry IDs file not found: {entry_ids_path}")
+    return [line.strip() for line in entry_ids_path.read_text().splitlines() if line.strip()]
+
+
 def record_attempt(
     attempt_cache: dict[str, dict[str, str]],
     *,
@@ -262,6 +288,7 @@ def fetch_moxfield_entries(
     offset: int,
     embedded_only: bool,
     include_known: bool,
+    require_topdeck_ids: bool = False,
     player_topdeck_id: str | None = None,
     order_by: str = "tournament-date",
     order_direction: str = "desc",
@@ -277,6 +304,9 @@ def fetch_moxfield_entries(
     if not include_known:
         select = "id,decklist_url,commanders!inner(name),players!inner(topdeck_id),tournaments!inner(topdeck_tid,start_date)"
         filters["commanders.name"] = 'in.("Unknown Commander","Moxfield Deck")'
+    if require_topdeck_ids:
+        filters["players.topdeck_id"] = "not.is.null"
+        filters["tournaments.topdeck_tid"] = "not.is.null"
     if player_topdeck_id:
         filters["players.topdeck_id"] = f"eq.{player_topdeck_id}"
     date_filters = []
@@ -310,6 +340,7 @@ def fetch_entries_by_ids(
     *,
     entry_ids: list[str],
     include_known: bool,
+    require_topdeck_ids: bool = False,
 ) -> list[dict]:
     if not entry_ids:
         return []
@@ -322,6 +353,14 @@ def fetch_entries_by_ids(
         {
             "select": select,
             "id": f"in.({ids})",
+            **(
+                {
+                    "players.topdeck_id": "not.is.null",
+                    "tournaments.topdeck_tid": "not.is.null",
+                }
+                if require_topdeck_ids
+                else {}
+            ),
             "limit": len(entry_ids),
         },
     )
@@ -469,13 +508,17 @@ def extract_topdeck_deck_page_commanders(page_html: str) -> list[str]:
     return names
 
 
-def fetch_topdeck_deck_page_commanders(
+def build_topdeck_deck_page_url(tournament_id: str, player_identifier: str) -> str:
+    return f"https://topdeck.gg/deck/{tournament_id}/{player_identifier}"
+
+
+def fetch_topdeck_deck_page_details(
     tournament_id: str,
     player_identifier: str,
     session: requests.Session,
     timeout: float,
-) -> list[str]:
-    url = f"https://topdeck.gg/deck/{tournament_id}/{player_identifier}"
+) -> tuple[list[str], str]:
+    url = build_topdeck_deck_page_url(tournament_id, player_identifier)
     headers = {
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "User-Agent": "cedh-research/1.0",
@@ -502,8 +545,23 @@ def fetch_topdeck_deck_page_commanders(
             continue
         if response.status_code >= 400:
             raise TopDeckHttpStatusError(str(response.status_code))
-        return extract_topdeck_deck_page_commanders(response.text)
+        return extract_topdeck_deck_page_commanders(response.text), url
     raise TopDeckHttpStatusError("too-many-redirects")
+
+
+def fetch_topdeck_deck_page_commanders(
+    tournament_id: str,
+    player_identifier: str,
+    session: requests.Session,
+    timeout: float,
+) -> list[str]:
+    commanders, _final_url = fetch_topdeck_deck_page_details(
+        tournament_id,
+        player_identifier,
+        session,
+        timeout,
+    )
+    return commanders
 
 
 def main() -> None:
@@ -511,6 +569,7 @@ def main() -> None:
     parser.add_argument("--limit", type=int, help="Maximum rows to update")
     parser.add_argument("--page-size", type=int, default=250, help="Supabase page size")
     parser.add_argument("--offset", type=int, default=0, help="Initial row offset")
+    parser.add_argument("--entry-ids-file", type=Path, help="Process only the listed tournament_entry IDs")
     parser.add_argument("--start-date", help="Only process tournaments on or after this date")
     parser.add_argument("--end-date", help="Only process tournaments on or before this date")
     parser.add_argument(
@@ -530,6 +589,11 @@ def main() -> None:
     parser.add_argument("--resolve-moxfield-api", action="store_true", help="Fetch pure Moxfield URLs from the Moxfield API")
     parser.add_argument("--resolve-moxfield-page", action="store_true", help="Scrape pure Moxfield URLs from public deck pages")
     parser.add_argument("--resolve-topdeck-deck-page", action="store_true", help="Scrape TopDeck's /deck/{tournament}/{player} page")
+    parser.add_argument(
+        "--process-all-moxfield-rows",
+        action="store_true",
+        help="Process all Moxfield rows for TopDeck deck URL rewrites; only update commanders when missing/unknown",
+    )
     parser.add_argument("--player-topdeck-id", help="Only process entries for one TopDeck player id")
     parser.add_argument("--max-moxfield-requests", type=int, help="Stop after this many Moxfield URL requests")
     parser.add_argument("--max-topdeck-requests", type=int, help="Stop after this many TopDeck deck page requests")
@@ -597,12 +661,20 @@ def main() -> None:
 
     effective_start = args.start_date
     effective_end = args.end_date
-    if not args.full_date_window and args.resolve_topdeck_deck_page and not args.retry_transient and retry_statuses is None:
+    process_all_moxfield_rows = args.process_all_moxfield_rows
+    if (
+        not process_all_moxfield_rows
+        and not args.full_date_window
+        and args.resolve_topdeck_deck_page
+        and not args.retry_transient
+        and retry_statuses is None
+    ):
         resume_end = find_resume_end_date(
             client,
             attempt_cache,
             embedded_only=args.embedded_only,
             include_known=args.include_known,
+            require_topdeck_ids=False,
             player_topdeck_id=args.player_topdeck_id,
             order_by=args.order_by,
             order_direction=args.order_direction,
@@ -622,6 +694,7 @@ def main() -> None:
 
     scanned = 0
     updated = 0
+    decklist_updated = 0
     skipped_known = 0
     unresolved = 0
     repeated_unresolved = 0
@@ -631,16 +704,30 @@ def main() -> None:
     topdeck_requests = 0
     offset = args.offset
     attempted_unresolved_ids: set[str] = set()
-    retry_entry_ids = cached_ids_for_statuses(attempt_cache, retry_statuses) if retry_statuses else []
+    retry_entry_ids = (
+        load_entry_ids(args.entry_ids_file)
+        if args.entry_ids_file
+        else cached_ids_for_statuses(attempt_cache, retry_statuses) if retry_statuses else []
+    )
     retry_index = 0
 
     while True:
-        if retry_statuses:
+        if args.entry_ids_file:
             batch_ids = retry_entry_ids[retry_index : retry_index + args.page_size]
             rows = fetch_entries_by_ids(
                 client,
                 entry_ids=batch_ids,
-                include_known=args.include_known,
+                include_known=args.include_known or process_all_moxfield_rows,
+                require_topdeck_ids=process_all_moxfield_rows,
+            )
+            retry_index += len(batch_ids)
+        elif retry_statuses:
+            batch_ids = retry_entry_ids[retry_index : retry_index + args.page_size]
+            rows = fetch_entries_by_ids(
+                client,
+                entry_ids=batch_ids,
+                include_known=args.include_known or process_all_moxfield_rows,
+                require_topdeck_ids=process_all_moxfield_rows,
             )
             retry_index += len(batch_ids)
         else:
@@ -649,7 +736,8 @@ def main() -> None:
                 limit=args.page_size,
                 offset=offset,
                 embedded_only=args.embedded_only,
-                include_known=args.include_known,
+                include_known=args.include_known or process_all_moxfield_rows,
+                require_topdeck_ids=process_all_moxfield_rows,
                 player_topdeck_id=args.player_topdeck_id,
                 order_by=args.order_by,
                 order_direction=args.order_direction,
@@ -659,8 +747,21 @@ def main() -> None:
         if not rows:
             break
 
+        rows = [
+            row
+            for row in rows
+            if row_within_date_window(row, start_date=effective_start, end_date=effective_end)
+        ]
+        if not rows:
+            if retry_statuses or args.entry_ids_file:
+                continue
+            offset += args.page_size
+            continue
+
         commander_data: dict[str, list[str]] = {}
         pending_updates: list[tuple[str, str]] = []
+        pending_decklist_updates: list[tuple[str, str]] = []
+        row_effects: dict[str, dict[str, bool]] = {}
         page_skipped = 0
         page_unresolved = 0
         page_processed = 0
@@ -669,7 +770,8 @@ def main() -> None:
             scanned += 1
             page_processed += 1
             existing_name = commander_name_for_entry(row)
-            if existing_name not in PLACEHOLDER_COMMANDERS and not args.include_known:
+            needs_commander_update = existing_name in PLACEHOLDER_COMMANDERS or args.include_known
+            if not process_all_moxfield_rows and existing_name not in PLACEHOLDER_COMMANDERS and not args.include_known:
                 skipped_known += 1
                 page_skipped += 1
                 continue
@@ -707,25 +809,32 @@ def main() -> None:
             if max_moxfield_requests is not None and moxfield_requests >= max_moxfield_requests:
                 should_resolve_moxfield = False
 
-            commanders = extract_commanders(
-                decklist,
-                resolve_moxfield=should_resolve_moxfield,
-                moxfield_session=http,
-                moxfield_source=moxfield_source,
-            )
-            if should_resolve_moxfield and "~~Commanders~~" not in decklist:
-                moxfield_requests += 1
-                time.sleep(args.sleep)
+            commanders = []
+            commander_name = existing_name or ""
+            if needs_commander_update:
+                commanders = extract_commanders(
+                    decklist,
+                    resolve_moxfield=should_resolve_moxfield,
+                    moxfield_session=http,
+                    moxfield_source=moxfield_source,
+                )
+                if should_resolve_moxfield and "~~Commanders~~" not in decklist:
+                    moxfield_requests += 1
+                    time.sleep(args.sleep)
+                commander_name = normalize_commander_name(commanders)
 
-            commander_name = normalize_commander_name(commanders)
-            if commander_name in PLACEHOLDER_COMMANDERS and args.resolve_topdeck_deck_page:
+            topdeck_deck_url = ""
+            should_fetch_topdeck = args.resolve_topdeck_deck_page and (
+                process_all_moxfield_rows or commander_name in PLACEHOLDER_COMMANDERS
+            )
+            if should_fetch_topdeck:
                 if args.max_topdeck_requests is not None and topdeck_requests >= args.max_topdeck_requests:
                     break
                 player_topdeck_id = relation_value(row, "players").get("topdeck_id")
                 tournament_topdeck_id = relation_value(row, "tournaments").get("topdeck_tid")
                 if player_topdeck_id and tournament_topdeck_id:
                     try:
-                        commanders = fetch_topdeck_deck_page_commanders(
+                        commanders, topdeck_deck_url = fetch_topdeck_deck_page_details(
                             tournament_topdeck_id,
                             player_topdeck_id,
                             http,
@@ -796,7 +905,10 @@ def main() -> None:
                         topdeck_requests += 1
                         continue
                     topdeck_requests += 1
-                    commander_name = normalize_commander_name(commanders)
+                    if needs_commander_update:
+                        commander_name = normalize_commander_name(commanders)
+                    if topdeck_deck_url and decklist != topdeck_deck_url:
+                        pending_decklist_updates.append((row["id"], topdeck_deck_url))
                 else:
                     record_attempt(
                         attempt_cache,
@@ -809,7 +921,7 @@ def main() -> None:
                     page_unresolved += 1
                     continue
 
-            if commander_name in PLACEHOLDER_COMMANDERS:
+            if needs_commander_update and commander_name in PLACEHOLDER_COMMANDERS:
                 attempted_unresolved_ids.add(row["id"])
                 unresolved += 1
                 page_unresolved += 1
@@ -821,13 +933,18 @@ def main() -> None:
                 )
                 continue
 
-            commander_data[commander_name] = commanders
-            pending_updates.append((row["id"], commander_name))
+            if needs_commander_update:
+                commander_data[commander_name] = commanders
+                pending_updates.append((row["id"], commander_name))
+            row_effects[row["id"]] = {
+                "commander_update": needs_commander_update,
+                "decklist_update": bool(topdeck_deck_url and decklist != topdeck_deck_url),
+            }
             record_attempt(
                 attempt_cache,
                 row=row,
                 status="resolved",
-                detail=commander_name,
+                detail=topdeck_deck_url or commander_name,
             )
 
             if args.limit and updated + len(pending_updates) >= args.limit:
@@ -883,13 +1000,42 @@ def main() -> None:
         else:
             updated += len(pending_updates)
 
+        successful_decklist_update_ids: set[str] = set()
+        if pending_decklist_updates and not args.dry_run:
+            for entry_id, topdeck_deck_url in pending_decklist_updates:
+                try:
+                    client.update("tournament_entries", {"decklist_url": topdeck_deck_url}, {"id": f"eq.{entry_id}"})
+                    decklist_updated += 1
+                    successful_decklist_update_ids.add(entry_id)
+                except requests.RequestException as exc:
+                    print(f"Supabase decklist update failed for entry {entry_id}: {exc}")
+                    attempted_unresolved_ids.add(entry_id)
+                    unresolved += 1
+                    page_unresolved += 1
+                    row = {
+                        "id": entry_id,
+                        "decklist_url": topdeck_deck_url,
+                        "players": {"topdeck_id": attempt_cache.get(entry_id, {}).get("player_topdeck_id", "")},
+                        "tournaments": {"topdeck_tid": attempt_cache.get(entry_id, {}).get("topdeck_tid", "")},
+                    }
+                    record_attempt(
+                        attempt_cache,
+                        row=row,
+                        status="supabase_update_failed",
+                        detail=str(exc),
+                    )
+        else:
+            decklist_updated += len(pending_decklist_updates)
+            successful_decklist_update_ids = {entry_id for entry_id, _ in pending_decklist_updates}
+
         write_attempt_cache(args.attempt_cache, attempt_cache)
 
         print(
             f"scanned={scanned} updated={updated} unresolved={unresolved} "
             f"repeated_unresolved={repeated_unresolved} skipped_known={skipped_known} "
             f"cached_skipped={cached_skipped} bad_url_skipped={bad_url_skipped} "
-            f"moxfield_requests={moxfield_requests} topdeck_requests={topdeck_requests}",
+            f"decklist_updated={decklist_updated} moxfield_requests={moxfield_requests} "
+            f"topdeck_requests={topdeck_requests}",
             flush=True,
         )
 
@@ -900,18 +1046,22 @@ def main() -> None:
         if args.max_topdeck_requests is not None and topdeck_requests >= args.max_topdeck_requests:
             break
 
-        if retry_statuses:
+        if retry_statuses or args.entry_ids_file:
             continue
+        page_retained_successes = sum(
+            1 for entry_id, effects in row_effects.items() if not effects["decklist_update"] or entry_id not in successful_decklist_update_ids
+        )
         if args.dry_run or args.include_known:
             offset += page_processed
         else:
-            offset += page_unresolved + page_skipped
+            offset += page_unresolved + page_skipped + page_retained_successes
 
     print(
         f"Done. scanned={scanned} updated={updated} unresolved={unresolved} "
         f"repeated_unresolved={repeated_unresolved} skipped_known={skipped_known} "
         f"cached_skipped={cached_skipped} bad_url_skipped={bad_url_skipped} "
-        f"moxfield_requests={moxfield_requests} topdeck_requests={topdeck_requests} dry_run={args.dry_run}",
+        f"decklist_updated={decklist_updated} moxfield_requests={moxfield_requests} "
+        f"topdeck_requests={topdeck_requests} dry_run={args.dry_run}",
         flush=True,
     )
     print(f"Attempt status summary: {summarize_attempt_statuses(attempt_cache)}", flush=True)
