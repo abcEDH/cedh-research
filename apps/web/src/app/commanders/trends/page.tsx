@@ -134,19 +134,25 @@ async function getCommanderPeriodSnapshots(commanderIds: string[], sizeFilter: S
   commanderIds.forEach((commanderId) => {
     const week = weeklyLatest.get(commanderId);
     const month = monthlyLatest.get(commanderId);
-    const weekGames = week ? week.wins + week.losses + week.draws : 0;
-    const monthGames = month ? month.wins + month.losses + month.draws : 0;
+    const weekWins = week?.wins ?? 0;
+    const weekLosses = week?.losses ?? 0;
+    const weekDraws = week?.draws ?? 0;
+    const monthWins = month?.wins ?? 0;
+    const monthLosses = month?.losses ?? 0;
+    const monthDraws = month?.draws ?? 0;
+    const weekGames = week ? weekWins + weekLosses + weekDraws : 0;
+    const monthGames = month ? monthWins + monthLosses + monthDraws : 0;
 
     snapshots[commanderId] = {
       weekStart: week?.week_start_date ?? null,
       weekEntries: week?.entries ?? null,
-      weekWinRate: weekGames ? (week!.wins / weekGames) * 100 : null,
-      weekPointsPerGame: weekGames ? (week!.wins * 5 + week!.draws) / weekGames : null,
+      weekWinRate: weekGames ? (weekWins / weekGames) * 100 : null,
+      weekPointsPerGame: weekGames ? (weekWins * 5 + weekDraws) / weekGames : null,
       weekPlayers: week?.total_players ?? null,
       monthKey: month?.month_key ?? null,
       monthEntries: month?.entries ?? null,
-      monthWinRate: monthGames ? (month!.wins / monthGames) * 100 : null,
-      monthPointsPerGame: monthGames ? (month!.wins * 5 + month!.draws) / monthGames : null,
+      monthWinRate: monthGames ? (monthWins / monthGames) * 100 : null,
+      monthPointsPerGame: monthGames ? (monthWins * 5 + monthDraws) / monthGames : null,
       monthPlayers: month?.total_players ?? null,
     };
   });
