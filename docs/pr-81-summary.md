@@ -1,4 +1,4 @@
-# Changes Summary (2026-04-09)
+# PR 81 Summary
 
 ## Backend / Backfill
 
@@ -21,21 +21,21 @@
   - attempt cache: `logs/backfill_moxfield_commanders_targeted_run_20260408.csv`
 - Latest checked status:
   - target rows: `55,361`
-  - attempted: `30,413`
-  - remaining: `24,948`
-  - completed: `54.9%`
+  - attempted: `38,207`
+  - remaining: `17,154`
+  - completed: `69.0%`
 - Breakdown at last check:
-  - `resolved`: `21,496`
-  - `no_commander_found`: `3,899`
-  - `moxfield_redirect`: `3,090`
-  - `bad_moxfield_url`: `1,874`
+  - `resolved`: `27,805`
+  - `no_commander_found`: `4,247`
+  - `moxfield_redirect`: `3,993`
+  - `bad_moxfield_url`: `2,107`
   - `topdeck_connection_error`: `27`
   - `topdeck_timeout`: `14`
   - `topdeck_http_error`: `4`
-  - `supabase_update_failed`: `9`
+  - `supabase_update_failed`: `10`
 - Recent pace at last check:
-  - `828` rows / 10 minutes
-  - about `4,968` rows / hour
+  - `614` rows / 10 minutes
+  - about `3,684` rows / hour
 
 ## Frontend Leaderboard
 
@@ -53,6 +53,7 @@
 - Updated country leaderboard behavior so country-wide `ALL states` views only include players whose inferred home country matches the selected country.
 - Fixed the legacy country-view fallback so it no longer silently falls back to the global leaderboard and no longer shows players like Alexander Bye in the wrong country view.
 - Removed the temporary human-name selection heuristic after confirming the current schema does not store historical per-event player names.
+- Fixed a strict TypeScript nullability regression in the latest-tournament matching logic that was breaking the PR 81 `Playwright E2E Tests` workflow during `next build`.
 
 ## Frontend Player Profile
 
@@ -105,4 +106,11 @@
   - mocking `server-only` in shared Vitest setup
   - making the `Retry-After` test deterministic
   - fixing `regional-elo/page.tsx` search-param typing/build issues
+- Fixed the PR 81 frontend workflow failure by guarding nullable `latestPlayed.game_date` during latest-tournament tournament matching in `apps/web/src/app/regional-elo/page.tsx`.
+- Reverified PR 81 locally with:
+  - `npm --workspace apps/web run test:ci`
+  - `npm --workspace apps/web run build`
+  - `npm run docs:check`
+  - `npm run docs:hygiene`
+  - `npm --workspace apps/web run test:e2e`
 - Updated [pr-48-summary.md](/Users/alexanderlien/Documents/GitHub/cedh-research/docs/pr-48-summary.md) to reflect those fixes.
