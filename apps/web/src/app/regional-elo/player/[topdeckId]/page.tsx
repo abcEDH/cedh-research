@@ -1488,25 +1488,25 @@ export default async function RegionalPlayerPage({
             </CardContent>
           </Card>
 
-          <Card className="knd-panel">
-            <CardHeader>
-              <CardTitle className="text-sm uppercase tracking-[0.2em] text-muted-foreground">
-                State Assignment
-              </CardTitle>
-              <p className="text-xs text-muted-foreground">
-                Historical games are grouped by inferred country and region.
-              </p>
+            <Card className="knd-panel">
+              <CardHeader>
+                <CardTitle className="text-sm uppercase tracking-[0.2em] text-muted-foreground">
+                  Played Regions
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Historical games are grouped by inferred country and region.
+                </p>
             </CardHeader>
             <CardContent>
               <div className="overflow-auto">
                 <table className="w-full text-sm">
-                  <thead className="text-left text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                    <tr>
-                      <th className="px-2 py-3">Country</th>
-                      <th className="px-2 py-3">Region</th>
-                      <th className="px-2 py-3 text-right">Games</th>
-                      <th className="px-2 py-3 text-right">W-L-D</th>
-                    </tr>
+                    <thead className="text-left text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                      <tr>
+                        <th className="px-2 py-3">Country</th>
+                        <th className="px-2 py-3">State</th>
+                        <th className="px-2 py-3 text-right">Games</th>
+                        <th className="px-2 py-3 text-right">W-L-D</th>
+                      </tr>
                   </thead>
                   <tbody>
                     {stateAssignmentRows.map((row) => {
