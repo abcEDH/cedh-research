@@ -2,11 +2,25 @@
 
 import Link from "next/link";
 import { startTransition, useState } from "react";
-import type { OpponentRecord } from "./player-stats";
+import type { CommanderRecord, OpponentRecord } from "./player-stats";
 
 const PAGE_SIZE = 12;
 
-export function OpponentRecordsTable({ records }: { records: OpponentRecord[] }) {
+type RecordRow = OpponentRecord | CommanderRecord;
+
+function isOpponentRecord(record: RecordRow): record is OpponentRecord {
+  return "opponentName" in record;
+}
+
+export function OpponentRecordsTable({
+  records,
+  entityLabel = "Opponent",
+  emptyLabel = "No opponent records found.",
+}: {
+  records: RecordRow[];
+  entityLabel?: string;
+  emptyLabel?: string;
+}) {
   const [page, setPage] = useState(1);
   const totalPages = Math.max(Math.ceil(records.length / PAGE_SIZE), 1);
   const start = records.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
@@ -25,7 +39,7 @@ export function OpponentRecordsTable({ records }: { records: OpponentRecord[] })
         <table className="w-full text-sm">
           <thead className="text-left text-xs uppercase tracking-[0.2em] text-muted-foreground">
             <tr>
-              <th className="px-2 py-3">Opponent</th>
+              <th className="px-2 py-3">{entityLabel}</th>
               <th className="px-2 py-3 text-right">Games</th>
               <th className="px-2 py-3 text-right">W-L-D</th>
             </tr>
@@ -33,19 +47,23 @@ export function OpponentRecordsTable({ records }: { records: OpponentRecord[] })
           <tbody>
             {visibleRecords.map((record, index) => (
               <tr
-                key={`${record.opponentTopdeckId ?? record.opponentName}:${index}`}
+                key={isOpponentRecord(record) ? `${record.opponentTopdeckId ?? record.opponentName}:${index}` : `${record.commanderName}:${index}`}
                 className="border-t border-border/60"
               >
                 <td className="px-2 py-3">
-                  {record.opponentTopdeckId ? (
-                    <Link
-                      href={`/regional-elo/player/${record.opponentTopdeckId}`}
-                      className="font-medium text-foreground hover:text-primary"
-                    >
-                      {record.opponentName}
-                    </Link>
+                  {isOpponentRecord(record) ? (
+                    record.opponentTopdeckId ? (
+                      <Link
+                        href={`/regional-elo/player/${record.opponentTopdeckId}`}
+                        className="font-medium text-foreground hover:text-primary"
+                      >
+                        {record.opponentName}
+                      </Link>
+                    ) : (
+                      <span className="font-medium text-foreground">{record.opponentName}</span>
+                    )
                   ) : (
-                    <span className="font-medium text-foreground">{record.opponentName}</span>
+                    <span className="font-medium text-foreground">{record.commanderName}</span>
                   )}
                 </td>
                 <td className="px-2 py-3 text-right font-mono text-muted-foreground">{record.games}</td>
@@ -57,7 +75,7 @@ export function OpponentRecordsTable({ records }: { records: OpponentRecord[] })
             {visibleRecords.length === 0 ? (
               <tr>
                 <td colSpan={3} className="px-2 py-6 text-center text-sm text-muted-foreground">
-                  No opponent records found.
+                  {emptyLabel}
                 </td>
               </tr>
             ) : null}

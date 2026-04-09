@@ -248,12 +248,20 @@ async function fetchPlayer(topdeckId: string): Promise<PlayerRow | null> {
 }
 
 async function fetchEntries(playerId: string): Promise<EntryRow[]> {
-  const { data } = await supabase
-    .from("tournament_entries")
-    .select("id, tournament_id, player_id, commander_id")
-    .eq("player_id", playerId);
+  const rows: EntryRow[] = [];
+  for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("tournament_entries")
+      .select("id, tournament_id, player_id, commander_id")
+      .eq("player_id", playerId)
+      .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
 
-  return (data as EntryRow[]) ?? [];
+    if (error) throw new Error(`Error fetching player entries: ${error.message}`);
+    rows.push(...((data as EntryRow[]) ?? []));
+    if (!data || data.length < SUPABASE_PAGE_SIZE) break;
+  }
+
+  return rows;
 }
 
 async function fetchActiveDisplayedRank(
@@ -417,6 +425,53 @@ async function fetchRegionalRank(playerId: string, regionKey: string): Promise<L
   return displayedRank && row ? { ...row, rank: displayedRank } : row;
 }
 
+async function fetchCountryRank(playerId: string, countryKey: string): Promise<LeaderboardRankRow | null> {
+  if (!countryKey || countryKey === "UNKNOWN") return null;
+
+  const { data, error } = await supabase
+    .from("regional_elo_leaderboard")
+    .select("primary_region_key, rank, rating, games_played, wins, draws, losses, last_game_date")
+    .eq("region_type", "global")
+    .eq("region_key", "ALL")
+    .eq("player_id", playerId)
+    .maybeSingle();
+
+  if (error) return null;
+  const playerRow = (data as LeaderboardRankRow | null) ?? null;
+  if (!playerRow) return null;
+  if (!isActiveRank(playerRow)) return playerRow;
+
+  const rows: LeaderboardRankRow[] = [];
+  for (let offset = 0; offset < 50000; offset += SUPABASE_PAGE_SIZE) {
+    const { data: pageData, error: pageError } = await supabase
+      .from("regional_elo_leaderboard")
+      .select("player_id, primary_region_key, rating, games_played, last_game_date")
+      .eq("region_type", "global")
+      .eq("region_key", "ALL")
+      .gte("last_game_date", activePlayerCutoffDate())
+      .order("rating", { ascending: false })
+      .order("games_played", { ascending: false })
+      .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
+
+    if (pageError) break;
+    const page = ((pageData as LeaderboardRankRow[]) ?? []).filter(
+      (row) =>
+        row.primary_region_key &&
+        inferCountryForRegion(row.primary_region_key) === countryKey
+    );
+    rows.push(...page);
+    if (page.some((row) => row.player_id === playerId)) {
+      return {
+        ...playerRow,
+        rank: rows.sort(activeRankSort).findIndex((row) => row.player_id === playerId) + 1,
+      };
+    }
+    if (!pageData || pageData.length < SUPABASE_PAGE_SIZE) break;
+  }
+
+  return playerRow;
+}
+
 async function fetchRegionalRanks(playerId: string): Promise<LeaderboardRankRow[]> {
   const { data, error } = await supabase
     .from("global_elo_leaderboard")
@@ -538,21 +593,31 @@ function formatShortDate(value: string | null | undefined) {
   });
 }
 
+function formatPct(value: number) {
+  return `${Math.round(value * 100)}%`;
+}
+
 async function fetchPlayerCommanderUsageRows(
   playerId: string,
   topdeckId: string,
   playerName: string
 ): Promise<PlayerCommanderUsageRow[]> {
-  const { data, error } = await supabase
-    .from("tournament_entries")
-    .select("wins, draws, losses, commanders(name), tournaments(start_date, name, player_count, topdeck_tid)")
-    .eq("player_id", playerId);
+  const rows: PlayerCommanderUsageQueryRow[] = [];
+  for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("tournament_entries")
+      .select("wins, draws, losses, commanders(name), tournaments(start_date, name, player_count, topdeck_tid)")
+      .eq("player_id", playerId)
+      .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
 
-  if (error) {
-    throw new Error(`Error fetching player commander usage: ${error.message}`);
+    if (error) {
+      throw new Error(`Error fetching player commander usage: ${error.message}`);
+    }
+    rows.push(...((data as PlayerCommanderUsageQueryRow[]) ?? []));
+    if (!data || data.length < SUPABASE_PAGE_SIZE) break;
   }
 
-  return ((data ?? []) as PlayerCommanderUsageQueryRow[])
+  return rows
     .map((row) => {
       const commander = firstRelation(row.commanders);
       const tournament = firstRelation(row.tournaments);
@@ -826,26 +891,41 @@ async function fetchPlayerEventLogs(playerId: string, regionFilter: string): Pro
   let lastEventError: unknown = null;
 
   for (const table of eventLogTables) {
-    let query = supabase
-      .from(table)
-      .select(
-        "game_id, game_date, tournament_name, state, round_number, round_name, table_number, seat_position, commander_name, game_result"
-      )
-      .eq("player_id", playerId)
-      .order("game_date", { ascending: false })
-      .range(0, 499);
+    const collected: PlayerEventLogRow[] = [];
+    let queryFailed = false;
+    let queryError: unknown = null;
 
-    if (regionFilter) {
-      query = query.ilike("state", regionFilter);
+    for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
+      let query = supabase
+        .from(table)
+        .select(
+          "game_id, game_date, tournament_name, state, round_number, round_name, table_number, seat_position, commander_name, game_result"
+        )
+        .eq("player_id", playerId)
+        .order("game_date", { ascending: false })
+        .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
+
+      if (regionFilter) {
+        query = query.ilike("state", regionFilter);
+      }
+
+      const { data, error } = await query;
+      if (error) {
+        queryFailed = true;
+        queryError = error;
+        break;
+      }
+
+      collected.push(...((data as PlayerEventLogRow[]) ?? []));
+      if (!data || data.length < SUPABASE_PAGE_SIZE) break;
     }
 
-    const { data, error } = await query;
-    if (!error) {
-      eventRows = (data as PlayerEventLogRow[]) ?? [];
+    if (!queryFailed) {
+      eventRows = collected;
       eventLogTable = table;
       break;
     }
-    lastEventError = error;
+    lastEventError = queryError;
   }
 
   if (lastEventError && eventRows.length === 0 && eventLogTable === eventLogTables[0]) {
@@ -857,21 +937,24 @@ async function fetchPlayerEventLogs(playerId: string, regionFilter: string): Pro
   const gameIds = Array.from(new Set(eventRows.map((row) => row.game_id)));
   const opponentRows: PlayerEventOpponentRow[] = [];
   for (const gameIdChunk of chunkArray(gameIds, 250)) {
-    const { data: opponentData, error: opponentError } = await supabase
-      .from(eventLogTable)
-      .select("game_id, player_id, player_name, topdeck_id, seat_position, commander_name, game_result")
-      .in("game_id", gameIdChunk)
-      .neq("player_id", playerId)
-      .range(0, 499);
+    for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
+      const { data: opponentData, error: opponentError } = await supabase
+        .from(eventLogTable)
+        .select("game_id, player_id, player_name, topdeck_id, seat_position, commander_name, game_result")
+        .in("game_id", gameIdChunk)
+        .neq("player_id", playerId)
+        .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
 
-    if (opponentError) {
-      console.error(
-        "Error fetching precomputed player event opponents:",
-        describeSupabaseError(opponentError)
-      );
-      continue;
+      if (opponentError) {
+        console.error(
+          "Error fetching precomputed player event opponents:",
+          describeSupabaseError(opponentError)
+        );
+        break;
+      }
+      opponentRows.push(...((opponentData as PlayerEventOpponentRow[]) ?? []));
+      if (!opponentData || opponentData.length < SUPABASE_PAGE_SIZE) break;
     }
-    opponentRows.push(...((opponentData as PlayerEventOpponentRow[]) ?? []));
   }
 
   const opponentsByGameId = new Map<string, PlayerGameLog["opponents"]>();
@@ -952,7 +1035,19 @@ export default async function RegionalPlayerPage({
       ? rawPlayerLogs
       : eventPlayerLogs;
 
-  const { totalGames, totalWins, totalDraws, totalLosses, seatRows, opponentRecords } = summarizePlayerLogs(playerLogs);
+  const {
+    totalGames,
+    totalWins,
+    totalDraws,
+    totalLosses,
+    seatRows,
+    opponentRecords,
+    commanderRecords,
+    bestOpponentMatchup,
+    worstOpponentMatchup,
+    bestCommanderMatchup,
+    worstCommanderMatchup,
+  } = summarizePlayerLogs(playerLogs);
   const canonicalGames = globalSnapshot?.gamesPlayed ?? profileSummary?.games_played ?? globalEloRank?.games_played ?? totalGames;
   const canonicalWins = globalSnapshot?.wins ?? profileSummary?.wins ?? globalEloRank?.wins ?? totalWins;
   const canonicalDraws = globalSnapshot?.draws ?? profileSummary?.draws ?? globalEloRank?.draws ?? totalDraws;
@@ -1017,11 +1112,18 @@ export default async function RegionalPlayerPage({
         return a.region_key.localeCompare(b.region_key);
       })[0]?.region_key ?? null;
   const homeRegion = globalEloRank?.primary_region_key ?? profileSummary?.home_region_key ?? regionalRanks[0]?.region_key ?? derivedHomeRegion;
+  const homeCountry =
+    profileSummary?.home_country_key ??
+    globalEloRank?.primary_country_key ??
+    (homeRegion ? inferCountryForRegion(homeRegion) : null) ??
+    (regionalRankRows[0]?.country_key ?? null);
   const selectedRegion = regionFilter || homeRegion || "";
   const regionalRank = await fetchRegionalRank(player.id, selectedRegion);
+  const countryRank = await fetchCountryRank(player.id, homeCountry ?? "");
   const activeRank = regionalRank;
   const shouldShowGlobalRank = isActiveRank(globalEloRank);
   const shouldShowLocalRank = isActiveRank(activeRank);
+  const shouldShowCountryRank = isActiveRank(countryRank);
   const stateAssignmentRows = Array.from(assignmentRowsByRegion.values()).sort((a, b) => {
     if (a.region_key === homeRegion) return -1;
     if (b.region_key === homeRegion) return 1;
@@ -1110,6 +1212,9 @@ export default async function RegionalPlayerPage({
         inferCountryForRegion(homeRegion) ?? "UNITED STATES"
       )}&region=${encodeURIComponent(homeRegion)}`
     : null;
+  const countryLeaderboardHref = homeCountry
+    ? `/regional-elo?scope=country&country=${encodeURIComponent(homeCountry)}`
+    : null;
 
   return (
     <div className="min-h-screen">
@@ -1117,18 +1222,13 @@ export default async function RegionalPlayerPage({
         <div className="space-y-8">
           <div className="space-y-3">
             <Link href={backHref} className="text-sm text-muted-foreground hover:text-foreground">
-              ← Back to region-filtered leaderboard
+              ← Back to region leaderboard
             </Link>
-            <p className="knd-chip">TopDeck Player Profile</p>
             <div className="flex flex-wrap items-end justify-between gap-4">
               <div>
                 <h1 className="text-3xl font-semibold text-foreground md:text-4xl">
                   {player.name}
                 </h1>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  Home region is assigned from recent and sustained activity. This page defaults
-                  to the global view; use the region filter below to inspect a specific state slice.
-                </p>
               </div>
               {topdeckProfileHref ? (
                 <a
@@ -1147,33 +1247,55 @@ export default async function RegionalPlayerPage({
             <Card className="knd-panel">
               <CardHeader>
                 <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Home Region
+                  State Rank
                 </CardTitle>
               </CardHeader>
-              <CardContent className="text-2xl font-semibold text-foreground">
-                {stateLeaderboardHref ? (
-                  <Link href={stateLeaderboardHref} className="hover:text-primary">
-                    {homeRegion}
-                  </Link>
-                ) : (
-                  "Unassigned"
-                )}
+              <CardContent className="space-y-1">
+                <div className="text-2xl font-semibold text-foreground">
+                  {stateLeaderboardHref && shouldShowLocalRank && activeRank ? (
+                    <Link href={stateLeaderboardHref} className="hover:text-primary">
+                      #{activeRank.rank}
+                    </Link>
+                  ) : (
+                    "--"
+                  )}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  {stateLeaderboardHref ? (
+                    <Link href={stateLeaderboardHref} className="hover:text-primary">
+                      {homeRegion}
+                    </Link>
+                  ) : (
+                    "Unassigned"
+                  )}
+                </div>
               </CardContent>
             </Card>
             <Card className="knd-panel">
               <CardHeader>
                 <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  State Rank
+                  Country Rank
                 </CardTitle>
               </CardHeader>
-              <CardContent className="text-2xl font-semibold text-foreground">
-                {stateLeaderboardHref && shouldShowLocalRank && activeRank ? (
-                  <Link href={stateLeaderboardHref} className="hover:text-primary">
-                    #{activeRank.rank}
-                  </Link>
-                ) : (
-                  "--"
-                )}
+              <CardContent className="space-y-1">
+                <div className="text-2xl font-semibold text-foreground">
+                  {countryLeaderboardHref && shouldShowCountryRank && countryRank ? (
+                    <Link href={countryLeaderboardHref} className="hover:text-primary">
+                      #{countryRank.rank}
+                    </Link>
+                  ) : (
+                    "--"
+                  )}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  {countryLeaderboardHref && homeCountry ? (
+                    <Link href={countryLeaderboardHref} className="hover:text-primary">
+                      {homeCountry}
+                    </Link>
+                  ) : (
+                    "Unassigned"
+                  )}
+                </div>
               </CardContent>
             </Card>
             <Card className="knd-panel">
@@ -1195,7 +1317,7 @@ export default async function RegionalPlayerPage({
             <Card className="knd-panel">
               <CardHeader>
                 <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  TopDeck
+                  TopDeck Rank
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-1">
@@ -1266,12 +1388,6 @@ export default async function RegionalPlayerPage({
               </CardContent>
             </Card>
           </div>
-
-          <p className="text-sm text-muted-foreground">
-            TopDeck rank, points, games played, and record come from TopDeck. The game history
-            below is reconstructed from stored tournament data when the precomputed event log is
-            sparse.
-          </p>
 
           <Card className="knd-panel">
             <CardHeader>
@@ -1439,7 +1555,7 @@ export default async function RegionalPlayerPage({
             </CardContent>
           </Card>
 
-          <div className="grid gap-6 xl:grid-cols-[360px_1fr]">
+          <div className="grid gap-6 xl:grid-cols-[360px_1fr_1fr]">
             <Card className="knd-panel">
               <CardHeader>
                 <CardTitle className="text-sm uppercase tracking-[0.2em] text-muted-foreground">
@@ -1467,8 +1583,111 @@ export default async function RegionalPlayerPage({
                   Record Against Opponents
                 </CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="rounded-lg border border-border/60 px-4 py-3">
+                    <div className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">Best Matchup</div>
+                    {bestOpponentMatchup ? (
+                      <>
+                        <div className="mt-2 font-medium text-foreground">
+                          {bestOpponentMatchup.href ? (
+                            <Link href={bestOpponentMatchup.href} className="hover:text-primary">
+                              {bestOpponentMatchup.label}
+                            </Link>
+                          ) : (
+                            bestOpponentMatchup.label
+                          )}
+                        </div>
+                        <div className="mt-1 text-sm text-muted-foreground">
+                          {bestOpponentMatchup.wins}-{bestOpponentMatchup.losses}-{bestOpponentMatchup.draws} in{" "}
+                          {bestOpponentMatchup.games} games
+                        </div>
+                        <div className="mt-1 text-sm text-primary">
+                          {formatPct(bestOpponentMatchup.posteriorScore)} adjusted score
+                        </div>
+                      </>
+                    ) : (
+                      <div className="mt-2 text-sm text-muted-foreground">No opponent matchup data.</div>
+                    )}
+                  </div>
+                  <div className="rounded-lg border border-border/60 px-4 py-3">
+                    <div className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">Worst Matchup</div>
+                    {worstOpponentMatchup ? (
+                      <>
+                        <div className="mt-2 font-medium text-foreground">
+                          {worstOpponentMatchup.href ? (
+                            <Link href={worstOpponentMatchup.href} className="hover:text-primary">
+                              {worstOpponentMatchup.label}
+                            </Link>
+                          ) : (
+                            worstOpponentMatchup.label
+                          )}
+                        </div>
+                        <div className="mt-1 text-sm text-muted-foreground">
+                          {worstOpponentMatchup.wins}-{worstOpponentMatchup.losses}-{worstOpponentMatchup.draws} in{" "}
+                          {worstOpponentMatchup.games} games
+                        </div>
+                        <div className="mt-1 text-sm text-[hsl(var(--destructive))]">
+                          {formatPct(worstOpponentMatchup.posteriorScore)} adjusted score
+                        </div>
+                      </>
+                    ) : (
+                      <div className="mt-2 text-sm text-muted-foreground">No opponent matchup data.</div>
+                    )}
+                  </div>
+                </div>
                 <OpponentRecordsTable records={opponentRecords} />
+              </CardContent>
+            </Card>
+
+            <Card className="knd-panel">
+              <CardHeader>
+                <CardTitle className="text-sm uppercase tracking-[0.2em] text-muted-foreground">
+                  Record Against Commanders
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="rounded-lg border border-border/60 px-4 py-3">
+                    <div className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">Best Matchup</div>
+                    {bestCommanderMatchup ? (
+                      <>
+                        <div className="mt-2 font-medium text-foreground">{bestCommanderMatchup.label}</div>
+                        <div className="mt-1 text-sm text-muted-foreground">
+                          {bestCommanderMatchup.wins}-{bestCommanderMatchup.losses}-{bestCommanderMatchup.draws} in{" "}
+                          {bestCommanderMatchup.games} games
+                        </div>
+                        <div className="mt-1 text-sm text-primary">
+                          {formatPct(bestCommanderMatchup.posteriorScore)} adjusted score
+                        </div>
+                      </>
+                    ) : (
+                      <div className="mt-2 text-sm text-muted-foreground">No commander matchup data.</div>
+                    )}
+                  </div>
+                  <div className="rounded-lg border border-border/60 px-4 py-3">
+                    <div className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">Worst Matchup</div>
+                    {worstCommanderMatchup ? (
+                      <>
+                        <div className="mt-2 font-medium text-foreground">{worstCommanderMatchup.label}</div>
+                        <div className="mt-1 text-sm text-muted-foreground">
+                          {worstCommanderMatchup.wins}-{worstCommanderMatchup.losses}-{worstCommanderMatchup.draws} in{" "}
+                          {worstCommanderMatchup.games} games
+                        </div>
+                        <div className="mt-1 text-sm text-[hsl(var(--destructive))]">
+                          {formatPct(worstCommanderMatchup.posteriorScore)} adjusted score
+                        </div>
+                      </>
+                    ) : (
+                      <div className="mt-2 text-sm text-muted-foreground">No commander matchup data.</div>
+                    )}
+                  </div>
+                </div>
+                <OpponentRecordsTable
+                  records={commanderRecords}
+                  entityLabel="Commander"
+                  emptyLabel="No commander records found."
+                />
               </CardContent>
             </Card>
           </div>

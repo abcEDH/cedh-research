@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
+import { buildProfiles, getCommanderUsageRows, selectCommanderForecastRows } from "@/lib/meta-prep";
 import { RegionalLeaderboardTable } from "./regional-leaderboard-table";
 import { RegionSelector } from "./region-selector";
 import { inferCountryForRegion } from "@/lib/region-countries";
@@ -123,19 +124,21 @@ type LeaderboardRow = {
 type LatestCommanderRow = {
   topdeck_id: string | null;
   active_commander: string | null;
-  latest_commander: string | null;
-  latest_commander_date: string | null;
-};
-
-type LeaderboardPage = {
-  rows: LeaderboardRow[];
-  totalCount: number;
+  active_commander_decklist_url: string | null;
+  latest_tournament_name: string | null;
+  latest_tournament_date: string | null;
+  latest_tournament_topdeck_tid: string | null;
 };
 
 function isKnownCommander(commanderName: string | null | undefined) {
   const normalized = (commanderName ?? "").trim().toLowerCase();
   return normalized.length > 0 && normalized !== "unknown commander";
 }
+
+type LeaderboardPage = {
+  rows: LeaderboardRow[];
+  totalCount: number;
+};
 
 function formatDate(value: string | null) {
   if (!value) return "—";
@@ -159,6 +162,10 @@ async function fetchLeaderboardRows(
   pageSize: number,
   searchQuery = ""
 ): Promise<LeaderboardPage> {
+  if (regionType === "country") {
+    return fetchCountryLeaderboardRows(regionKey, page, pageSize, searchQuery);
+  }
+
   const cutoffDate = activePlayerCutoffDate();
   const normalizedSearch = searchQuery.trim();
   const pageStart = (page - 1) * pageSize;
@@ -204,6 +211,10 @@ async function fetchLeaderboardRowsFromView(
   cutoffDate: string,
   searchQuery = ""
 ): Promise<LeaderboardPage> {
+  if (regionType === "country") {
+    return fetchCountryLeaderboardRows(regionKey, page, pageSize, searchQuery);
+  }
+
   const pageStart = (page - 1) * pageSize;
   const pageEnd = pageStart + pageSize - 1;
   let query = supabase
@@ -241,13 +252,72 @@ async function fetchLeaderboardRowsFromView(
   };
 }
 
+async function fetchCountryLeaderboardRows(
+  countryKey: string,
+  page: number,
+  pageSize: number,
+  searchQuery = ""
+): Promise<LeaderboardPage> {
+  const cutoffDate = activePlayerCutoffDate();
+  const pageStart = (page - 1) * pageSize;
+  const batchSize = 1000;
+  const filteredRows: LeaderboardRow[] = [];
+  let totalCount = 0;
+  for (let offset = 0; ; offset += batchSize) {
+    let query = supabase
+      .from("regional_elo_leaderboard")
+      .select(
+        "region_type, region_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank"
+      )
+      .eq("region_type", "global")
+      .eq("region_key", GLOBAL_REGION_KEY)
+      .gte("last_game_date", cutoffDate)
+      .order("rank", { ascending: true })
+      .range(offset, offset + batchSize - 1);
+
+    if (searchQuery) {
+      query = query.ilike("player_name", `%${searchQuery}%`);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error("Error fetching country leaderboard rows:", error);
+      return { rows: [], totalCount: 0 };
+    }
+
+    const pageRows = (data as LeaderboardRow[]) ?? [];
+    if (pageRows.length === 0) break;
+
+    for (const row of pageRows) {
+      const homeCountry = row.primary_region_key ? inferCountryForRegion(row.primary_region_key) : null;
+      if (homeCountry !== countryKey) continue;
+      if (totalCount >= pageStart && filteredRows.length < pageSize) {
+        filteredRows.push(row);
+      }
+      totalCount += 1;
+    }
+
+    if (pageRows.length < batchSize) break;
+  }
+
+  return {
+    rows: await applyGlobalLeaderboardTotals("country", filteredRows),
+    totalCount,
+  };
+}
+
 async function fetchLegacyLeaderboardRows(
-  regionType: "global" | "state",
+  regionType: "global" | "country" | "state",
   regionKey: string,
   page: number,
   pageSize: number,
   searchQuery = ""
 ): Promise<LeaderboardPage> {
+  if (regionType === "country") {
+    return fetchCountryLeaderboardRows(regionKey, page, pageSize, searchQuery);
+  }
+
   const cutoffDate = activePlayerCutoffDate();
   const pageStart = (page - 1) * pageSize;
   const pageEnd = pageStart + pageSize - 1;
@@ -451,65 +521,129 @@ function chunkArray<T>(values: T[], chunkSize: number) {
   return chunks;
 }
 
-async function fetchLatestCommanders(topdeckIds: string[]): Promise<Map<string, LatestCommanderRow>> {
+async function fetchLatestCommanders(rows: LeaderboardRow[]): Promise<Map<string, LatestCommanderRow>> {
+  const topdeckIds = rows
+    .map((row) => row.topdeck_id)
+    .filter((value): value is string => Boolean(value));
   if (topdeckIds.length === 0) return new Map();
+  const playerIdByTopdeckId = new Map<string, string>();
+  const topdeckIdByPlayerId = new Map<string, string>();
+  const lastGameDateByTopdeckId = new Map<string, string | null>();
+  for (const row of rows) {
+    if (!row.topdeck_id) continue;
+    playerIdByTopdeckId.set(row.topdeck_id, row.player_id);
+    topdeckIdByPlayerId.set(row.player_id, row.topdeck_id);
+    lastGameDateByTopdeckId.set(row.topdeck_id, row.last_game_date);
+  }
 
-  const pageSize = 1000;
-  const rows: LatestCommanderRow[] = [];
+  const profileRows: Array<{ topdeck_id: string | null; active_commander: string | null }> = [];
   for (const topdeckIdChunk of chunkArray(topdeckIds, 250)) {
+    const { data, error } = await supabase
+      .from("player_commander_profiles")
+      .select("topdeck_id, active_commander")
+      .in("topdeck_id", topdeckIdChunk);
+
+    if (error || !data?.length) continue;
+    profileRows.push(...(data as Array<{ topdeck_id: string | null; active_commander: string | null }>));
+  }
+
+  const latestByPlayer = new Map<string, LatestCommanderRow>();
+  const profileActiveCommanderByTopdeckId = new Map<string, string>();
+  const latestTournamentRows: Array<{
+    player_id: string;
+    tournament_id: string;
+    tournaments:
+      | { name: string | null; start_date: string | null; topdeck_tid: string | null }
+      | Array<{ name: string | null; start_date: string | null; topdeck_tid: string | null }>
+      | null;
+  }> = [];
+  const pageSize = 1000;
+  const playerIds = Array.from(topdeckIdByPlayerId.keys());
+  for (const playerIdChunk of chunkArray(playerIds, 100)) {
     for (let offset = 0; ; offset += pageSize) {
       const { data, error } = await supabase
-        .from("player_commander_profiles")
-        .select("topdeck_id, active_commander, latest_commander, latest_commander_date")
-        .in("topdeck_id", topdeckIdChunk)
-        .order("latest_commander_date", { ascending: false })
+        .from("tournament_entries")
+        .select("player_id, tournament_id, tournaments!inner(name, start_date, topdeck_tid)")
+        .in("player_id", playerIdChunk)
         .range(offset, offset + pageSize - 1);
 
       if (error || !data?.length) break;
-      rows.push(...(data as LatestCommanderRow[]));
+      latestTournamentRows.push(
+        ...(data as Array<{
+          player_id: string;
+          tournament_id: string;
+          tournaments:
+            | { name: string | null; start_date: string | null; topdeck_tid: string | null }
+            | Array<{ name: string | null; start_date: string | null; topdeck_tid: string | null }>
+            | null;
+        }>)
+      );
       if (data.length < pageSize) break;
     }
   }
 
-  const latestByPlayer = new Map<string, LatestCommanderRow>();
-  for (const row of rows) {
-    if (!row.topdeck_id || latestByPlayer.has(row.topdeck_id)) continue;
-    if (!isKnownCommander(row.active_commander) && !isKnownCommander(row.latest_commander)) continue;
-    latestByPlayer.set(row.topdeck_id, row);
-  }
-  if (latestByPlayer.size > 0) return latestByPlayer;
-
-  return fetchLatestCommandersFromHistory(topdeckIds);
-}
-
-async function fetchLatestCommandersFromHistory(topdeckIds: string[]): Promise<Map<string, LatestCommanderRow>> {
-  const rows: Array<{ topdeck_id: string | null; commander_name: string | null; start_date: string | null }> = [];
-  for (const topdeckIdChunk of chunkArray(topdeckIds, 250)) {
-    const { data, error } = await supabase
-      .from("player_commander_entries")
-      .select("topdeck_id, commander_name, start_date")
-      .in("topdeck_id", topdeckIdChunk)
-      .order("start_date", { ascending: false })
-      .range(0, 999);
-
-    if (error) {
-      console.error("Error fetching legacy commander history:", error);
-      continue;
-    }
-    rows.push(...((data ?? []) as Array<{ topdeck_id: string | null; commander_name: string | null; start_date: string | null }>));
-  }
-
-  const latestByPlayer = new Map<string, LatestCommanderRow>();
-  for (const row of rows) {
-    if (!row.topdeck_id || latestByPlayer.has(row.topdeck_id)) continue;
-    if (!isKnownCommander(row.commander_name)) continue;
-    latestByPlayer.set(row.topdeck_id, {
-      topdeck_id: row.topdeck_id,
-      active_commander: row.commander_name,
-      latest_commander: row.commander_name,
-      latest_commander_date: row.start_date,
+  for (const topdeckId of topdeckIds) {
+    latestByPlayer.set(topdeckId, {
+      topdeck_id: topdeckId,
+      active_commander: null,
+      active_commander_decklist_url: null,
+      latest_tournament_name: null,
+      latest_tournament_date: null,
+      latest_tournament_topdeck_tid: null,
     });
   }
+
+  for (const row of latestTournamentRows) {
+    const topdeckId = topdeckIdByPlayerId.get(row.player_id) ?? null;
+    if (!topdeckId) continue;
+
+    const existing = latestByPlayer.get(topdeckId);
+    if (!existing) continue;
+    const tournament = Array.isArray(row.tournaments) ? (row.tournaments[0] ?? null) : row.tournaments;
+    const playedAt = tournament?.start_date ?? null;
+    const lastGameDate = lastGameDateByTopdeckId.get(topdeckId);
+    if (playedAt && lastGameDate && playedAt > lastGameDate) continue;
+
+    if (
+      playedAt &&
+      (!existing.latest_tournament_date || playedAt > existing.latest_tournament_date)
+    ) {
+      existing.latest_tournament_name = tournament?.name ?? null;
+      existing.latest_tournament_date = playedAt;
+      existing.latest_tournament_topdeck_tid = tournament?.topdeck_tid ?? null;
+    }
+  }
+
+  const referenceDate = new Date();
+  const usageRows = await getCommanderUsageRows(topdeckIds, "1900-01-01");
+  const forecastRows = selectCommanderForecastRows(topdeckIds, usageRows, referenceDate);
+  const profiles = buildProfiles(topdeckIds, forecastRows, 1, referenceDate.toISOString());
+  for (const profile of profiles.players) {
+    const commander = profile.commanders[0]?.commander ?? null;
+    if (isKnownCommander(commander)) {
+      profileActiveCommanderByTopdeckId.set(profile.topdeckId, commander);
+      const existing = latestByPlayer.get(profile.topdeckId);
+      if (existing) {
+        existing.active_commander_decklist_url =
+          profile.commanders[0]?.latestTopdeckDecklistUrl ||
+          profile.commanders[0]?.latestDecklistUrl ||
+          null;
+      }
+    }
+  }
+
+  for (const row of profileRows) {
+    if (row.topdeck_id && isKnownCommander(row.active_commander)) {
+      profileActiveCommanderByTopdeckId.set(row.topdeck_id, row.active_commander ?? null);
+    }
+  }
+
+  for (const [topdeckId, activeCommander] of profileActiveCommanderByTopdeckId.entries()) {
+    const existing = latestByPlayer.get(topdeckId);
+    if (!existing) continue;
+    existing.active_commander = activeCommander;
+  }
+
   return latestByPlayer;
 }
 
@@ -567,8 +701,8 @@ export default async function RegionalEloPage({
             playerSearch
           )
         : await fetchLegacyLeaderboardRows(
-            activeRegionType === "state" ? "state" : "global",
-            activeRegionType === "state" ? activeRegionKey : GLOBAL_REGION_KEY,
+            activeRegionType,
+            activeRegionType === "global" ? GLOBAL_REGION_KEY : activeRegionKey,
             requestedPage,
             LEADERBOARD_PAGE_SIZE,
             playerSearch
@@ -577,7 +711,7 @@ export default async function RegionalEloPage({
 
   const totalPages = Math.max(Math.ceil(leaderboardPage.totalCount / LEADERBOARD_PAGE_SIZE), 1);
   const currentPage = Math.min(requestedPage, totalPages);
-  const leaderboard =
+  const leaderboardRows =
     currentPage === requestedPage
       ? leaderboardPage.rows
       : activeRegionKey
@@ -591,19 +725,17 @@ export default async function RegionalEloPage({
                   playerSearch
                 )
               : await fetchLegacyLeaderboardRows(
-                  activeRegionType === "state" ? "state" : "global",
-                  activeRegionType === "state" ? activeRegionKey : GLOBAL_REGION_KEY,
+                  activeRegionType,
+                  activeRegionType === "global" ? GLOBAL_REGION_KEY : activeRegionKey,
                   currentPage,
                   LEADERBOARD_PAGE_SIZE,
                   playerSearch
                 )
           ).rows
         : [];
+  const leaderboard = leaderboardRows;
 
-  const topdeckIds = leaderboard
-    .map((row) => row.topdeck_id)
-    .filter((value): value is string => Boolean(value));
-  const latestByPlayer = await fetchLatestCommanders(topdeckIds);
+  const latestByPlayer = await fetchLatestCommanders(leaderboard);
   const latestByPlayerRecord = Object.fromEntries(latestByPlayer.entries());
 
   const updatedAt =
