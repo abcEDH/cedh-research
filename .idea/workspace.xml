@@ -6,8 +6,11 @@
   <component name="ChangeListManager">
     <list default="true" id="5578a0ab-1e26-4f4d-b242-0ac96e28ea2f" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/apps/web/src/app/regional-elo/page.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/apps/web/src/app/regional-elo/page.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/web/src/app/regional-elo/player/[topdeckId]/player-stats.ts" beforeDir="false" afterPath="$PROJECT_DIR$/apps/web/src/app/regional-elo/player/[topdeckId]/player-stats.ts" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/docs/backfill-followups.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/backfill-followups.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/player-matchup-algorithm.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/player-matchup-algorithm.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/pr-81-summary.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/pr-81-summary.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/backend/src/backfill_moxfield_commanders.py" beforeDir="false" afterPath="$PROJECT_DIR$/packages/backend/src/backfill_moxfield_commanders.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -70,7 +73,7 @@
       <option name="presentableId" value="Default" />
       <updated>1774217452916</updated>
       <workItem from="1774217454430" duration="7460000" />
-      <workItem from="1775738053559" duration="3088000" />
+      <workItem from="1775738053559" duration="7369000" />
     </task>
     <servers />
   </component>
