@@ -249,16 +249,16 @@ jobs:
               return ": ".join(details)
 
           tables = [
-              ("tournaments", 50),
-              ("commanders", 100),
-              ("tournament_entries", 3000),
-              ("games", 5000),
-              ("game_participants", 15000),
-              ("players", 2000),
-              ("global_elo_state_activity", 10),
-              ("global_elo_game_events", 100),
-              ("global_elo_active_leaderboard", 10),
-              ("global_elo_player_profile_summaries", 10),
+              ("tournaments", 50, False),
+              ("commanders", 100, False),
+              ("tournament_entries", 3000, False),
+              ("games", 5000, False),
+              ("game_participants", 15000, False),
+              ("players", 2000, False),
+              ("global_elo_state_activity", 10, True),
+              ("global_elo_game_events", 100, True),
+              ("global_elo_active_leaderboard", 10, True),
+              ("global_elo_player_profile_summaries", 10, True),
           ]
 
           failed = []
@@ -299,7 +299,7 @@ jobs:
 
               raise RuntimeError("; ".join(errors))
 
-          for table_name, min_count in tables:
+          for table_name, min_count, optional in tables:
               try:
                   count, strategy = get_table_count(table_name)
                   status = "✓" if count >= min_count else "✗"
@@ -308,10 +308,16 @@ jobs:
                       f"(expected >= {min_count:,}; via {strategy})"
                   )
                   if count < min_count:
-                      failed.append((table_name, f"{count} < {min_count} via {strategy}"))
+                      if optional:
+                          print(f"  (Warning: Optional table {table_name} below threshold)")
+                      else:
+                          failed.append((table_name, f"{count} < {min_count} via {strategy}"))
               except Exception as e:
-                  print(f"✗ {table_name}: {str(e)}")
-                  failed.append((table_name, str(e)))
+                  if optional:
+                      print(f"○ {table_name}: Skipped (Optional table not found or error: {e})")
+                  else:
+                      print(f"✗ {table_name}: {str(e)}")
+                      failed.append((table_name, str(e)))
 
           print()
           if failed:

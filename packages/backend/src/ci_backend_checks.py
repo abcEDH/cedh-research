@@ -43,13 +43,17 @@ RPC_SPECS: list[tuple[str, dict[str, Any], bool]] = [
     ("get_commanders_for_card", {"p_card_name": "Sol Ring"}, True),
 ]
 
-TABLE_SPECS: list[tuple[str, int]] = [
-    ("tournaments", 50),
-    ("commanders", 100),
-    ("tournament_entries", 3000),
-    ("games", 5000),
-    ("game_participants", 15000),
-    ("players", 2000),
+TABLE_SPECS: list[tuple[str, int, bool]] = [
+    ("tournaments", 50, False),
+    ("commanders", 100, False),
+    ("tournament_entries", 3000, False),
+    ("games", 5000, False),
+    ("game_participants", 15000, False),
+    ("players", 2000, False),
+    ("global_elo_state_activity", 10, True),
+    ("global_elo_game_events", 100, True),
+    ("global_elo_active_leaderboard", 10, True),
+    ("global_elo_player_profile_summaries", 10, True),
 ]
 
 
@@ -200,7 +204,7 @@ def validate_data_integrity() -> None:
     print("DATA INTEGRITY CHECK")
     print("=" * 60)
 
-    for table_name, min_count in TABLE_SPECS:
+    for table_name, min_count, optional in TABLE_SPECS:
         try:
             count, strategy = get_table_count(supabase_url, headers, table_name)
             status = "✓" if count >= min_count else "✗"
@@ -209,10 +213,16 @@ def validate_data_integrity() -> None:
                 f"(expected >= {min_count:,}; via {strategy})"
             )
             if count < min_count:
-                failed.append((table_name, f"{count} < {min_count} via {strategy}"))
+                if optional:
+                    print(f"  (Warning: Optional table {table_name} below threshold)")
+                else:
+                    failed.append((table_name, f"{count} < {min_count} via {strategy}"))
         except Exception as exc:  # pragma: no cover - CI diagnostic path
-            print(f"✗ {table_name}: {exc}")
-            failed.append((table_name, str(exc)))
+            if optional:
+                print(f"○ {table_name}: Skipped (Optional table not found or error: {exc})")
+            else:
+                print(f"✗ {table_name}: {exc}")
+                failed.append((table_name, str(exc)))
 
     print()
     if failed:

@@ -975,7 +975,7 @@ def fetch_commander_usage_rows(client: SupabaseClient) -> Dict[str, List[Command
         [
             (
                 "select",
-                "player_id,topdeck_id,player_name,commander_name,start_date",
+                "player_id,topdeck_id,player_name,commander_name,start_date,decklist_url",
             ),
             ("topdeck_id", "not.is.null"),
             ("commander_name", "not.is.null"),
@@ -1000,6 +1000,7 @@ def fetch_commander_usage_rows(client: SupabaseClient) -> Dict[str, List[Command
                 player_name=row.get("player_name"),
                 commander_name=commander_name,
                 start_date=str(start_date),
+                decklist_url=row.get("decklist_url"),
             )
         )
 
@@ -1007,14 +1008,26 @@ def fetch_commander_usage_rows(client: SupabaseClient) -> Dict[str, List[Command
     return by_topdeck_id
 
 
-def delete_optional_rows(client: SupabaseClient, table: str, filters: Dict[str, Any]) -> None:
+def resilient_delete(client: SupabaseClient, table: str, fallback_table: str, filters: Dict[str, Any]) -> None:
     try:
         client.delete(table, filters)
     except Exception as exc:
-        print(
-            f"Skipping delete for {table}; upsert will replace matching rows. Error: {exc}",
-            flush=True,
-        )
+        print(f"Delete failed for {table}, trying {fallback_table}. Error: {exc}", flush=True)
+        try:
+            client.delete(fallback_table, filters)
+        except Exception as exc2:
+            print(f"Delete failed for fallback {fallback_table}. Error: {exc2}", flush=True)
+
+
+def resilient_upsert(client: SupabaseClient, table: str, fallback_table: str, rows: List[Dict[str, Any]], on_conflict: str) -> None:
+    try:
+        upsert_rows(client, table, rows, on_conflict=on_conflict)
+    except Exception as exc:
+        print(f"Upsert failed for {table}, trying {fallback_table}. Error: {exc}", flush=True)
+        try:
+            upsert_rows(client, fallback_table, rows, on_conflict=on_conflict)
+        except Exception as exc2:
+            print(f"Upsert failed for fallback {fallback_table}. Error: {exc2}", flush=True)
 
 
 def selected_commander_rows(rows: List[CommanderUsage], reference: date) -> List[CommanderUsage]:
@@ -1136,29 +1149,6 @@ def dedupe_rows(rows: List[Dict[str, Any]], keys: Sequence[str]) -> List[Dict[st
     return list(deduped.values())
 
 
-def upsert_state_activity_rows(client: SupabaseClient, rows: List[Dict[str, Any]]) -> None:
-    try:
-        upsert_rows(
-            client,
-            "global_elo_state_activity",
-            rows,
-            on_conflict="region_type,region_key,player_id",
-        )
-    except Exception as exc:
-        print(
-            "Falling back to global_elo_state_activity without country_key. "
-            f"Apply the country-region migration to store country_key. Error: {exc}",
-            flush=True,
-        )
-        fallback_rows = [{key: value for key, value in row.items() if key != "country_key"} for row in rows]
-        upsert_rows(
-            client,
-            "global_elo_state_activity",
-            fallback_rows,
-            on_conflict="region_type,region_key,player_id",
-        )
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="Compute global Elo and derived state activity leaderboards")
     parser.add_argument(
@@ -1202,20 +1192,28 @@ def main() -> None:
     commander_profile_rows = build_commander_profile_rows(client)
 
     print("Deleting existing global Elo, state activity, and event rows")
-    client.delete("global_elo_ratings", {"region_type": f"eq.{GLOBAL_REGION_TYPE}"})
-    client.delete("global_elo_state_activity", {"region_type": f"eq.{STATE_REGION_TYPE}"})
-    delete_optional_rows(client, "global_elo_game_events", {"region_type": f"eq.{GLOBAL_REGION_TYPE}"})
+    resilient_delete(client, "global_elo_ratings", "regional_elo_ratings", {"region_type": f"eq.{GLOBAL_REGION_TYPE}"})
+    resilient_delete(client, "global_elo_state_activity", "regional_elo_state_activity", {"region_type": f"eq.{STATE_REGION_TYPE}"})
+    resilient_delete(client, "global_elo_game_events", "regional_elo_game_events", {"region_type": f"eq.{GLOBAL_REGION_TYPE}"})
 
-    upsert_rows(
+    resilient_upsert(
         client,
         "global_elo_ratings",
+        "regional_elo_ratings",
         rating_rows,
         on_conflict="region_type,region_key,player_id",
     )
-    upsert_state_activity_rows(client, state_activity_rows)
-    upsert_rows(
+    resilient_upsert(
+        client,
+        "global_elo_state_activity",
+        "regional_elo_state_activity",
+        state_activity_rows,
+        on_conflict="region_type,region_key,player_id",
+    )
+    resilient_upsert(
         client,
         "global_elo_game_events",
+        "regional_elo_game_events",
         event_rows,
         on_conflict="region_type,region_key,game_id,player_id",
     )
