@@ -70,7 +70,6 @@ export type PlayerLogSummary = {
 };
 
 const MATCHUP_PRIOR_GAMES = 20;
-const MATCHUP_DELTA_THRESHOLD = 0.08;
 const DRAW_SCORE = 0.2;
 
 function scoreRate(wins: number, draws: number, games: number) {
@@ -121,12 +120,6 @@ function selectBestAndWorstMatchups(
 
   const best =
     [...pool]
-      .filter((insight) => insight.delta >= MATCHUP_DELTA_THRESHOLD)
-      .sort((a, b) => {
-        if (b.delta !== a.delta) return b.delta - a.delta;
-        return b.games - a.games;
-      })[0] ??
-    [...pool]
       .sort((a, b) => {
         if (b.delta !== a.delta) return b.delta - a.delta;
         return b.games - a.games;
@@ -134,12 +127,6 @@ function selectBestAndWorstMatchups(
     null;
 
   const worst =
-    [...pool]
-      .filter((insight) => insight.delta <= -MATCHUP_DELTA_THRESHOLD)
-      .sort((a, b) => {
-        if (a.delta !== b.delta) return a.delta - b.delta;
-        return b.games - a.games;
-      })[0] ??
     [...pool]
       .sort((a, b) => {
         if (a.delta !== b.delta) return a.delta - b.delta;

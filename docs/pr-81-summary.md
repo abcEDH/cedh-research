@@ -21,23 +21,31 @@
 
 ## Current Backfill Status
 
-- Active job:
-  - `packages/backend/src/backfill_moxfield_commanders.py`
-  - PID `60905`
-  - target file: `logs/moxfield_entry_ids_2023-12-08_to_2025-10-05.txt`
-  - attempt cache: `logs/backfill_moxfield_commanders_targeted_run_20260408.csv`
-- Target rows: `55,361`
-- The attempt cache is currently malformed by embedded newlines and NUL bytes in some `detail` values, so cache-derived totals are now lower bounds rather than exact full-run counts.
-- There is still one active main backfill process writing the cache; follow-up gap/retry passes should not run until that process stops.
-- Latest checked lower-bound cache counts:
-  - `resolved`: `1,443`
-  - `no_commander_found`: `251`
-  - `moxfield_redirect`: `217`
-  - `bad_moxfield_url`: `126`
-  - `supabase_update_failed`: `2`
-  - `topdeck_timeout`: `1`
-- Latest observed pace from recent cache writes:
-  - about `1,600` logged rows in the last `10` minutes
+- The original main targeted run is no longer the current source of truth for progress tracking.
+- Follow-up work moved to DB-derived residual manifests so progress is measured against rows that still store a Moxfield `decklist_url` in the target date window.
+- The second residual run was restarted with a seeded non-retry cache so previously accepted permanent outcomes were skipped instead of being reprocessed:
+  - target file: `logs/moxfield_entry_ids_remaining_in_range_postrun.txt`
+  - seeded attempt cache: `logs/backfill_moxfield_commanders_residual_in_range_postrun_seeded_nonretry_20260409_055003.csv`
+  - seeded skip set: `43,360` rows
+  - resumed work queue after seeded skips: `27,669` rows
+- That seeded rerun has now completed.
+- Final seeded rerun counters:
+  - `scanned`: `19,105`
+  - `updated`: `4,955`
+  - `unresolved`: `6,033`
+  - `bad_url_skipped`: `1,170`
+  - `decklist_updated`: `16,153`
+  - `topdeck_requests`: `17,935`
+  - `moxfield_requests`: `0`
+- Final seeded cache totals:
+  - `resolved`: `42,844`
+  - `no_commander_found`: `8,188`
+  - `moxfield_redirect`: `6,225`
+  - `bad_moxfield_url`: `5,179`
+  - `topdeck_timeout`: `18`
+  - `supabase_update_failed`: `7`
+  - `topdeck_connection_error`: `4`
+- Next step remains a fresh DB-side reconciliation to measure the real remaining residual set after this completed seeded pass.
 
 ## Frontend Leaderboard
 
@@ -89,7 +97,8 @@
   - prior games: `20`
   - adjusted score uses Bayesian-style shrinkage toward the player baseline
   - no minimum-games gate for selecting a best/worst matchup
-- Updated the UI to show a best guess whenever matchup data exists, instead of suppressing results for small samples.
+- best matchup is the highest adjusted-score delta
+- worst matchup is the lowest adjusted-score delta
 
 ## Player Profile Data Fixes
 
