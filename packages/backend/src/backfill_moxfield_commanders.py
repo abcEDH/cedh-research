@@ -7,6 +7,7 @@ import argparse
 import collections
 import csv
 import html
+import io
 import os
 import re
 import time
@@ -112,13 +113,24 @@ def load_attempt_cache(cache_path: Path) -> dict[str, dict[str, str]]:
     if not cache_path.exists():
         return {}
 
-    with cache_path.open(newline="") as handle:
-        reader = csv.DictReader(handle)
-        return {
-            row["entry_id"]: row
-            for row in reader
-            if row.get("entry_id")
-        }
+    raw_text = cache_path.read_text(errors="replace").replace("\x00", "")
+    reader = csv.DictReader(io.StringIO(raw_text))
+    return {
+        row["entry_id"]: row
+        for row in reader
+        if row.get("entry_id")
+    }
+
+
+ENTRY_ID_LINE_RE = re.compile(
+    r"(?m)^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}),"
+)
+
+
+def load_attempted_entry_ids(cache_path: Path) -> set[str]:
+    if not cache_path.exists():
+        return set()
+    return set(ENTRY_ID_LINE_RE.findall(cache_path.read_text(errors="replace")))
 
 
 def write_attempt_cache(cache_path: Path, attempt_cache: dict[str, dict[str, str]]) -> None:
@@ -259,6 +271,16 @@ def load_entry_ids(entry_ids_path: Path) -> list[str]:
     if not entry_ids_path.exists():
         raise SystemExit(f"Error: entry IDs file not found: {entry_ids_path}")
     return [line.strip() for line in entry_ids_path.read_text().splitlines() if line.strip()]
+
+
+def find_resume_index_for_entry_ids(
+    entry_ids: list[str],
+    attempt_cache: dict[str, dict[str, str]],
+) -> int:
+    for index, entry_id in enumerate(entry_ids):
+        if entry_id not in attempt_cache:
+            return index
+    return len(entry_ids)
 
 
 def record_attempt(
@@ -704,12 +726,21 @@ def main() -> None:
     topdeck_requests = 0
     offset = args.offset
     attempted_unresolved_ids: set[str] = set()
+    attempted_entry_ids = set(attempt_cache)
+    attempted_entry_ids.update(load_attempted_entry_ids(args.attempt_cache))
     retry_entry_ids = (
-        load_entry_ids(args.entry_ids_file)
-        if args.entry_ids_file
-        else cached_ids_for_statuses(attempt_cache, retry_statuses) if retry_statuses else []
+        cached_ids_for_statuses(attempt_cache, retry_statuses)
+        if retry_statuses
+        else load_entry_ids(args.entry_ids_file) if args.entry_ids_file else []
     )
     retry_index = 0
+    if args.entry_ids_file and retry_statuses is None:
+        total_targets = len(retry_entry_ids)
+        retry_entry_ids = [entry_id for entry_id in retry_entry_ids if entry_id not in attempted_entry_ids]
+        print(
+            f"Resuming entry ID list with {len(retry_entry_ids)} remaining of {total_targets}",
+            flush=True,
+        )
 
     while True:
         if args.entry_ids_file:

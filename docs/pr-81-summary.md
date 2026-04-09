@@ -8,34 +8,36 @@
   - rewrite `decklist_url` to a TopDeck deck page when available
   - update `commander_id` only when the current commander is missing or placeholder
   - enforce the passed date window locally instead of trusting the unstable relation filter
+- Hardened the same script further so:
+  - `--entry-ids-file` resume can skip already-attempted IDs instead of rescanning from index `0`
+  - retry mode uses cached retry IDs directly instead of conflicting with the normal resume path
+  - attempt-cache loading strips NUL bytes before CSV parsing
 - Added a temporary dedicated URL rewrite script during iteration, then consolidated the real workflow back into the commander backfill.
 - Generated the in-range target manifest at `logs/moxfield_entry_ids_2023-12-08_to_2025-10-05.txt`.
-- Documented the post-run retry plan for transient failures in [backfill-followups.md](/Users/alexanderlien/Documents/GitHub/cedh-research/docs/backfill-followups.md).
+- Documented the post-run follow-up plan in [backfill-followups.md](/Users/alexanderlien/Documents/GitHub/cedh-research/docs/backfill-followups.md), including:
+  - a gap pass for target IDs missing from the attempt cache
+  - a transient retry pass for `topdeck_timeout`, `topdeck_connection_error`, `supabase_update_failed`, and `topdeck_http_error`
+  - a final reconciliation check to confirm all target IDs are logged
 
 ## Current Backfill Status
 
 - Active job:
   - `packages/backend/src/backfill_moxfield_commanders.py`
-  - PID `46196`
+  - PID `60905`
   - target file: `logs/moxfield_entry_ids_2023-12-08_to_2025-10-05.txt`
   - attempt cache: `logs/backfill_moxfield_commanders_targeted_run_20260408.csv`
-- Latest checked status:
-  - target rows: `55,361`
-  - attempted: `38,207`
-  - remaining: `17,154`
-  - completed: `69.0%`
-- Breakdown at last check:
-  - `resolved`: `27,805`
-  - `no_commander_found`: `4,247`
-  - `moxfield_redirect`: `3,993`
-  - `bad_moxfield_url`: `2,107`
-  - `topdeck_connection_error`: `27`
-  - `topdeck_timeout`: `14`
-  - `topdeck_http_error`: `4`
-  - `supabase_update_failed`: `10`
-- Recent pace at last check:
-  - `614` rows / 10 minutes
-  - about `3,684` rows / hour
+- Target rows: `55,361`
+- The attempt cache is currently malformed by embedded newlines and NUL bytes in some `detail` values, so cache-derived totals are now lower bounds rather than exact full-run counts.
+- There is still one active main backfill process writing the cache; follow-up gap/retry passes should not run until that process stops.
+- Latest checked lower-bound cache counts:
+  - `resolved`: `1,443`
+  - `no_commander_found`: `251`
+  - `moxfield_redirect`: `217`
+  - `bad_moxfield_url`: `126`
+  - `supabase_update_failed`: `2`
+  - `topdeck_timeout`: `1`
+- Latest observed pace from recent cache writes:
+  - about `1,600` logged rows in the last `10` minutes
 
 ## Frontend Leaderboard
 
@@ -114,3 +116,4 @@
   - `npm run docs:hygiene`
   - `npm --workspace apps/web run test:e2e`
 - Updated [pr-48-summary.md](/Users/alexanderlien/Documents/GitHub/cedh-research/docs/pr-48-summary.md) to reflect those fixes.
+- Confirmed the linked failing GitHub Actions `Playwright E2E Tests` job was caused by the same nullable latest-tournament build error and that the fix cleared local `next build` and E2E verification.
