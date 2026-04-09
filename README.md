@@ -8,7 +8,7 @@ Unified backend ingestion + frontend dashboard for cEDH analytics.
 
 ## Requirements
 - Node.js 20+
-- Python 3.12+ (3.14 recommended)
+- Python 3.12+
 
 ## Environment
 Use separate env files for frontend and backend. Do not put server-only keys in frontend env files.
@@ -28,6 +28,22 @@ Safe templates live in:
 - `apps/web/.env.example`
 - `packages/backend/.env.example`
 
+## Quick Start
+1. Install prerequisites: Node.js 20+ and Python 3.12+.
+2. Install JavaScript dependencies from repo root:
+   - `npm install`
+3. Copy environment templates and fill in required values:
+   - `cp .env.example .env`
+   - `cp apps/web/.env.example apps/web/.env.local`
+   - `cp packages/backend/.env.example packages/backend/.env`
+4. Start the web app:
+   - `npm run web:dev`
+5. (Optional) Install backend Python dependencies:
+   - `npm run backend:install`
+6. Validate docs and repo hygiene before opening or reviewing a PR:
+   - `npm run docs:check`
+   - `npm run docs:hygiene`
+
 ## Frontend (apps/web)
 - Dev: `npm run web:dev`
 - Build: `npm run web:build`
@@ -39,13 +55,10 @@ Safe templates live in:
 - Migrations live in `packages/backend/supabase/migrations/`
 
 ## CI
-- Frontend workflows run on `apps/web/**` changes
-- Backend workflows run on `packages/backend/**` changes
-- `ci.yml` provides a tight regression loop for Global Elo changes:
-  - frontend regression tests
-  - canonical global aggregate proof
-  - uploaded evidence artifact for human review
-- Release ownership: semantic release runs from `.github/workflows/frontend.yml`; production aliasing runs from `.github/workflows/cd.yml`; `.github/workflows/release.yml` remains a manual fallback only
+- Frontend workflows run from `.github/workflows/frontend.yml` on `apps/web/**` changes.
+- Backend workflows run from `.github/workflows/ci-backend.yml` on `packages/backend/**` changes.
+- Docs checks run from `.github/workflows/docs.yml` for markdown and repo-hygiene validation.
+- Release ownership: semantic release runs from `.github/workflows/frontend.yml`; production aliasing runs from `.github/workflows/cd.yml`; `.github/workflows/release.yml` remains a manual fallback only.
 
 ## QA
 - Release lessons: `docs/release-lessons-2026-04-05-regional-elo.md`
