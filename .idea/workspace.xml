@@ -4,14 +4,18 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="5578a0ab-1e26-4f4d-b242-0ac96e28ea2f" name="Changes" comment="" />
+    <list default="true" id="5578a0ab-1e26-4f4d-b242-0ac96e28ea2f" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/web/src/app/regional-elo/page.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/apps/web/src/app/regional-elo/page.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/backfill-followups.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/backfill-followups.md" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
   <component name="EmbeddingIndexingInfo">
-    <option name="cachedIndexableFilesCount" value="167" />
+    <option name="cachedIndexableFilesCount" value="382" />
   </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
@@ -20,10 +24,10 @@
     <commands />
     <urls />
   </component>
-  <component name="ProjectColorInfo"><![CDATA[{
-  "associatedIndex": 7,
-  "fromUser": false
-}]]></component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 7,
+  &quot;fromUser&quot;: false
+}</component>
   <component name="ProjectId" id="3BJqJm1kqgKvTUcv9lNMREZ39k6" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
@@ -38,7 +42,7 @@
     "RunOnceActivity.git.unshallow": "true",
     "RunOnceActivity.typescript.service.memoryLimit.init": "true",
     "com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1": "true",
-    "git-widget-placeholder": "feat/tournament-topdeck-input",
+    "git-widget-placeholder": "elo",
     "javascript.preferred.runtime.type.id": "node",
     "junie.onboarding.icon.badge.shown": "true",
     "node.js.detected.package.eslint": "true",
@@ -66,6 +70,7 @@
       <option name="presentableId" value="Default" />
       <updated>1774217452916</updated>
       <workItem from="1774217454430" duration="7460000" />
+      <workItem from="1775738053559" duration="3088000" />
     </task>
     <servers />
   </component>
