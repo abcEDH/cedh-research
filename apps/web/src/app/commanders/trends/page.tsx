@@ -9,6 +9,7 @@ import TrendMetricCharts, {
   TrendMetricPoint,
   TrendMetricSeries,
 } from "@/components/commanders/trend-metric-charts";
+import type { CommanderPeriodSnapshot } from "@/components/commanders/commander-trends-table";
 
 export const dynamic = "force-dynamic";
 
@@ -129,7 +130,7 @@ async function getCommanderPeriodSnapshots(commanderIds: string[], sizeFilter: S
     monthlyLatest.set(row.commander_id, row);
   });
 
-  const snapshots: Record<string, any> = {};
+  const snapshots: Record<string, CommanderPeriodSnapshot> = {};
   commanderIds.forEach((commanderId) => {
     const week = weeklyLatest.get(commanderId);
     const month = monthlyLatest.get(commanderId);
