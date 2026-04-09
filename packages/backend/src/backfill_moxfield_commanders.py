@@ -88,6 +88,8 @@ def canonicalize_moxfield_url(decklist_url: str) -> str:
 
 
 def classify_bad_moxfield_url(decklist_url: str) -> str | None:
+    if "~~Commanders~~" in decklist_url:
+        return None
     canonical = canonicalize_moxfield_url(decklist_url).lower()
     if "moxfield.com" not in canonical:
         return "bad_moxfield_url"
@@ -749,7 +751,7 @@ def main() -> None:
                 client,
                 entry_ids=batch_ids,
                 include_known=args.include_known or process_all_moxfield_rows,
-                require_topdeck_ids=process_all_moxfield_rows,
+                require_topdeck_ids=False,
             )
             retry_index += len(batch_ids)
         elif retry_statuses:
@@ -758,7 +760,7 @@ def main() -> None:
                 client,
                 entry_ids=batch_ids,
                 include_known=args.include_known or process_all_moxfield_rows,
-                require_topdeck_ids=process_all_moxfield_rows,
+                require_topdeck_ids=False,
             )
             retry_index += len(batch_ids)
         else:
@@ -865,7 +867,7 @@ def main() -> None:
                 tournament_topdeck_id = relation_value(row, "tournaments").get("topdeck_tid")
                 if player_topdeck_id and tournament_topdeck_id:
                     try:
-                        commanders, topdeck_deck_url = fetch_topdeck_deck_page_details(
+                        topdeck_commanders, topdeck_deck_url = fetch_topdeck_deck_page_details(
                             tournament_topdeck_id,
                             player_topdeck_id,
                             http,
@@ -936,8 +938,10 @@ def main() -> None:
                         topdeck_requests += 1
                         continue
                     topdeck_requests += 1
-                    if needs_commander_update:
-                        commander_name = normalize_commander_name(commanders)
+                    if topdeck_commanders:
+                        commanders = topdeck_commanders
+                        if needs_commander_update:
+                            commander_name = normalize_commander_name(commanders)
                     if topdeck_deck_url and decklist != topdeck_deck_url:
                         pending_decklist_updates.append((row["id"], topdeck_deck_url))
                 else:

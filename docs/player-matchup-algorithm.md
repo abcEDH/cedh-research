@@ -66,26 +66,14 @@ delta = adjusted_score - baseline_score
 
 ## Selection Rules
 
-Selection threshold:
-
-- significance threshold: `8` percentage points (`0.08`)
-
-Primary selection:
-
 - best matchup:
-  - highest positive delta at or above `+0.08`
+  - highest delta
   - tie-breaker: more games
 - worst matchup:
-  - lowest negative delta at or below `-0.08`
+  - lowest delta
   - tie-breaker: more games
 
-Fallback behavior:
-
-- if no matchup clears the threshold but matchup data exists, the UI still shows the best guess:
-  - best = highest delta
-  - worst = lowest delta
-  - tie-breaker: more games
-- if there are no matchup records at all, the profile shows no matchup insight
+If there are no matchup records at all, the profile shows no matchup insight.
 
 There is currently no minimum-games requirement for a matchup to be selected.
 
