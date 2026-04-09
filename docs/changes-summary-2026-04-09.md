@@ -48,7 +48,8 @@
   - `Active Commander` links to the most recent decklist for that commander when available
 - Updated leaderboard data assembly so:
   - active commander uses the same source-of-truth logic as the profile page
-  - latest tournament is chosen from the latest playable tournament context instead of unstable query ordering
+  - latest tournament is now derived from each player's latest actual game event instead of the old tournament-entry proxy
+  - tournament names and TopDeck bracket links are recovered from `tournaments` after selecting the latest played event
 - Updated country leaderboard behavior so country-wide `ALL states` views only include players whose inferred home country matches the selected country.
 - Fixed the legacy country-view fallback so it no longer silently falls back to the global leaderboard and no longer shows players like Alexander Bye in the wrong country view.
 - Removed the temporary human-name selection heuristic after confirming the current schema does not store historical per-event player names.
@@ -65,10 +66,12 @@
   - `Country Rank` shows the rank prominently with country as secondary text
   - `State Rank` shows the rank prominently with state as secondary text
   - `TopDeck` was renamed to `TopDeck Rank`
+- Renamed the profile regions table from `State Assignment` to `Played Regions` and renamed its `Region` column to `State`.
 - Removed extra profile-page copy including:
   - `TopDeck Player Profile`
   - the old global/state-slice explainer under the player name
   - the old TopDeck/home-region explainer under the stat cards
+  - the old helper blurbs under `Played Commanders` and `Played Regions`
 
 ## Matchup Algorithm
 
