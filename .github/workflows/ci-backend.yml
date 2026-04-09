@@ -53,9 +53,6 @@ jobs:
           python-version: "3.12"
           enable-cache: true
 
-      - name: Create virtual environment
-        run: uv venv --python 3.12 .venv
-
       - name: Install dependencies
         run: uv pip install --python .venv/bin/python -r packages/backend/requirements.txt
 
@@ -83,9 +80,6 @@ jobs:
         with:
           python-version: "3.12"
           enable-cache: true
-
-      - name: Create virtual environment
-        run: uv venv --python 3.12 .venv
 
       - name: Install dependencies
         run: uv pip install --python .venv/bin/python -r packages/backend/requirements.txt

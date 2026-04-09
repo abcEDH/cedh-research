@@ -35,6 +35,20 @@ type WeeklyTrendRow = {
   week_key?: string | null;
   week_start_date?: string | null;
   entries: number;
+  wins?: number | null;
+  losses?: number | null;
+  draws?: number | null;
+  total_players?: number | null;
+};
+
+type MonthlyTrendRow = {
+  commander_id: string;
+  month_key?: string | null;
+  entries: number;
+  wins?: number | null;
+  losses?: number | null;
+  draws?: number | null;
+  total_players?: number | null;
 };
 
 function normalizeDateKey(value: string | null | undefined) {
@@ -71,8 +85,8 @@ async function getCommanderPeriodSnapshots(commanderIds: string[]) {
     .in("commander_id", commanderIds)
     .order("month_key", { ascending: true });
 
-  let weeklyData: any[] = weeklyPrimary.data ?? [];
-  let monthlyData: any[] = monthlyPrimary.data ?? [];
+  let weeklyData: WeeklyTrendRow[] = weeklyPrimary.data ?? [];
+  let monthlyData: MonthlyTrendRow[] = monthlyPrimary.data ?? [];
 
   if (weeklyPrimary.error) {
     console.error("Error fetching weekly trends (with players):", weeklyPrimary.error);
@@ -101,24 +115,8 @@ async function getCommanderPeriodSnapshots(commanderIds: string[]) {
     console.error("Error fetching monthly trends:", monthlyPrimary.error);
   }
 
-  const weeklyRows = (weeklyData || []) as {
-    commander_id: string;
-    week_start_date: string;
-    entries: number;
-    wins: number;
-    losses: number;
-    draws: number;
-    total_players?: number | null;
-  }[];
-  const monthlyRows = (monthlyData || []) as {
-    commander_id: string;
-    month_key: string;
-    entries: number;
-    wins: number;
-    losses: number;
-    draws: number;
-    total_players?: number | null;
-  }[];
+  const weeklyRows = weeklyData;
+  const monthlyRows = monthlyData;
 
   const weeklyLatest = new Map<string, typeof weeklyRows[number]>();
   weeklyRows.forEach((row) => {
