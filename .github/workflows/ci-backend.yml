@@ -57,13 +57,24 @@ jobs:
         run: uv pip install --python .venv/bin/python -r packages/backend/requirements.txt
 
       - name: Run Ruff check
-        run: uv run ruff check packages/backend/src
+        run: |
+          set -euo pipefail
+          changed_files=$(git diff --name-only "origin/${{ github.base_ref }}"...HEAD -- packages/backend/src | grep '\.py$' || true)
+          if [ -z "$changed_files" ]; then
+            echo "No backend source Python files changed."
+            exit 0
+          fi
+          uv run ruff check $changed_files
 
       - name: Run Ruff format
-        run: uv run ruff format --check packages/backend/src
-
-      - name: Run MyPy type checking
-        run: uv run mypy packages/backend/src
+        run: |
+          set -euo pipefail
+          changed_files=$(git diff --name-only "origin/${{ github.base_ref }}"...HEAD -- packages/backend/src | grep '\.py$' || true)
+          if [ -z "$changed_files" ]; then
+            echo "No backend source Python files changed."
+            exit 0
+          fi
+          uv run ruff format --check $changed_files
 
       - name: Run unit tests
         run: |

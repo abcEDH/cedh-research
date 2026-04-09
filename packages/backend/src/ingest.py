@@ -19,9 +19,9 @@ import os
 import re
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import urlparse
 
 import requests
@@ -31,6 +31,7 @@ from dateutil import parser as date_parser
 try:
     import psycopg2
     from psycopg2.extras import execute_values
+
     PSYCOPG2_AVAILABLE = True
 except ImportError:
     PSYCOPG2_AVAILABLE = False
@@ -137,9 +138,13 @@ class TopDeckClient:
                     raise requests.exceptions.HTTPError(f"{response.status_code} Server Error", response=response)
                 response.raise_for_status()
                 return response
-            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout, requests.exceptions.HTTPError) as e:
+            except (
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+                requests.exceptions.HTTPError,
+            ) as e:
                 if attempt < max_retries - 1:
-                    wait_time = 2 ** attempt
+                    wait_time = 2**attempt
                     logger.warning(f"TopDeck request error, retrying in {wait_time}s... ({attempt + 1}/{max_retries})")
                     time.sleep(wait_time)
                 else:
@@ -249,7 +254,7 @@ class SupabaseClient:
 
         headers = self.headers.copy()
         if on_conflict:
-            headers["Prefer"] = f"resolution=merge-duplicates,return=representation"
+            headers["Prefer"] = "resolution=merge-duplicates,return=representation"
 
         params = {}
         if on_conflict:
@@ -262,9 +267,13 @@ class SupabaseClient:
                     logger.error(f"Supabase error: {response.text}")
                     response.raise_for_status()
                 return response.json()
-            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout, requests.exceptions.ReadTimeout) as e:
+            except (
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+                requests.exceptions.ReadTimeout,
+            ) as e:
                 if attempt < max_retries - 1:
-                    wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                    wait_time = 2**attempt  # Exponential backoff: 1s, 2s, 4s
                     logger.warning(f"Connection error, retrying in {wait_time}s... ({attempt + 1}/{max_retries})")
                     time.sleep(wait_time)
                 else:
@@ -290,7 +299,7 @@ class SupabaseClient:
                 requests.exceptions.HTTPError,
             ) as e:
                 if attempt < max_retries - 1:
-                    wait_time = 2 ** attempt
+                    wait_time = 2**attempt
                     logger.warning(f"Select error, retrying in {wait_time}s... ({attempt + 1}/{max_retries})")
                     time.sleep(wait_time)
                 else:
@@ -310,9 +319,13 @@ class SupabaseClient:
                     logger.error(f"Supabase delete error: {response.text}")
                     response.raise_for_status()
                 return
-            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout, requests.exceptions.ReadTimeout) as e:
+            except (
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+                requests.exceptions.ReadTimeout,
+            ) as e:
                 if attempt < max_retries - 1:
-                    wait_time = 2 ** attempt
+                    wait_time = 2**attempt
                     logger.warning(f"Delete error, retrying in {wait_time}s... ({attempt + 1}/{max_retries})")
                     time.sleep(wait_time)
                 else:
@@ -330,9 +343,13 @@ class SupabaseClient:
                     logger.error(f"Supabase update error: {response.text}")
                     response.raise_for_status()
                 return response.json()
-            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout, requests.exceptions.ReadTimeout) as e:
+            except (
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+                requests.exceptions.ReadTimeout,
+            ) as e:
                 if attempt < max_retries - 1:
-                    wait_time = 2 ** attempt
+                    wait_time = 2**attempt
                     logger.warning(f"Update error, retrying in {wait_time}s... ({attempt + 1}/{max_retries})")
                     time.sleep(wait_time)
                 else:
@@ -353,7 +370,9 @@ class DirectPostgresClient:
 
     def __init__(self, db_url: str):
         if not PSYCOPG2_AVAILABLE:
-            raise ImportError("psycopg2 is required for direct Postgres connection. Install with: pip install psycopg2-binary")
+            raise ImportError(
+                "psycopg2 is required for direct Postgres connection. Install with: pip install psycopg2-binary"
+            )
         self.db_url = db_url
         self._conn = None
 
@@ -418,7 +437,7 @@ class DirectPostgresClient:
                 results = cursor.fetchall()
                 col_names = [desc[0] for desc in cursor.description]
                 conn.commit()
-                return [dict(zip(col_names, row)) for row in results]
+                return [dict(zip(col_names, row, strict=False)) for row in results]
         except Exception as e:
             conn.rollback()
             logger.error(f"Direct Postgres upsert failed: {e}")
@@ -460,7 +479,7 @@ class DirectPostgresClient:
                 if not results:
                     return []
                 col_names = [desc[0] for desc in cursor.description]
-                return [dict(zip(col_names, row)) for row in results]
+                return [dict(zip(col_names, row, strict=False)) for row in results]
         except Exception as e:
             logger.error(f"Direct Postgres select failed: {e}")
             raise
@@ -693,7 +712,7 @@ def normalize_commander_name(commanders: list[str]) -> str:
     return " / ".join(sorted_cmds)
 
 
-def normalize_rate_value(value: Any) -> Optional[float]:
+def normalize_rate_value(value: Any) -> float | None:
     """Normalize TopDeck rate fields into 0-1 decimal form for NUMERIC(5,4)."""
     if value is None:
         return None
@@ -790,7 +809,13 @@ OTHER_REGION_NAMES = {
 }
 
 
-def normalize_region_name(state: str | None, *, city: str | None = None, country: str | None = None, venue: str | None = None) -> str | None:
+def normalize_region_name(
+    state: str | None,
+    *,
+    city: str | None = None,
+    country: str | None = None,
+    venue: str | None = None,
+) -> str | None:
     """Expand known state/province abbreviations using location context."""
     if not state:
         return None
@@ -836,7 +861,7 @@ def parse_datetime(value) -> datetime | None:
     if isinstance(value, datetime):
         parsed = value
     elif isinstance(value, (int, float)):
-        parsed = datetime.fromtimestamp(value, tz=timezone.utc)
+        parsed = datetime.fromtimestamp(value, tz=UTC)
     else:
         try:
             parsed = date_parser.parse(str(value))
@@ -844,11 +869,11 @@ def parse_datetime(value) -> datetime | None:
             return None
 
     if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
+        return parsed.replace(tzinfo=UTC)
     return parsed
 
 
-def extract_standing_rates(standing: dict[str, Any]) -> tuple[Optional[float], Optional[float]]:
+def extract_standing_rates(standing: dict[str, Any]) -> tuple[float | None, float | None]:
     primary_rate = None
     for primary_rate_key, _ in TOPDECK_STANDING_RATE_FIELDS:
         primary_rate = normalize_rate_value(standing.get(primary_rate_key))
@@ -1142,13 +1167,15 @@ class DataIngester:
                 player_data[player_topdeck_id] = player_name
 
             # Store for later entry creation
-            standing_info.append({
-                "idx": idx,
-                "topdeck_id": player_topdeck_id,
-                "commander_name": commander_name,
-                "decklist": decklist,
-                "standing": standing,
-            })
+            standing_info.append(
+                {
+                    "idx": idx,
+                    "topdeck_id": player_topdeck_id,
+                    "commander_name": commander_name,
+                    "decklist": decklist,
+                    "standing": standing,
+                }
+            )
 
         # Step 2: Batch upsert commanders (1 API call)
         self.batch_upsert_commanders(commander_data)
@@ -1171,22 +1198,24 @@ class DataIngester:
             win_rate, opponent_win_rate = extract_standing_rates(standing)
 
             top_16_cutoff = 4 if player_count <= 34 else 16
-            entries.append({
-                "tournament_id": tournament_id,
-                "player_id": player_id,
-                "commander_id": commander_id,
-                "final_standing": final_standing,
-                "points": int(standing.get("points") or 0),
-                "wins": int(standing.get("wins") or 0),
-                "losses": int(standing.get("losses") or 0),
-                "draws": int(standing.get("draws") or 0),
-                "win_rate": win_rate,
-                "opponent_win_rate": opponent_win_rate,
-                "decklist_url": decklist if decklist and "http" in decklist else None,
-                "decklist_text": decklist if decklist and "http" not in decklist else None,
-                "made_top_cut": final_standing <= effective_top_cut if effective_top_cut > 0 else False,
-                "made_top_16": final_standing <= top_16_cutoff,
-            })
+            entries.append(
+                {
+                    "tournament_id": tournament_id,
+                    "player_id": player_id,
+                    "commander_id": commander_id,
+                    "final_standing": final_standing,
+                    "points": int(standing.get("points") or 0),
+                    "wins": int(standing.get("wins") or 0),
+                    "losses": int(standing.get("losses") or 0),
+                    "draws": int(standing.get("draws") or 0),
+                    "win_rate": win_rate,
+                    "opponent_win_rate": opponent_win_rate,
+                    "decklist_url": decklist if decklist and "http" in decklist else None,
+                    "decklist_text": decklist if decklist and "http" not in decklist else None,
+                    "made_top_cut": final_standing <= effective_top_cut if effective_top_cut > 0 else False,
+                    "made_top_16": final_standing <= top_16_cutoff,
+                }
+            )
 
         # Step 5: Batch upsert all entries (1 API call)
         entry_map = self.batch_upsert_entries(entries)
@@ -1237,9 +1266,15 @@ class DataIngester:
                             winner_player_id = self.player_cache.get(p.get("id"))
                             break
 
+                round_number = (
+                    int(round_num)
+                    if isinstance(round_num, int) or (isinstance(round_num, str) and round_num.isdigit())
+                    else None
+                )
+
                 game_data = {
                     "tournament_id": tournament_id,
-                    "round_number": int(round_num) if isinstance(round_num, int) or (isinstance(round_num, str) and round_num.isdigit()) else None,
+                    "round_number": round_number,
                     "round_name": str(round_num) if is_bracket else None,
                     "is_bracket": is_bracket,
                     "table_number": table_num if isinstance(table_num, int) else None,
@@ -1275,12 +1310,14 @@ class DataIngester:
                         result_str = "loss"
                         points = 0
 
-                    participants_info.append({
-                        "entry_id": entry_id,
-                        "seat_position": seat,
-                        "result": result_str,
-                        "points_earned": points,
-                    })
+                    participants_info.append(
+                        {
+                            "entry_id": entry_id,
+                            "seat_position": seat,
+                            "result": result_str,
+                            "points_earned": points,
+                        }
+                    )
 
                 games_data.append((game_data, participants_info))
 
@@ -1300,13 +1337,15 @@ class DataIngester:
                         _, participants_info = games_data[i]
 
                         for p in participants_info:
-                            all_participants.append({
-                                "game_id": game_id,
-                                "entry_id": p["entry_id"],
-                                "seat_position": p["seat_position"],
-                                "result": p["result"],
-                                "points_earned": p["points_earned"],
-                            })
+                            all_participants.append(
+                                {
+                                    "game_id": game_id,
+                                    "entry_id": p["entry_id"],
+                                    "seat_position": p["seat_position"],
+                                    "result": p["result"],
+                                    "points_earned": p["points_earned"],
+                                }
+                            )
 
                     if all_participants:
                         logger.info(f"Batch upserting {len(all_participants)} game participants...")
@@ -1328,7 +1367,7 @@ class DataIngester:
         }
 
 
-def parse_tournament_start_date(tournament: dict) -> Optional[datetime]:
+def parse_tournament_start_date(tournament: dict) -> datetime | None:
     """Extract and parse tournament start date from search or detail payloads."""
     info = tournament.get("data", tournament)
     start_date = info.get("startDate") or tournament.get("startDate")
@@ -1356,28 +1395,26 @@ def normalize_tournament_name(name: str) -> str:
 
 def build_game_key(
     tournament_id: str,
-    round_number: Optional[int],
-    round_name: Optional[str],
-    table_number: Optional[int],
+    round_number: int | None,
+    round_name: str | None,
+    table_number: int | None,
     is_bracket: bool,
 ) -> str:
     """Build deterministic game key for idempotent upserts."""
-    return "|".join([
-        str(tournament_id),
-        str(round_number) if round_number is not None else "RNULL",
-        round_name or "RNNULL",
-        str(table_number) if table_number is not None else "TNULL",
-        str(is_bracket).lower() if is_bracket is not None else "BNULL",
-    ])
-
-
-def extract_name_and_tid(tournament: dict) -> tuple[Optional[str], Optional[str]]:
-    """Extract a display name and tournament id/slug from a search payload."""
-    name = (
-        tournament.get("tournamentName")
-        or tournament.get("name")
-        or tournament.get("data", {}).get("name")
+    return "|".join(
+        [
+            str(tournament_id),
+            str(round_number) if round_number is not None else "RNULL",
+            round_name or "RNNULL",
+            str(table_number) if table_number is not None else "TNULL",
+            str(is_bracket).lower() if is_bracket is not None else "BNULL",
+        ]
     )
+
+
+def extract_name_and_tid(tournament: dict) -> tuple[str | None, str | None]:
+    """Extract a display name and tournament id/slug from a search payload."""
+    name = tournament.get("tournamentName") or tournament.get("name") or tournament.get("data", {}).get("name")
     tid = (
         tournament.get("TID")
         or tournament.get("id")
@@ -1409,7 +1446,10 @@ def main():
     parser.add_argument(
         "--direct",
         action="store_true",
-        help="Use direct Postgres connection (10x faster for large batches). Requires SUPABASE_DB_URL env var and psycopg2.",
+        help=(
+            "Use direct Postgres connection (10x faster for large batches). "
+            "Requires SUPABASE_DB_URL env var and psycopg2."
+        ),
     )
     args = parser.parse_args()
 
@@ -1477,9 +1517,7 @@ def main():
         ]
         logger.info(f"Loaded {len(names)} tournament names from {names_path}")
 
-        logger.info(
-            f"Resolving names using last {args.resolve_days} days, min_players={args.resolve_min_players}"
-        )
+        logger.info(f"Resolving names using last {args.resolve_days} days, min_players={args.resolve_min_players}")
         tournaments = topdeck.search_tournaments(
             days=args.resolve_days, min_players=args.resolve_min_players, light=True
         )
@@ -1506,24 +1544,19 @@ def main():
 
             # Fallback: contains match (unique)
             contains_matches = [
-                (t_name, t_tid)
-                for k, vals in name_map.items()
-                if key and key in k
-                for (t_name, t_tid) in vals
+                (t_name, t_tid) for k, vals in name_map.items() if key and key in k for (t_name, t_tid) in vals
             ]
             if len(contains_matches) == 1:
                 resolved[raw_name] = contains_matches[0][1]
                 continue
 
             if args.resolve_include_ambiguous and (matches or contains_matches):
-                for _, t_tid in (matches or contains_matches):
+                for _, t_tid in matches or contains_matches:
                     resolved_extra.add(t_tid)
             else:
                 unresolved.append(raw_name)
             if matches or contains_matches:
-                logger.warning(
-                    f"Ambiguous match for '{raw_name}': {[m[0] for m in (matches or contains_matches)]}"
-                )
+                logger.warning(f"Ambiguous match for '{raw_name}': {[m[0] for m in (matches or contains_matches)]}")
 
         if args.tids_out:
             out_path = Path(args.tids_out)
@@ -1565,7 +1598,7 @@ def main():
             sys.exit(1)
 
         for index in range(0, len(tids), max(args.tids_batch_size, 1)):
-            tid_batch = tids[index:index + max(args.tids_batch_size, 1)]
+            tid_batch = tids[index : index + max(args.tids_batch_size, 1)]
             try:
                 tournaments = topdeck.get_tournaments_by_ids(tid_batch)
             except Exception as e:
@@ -1596,7 +1629,8 @@ def main():
                     except Exception as e:
                         logger.error(f"Failed to process {tid}: {e}")
                 else:
-                    logger.info(f"Would process: {tournament.get('tournamentName')} ({len(tournament.get('standings', []))} players)")
+                    player_count = len(tournament.get("standings", []))
+                    logger.info(f"Would process: {tournament.get('tournamentName')} ({player_count} players)")
     else:
         if args.start_date:
             start_dt = date_parser.parse(args.start_date)
@@ -1605,12 +1639,8 @@ def main():
                 logger.error("--end-date must be on or after --start-date")
                 sys.exit(1)
             days_back = (datetime.utcnow() - start_dt).days + 1
-            logger.info(
-                f"Backfill range: {start_dt.date()} to {end_dt.date()} ({days_back} days lookback)"
-            )
-            tournaments = topdeck.search_tournaments(
-                days=days_back, min_players=args.min_players
-            )
+            logger.info(f"Backfill range: {start_dt.date()} to {end_dt.date()} ({days_back} days lookback)")
+            tournaments = topdeck.search_tournaments(days=days_back, min_players=args.min_players)
             tournaments = [
                 t
                 for t in tournaments
@@ -1620,9 +1650,7 @@ def main():
             ]
             logger.info(f"{len(tournaments)} tournaments after date filtering")
         else:
-            tournaments = topdeck.search_tournaments(
-                days=args.days, min_players=args.min_players
-            )
+            tournaments = topdeck.search_tournaments(days=args.days, min_players=args.min_players)
 
         for t in tournaments:
             if ingester:
@@ -1633,7 +1661,8 @@ def main():
                 except Exception as e:
                     logger.error(f"Failed to process {t.get('tournamentName')}: {e}")
             else:
-                logger.info(f"Would process: {t.get('tournamentName')} ({len(t.get('standings', []))} players)")
+                player_count = len(t.get("standings", []))
+                logger.info(f"Would process: {t.get('tournamentName')} ({player_count} players)")
 
     # Cleanup direct Postgres connection
     if args.direct and db_client:

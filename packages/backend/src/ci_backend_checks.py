@@ -6,14 +6,14 @@ import argparse
 import json
 import os
 import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from statistics import median
-from typing import Any, Callable
+from typing import Any
 
 import requests
-
 
 RETRY_ATTEMPTS = 3
 RETRY_BACKOFF_SECONDS = 2
@@ -107,7 +107,13 @@ def _rest_url(supabase_url: str, path: str) -> str:
     return f"{supabase_url.rstrip('/')}/rest/v1/{path.lstrip('/')}"
 
 
-def _select_params(select: str, *, limit: int | None = None, order: str | None = None, offset: int | None = None) -> dict[str, Any]:
+def _select_params(
+    select: str,
+    *,
+    limit: int | None = None,
+    order: str | None = None,
+    offset: int | None = None,
+) -> dict[str, Any]:
     params: dict[str, Any] = {"select": select}
     if limit is not None:
         params["limit"] = limit
@@ -119,7 +125,7 @@ def _select_params(select: str, *, limit: int | None = None, order: str | None =
 
 
 def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _fetch_json(
@@ -171,7 +177,8 @@ def resolve_benchmark_fixture(supabase_url: str, headers: dict[str, str]) -> Ben
             params=params,
         )
         if commander_resp.status_code != 200:
-            raise RuntimeError(f"Unable to resolve benchmark commander fixture from {source}: {response_failure(commander_resp)}")
+            failure = response_failure(commander_resp)
+            raise RuntimeError(f"Unable to resolve benchmark commander fixture from {source}: {failure}")
         commander_rows = commander_resp.json()
         if commander_rows:
             break
@@ -211,7 +218,8 @@ def resolve_benchmark_fixture(supabase_url: str, headers: dict[str, str]) -> Ben
                 "commander_id,commander,card_name,deck_count,total_decks,inclusion_rate,avg_win_rate,baseline_win_rate,win_rate_delta,std_win_rate,top_16_count,top_cut_count,top_16_rate,avg_standing,performance_tier",
                 limit=1,
                 order="win_rate_delta.desc",
-            ) | {"commander_id": f"eq.{commander_id}"},
+            )
+            | {"commander_id": f"eq.{commander_id}"},
         )
         if (
             notable_resp.status_code == 200
@@ -304,11 +312,24 @@ def benchmark_specs() -> list[BenchmarkSpec]:
                 "GET",
                 _rest_url(supabase_url, "commander_weekly_trends"),
                 params={
-                    **_select_params("commander_id,week_key,week_start_date,entries,wins,losses,draws,win_rate", limit=25, order="week_start_date.desc"),
+                    **_select_params(
+                        ("commander_id,week_key,week_start_date,entries,wins,losses,draws,win_rate"),
+                        limit=25,
+                        order="week_start_date.desc",
+                    ),
                     "commander_id": f"eq.{fixture.commander_id}",
                 },
             ),
-            expected_columns=("commander_id", "week_key", "week_start_date", "entries", "wins", "losses", "draws", "win_rate"),
+            expected_columns=(
+                "commander_id",
+                "week_key",
+                "week_start_date",
+                "entries",
+                "wins",
+                "losses",
+                "draws",
+                "win_rate",
+            ),
         ),
         BenchmarkSpec(
             name="commander_monthly_trends",
@@ -316,11 +337,24 @@ def benchmark_specs() -> list[BenchmarkSpec]:
                 "GET",
                 _rest_url(supabase_url, "commander_monthly_trends"),
                 params={
-                    **_select_params("commander_id,month_key,month_start_date,entries,wins,losses,draws,win_rate", limit=25, order="month_start_date.desc"),
+                    **_select_params(
+                        ("commander_id,month_key,month_start_date,entries,wins,losses,draws,win_rate"),
+                        limit=25,
+                        order="month_start_date.desc",
+                    ),
                     "commander_id": f"eq.{fixture.commander_id}",
                 },
             ),
-            expected_columns=("commander_id", "month_key", "month_start_date", "entries", "wins", "losses", "draws", "win_rate"),
+            expected_columns=(
+                "commander_id",
+                "month_key",
+                "month_start_date",
+                "entries",
+                "wins",
+                "losses",
+                "draws",
+                "win_rate",
+            ),
         ),
         BenchmarkSpec(
             name="regional_elo_leaderboard_state",
@@ -358,7 +392,14 @@ def benchmark_specs() -> list[BenchmarkSpec]:
                 "GET",
                 _rest_url(supabase_url, "regional_elo_player_stats"),
                 params={
-                    **_select_params("region_type,region_key,player_id,games_played,wins,draws,losses,last_game_date,activity_score,games_30d,games_90d,games_365d", limit=1),
+                    **_select_params(
+                        (
+                            "region_type,region_key,player_id,games_played,wins,draws,"
+                            "losses,last_game_date,activity_score,games_30d,games_90d,"
+                            "games_365d"
+                        ),
+                        limit=1,
+                    ),
                     "region_type": "eq.state",
                     "region_key": f"eq.{fixture.region_key}",
                     "player_id": f"eq.{fixture.region_player_id}",
@@ -384,9 +425,18 @@ def benchmark_specs() -> list[BenchmarkSpec]:
             request_builder=lambda supabase_url, fixture: BenchmarkRequest(
                 "GET",
                 _rest_url(supabase_url, "regional_elo_regions"),
-                params=_select_params("region_type,region_key,player_count,updated_at", limit=100, order="region_key.asc"),
+                params=_select_params(
+                    "region_type,region_key,player_count,updated_at",
+                    limit=100,
+                    order="region_key.asc",
+                ),
             ),
-            expected_columns=("region_type", "region_key", "player_count", "updated_at"),
+            expected_columns=(
+                "region_type",
+                "region_key",
+                "player_count",
+                "updated_at",
+            ),
         ),
         BenchmarkSpec(
             name="regional_elo_data_validity",
@@ -394,7 +444,13 @@ def benchmark_specs() -> list[BenchmarkSpec]:
                 "GET",
                 _rest_url(supabase_url, "regional_elo_data_validity"),
                 params=_select_params(
-                    "region_type,region_key,scope,total_tournaments,tournaments_with_state,tournaments_missing_state,total_games,included_games,excluded_games_missing_state,excluded_games_with_byes,excluded_games_insufficient_players,included_players,earliest_game_date,latest_game_date",
+                    (
+                        "region_type,region_key,scope,total_tournaments,"
+                        "tournaments_with_state,tournaments_missing_state,total_games,"
+                        "included_games,excluded_games_missing_state,"
+                        "excluded_games_with_byes,excluded_games_insufficient_players,"
+                        "included_players,earliest_game_date,latest_game_date"
+                    ),
                     limit=100,
                     order="region_key.asc",
                 ),
@@ -422,9 +478,20 @@ def benchmark_specs() -> list[BenchmarkSpec]:
             request_builder=lambda supabase_url, fixture: BenchmarkRequest(
                 "GET",
                 _rest_url(supabase_url, "card_frequencies_global"),
-                params=_select_params("card_name,deck_count,total_decks,inclusion_rate,commander_count,tier", limit=25, order="deck_count.desc"),
+                params=_select_params(
+                    "card_name,deck_count,total_decks,inclusion_rate,commander_count,tier",
+                    limit=25,
+                    order="deck_count.desc",
+                ),
             ),
-            expected_columns=("card_name", "deck_count", "total_decks", "inclusion_rate", "commander_count", "tier"),
+            expected_columns=(
+                "card_name",
+                "deck_count",
+                "total_decks",
+                "inclusion_rate",
+                "commander_count",
+                "tier",
+            ),
         ),
         BenchmarkSpec(
             name="card_frequencies_by_commander",
@@ -432,11 +499,23 @@ def benchmark_specs() -> list[BenchmarkSpec]:
                 "GET",
                 _rest_url(supabase_url, "card_frequencies_by_commander"),
                 params={
-                    **_select_params("commander_id,commander,card_name,deck_count,total_decks,inclusion_rate,tier", limit=25, order="deck_count.desc"),
+                    **_select_params(
+                        ("commander_id,commander,card_name,deck_count,total_decks,inclusion_rate,tier"),
+                        limit=25,
+                        order="deck_count.desc",
+                    ),
                     "commander_id": f"eq.{fixture.commander_id}",
                 },
             ),
-            expected_columns=("commander_id", "commander", "card_name", "deck_count", "total_decks", "inclusion_rate", "tier"),
+            expected_columns=(
+                "commander_id",
+                "commander",
+                "card_name",
+                "deck_count",
+                "total_decks",
+                "inclusion_rate",
+                "tier",
+            ),
         ),
         BenchmarkSpec(
             name="card_performance_by_commander",
@@ -445,7 +524,12 @@ def benchmark_specs() -> list[BenchmarkSpec]:
                 _rest_url(supabase_url, "card_performance_by_commander"),
                 params={
                     **_select_params(
-                        "commander_id,commander,card_name,deck_count,total_decks,inclusion_rate,avg_win_rate,baseline_win_rate,win_rate_delta,std_win_rate,top_16_count,top_cut_count,top_16_rate,avg_standing,performance_tier",
+                        (
+                            "commander_id,commander,card_name,deck_count,"
+                            "total_decks,inclusion_rate,avg_win_rate,baseline_win_rate,"
+                            "win_rate_delta,std_win_rate,top_16_count,top_cut_count,"
+                            "top_16_rate,avg_standing,performance_tier"
+                        ),
                         limit=25,
                         order="win_rate_delta.desc",
                     ),
@@ -529,9 +613,21 @@ def benchmark_specs() -> list[BenchmarkSpec]:
             request_builder=lambda supabase_url, fixture: BenchmarkRequest(
                 "GET",
                 _rest_url(supabase_url, "commander_meta_monthly"),
-                params=_select_params("month,commander_name,entries,meta_share,avg_win_rate,top_16_count,top_16_rate", limit=25, order="month.desc"),
+                params=_select_params(
+                    "month,commander_name,entries,meta_share,avg_win_rate,top_16_count,top_16_rate",
+                    limit=25,
+                    order="month.desc",
+                ),
             ),
-            expected_columns=("month", "commander_name", "entries", "meta_share", "avg_win_rate", "top_16_count", "top_16_rate"),
+            expected_columns=(
+                "month",
+                "commander_name",
+                "entries",
+                "meta_share",
+                "avg_win_rate",
+                "top_16_count",
+                "top_16_rate",
+            ),
         ),
         BenchmarkSpec(
             name="commander_momentum",
@@ -539,7 +635,11 @@ def benchmark_specs() -> list[BenchmarkSpec]:
                 "GET",
                 _rest_url(supabase_url, "commander_momentum"),
                 params=_select_params(
-                    "month,commander_name,entries,meta_share,prev_meta_share,meta_share_delta,avg_win_rate,prev_win_rate,win_rate_delta,momentum_score",
+                    (
+                        "month,commander_name,entries,meta_share,prev_meta_share,"
+                        "meta_share_delta,avg_win_rate,prev_win_rate,win_rate_delta,"
+                        "momentum_score"
+                    ),
                     limit=25,
                     order="momentum_score.desc",
                 ),
@@ -562,9 +662,20 @@ def benchmark_specs() -> list[BenchmarkSpec]:
             request_builder=lambda supabase_url, fixture: BenchmarkRequest(
                 "GET",
                 _rest_url(supabase_url, "commander_first_appearances"),
-                params=_select_params("commander_name,first_seen,total_entries,tournaments,avg_win_rate,top_16s", limit=25, order="first_seen.desc"),
+                params=_select_params(
+                    "commander_name,first_seen,total_entries,tournaments,avg_win_rate,top_16s",
+                    limit=25,
+                    order="first_seen.desc",
+                ),
             ),
-            expected_columns=("commander_name", "first_seen", "total_entries", "tournaments", "avg_win_rate", "top_16s"),
+            expected_columns=(
+                "commander_name",
+                "first_seen",
+                "total_entries",
+                "tournaments",
+                "avg_win_rate",
+                "top_16s",
+            ),
         ),
         BenchmarkSpec(
             name="survival_summary",
@@ -599,7 +710,11 @@ def _benchmark_response_columns(response_rows: list[dict[str, Any]]) -> tuple[st
     return tuple(response_rows[0].keys())
 
 
-def _run_benchmark_request(session: requests.Session, request: BenchmarkRequest, headers: dict[str, str]) -> tuple[float, list[dict[str, Any]]]:
+def _run_benchmark_request(
+    session: requests.Session,
+    request: BenchmarkRequest,
+    headers: dict[str, str],
+) -> tuple[float, list[dict[str, Any]]]:
     start = time.perf_counter()
     resp = _fetch_json(
         session,
@@ -690,9 +805,7 @@ def benchmark_queries(
     session = requests.Session()
 
     specs = [
-        spec
-        for spec in benchmark_specs()
-        if (only is None or spec.name in only) and (not smoke_only or spec.smoke)
+        spec for spec in benchmark_specs() if (only is None or spec.name in only) and (not smoke_only or spec.smoke)
     ]
     if not specs:
         raise SystemExit("No benchmark specs matched the requested filters.")
@@ -961,10 +1074,7 @@ def validate_data_integrity() -> None:
         try:
             count, strategy = get_table_count(supabase_url, headers, table_name)
             status = "✓" if count >= min_count else "✗"
-            print(
-                f"{status} {table_name}: {count:,} rows "
-                f"(expected >= {min_count:,}; via {strategy})"
-            )
+            print(f"{status} {table_name}: {count:,} rows (expected >= {min_count:,}; via {strategy})")
             if count < min_count:
                 failed.append((table_name, f"{count} < {min_count} via {strategy}"))
         except Exception as exc:  # pragma: no cover - CI diagnostic path
@@ -999,9 +1109,7 @@ def fetch_state_samples(supabase_url: str, headers: dict[str, str]) -> list[dict
             timeout=30,
         )
         if leaderboard_resp.status_code != 200:
-            raise RuntimeError(
-                f"Failed to fetch regional Elo leaderboard sample: {response_failure(leaderboard_resp)}"
-            )
+            raise RuntimeError(f"Failed to fetch regional Elo leaderboard sample: {response_failure(leaderboard_resp)}")
 
         page_rows = leaderboard_resp.json()
         leaderboard_rows.extend(
