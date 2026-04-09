@@ -694,6 +694,7 @@ async function fetchLatestCommanders(rows: LeaderboardRow[]): Promise<Map<string
           .filter(
             (row) =>
               row.start_date &&
+              latestPlayed.game_date &&
               row.start_date <= latestPlayed.game_date
           )
           .sort((a, b) => (b.start_date ?? "").localeCompare(a.start_date ?? ""))
