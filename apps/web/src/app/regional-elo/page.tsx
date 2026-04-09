@@ -238,8 +238,8 @@ async function fetchLeaderboardRowsFromView(
 
   if (error) {
     return fetchLegacyLeaderboardRows(
-      regionType === "country" ? "global" : regionType,
-      regionType === "country" ? GLOBAL_REGION_KEY : regionKey,
+      regionType,
+      regionType === "global" ? GLOBAL_REGION_KEY : regionKey,
       page,
       pageSize,
       searchQuery
@@ -633,8 +633,9 @@ async function fetchLatestCommanders(rows: LeaderboardRow[]): Promise<Map<string
   }
 
   for (const row of profileRows) {
-    if (row.topdeck_id && isKnownCommander(row.active_commander)) {
-      profileActiveCommanderByTopdeckId.set(row.topdeck_id, row.active_commander ?? null);
+    const activeCommander = row.active_commander;
+    if (row.topdeck_id && activeCommander && isKnownCommander(activeCommander)) {
+      profileActiveCommanderByTopdeckId.set(row.topdeck_id, activeCommander);
     }
   }
 
