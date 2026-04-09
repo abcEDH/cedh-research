@@ -20,6 +20,7 @@ describe("fetchTournamentBySlug", () => {
 
   it("waits for Retry-After HTTP-date values before retrying", async () => {
     vi.stubGlobal("fetch", vi.fn());
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-04-08T00:00:00Z"));
     vi.spyOn(globalThis, "setTimeout").mockImplementation(((callback: TimerHandler) => {
       if (typeof callback === "function") {
         callback();

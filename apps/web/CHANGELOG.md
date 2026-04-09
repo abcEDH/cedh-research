@@ -1,3 +1,43 @@
+# [1.7.0](https://github.com/abcEDH/cedh-research/compare/v1.6.0...v1.7.0) (2026-04-08)
+
+
+### Bug Fixes
+
+* backfill moxfield commanders ([34658f3](https://github.com/abcEDH/cedh-research/commit/34658f325051c1291e606add8f62fbbd927937fc))
+* backfill unknown-state elo games ([6af8ab4](https://github.com/abcEDH/cedh-research/commit/6af8ab48b1794fbf7e0c1fef2cbfe23894f2599d))
+* **ci:** harden regional elo consistency check ([#59](https://github.com/abcEDH/cedh-research/issues/59)) ([12cc825](https://github.com/abcEDH/cedh-research/commit/12cc8251a935a1073ebb32ea28bb459b16217c9d))
+* collapse double-faced commanders ([40b65cb](https://github.com/abcEDH/cedh-research/commit/40b65cbcee74ab80ede61df1d457ce0d712d0742))
+* derive player home region from game history ([fa979bd](https://github.com/abcEDH/cedh-research/commit/fa979bd858bdffc47a83db03850a40200c29b578))
+* fall back to legacy elo leaderboard ([4ebe586](https://github.com/abcEDH/cedh-research/commit/4ebe5868987957629a41035dad6926b31f7e5d47))
+* fall back to legacy player event log ([fe59022](https://github.com/abcEDH/cedh-research/commit/fe5902242485554aa06aa012ba2950fc7a83ca02))
+* include unknown games in regional totals ([421ac9c](https://github.com/abcEDH/cedh-research/commit/421ac9c97adef3c465da6cffce7272d0bba0fd5b))
+* include unknown state games in global elo ([bf42ddd](https://github.com/abcEDH/cedh-research/commit/bf42dddaf64ffe66c6656b0955aa74a65a7efff3))
+* normalize imported commander names ([3bf2acf](https://github.com/abcEDH/cedh-research/commit/3bf2acf3d33c3c1a9f0845e2eb45593e0f6f514f))
+* preserve apostrophes in commander imports ([2589638](https://github.com/abcEDH/cedh-research/commit/2589638beec582be8d0e8e8124b5fbc3534837a4))
+* recognize topdeck draw winners ([5b7299d](https://github.com/abcEDH/cedh-research/commit/5b7299d15ea2a0d5e8824368cbd937a5f8ca0dde))
+* show all player games across regions ([7c2b95b](https://github.com/abcEDH/cedh-research/commit/7c2b95b0c2ae6cf9b57357736cd7bad2f7074c27))
+* show country option for legacy elo regions ([3e617c9](https://github.com/abcEDH/cedh-research/commit/3e617c9aaa2e4bd5034e3828322d3cd18a6b945f))
+* show global totals on regional leaderboard ([9bad367](https://github.com/abcEDH/cedh-research/commit/9bad367c6fa38ea7b92f3219206328e82554ac6f))
+* show stored elo on player profiles ([f95bbd8](https://github.com/abcEDH/cedh-research/commit/f95bbd86d7c4443392534bac1069fc52c0b6547a))
+
+
+### Features
+
+* import moxfield commander mappings ([acad40c](https://github.com/abcEDH/cedh-research/commit/acad40c7cd4246077d1731b559f2d669a663b92d))
+* infer elo countries from regions ([dfa8258](https://github.com/abcEDH/cedh-research/commit/dfa8258e3211ffcef76b47af8840bc1bc529ad29))
+* resolve commanders from topdeck deck pages ([1c99bd7](https://github.com/abcEDH/cedh-research/commit/1c99bd7d78bbc5b4616fc8b6899de00e9b7a4cbf))
+* scrape moxfield deck pages ([f270987](https://github.com/abcEDH/cedh-research/commit/f270987815d4abaa62c038515f967d442c6f9927))
+* use topdeck stats on player profiles ([cd2a265](https://github.com/abcEDH/cedh-research/commit/cd2a265eb10ff4a6e149740ebe829192e96099a9))
+
+
+### Performance Improvements
+
+* avoid blocking regional leaderboard render ([db942fb](https://github.com/abcEDH/cedh-research/commit/db942fb8ad90327f81b4a37aedf4496009d143d9))
+* precompute active elo profile data ([a547ff9](https://github.com/abcEDH/cedh-research/commit/a547ff98012cd7bd1f4b4b2684fd0dab239d097e))
+* precompute commander profiles and country regions ([e7da338](https://github.com/abcEDH/cedh-research/commit/e7da338fd888519fd200ea4687fe1407895f6b48))
+* speed global elo pages ([f7b2a2d](https://github.com/abcEDH/cedh-research/commit/f7b2a2d87d2975ff05beef76cfcb3d80b67ebdde))
+* use precomputed regional elo views ([6e1f1cd](https://github.com/abcEDH/cedh-research/commit/6e1f1cd6914bd4ff8fbdf05945f5f02b6b0083a6))
+
 # [1.6.0](https://github.com/abcEDH/cedh-research/compare/v1.5.1...v1.6.0) (2026-04-08)
 
 

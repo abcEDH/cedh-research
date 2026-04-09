@@ -11,6 +11,30 @@ export type TopDeckLeaderboardEntry = {
   youtube?: string | null;
 };
 
+export type TopDeckProfileStats = {
+  tournaments: number;
+  gamesPlayed: number;
+  wins: number;
+  draws: number;
+  losses: number;
+};
+
+type TopDeckProfileStatsResponse = {
+  yearlyStats?: Record<
+    string,
+    Record<
+      string,
+      | {
+          totalTournaments?: number | null;
+          wins?: number | null;
+          draws?: number | null;
+          losses?: number | null;
+        }
+      | undefined
+    >
+  >;
+};
+
 type TopDeckTournamentResponse = {
   data: {
     name: string;
@@ -110,6 +134,7 @@ function normalizeStandingRates<T extends TopDeckTournamentResponse>(response: T
 export function extractTournamentSlug(input: string): string {
   const value = input.trim();
   if (!value) return "";
+  if (!value.includes("/") && !value.includes(".")) return value;
 
   try {
     const normalized = value.startsWith("http://") || value.startsWith("https://")
@@ -130,7 +155,7 @@ export function extractTournamentSlug(input: string): string {
 }
 
 export async function fetchChampionshipLeaderboard(): Promise<TopDeckLeaderboardEntry[]> {
-  const res = await fetch(CHAMPIONSHIP_LEADERBOARD_URL, { cache: "no-store" });
+  const res = await fetch(CHAMPIONSHIP_LEADERBOARD_URL, { next: { revalidate: 60 * 15 } });
   if (!res.ok) {
     throw new Error(`TopDeck leaderboard fetch failed (${res.status})`);
   }
@@ -140,6 +165,40 @@ export async function fetchChampionshipLeaderboard(): Promise<TopDeckLeaderboard
     throw new Error("TopDeck leaderboard payload not found in HTML");
   }
   return JSON.parse(match[1]) as TopDeckLeaderboardEntry[];
+}
+
+export async function fetchTopDeckProfileStats(topdeckId: string): Promise<TopDeckProfileStats | null> {
+  const res = await fetch(`https://topdeck.gg/profile/${encodeURIComponent(topdeckId)}/stats`, {
+    next: { revalidate: 60 * 15 },
+  });
+  if (!res.ok) {
+    throw new Error(`TopDeck profile stats fetch failed (${res.status})`);
+  }
+
+  const payload = (await res.json()) as TopDeckProfileStatsResponse;
+  const yearlyStats = payload.yearlyStats ?? {};
+  const totals = Object.values(yearlyStats).reduce(
+    (current, year) => {
+      const edhStats = year["Magic: The Gathering: EDH"] ?? year.overall;
+      if (!edhStats) return current;
+      current.tournaments += edhStats.totalTournaments ?? 0;
+      current.wins += edhStats.wins ?? 0;
+      current.draws += edhStats.draws ?? 0;
+      current.losses += edhStats.losses ?? 0;
+      return current;
+    },
+    { tournaments: 0, wins: 0, draws: 0, losses: 0 }
+  );
+  const gamesPlayed = totals.wins + totals.draws + totals.losses;
+  if (totals.tournaments === 0 && gamesPlayed === 0) return null;
+
+  return {
+    tournaments: totals.tournaments,
+    gamesPlayed,
+    wins: totals.wins,
+    draws: totals.draws,
+    losses: totals.losses,
+  };
 }
 
 function withTournamentRecords(response: TopDeckTournamentResponse): TopDeckTournamentResponse {

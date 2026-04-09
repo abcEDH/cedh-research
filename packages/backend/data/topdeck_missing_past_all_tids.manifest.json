@@ -1,0 +1,14 @@
+{
+  "generated_at": "2026-04-07T08:27:31.555721+00:00",
+  "today_utc": "2026-04-07",
+  "topdeck_total_events": 12726,
+  "past_events_through_today": 12724,
+  "future_events_excluded": 2,
+  "existing_supabase_tournaments": 1086,
+  "missing_past_events": 11639,
+  "earliest_past_event": "2022-08-27",
+  "latest_past_event": "2026-04-07",
+  "earliest_missing_event": "2022-08-27",
+  "latest_missing_event": "2026-04-07",
+  "missing_start_date_count": 0
+}

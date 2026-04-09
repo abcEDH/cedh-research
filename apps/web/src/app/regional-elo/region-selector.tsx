@@ -5,21 +5,35 @@ import { useState } from "react";
 type RegionOption = {
   region_type: string;
   region_key: string;
+  country_key: string | null;
   player_count: number;
 };
 
 export function RegionSelector({
   regions,
   selectedScope,
+  selectedCountry,
   selectedRegion,
+  supportsCountryRegions = true,
 }: {
   regions: RegionOption[];
-  selectedScope: "global" | "state";
+  selectedScope: "global" | "country";
+  selectedCountry?: string;
   selectedRegion?: string;
+  supportsCountryRegions?: boolean;
 }) {
   const [isLoading, setIsLoading] = useState(false);
-  const globalRegion = regions.find((region) => region.region_type === "global");
-  const stateRegions = regions.filter((region) => region.region_type === "state");
+  const countryRegions = regions.filter((region) => region.region_type === "country");
+  const [view, setView] = useState(
+    supportsCountryRegions && selectedScope === "country" && selectedCountry
+      ? selectedCountry
+      : "global"
+  );
+  const [region, setRegion] = useState(selectedRegion ?? "");
+  const country = view === "global" ? "" : view;
+  const stateRegions = regions.filter(
+    (region) => region.region_type === "state" && region.country_key === country
+  );
 
   return (
     <form
@@ -28,22 +42,46 @@ export function RegionSelector({
       className="space-y-3"
       onSubmit={() => setIsLoading(true)}
     >
-      <label className="text-sm text-muted-foreground">View</label>
-      <select name="scope" defaultValue={selectedScope} className="knd-input">
-        <option value="global">
-          Global {globalRegion ? `(${globalRegion.player_count})` : ""}
-        </option>
-        <option value="state">By state assignment</option>
+      <label className="text-sm text-muted-foreground">Country</label>
+      <select
+        value={view}
+        className="knd-input"
+        onChange={(event) => {
+          setView(event.target.value);
+          setRegion("");
+        }}
+      >
+        <option value="global">GLOBAL</option>
+        {supportsCountryRegions
+          ? countryRegions.map((region) => (
+              <option key={region.region_key} value={region.region_key}>
+                {region.region_key}
+              </option>
+            ))
+          : null}
       </select>
 
-      <label className="text-sm text-muted-foreground">State</label>
-      <select name="region" defaultValue={selectedRegion} className="knd-input">
-        {stateRegions.map((region) => (
-          <option key={region.region_key} value={region.region_key}>
-            {region.region_key} ({region.player_count})
-          </option>
-        ))}
-      </select>
+      <input type="hidden" name="scope" value={view === "global" ? "global" : "country"} />
+      {view !== "global" ? <input type="hidden" name="country" value={view} /> : null}
+
+      {view !== "global" ? (
+        <>
+          <label className="text-sm text-muted-foreground">State</label>
+          <select
+            name="region"
+            value={region}
+            className="knd-input"
+            onChange={(event) => setRegion(event.target.value)}
+          >
+            <option value="">All states</option>
+            {stateRegions.map((region) => (
+              <option key={`${region.country_key}:${region.region_key}`} value={region.region_key}>
+                {region.region_key}
+              </option>
+            ))}
+          </select>
+        </>
+      ) : null}
       <button
         type="submit"
         disabled={isLoading}

@@ -156,12 +156,12 @@ erDiagram
 - `pod_composition`: Full pod lineups with seat and result.
 - `player_seat_distribution`: Seat distribution and win rate by player.
 
-### Regional Elo
+### Global Elo
 
-- `regional_elo_ratings`: Per-player rating state at a region granularity.
-- `regional_elo_leaderboard`: Regional leaderboard view.
-- `regional_elo_regions`: Region availability and update metadata.
-- `regional_elo_game_results`: Base view for regional Elo calculations.
+- `global_elo_ratings`: Global per-player rating state.
+- `global_elo_leaderboard`: Global leaderboard view with country/state filter rows derived from global ratings.
+- `global_elo_regions`: Region availability and update metadata.
+- `global_elo_game_results`: Base view for global Elo calculations.
 
 ### Meta Preparation
 
@@ -180,7 +180,7 @@ The Next.js app reads from Supabase views for most pages to keep the anon role s
 
 - Rankings: `commander_stats`, `commander_weekly_trends`, `commander_monthly_trends`
 - Card analytics: `card_frequencies_*`, `card_performance_*`
-- Regional Elo: `regional_elo_leaderboard`, `regional_elo_regions`
+- Global Elo: `global_elo_leaderboard`, `global_elo_regions`
 - Meta prep: `player_commander_entries`
 
 If a view is missing, the corresponding page will show empty state messaging.

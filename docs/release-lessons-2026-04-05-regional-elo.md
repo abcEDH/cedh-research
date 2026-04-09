@@ -2,7 +2,7 @@
 
 ## What broke
 - The regional player drilldown mixed two different data sources on the same page.
-- The summary cards (`Current Rank`, `Counted Games`, `Record`) read from `regional_elo_leaderboard`.
+- The summary cards (`Current Rank`, `Counted Games`, `Record`) read from `global_elo_leaderboard`.
 - The detailed game log reconstructed games from raw `tournament_entries`, `games`, and `game_participants`.
 - Those sources drifted, so a player could show one record in the summary and a different record in the drilldown log.
 - Production also spent time pointed at a stale Vercel alias, which made already-merged fixes appear missing.
@@ -14,14 +14,14 @@
 
 ## Root cause
 - We allowed user-facing totals to be rendered from two independently computed paths.
-- `regional_elo_ratings` persisted rating rows and stale counters.
+- `global_elo_ratings` persisted rating rows and stale counters.
 - The drilldown reconstructed included games directly from canonical game rows.
 - There was no CI invariant asserting that leaderboard summary fields and reconstructible detail agreed.
 - Deployment aliasing in Vercel was not being explicitly verified after release.
 
 ## Fixes applied
-- Added `regional_elo_player_stats` as the canonical per-region aggregate derived directly from `regional_elo_game_results`.
-- Rewired `regional_elo_leaderboard` so `games_played`, `wins`, `draws`, `losses`, and `last_game_date` come from `regional_elo_player_stats`.
+- Added `global_elo_player_stats` as the canonical per-region aggregate derived directly from `global_elo_game_results`.
+- Rewired `global_elo_leaderboard` so `games_played`, `wins`, `draws`, `losses`, and `last_game_date` come from `global_elo_player_stats`.
 - Updated the player page to use the same canonical aggregate for its summary cards.
 - Added regression coverage for player stat summarization and page-level rendering.
 - Added a backend CI check that compares sampled leaderboard rows against canonical regional aggregates.
