@@ -9,7 +9,6 @@ from pathlib import Path
 import requests
 
 from backfill_moxfield_commanders import (
-    DEFAULT_ATTEMPT_CACHE,
     RedirectedToMoxfieldError,
     TopDeckHttpStatusError,
     classify_bad_moxfield_url,
