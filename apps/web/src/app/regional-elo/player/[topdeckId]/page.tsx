@@ -1295,14 +1295,17 @@ export default async function RegionalPlayerPage({
                   Global Rank
                 </CardTitle>
               </CardHeader>
-              <CardContent className="text-2xl font-semibold text-foreground">
-                {shouldShowGlobalRank && globalEloRank ? (
-                  <Link href="/regional-elo" className="hover:text-primary">
-                    #{globalEloRank.rank}
-                  </Link>
-                ) : (
-                  "--"
-                )}
+              <CardContent className="space-y-1">
+                <div className="text-2xl font-semibold text-foreground">
+                  {shouldShowGlobalRank && globalEloRank ? (
+                    <Link href="/regional-elo" className="hover:text-primary">
+                      #{globalEloRank.rank}
+                    </Link>
+                  ) : (
+                    "--"
+                  )}
+                </div>
+                <div className="text-sm text-muted-foreground">EARTH</div>
               </CardContent>
             </Card>
             <Card className="knd-panel">
@@ -1552,16 +1555,38 @@ export default async function RegionalPlayerPage({
                 <CardTitle className="text-sm uppercase tracking-[0.2em] text-muted-foreground">
                   Seat Distribution
                 </CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Score = (wins + 0.2 × draws) / games
+                </p>
               </CardHeader>
               <CardContent className="space-y-4">
+                <div className="rounded-lg border border-border/60 px-4 py-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-foreground">Overall</span>
+                    <span className="font-mono text-sm text-muted-foreground">{totalGames} games</span>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-4 text-sm text-muted-foreground">
+                    <span>
+                      {totalWins}-{totalLosses}-{totalDraws}
+                    </span>
+                    <span className="font-mono">
+                      Score: {formatPct((totalWins + totalDraws * 0.2) / Math.max(totalGames, 1))}
+                    </span>
+                  </div>
+                </div>
                 {seatRows.map((row) => (
                   <div key={row.seat} className="rounded-lg border border-border/60 px-4 py-3">
                     <div className="flex items-center justify-between">
                       <span className="font-medium text-foreground">Seat {row.seat}</span>
                       <span className="font-mono text-sm text-muted-foreground">{row.games} games</span>
                     </div>
-                    <div className="mt-2 text-sm text-muted-foreground">
-                      {row.wins}-{row.losses}-{row.draws}
+                    <div className="mt-2 flex items-center justify-between gap-4 text-sm text-muted-foreground">
+                      <span>
+                        {row.wins}-{row.losses}-{row.draws}
+                      </span>
+                      <span className="font-mono">
+                        Score: {formatPct((row.wins + row.draws * 0.2) / Math.max(row.games, 1))}
+                      </span>
                     </div>
                   </div>
                 ))}
@@ -1594,7 +1619,7 @@ export default async function RegionalPlayerPage({
                           {bestOpponentMatchup.games} games
                         </div>
                         <div className="mt-1 text-sm text-primary">
-                          {formatPct(bestOpponentMatchup.posteriorScore)} adjusted score
+                          Adjusted score: {formatPct(bestOpponentMatchup.posteriorScore)}
                         </div>
                       </>
                     ) : (
@@ -1619,7 +1644,7 @@ export default async function RegionalPlayerPage({
                           {worstOpponentMatchup.games} games
                         </div>
                         <div className="mt-1 text-sm text-[hsl(var(--destructive))]">
-                          {formatPct(worstOpponentMatchup.posteriorScore)} adjusted score
+                          Adjusted score: {formatPct(worstOpponentMatchup.posteriorScore)}
                         </div>
                       </>
                     ) : (
@@ -1649,7 +1674,7 @@ export default async function RegionalPlayerPage({
                           {bestCommanderMatchup.games} games
                         </div>
                         <div className="mt-1 text-sm text-primary">
-                          {formatPct(bestCommanderMatchup.posteriorScore)} adjusted score
+                          Adjusted score: {formatPct(bestCommanderMatchup.posteriorScore)}
                         </div>
                       </>
                     ) : (
@@ -1666,7 +1691,7 @@ export default async function RegionalPlayerPage({
                           {worstCommanderMatchup.games} games
                         </div>
                         <div className="mt-1 text-sm text-[hsl(var(--destructive))]">
-                          {formatPct(worstCommanderMatchup.posteriorScore)} adjusted score
+                          Adjusted score: {formatPct(worstCommanderMatchup.posteriorScore)}
                         </div>
                       </>
                     ) : (
