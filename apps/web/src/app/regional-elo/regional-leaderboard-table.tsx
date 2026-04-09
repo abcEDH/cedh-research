@@ -20,9 +20,15 @@ type LeaderboardRow = {
 type LatestCommanderRow = {
   topdeck_id: string | null;
   active_commander: string | null;
-  latest_commander: string | null;
-  latest_commander_date: string | null;
+  active_commander_decklist_url: string | null;
+  latest_tournament_name: string | null;
+  latest_tournament_date: string | null;
+  latest_tournament_topdeck_tid: string | null;
 };
+
+function buildTopdeckTournamentUrl(tournamentSlug: string | null | undefined) {
+  return tournamentSlug ? `https://topdeck.gg/bracket/${tournamentSlug}` : null;
+}
 
 function formatDate(value: string | null) {
   if (!value) return "-";
@@ -85,14 +91,16 @@ export function RegionalLeaderboardTable({
               <th className="px-2 py-3">Rank</th>
               <th className="px-2 py-3">Player</th>
               <th className="px-2 py-3">Elo</th>
+              <th className="px-2 py-3">Active Commander</th>
               <th className="px-2 py-3">Games</th>
               <th className="px-2 py-3">W-L-D</th>
-              <th className="px-2 py-3">Latest</th>
+              <th className="px-2 py-3">Latest Tournament</th>
             </tr>
           </thead>
           <tbody>
             {leaderboard.map((row, index) => {
               const latestCommander = row.topdeck_id ? latestByPlayer[row.topdeck_id] : undefined;
+              const latestTournamentHref = buildTopdeckTournamentUrl(latestCommander?.latest_tournament_topdeck_tid);
               const displayRank = (currentPage - 1) * pageSize + index + 1;
               const playerHref =
                 row.topdeck_id && row.region_type === "state"
@@ -118,14 +126,41 @@ export function RegionalLeaderboardTable({
                     )}
                   </td>
                   <td className="px-2 py-3 font-semibold text-primary">{Math.round(row.rating)}</td>
+                  <td className="px-2 py-3 text-xs text-muted-foreground">
+                    <div className="truncate">
+                      {latestCommander?.active_commander_decklist_url && latestCommander?.active_commander ? (
+                        <a
+                          href={latestCommander.active_commander_decklist_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="hover:text-primary"
+                        >
+                          {latestCommander.active_commander}
+                        </a>
+                      ) : (
+                        latestCommander?.active_commander || "No commander data"
+                      )}
+                    </div>
+                  </td>
                   <td className="px-2 py-3 text-muted-foreground">{row.games_played}</td>
                   <td className="px-2 py-3 text-muted-foreground">
                     {row.wins}-{row.losses}-{row.draws}
                   </td>
                   <td className="px-2 py-3 text-xs text-muted-foreground">
-                    <div>{formatDate(row.last_game_date)}</div>
+                    <div>{formatDate(latestCommander?.latest_tournament_date ?? row.last_game_date)}</div>
                     <div className="truncate text-[11px]">
-                      {latestCommander?.active_commander || latestCommander?.latest_commander || "No commander data"}
+                      {latestTournamentHref && latestCommander?.latest_tournament_name ? (
+                        <a
+                          href={latestTournamentHref}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="hover:text-primary"
+                        >
+                          {latestCommander.latest_tournament_name}
+                        </a>
+                      ) : (
+                        latestCommander?.latest_tournament_name || "No tournament data"
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -133,7 +168,7 @@ export function RegionalLeaderboardTable({
             })}
             {leaderboard.length === 0 && (
               <tr>
-                <td colSpan={6} className="py-6 text-center text-sm text-muted-foreground">
+                <td colSpan={7} className="py-6 text-center text-sm text-muted-foreground">
                   No Global Elo data yet. Run the Global Elo job to populate this leaderboard.
                 </td>
               </tr>
