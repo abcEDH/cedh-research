@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sys
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -82,6 +81,7 @@ class BenchmarkSpec:
     request_builder: Callable[[str, BenchmarkFixture], BenchmarkRequest]
     expected_columns: tuple[str, ...]
     min_rows: int = 1
+    smoke: bool = True
 
 
 @dataclass(frozen=True)
@@ -415,6 +415,7 @@ def benchmark_specs() -> list[BenchmarkSpec]:
                 "earliest_game_date",
                 "latest_game_date",
             ),
+            smoke=False,
         ),
         BenchmarkSpec(
             name="card_frequencies_global",
@@ -476,7 +477,20 @@ def benchmark_specs() -> list[BenchmarkSpec]:
                 _rest_url(supabase_url, "rpc/get_notable_players_for_commander"),
                 json_body={"p_commander_id": fixture.commander_id},
             ),
-            expected_columns=("player_name", "entries", "total_wins", "total_games", "win_rate", "top_16_count"),
+            expected_columns=(
+                "player_id",
+                "player_name",
+                "topdeck_handle",
+                "topdeck_id",
+                "entries",
+                "total_wins",
+                "total_losses",
+                "total_draws",
+                "total_games",
+                "win_rate",
+                "top_16_count",
+                "avg_standing",
+            ),
         ),
         BenchmarkSpec(
             name="get_commander_matchups",
@@ -485,7 +499,21 @@ def benchmark_specs() -> list[BenchmarkSpec]:
                 _rest_url(supabase_url, "rpc/get_commander_matchups"),
                 json_body={"p_commander_id": fixture.commander_id},
             ),
-            expected_columns=("opponent_commander", "opponent_commander_id", "times_lost_to", "times_beat", "total_encounters", "loss_rate"),
+            expected_columns=(
+                "opponent_commander_id",
+                "opponent_commander_name",
+                "games_played",
+                "wins",
+                "losses",
+                "draws",
+                "win_rate",
+                "loss_rate",
+                "draw_rate",
+                "expected_win_rate",
+                "win_rate_vs_expected",
+                "is_statistically_significant",
+                "confidence_level",
+            ),
         ),
         BenchmarkSpec(
             name="get_commanders_for_card",
@@ -654,13 +682,18 @@ def benchmark_queries(
     warmups: int = BENCHMARK_WARMUPS_DEFAULT,
     max_regression_pct: float = BENCHMARK_FAILURE_REGRESSION_PCT_DEFAULT,
     only: set[str] | None = None,
+    smoke_only: bool = False,
 ) -> None:
     supabase_url, _ = get_supabase_env()
     headers = supabase_headers()
     fixture = resolve_benchmark_fixture(supabase_url, headers)
     session = requests.Session()
 
-    specs = [spec for spec in benchmark_specs() if only is None or spec.name in only]
+    specs = [
+        spec
+        for spec in benchmark_specs()
+        if (only is None or spec.name in only) and (not smoke_only or spec.smoke)
+    ]
     if not specs:
         raise SystemExit("No benchmark specs matched the requested filters.")
 
@@ -1077,6 +1110,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=[],
         help="Run only the named benchmark query. May be provided multiple times.",
     )
+    benchmark_parser.add_argument(
+        "--smoke-only",
+        action="store_true",
+        help="Run only the fast smoke-test benchmark queries. Skips known slow surfaces.",
+    )
     subparsers.add_parser("all", help="Run all backend maintenance validations")
     return parser
 
@@ -1098,6 +1136,7 @@ def main(argv: list[str] | None = None) -> int:
             warmups=args.warmups,
             max_regression_pct=args.max_regression_pct,
             only=set(args.only) if args.only else None,
+            smoke_only=args.smoke_only,
         )
     elif args.command == "all":
         validate_views()

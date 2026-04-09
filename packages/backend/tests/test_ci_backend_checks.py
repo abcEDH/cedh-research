@@ -33,6 +33,11 @@ class BenchmarkSpecTests(unittest.TestCase):
                 msg=f"{spec.name} should define expected columns",
             )
 
+    def test_regional_validity_is_excluded_from_smoke(self) -> None:
+        smoke_specs = {spec.name for spec in benchmark_specs() if spec.smoke}
+
+        self.assertNotIn("regional_elo_data_validity", smoke_specs)
+
 
 if __name__ == "__main__":
     unittest.main()

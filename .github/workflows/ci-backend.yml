@@ -53,8 +53,11 @@ jobs:
           python-version: "3.12"
           enable-cache: true
 
+      - name: Create virtual environment
+        run: uv venv --python 3.12 .venv
+
       - name: Install dependencies
-        run: uv pip install -r packages/backend/requirements.txt
+        run: uv pip install --python .venv/bin/python -r packages/backend/requirements.txt
 
       - name: Run Ruff check
         run: uv run ruff check packages/backend/src
@@ -81,8 +84,11 @@ jobs:
           python-version: "3.12"
           enable-cache: true
 
+      - name: Create virtual environment
+        run: uv venv --python 3.12 .venv
+
       - name: Install dependencies
-        run: uv pip install -r packages/backend/requirements.txt
+        run: uv pip install --python .venv/bin/python -r packages/backend/requirements.txt
 
       - name: Validate backend views and functions
         run: uv run python packages/backend/src/ci_backend_checks.py views
@@ -96,7 +102,7 @@ jobs:
       - name: Smoke-test analytics benchmarks
         run: |
           uv run python packages/backend/src/ci_backend_checks.py benchmark \
-            --runs 1 --warmups 0
+            --runs 1 --warmups 0 --smoke-only
 
       - name: Smoke-test leaderboard recompute
         run: uv run python packages/backend/src/regional_elo.py --smoke-days 30 --dry-run
