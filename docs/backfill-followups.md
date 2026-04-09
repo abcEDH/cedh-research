@@ -1,40 +1,76 @@
 # Backfill Follow-ups
 
-## Targeted Moxfield Commander Backfill
+## Recommended Workflow
 
-- After `logs/backfill_moxfield_commanders_targeted_run_20260408.csv` finishes, run a gap pass first for in-range Moxfield rows whose `entry_id` does not appear in the attempt cache.
-- Current recoverable gap count from the target list versus cache UUID scan: about `5,360` rows.
-- Generate the gap ID list first:
+- Do not treat the old attempt cache alone as the source of truth for completion.
+- The reliable source of truth is current database state:
+  - rows still in the date range
+  - rows still storing a Moxfield `decklist_url`
+
+## Current Corrective Pass
+
+- Current residual manifest:
+  - `logs/moxfield_entry_ids_remaining_in_range_20260409.txt`
+- Current corrective run cache:
+  - `logs/backfill_moxfield_commanders_residual_in_range_20260409.csv`
+- This residual manifest was generated directly from Supabase for rows where:
+  - `decklist_url ilike '%moxfield.com%'`
+  - `tournaments.start_date` is between `2023-12-08` and `2025-10-05`
+
+## After The Current Residual Run Finishes
+
+- Regenerate a fresh residual manifest from the database.
+- Goal: identify rows that still have a Moxfield `decklist_url` after the current corrective run.
 
 ```bash
 python3 - <<'PY'
+import sys
 from pathlib import Path
-import re
 
-target_ids = [
-    line.strip()
-    for line in Path("logs/moxfield_entry_ids_2023-12-08_to_2025-10-05.txt").read_text().splitlines()
-    if line.strip()
-]
-cache_ids = set(
-    re.findall(
-        r"(?m)^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}),",
-        Path("logs/backfill_moxfield_commanders_targeted_run_20260408.csv").read_text(errors="replace"),
+sys.path.insert(0, "packages/backend/src")
+from backfill_moxfield_commanders import load_credentials
+from ingest import SupabaseClient
+
+supabase_url, supabase_key = load_credentials()
+client = SupabaseClient(supabase_url, supabase_key)
+
+ids = []
+offset = 0
+limit = 1000
+while True:
+    rows = client.select(
+        "tournament_entries",
+        {
+            "select": "id,players(topdeck_id),tournaments(topdeck_tid,start_date)",
+            "decklist_url": "ilike.*moxfield.com*",
+            "tournaments.start_date": ["gte.2023-12-08", "lte.2025-10-05"],
+            "limit": limit,
+            "offset": offset,
+            "order": "id.asc",
+        },
     )
-)
-missing_ids = [entry_id for entry_id in target_ids if entry_id not in cache_ids]
-Path("logs/moxfield_entry_ids_2023-12-08_to_2025-10-05_missing_from_cache.txt").write_text(
-    "\n".join(missing_ids) + ("\n" if missing_ids else "")
-)
-print(len(missing_ids))
+    if not rows:
+        break
+    ids.extend(row["id"] for row in rows if row.get("id"))
+    offset += len(rows)
+    if len(rows) < limit:
+        break
+
+out = Path("logs/moxfield_entry_ids_remaining_in_range_postrun.txt")
+out.write_text("\n".join(ids) + ("\n" if ids else ""))
+print(f"remaining_in_range_rows={len(ids)}")
+print(f"output={out}")
 PY
 ```
 
-- Then run the backfill against just that gap list:
+## If Residual Rows Remain
+
+- Run one more cleanup pass against that fresh DB-derived residual manifest.
+- Use a fresh attempt cache for that second pass.
 
 ```bash
 python3 packages/backend/src/backfill_moxfield_commanders.py \
-  --entry-ids-file logs/moxfield_entry_ids_2023-12-08_to_2025-10-05_missing_from_cache.txt \
+  --entry-ids-file logs/moxfield_entry_ids_remaining_in_range_postrun.txt \
   --process-all-moxfield-rows \
   --resolve-topdeck-deck-page \
   --start-date 2023-12-08 \
@@ -42,17 +78,30 @@ python3 packages/backend/src/backfill_moxfield_commanders.py \
   --order-direction desc \
   --page-size 25 \
   --topdeck-timeout 10 \
-  --attempt-cache logs/backfill_moxfield_commanders_targeted_run_20260408.csv
+  --attempt-cache logs/backfill_moxfield_commanders_residual_in_range_postrun.csv
 ```
 
-- After the gap pass, run one focused retry pass for transient failures only.
-- Retry statuses: `topdeck_timeout`, `topdeck_connection_error`, `supabase_update_failed`, `topdeck_http_error`.
-- The script's real CLI uses repeated `--retry-status`, not `--retry-statuses`.
-- Recommended command shape:
+## After The Residual Follow-up Pass
+
+- If the second residual pass completes and there are still Moxfield rows left, inspect the remainder directly.
+- Common expected remainder classes:
+  - `moxfield_redirect`
+  - `bad_moxfield_url`
+  - rows where TopDeck metadata exists but TopDeck still does not expose a standalone native deck page
+
+## Optional Transient Retry
+
+- If you want one final focused retry after the second residual pass, use the second pass's own cache.
+- Retry statuses:
+  - `topdeck_timeout`
+  - `topdeck_connection_error`
+  - `supabase_update_failed`
+  - `topdeck_http_error`
+- The real CLI uses repeated `--retry-status`.
 
 ```bash
 python3 packages/backend/src/backfill_moxfield_commanders.py \
-  --entry-ids-file logs/moxfield_entry_ids_2023-12-08_to_2025-10-05.txt \
+  --entry-ids-file logs/moxfield_entry_ids_remaining_in_range_postrun.txt \
   --process-all-moxfield-rows \
   --resolve-topdeck-deck-page \
   --start-date 2023-12-08 \
@@ -64,39 +113,13 @@ python3 packages/backend/src/backfill_moxfield_commanders.py \
   --retry-status topdeck_connection_error \
   --retry-status supabase_update_failed \
   --retry-status topdeck_http_error \
-  --attempt-cache logs/backfill_moxfield_commanders_targeted_run_20260408.csv
+  --attempt-cache logs/backfill_moxfield_commanders_residual_in_range_postrun.csv
 ```
 
-- After the gap pass and transient retry pass, run one final reconciliation check.
-- Goal: confirm that every target `entry_id` in `logs/moxfield_entry_ids_2023-12-08_to_2025-10-05.txt` appears in the attempt cache.
-- Recommended reconciliation command:
+## Final Success Check
 
-```bash
-python3 - <<'PY'
-from pathlib import Path
-import re
+- Final success should be measured by the database, not by old cache presence.
+- Success condition:
+  - the regenerated DB-derived residual manifest is empty
+  - or only contains rows you have explicitly accepted as irreducible Moxfield holdouts
 
-target_ids = [
-    line.strip()
-    for line in Path("logs/moxfield_entry_ids_2023-12-08_to_2025-10-05.txt").read_text().splitlines()
-    if line.strip()
-]
-cache_ids = set(
-    re.findall(
-        r"(?m)^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}),",
-        Path("logs/backfill_moxfield_commanders_targeted_run_20260408.csv").read_text(errors="replace"),
-    )
-)
-missing_ids = [entry_id for entry_id in target_ids if entry_id not in cache_ids]
-print(f"target_ids={len(target_ids)}")
-print(f"cache_ids={len(cache_ids)}")
-print(f"missing_ids={len(missing_ids)}")
-if missing_ids:
-    Path("logs/moxfield_entry_ids_2023-12-08_to_2025-10-05_missing_after_followups.txt").write_text(
-        "\n".join(missing_ids) + "\n"
-    )
-    print("wrote logs/moxfield_entry_ids_2023-12-08_to_2025-10-05_missing_after_followups.txt")
-PY
-```
-
-- Success condition: `missing_ids=0`

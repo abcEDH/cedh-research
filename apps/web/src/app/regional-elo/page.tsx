@@ -551,20 +551,12 @@ async function fetchLatestCommanders(rows: LeaderboardRow[]): Promise<Map<string
   const profileActiveCommanderByTopdeckId = new Map<string, string>();
   const latestPlayedEventByPlayerId = new Map<
     string,
-    { tournament_name: string | null; game_date: string | null }
+    { tournament_id: string | null; tournament_name: string | null; game_date: string | null }
   >();
-  const tournamentsByName = new Map<
+  const tournamentsById = new Map<
     string,
-    Array<{ name: string | null; start_date: string | null; topdeck_tid: string | null }>
+    { id: string; name: string | null; start_date: string | null; topdeck_tid: string | null }
   >();
-  const latestTournamentRows: Array<{
-    player_id: string;
-    tournament_id: string;
-    tournaments:
-      | { name: string | null; start_date: string | null; topdeck_tid: string | null }
-      | Array<{ name: string | null; start_date: string | null; topdeck_tid: string | null }>
-      | null;
-  }> = [];
   const pageSize = 1000;
   const playerIds = Array.from(topdeckIdByPlayerId.keys());
 
@@ -574,7 +566,7 @@ async function fetchLatestCommanders(rows: LeaderboardRow[]): Promise<Map<string
       for (let offset = 0; ; offset += pageSize) {
         const { data, error } = await supabase
           .from(table)
-          .select("player_id, game_date, tournament_name")
+          .select("player_id, game_date, tournament_name, tournament_id")
           .in("player_id", playerIdChunk)
           .order("game_date", { ascending: false })
           .range(offset, offset + pageSize - 1);
@@ -586,12 +578,18 @@ async function fetchLatestCommanders(rows: LeaderboardRow[]): Promise<Map<string
         }
 
         const page =
-          (data as Array<{ player_id: string; game_date: string | null; tournament_name: string | null }>) ?? [];
+          (data as Array<{
+            player_id: string;
+            game_date: string | null;
+            tournament_name: string | null;
+            tournament_id: string | null;
+          }>) ?? [];
         tableWorked = tableWorked || page.length > 0;
         for (const row of page) {
           const existing = latestPlayedEventByPlayerId.get(row.player_id);
           if (!existing || (row.game_date && (!existing.game_date || row.game_date > existing.game_date))) {
             latestPlayedEventByPlayerId.set(row.player_id, {
+              tournament_id: row.tournament_id ?? null,
               tournament_name: row.tournament_name ?? null,
               game_date: row.game_date ?? null,
             });
@@ -605,48 +603,22 @@ async function fetchLatestCommanders(rows: LeaderboardRow[]): Promise<Map<string
     if (tableWorked || latestPlayedEventByPlayerId.size > 0) break;
   }
 
-  for (const playerIdChunk of chunkArray(playerIds, 100)) {
-    for (let offset = 0; ; offset += pageSize) {
-      const { data, error } = await supabase
-        .from("tournament_entries")
-        .select("player_id, tournament_id, tournaments!inner(name, start_date, topdeck_tid)")
-        .in("player_id", playerIdChunk)
-        .range(offset, offset + pageSize - 1);
-
-      if (error || !data?.length) break;
-      latestTournamentRows.push(
-        ...(data as Array<{
-          player_id: string;
-          tournament_id: string;
-          tournaments:
-            | { name: string | null; start_date: string | null; topdeck_tid: string | null }
-            | Array<{ name: string | null; start_date: string | null; topdeck_tid: string | null }>
-            | null;
-        }>)
-      );
-      if (data.length < pageSize) break;
-    }
-  }
-
-  const latestTournamentNames = Array.from(
+  const latestTournamentIds = Array.from(
     new Set(
       Array.from(latestPlayedEventByPlayerId.values())
-        .map((row) => row.tournament_name)
+        .map((row) => row.tournament_id)
         .filter((value): value is string => Boolean(value))
     )
   );
-  for (const nameChunk of chunkArray(latestTournamentNames, 100)) {
+  for (const idChunk of chunkArray(latestTournamentIds, 100)) {
     const { data, error } = await supabase
       .from("tournaments")
-      .select("name, start_date, topdeck_tid")
-      .in("name", nameChunk);
+      .select("id, name, start_date, topdeck_tid")
+      .in("id", idChunk);
 
     if (error || !data?.length) continue;
-    for (const row of data as Array<{ name: string | null; start_date: string | null; topdeck_tid: string | null }>) {
-      const tournamentName = row.name ?? "";
-      const existing = tournamentsByName.get(tournamentName) ?? [];
-      existing.push(row);
-      tournamentsByName.set(tournamentName, existing);
+    for (const row of data as Array<{ id: string; name: string | null; start_date: string | null; topdeck_tid: string | null }>) {
+      tournamentsById.set(row.id, row);
     }
   }
 
@@ -661,51 +633,18 @@ async function fetchLatestCommanders(rows: LeaderboardRow[]): Promise<Map<string
     });
   }
 
-  for (const row of latestTournamentRows) {
-    const topdeckId = topdeckIdByPlayerId.get(row.player_id) ?? null;
-    if (!topdeckId) continue;
-
-    const existing = latestByPlayer.get(topdeckId);
-    if (!existing) continue;
-    const latestPlayed = latestPlayedEventByPlayerId.get(row.player_id);
-    if (!latestPlayed?.game_date || !latestPlayed.tournament_name) continue;
-    const tournament = Array.isArray(row.tournaments) ? (row.tournaments[0] ?? null) : row.tournaments;
-    const playedAt = tournament?.start_date ?? null;
-    if (tournament?.name !== latestPlayed.tournament_name) continue;
-    if (playedAt && latestPlayed.game_date && playedAt > latestPlayed.game_date) continue;
-
-    if (
-      playedAt &&
-      (!existing.latest_tournament_date || playedAt > existing.latest_tournament_date)
-    ) {
-      existing.latest_tournament_name = tournament?.name ?? null;
-      existing.latest_tournament_date = playedAt;
-      existing.latest_tournament_topdeck_tid = tournament?.topdeck_tid ?? null;
-    }
-  }
-
   for (const [playerId, latestPlayed] of latestPlayedEventByPlayerId.entries()) {
     const topdeckId = topdeckIdByPlayerId.get(playerId);
     if (!topdeckId) continue;
     const existing = latestByPlayer.get(topdeckId);
     if (!existing || !latestPlayed.game_date) continue;
-    const matchingTournaments = latestPlayed.tournament_name
-      ? (tournamentsByName.get(latestPlayed.tournament_name) ?? [])
-          .filter(
-            (row) =>
-              row.start_date &&
-              latestPlayed.game_date &&
-              row.start_date <= latestPlayed.game_date
-          )
-          .sort((a, b) => (b.start_date ?? "").localeCompare(a.start_date ?? ""))
-      : [];
-    const matchedTournament = matchingTournaments[0] ?? null;
+    const matchedTournament = latestPlayed.tournament_id
+      ? (tournamentsById.get(latestPlayed.tournament_id) ?? null)
+      : null;
 
-    existing.latest_tournament_name =
-      matchedTournament?.name ?? latestPlayed.tournament_name ?? existing.latest_tournament_name;
+    existing.latest_tournament_name = matchedTournament?.name ?? latestPlayed.tournament_name;
     existing.latest_tournament_date = matchedTournament?.start_date ?? latestPlayed.game_date;
-    existing.latest_tournament_topdeck_tid =
-      matchedTournament?.topdeck_tid ?? existing.latest_tournament_topdeck_tid;
+    existing.latest_tournament_topdeck_tid = matchedTournament?.topdeck_tid ?? null;
   }
 
   const referenceDate = new Date();
