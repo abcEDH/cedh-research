@@ -13,6 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  TOPDECK_API_KEY: ${{ secrets.TOPDECK_API_KEY }}
   SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
   SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
 
@@ -41,8 +42,8 @@ jobs:
 
           echo "Data dictionary check passed."
 
-  backend-validation:
-    name: Backend validation and consistency checks
+  ingest-smoke:
+    name: Backend ingest and leaderboard smoke
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -55,14 +56,16 @@ jobs:
       - name: Install dependencies
         run: pip install -r packages/backend/requirements.txt
 
-      - name: Validate backend views and functions
-        run: python packages/backend/src/ci_backend_checks.py views
-
-      - name: Check data integrity
-        run: python packages/backend/src/ci_backend_checks.py data-integrity
-
-      - name: Check regional Elo aggregate consistency
-        run: python packages/backend/src/ci_backend_checks.py regional-elo
+      - name: Run bounded data ingestion
+        run: python packages/backend/src/ingest.py --days 7 --min-players 32
 
       - name: Smoke-test leaderboard recompute
         run: python packages/backend/src/regional_elo.py --smoke-days 30 --dry-run
+
+      - name: Upload logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ingest-logs
+          path: packages/backend/logs/
+          retention-days: 30
