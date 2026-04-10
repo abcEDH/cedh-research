@@ -1,6 +1,6 @@
 # Data Dictionary
 
-Last reviewed: 2026-04-08
+Last reviewed: 2026-04-09
 Update policy: This file must be updated whenever migrations in `packages/backend/supabase/migrations` change.
 
 This describes the primary tables and analytical views used in the cEDH Analytics database.
@@ -292,8 +292,15 @@ erDiagram
 - **`global_elo_game_event_log`**: global Elo per-game event log enriched with tournament, player, commander, and seat context.
 - **`global_elo_primary_state_assignments`**: one row per player for the state currently assigned from recency-weighted activity.
 - **`global_elo_player_stats`**: canonical assigned-state game counts and W/L/D totals sourced from `global_elo_primary_state_assignments`.
-- **`global_elo_leaderboard`**: global, country, and assigned-state leaderboard rows by `region_type` and `region_key`, enriched with player names and TopDeck IDs. Rankings use global Elo; country/state games and record fields use global player totals so unknown-region games remain counted.
+- **`global_elo_leaderboard`**: global, country, and assigned-state leaderboard rows by `region_type` and `region_key`, enriched with player names and TopDeck IDs. Rankings use global Elo. Displayed games, wins, draws, losses, and last-game date are sourced from canonical `global_elo_game_events` aggregates for the player's global `('global', 'ALL')` stream rather than from rating-table counters, so unknown-region games remain counted and stale rating counters do not leak into the leaderboard.
 - **`global_elo_regions`**: global, country, and assigned-state region summary with player counts, country grouping, and latest `updated_at` timestamp.
+
+## Migration 20260409140000_fix_global_leaderboard_canonical_counts
+- **Purpose**: make leaderboard/profile-facing global counts use canonical game-event aggregates instead of historical counters persisted on the rating rows.
+- **Key actions**:
+  - Rebuilds `regional_elo_leaderboard` from `global_elo_ratings` joined to aggregated `global_elo_game_events` counts for the global `ALL` stream.
+  - Keeps global/country/state leaderboard ranking based on rating plus the existing activity/order tie-breaks, while replacing displayed record fields with canonical aggregate values.
+  - Recreates `global_elo_leaderboard` as an alias of the updated `regional_elo_leaderboard` and reapplies `security_invoker` plus public `SELECT` grants.
 
 ### Card Analytics (materialized views)
 - **`card_frequencies_by_commander`**: per-commander card inclusion frequencies.
