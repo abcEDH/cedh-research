@@ -5,9 +5,8 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="5578a0ab-1e26-4f4d-b242-0ac96e28ea2f" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/pr-81-summary.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/pr-81-summary.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/scripts/check-mermaid.mjs" beforeDir="false" afterPath="$PROJECT_DIR$/scripts/check-mermaid.mjs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.github/workflows/ci-backend-maintenance.yml" beforeDir="false" afterPath="$PROJECT_DIR$/.github/workflows/ci-backend-maintenance.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/backend/src/ci_backend_checks.py" beforeDir="false" afterPath="$PROJECT_DIR$/packages/backend/src/ci_backend_checks.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -72,7 +71,7 @@
       <updated>1774217452916</updated>
       <workItem from="1774217454430" duration="7460000" />
       <workItem from="1775738053559" duration="9275000" />
-      <workItem from="1775773449489" duration="4515000" />
+      <workItem from="1775773449489" duration="4890000" />
     </task>
     <servers />
   </component>

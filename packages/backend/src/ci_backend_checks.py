@@ -34,7 +34,8 @@ VIEW_SPECS: list[tuple[str, int]] = [
     ("commander_first_appearances", 10),
     ("survival_summary", 10),
     ("regional_elo_player_stats", 10),
-    ("regional_elo_leaderboard", 10),
+    ("regional_elo_regions", 2),
+    ("regional_elo_game_event_log", 100),
 ]
 
 RPC_SPECS: list[tuple[str, dict[str, Any], bool]] = [
@@ -50,6 +51,8 @@ TABLE_SPECS: list[tuple[str, int]] = [
     ("games", 5000),
     ("game_participants", 15000),
     ("players", 2000),
+    ("regional_elo_state_activity", 10),
+    ("regional_elo_game_events", 100),
 ]
 
 
@@ -225,13 +228,13 @@ def validate_data_integrity() -> None:
 
 
 def fetch_state_samples(supabase_url: str, headers: dict[str, str]) -> list[dict[str, Any]]:
-    leaderboard_rows: list[dict[str, Any]] = []
+    player_stats_rows: list[dict[str, Any]] = []
     offset = 0
 
-    while len(leaderboard_rows) < STATE_SAMPLE_SIZE:
-        leaderboard_resp = request_with_retry(
+    while len(player_stats_rows) < STATE_SAMPLE_SIZE:
+        stats_resp = request_with_retry(
             "GET",
-            f"{supabase_url}/rest/v1/regional_elo_leaderboard",
+            f"{supabase_url}/rest/v1/regional_elo_player_stats",
             headers=headers,
             params={
                 "select": "region_type,region_key,player_id,games_played,wins,draws,losses",
@@ -241,13 +244,13 @@ def fetch_state_samples(supabase_url: str, headers: dict[str, str]) -> list[dict
             },
             timeout=30,
         )
-        if leaderboard_resp.status_code != 200:
+        if stats_resp.status_code != 200:
             raise RuntimeError(
-                f"Failed to fetch regional Elo leaderboard sample: {response_failure(leaderboard_resp)}"
+                f"Failed to fetch regional Elo player stats sample: {response_failure(stats_resp)}"
             )
 
-        page_rows = leaderboard_resp.json()
-        leaderboard_rows.extend(
+        page_rows = stats_resp.json()
+        player_stats_rows.extend(
             row for row in page_rows if row.get("region_type") == "state" and row.get("games_played", 0) > 0
         )
 
@@ -256,44 +259,57 @@ def fetch_state_samples(supabase_url: str, headers: dict[str, str]) -> list[dict
 
         offset += PAGE_SIZE
 
-    return leaderboard_rows[:STATE_SAMPLE_SIZE]
+    return player_stats_rows[:STATE_SAMPLE_SIZE]
 
 
 def validate_regional_elo_consistency() -> None:
     supabase_url, _ = get_supabase_env()
     headers = supabase_headers()
-    leaderboard_rows = fetch_state_samples(supabase_url, headers)
+    stat_rows = fetch_state_samples(supabase_url, headers)
 
-    if not leaderboard_rows:
-        raise SystemExit("No regional Elo leaderboard rows found to validate.")
+    if not stat_rows:
+        raise SystemExit("No regional Elo player stats rows found to validate.")
 
     failures: list[tuple[dict[str, Any], str]] = []
-    for row in leaderboard_rows:
+    for row in stat_rows:
         stats_resp = request_with_retry(
             "GET",
-            f"{supabase_url}/rest/v1/regional_elo_player_stats",
+            f"{supabase_url}/rest/v1/regional_elo_state_activity",
             headers=headers,
             params={
-                "select": "games_played,wins,draws,losses",
+                "select": "games_lifetime,wins,draws,losses",
                 "region_type": f"eq.{row['region_type']}",
                 "region_key": f"eq.{row['region_key']}",
                 "player_id": f"eq.{row['player_id']}",
+                "is_primary_state": "eq.true",
             },
             timeout=30,
         )
         if stats_resp.status_code != 200:
-            failures.append((row, f"failed to fetch canonical stats: {response_failure(stats_resp)}"))
+            failures.append((row, f"failed to fetch canonical state activity: {response_failure(stats_resp)}"))
             continue
 
         stats_rows = stats_resp.json()
         if not stats_rows:
-            failures.append((row, "missing canonical stats row"))
+            failures.append((row, "missing primary state activity row"))
             continue
 
         stats = stats_rows[0]
-        for field in ("games_played", "wins", "draws", "losses"):
-            if row[field] != stats[field]:
-                failures.append((row, f"{field}: leaderboard={row[field]} canonical={stats[field]}"))
+        comparisons = (
+            ("games_played", "games_lifetime"),
+            ("wins", "wins"),
+            ("draws", "draws"),
+            ("losses", "losses"),
+        )
+        for observed_field, canonical_field in comparisons:
+            if row[observed_field] != stats[canonical_field]:
+                failures.append(
+                    (
+                        row,
+                        f"{observed_field}: player_stats={row[observed_field]} "
+                        f"state_activity={stats[canonical_field]}",
+                    )
+                )
                 break
 
     if failures:
@@ -302,7 +318,7 @@ def validate_regional_elo_consistency() -> None:
             print(f"  - {row['region_key']} / {row['player_id']}: {reason}")
         raise SystemExit(1)
 
-    print(f"Validated {len(leaderboard_rows)} regional Elo rows against canonical stats.")
+    print(f"Validated {len(stat_rows)} regional Elo player stats rows against primary state activity.")
 
 
 def build_parser() -> argparse.ArgumentParser:
