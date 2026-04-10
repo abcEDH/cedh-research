@@ -12,7 +12,7 @@ import time
 import argparse
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
 
 from ingest import SupabaseClient
@@ -24,6 +24,8 @@ ELO_DIVISOR = 200
 GLOBAL_REGION_TYPE = "global"
 GLOBAL_REGION_KEY = "ALL"
 STATE_REGION_TYPE = "state"
+GLOBAL_ELO_RATINGS_TABLE_CANDIDATES = ("global_elo_ratings", "regional_elo_ratings")
+GAME_RESULTS_TABLE_CANDIDATES = ("global_elo_game_results", "regional_elo_game_results")
 COMMANDER_PRIMARY_LOOKBACK_MONTHS = 6
 COMMANDER_FALLBACK_LOOKBACK_MONTHS = 12
 COMMANDER_MIN_PRIMARY_ENTRIES = 2
@@ -424,11 +426,36 @@ def next_month(value: datetime) -> datetime:
     return datetime(value.year, value.month + 1, 1)
 
 
+def utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+def table_exists(client: SupabaseClient, table: str) -> bool:
+    try:
+        client.select(table, {"select": "*", "limit": "1"}, max_retries=1)
+        return True
+    except Exception:
+        return False
+
+
+def first_available_table(client: SupabaseClient, candidates: Sequence[str]) -> str:
+    for table in candidates:
+        if table_exists(client, table):
+            return table
+    raise RuntimeError(f"None of the candidate tables are available: {', '.join(candidates)}")
+
+
 def fetch_elo_game_rows(client: SupabaseClient, smoke_days: int | None = None) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
-    current_month = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    current_month = utc_now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     end_month = next_month(current_month)
-    start_cutoff = (datetime.utcnow().date() - timedelta(days=smoke_days)).isoformat() if smoke_days else None
+    start_cutoff = (utc_now().date() - timedelta(days=smoke_days)).isoformat() if smoke_days else None
+    game_results_table = first_available_table(client, GAME_RESULTS_TABLE_CANDIDATES)
+    if game_results_table != GAME_RESULTS_TABLE_CANDIDATES[0]:
+        print(
+            f"Using fallback game-results table '{game_results_table}' because '{GAME_RESULTS_TABLE_CANDIDATES[0]}' is unavailable.",
+            flush=True,
+        )
 
     for start in month_starts(2022, end_month.year):
         if start >= end_month:
@@ -446,11 +473,7 @@ def fetch_elo_game_rows(client: SupabaseClient, smoke_days: int | None = None) -
             ("start_date", f"gte.{query_start}"),
             ("start_date", f"lt.{end.date().isoformat()}"),
         ]
-        try:
-            page = fetch_all(client, "global_elo_game_results", query_params, limit=250)
-        except Exception as exc:
-            print(f"Falling back to regional_elo_game_results for {start:%Y-%m}. Error: {exc}", flush=True)
-            page = fetch_all(client, "regional_elo_game_results", query_params, limit=250)
+        page = fetch_all(client, game_results_table, query_params, limit=250)
         rows.extend(page)
         print(f"Fetched {len(page)} game-result rows for {start:%Y-%m}", flush=True)
 
@@ -571,7 +594,7 @@ def process_game(
     is_draw = any((row.get("result") or "") == "draw" for row in rows) or bool(rows[0].get("is_draw"))
     result_value = 1.0 / len(players) if is_draw else None
     parsed_game_date = parse_game_date(game_date)
-    age_days = (datetime.utcnow().date() - parsed_game_date).days if parsed_game_date else None
+    age_days = (utc_now().date() - parsed_game_date).days if parsed_game_date else None
     state_key = normalized_state(rows[0])
     country_key = normalized_country(rows[0])
     profile_region_key = state_key or "UNKNOWN"
@@ -675,7 +698,7 @@ def build_upsert_rows(
     region_key: str,
     region_stats: Dict[str, PlayerStats],
 ) -> List[Dict[str, Any]]:
-    updated_at = datetime.utcnow().isoformat()
+    updated_at = utc_now().isoformat()
     rows = []
     for player_id, stats in region_stats.items():
         rows.append(
@@ -773,7 +796,7 @@ def build_primary_state_by_player(
 
 
 def build_state_activity_rows(state_activity: Dict[str, Dict[str, StateActivity]]) -> List[Dict[str, Any]]:
-    updated_at = datetime.utcnow().isoformat()
+    updated_at = utc_now().isoformat()
     rows: List[Dict[str, Any]] = []
     for player_id, state_rows in state_activity.items():
         for region_key, activity in state_rows.items():
@@ -841,8 +864,8 @@ def build_active_leaderboard_rows(
     state_activity: Dict[str, Dict[str, StateActivity]],
     players_by_id: Dict[str, Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
-    updated_at = datetime.utcnow().isoformat()
-    cutoff = date_months_ago(datetime.utcnow().date(), ACTIVE_PLAYER_LOOKBACK_MONTHS).isoformat()
+    updated_at = utc_now().isoformat()
+    cutoff = date_months_ago(utc_now().date(), ACTIVE_PLAYER_LOOKBACK_MONTHS).isoformat()
     primary_state_by_player = build_primary_state_by_player(state_activity)
     rows_by_scope: Dict[Tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
 
@@ -915,7 +938,7 @@ def build_profile_summary_rows(
     profile_activity: Dict[str, Dict[str, StateActivity]],
     players_by_id: Dict[str, Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
-    updated_at = datetime.utcnow().isoformat()
+    updated_at = utc_now().isoformat()
     rows: List[Dict[str, Any]] = []
     for player_id, stats in global_stats.items():
         player = players_by_id.get(player_id) or {}
@@ -1056,8 +1079,8 @@ def selected_commander_rows(rows: List[CommanderUsage], reference: date) -> List
 
 def build_commander_profile_rows(client: SupabaseClient) -> List[Dict[str, Any]]:
     by_topdeck_id = fetch_commander_usage_rows(client)
-    updated_at = datetime.utcnow().isoformat()
-    reference = datetime.utcnow().date()
+    updated_at = utc_now().isoformat()
+    reference = utc_now().date()
     profile_rows: List[Dict[str, Any]] = []
 
     for topdeck_id, rows in by_topdeck_id.items():
@@ -1197,14 +1220,21 @@ def main() -> None:
 
     commander_profile_rows = build_commander_profile_rows(client)
 
+    ratings_table = first_available_table(client, GLOBAL_ELO_RATINGS_TABLE_CANDIDATES)
+    if ratings_table != GLOBAL_ELO_RATINGS_TABLE_CANDIDATES[0]:
+        print(
+            f"Using fallback ratings table '{ratings_table}' because '{GLOBAL_ELO_RATINGS_TABLE_CANDIDATES[0]}' is unavailable.",
+            flush=True,
+        )
+
     print("Deleting existing global Elo, state activity, and event rows")
-    resilient_delete(client, "global_elo_ratings", "regional_elo_ratings", {"region_type": f"eq.{GLOBAL_REGION_TYPE}"})
+    resilient_delete(client, ratings_table, "regional_elo_ratings", {"region_type": f"eq.{GLOBAL_REGION_TYPE}"})
     resilient_delete(client, "global_elo_state_activity", "regional_elo_state_activity", {"region_type": f"eq.{STATE_REGION_TYPE}"})
     resilient_delete(client, "global_elo_game_events", "regional_elo_game_events", {"region_type": f"eq.{GLOBAL_REGION_TYPE}"})
 
     resilient_upsert(
         client,
-        "global_elo_ratings",
+        ratings_table,
         "regional_elo_ratings",
         rating_rows,
         on_conflict="region_type,region_key,player_id",
