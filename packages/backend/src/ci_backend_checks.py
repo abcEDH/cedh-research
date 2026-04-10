@@ -627,15 +627,6 @@ def benchmark_specs() -> list[BenchmarkSpec]:
             ),
         ),
         BenchmarkSpec(
-            name="get_commanders_for_card",
-            request_builder=lambda supabase_url, fixture: BenchmarkRequest(
-                "POST",
-                _rest_url(supabase_url, "rpc/get_commanders_for_card"),
-                json_body={"p_card_name": fixture.card_name},
-            ),
-            expected_columns=("commander_id", "commander_name", "deck_count", "inclusion_rate"),
-        ),
-        BenchmarkSpec(
             name="commander_meta_monthly",
             request_builder=lambda supabase_url, fixture: BenchmarkRequest(
                 "GET",
