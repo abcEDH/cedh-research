@@ -271,7 +271,10 @@ def fetch_state_samples(supabase_url: str, headers: dict[str, str]) -> list[dict
             f"{supabase_url}/rest/v1/global_elo_leaderboard",
             headers=headers,
             params={
-                "select": "region_type,region_key,player_id,games_played,wins,draws,losses",
+                "select": (
+                    "region_type,region_key,player_id,games_played,wins,draws,losses,"
+                    "primary_country_key,primary_region_key"
+                ),
                 "order": "games_played.desc",
                 "limit": PAGE_SIZE,
                 "offset": offset,
@@ -306,32 +309,47 @@ def validate_regional_elo_consistency() -> None:
 
     failures: list[tuple[dict[str, Any], str]] = []
     for row in leaderboard_rows:
-        stats_resp = request_with_retry(
+        summary_resp = request_with_retry(
             "GET",
-            f"{supabase_url}/rest/v1/global_elo_player_stats",
+            f"{supabase_url}/rest/v1/global_elo_player_profile_summaries",
             headers=headers,
             params={
-                "select": "games_played,wins,draws,losses",
-                "region_type": f"eq.{row['region_type']}",
-                "region_key": f"eq.{row['region_key']}",
+                "select": "games_played,wins,draws,losses,last_game_date,home_country_key,home_region_key",
                 "player_id": f"eq.{row['player_id']}",
             },
             timeout=30,
         )
-        if stats_resp.status_code != 200:
-            failures.append((row, f"failed to fetch canonical stats: {response_failure(stats_resp)}"))
+        if summary_resp.status_code != 200:
+            failures.append((row, f"failed to fetch canonical summary: {response_failure(summary_resp)}"))
             continue
 
-        stats_rows = stats_resp.json()
-        if not stats_rows:
-            failures.append((row, "missing canonical stats row"))
+        summary_rows = summary_resp.json()
+        if not summary_rows:
+            failures.append((row, "missing canonical summary row"))
             continue
 
-        stats = stats_rows[0]
+        summary = summary_rows[0]
         for field in ("games_played", "wins", "draws", "losses"):
-            if row[field] != stats[field]:
-                failures.append((row, f"{field}: leaderboard={row[field]} canonical={stats[field]}"))
+            if row[field] != summary[field]:
+                failures.append((row, f"{field}: leaderboard={row[field]} canonical={summary[field]}"))
                 break
+        else:
+            if row.get("primary_country_key") != summary.get("home_country_key"):
+                failures.append(
+                    (
+                        row,
+                        "primary_country_key: "
+                        f"leaderboard={row.get('primary_country_key')} canonical={summary.get('home_country_key')}",
+                    )
+                )
+            elif row.get("primary_region_key") != summary.get("home_region_key"):
+                failures.append(
+                    (
+                        row,
+                        "primary_region_key: "
+                        f"leaderboard={row.get('primary_region_key')} canonical={summary.get('home_region_key')}",
+                    )
+                )
 
     if failures:
         print("Global Elo aggregate consistency check failed:")
@@ -339,7 +357,7 @@ def validate_regional_elo_consistency() -> None:
             print(f"  - {row['region_key']} / {row['player_id']}: {reason}")
         raise SystemExit(1)
 
-    print(f"Validated {len(leaderboard_rows)} global Elo rows against canonical stats.")
+    print(f"Validated {len(leaderboard_rows)} global Elo rows against canonical player summaries.")
 
 
 def build_parser() -> argparse.ArgumentParser:
