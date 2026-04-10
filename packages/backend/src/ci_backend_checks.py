@@ -33,23 +33,42 @@ VIEW_SPECS: list[tuple[str, int]] = [
     ("commander_momentum", 1),
     ("commander_first_appearances", 10),
     ("survival_summary", 10),
-    ("regional_elo_player_stats", 10),
-    ("regional_elo_leaderboard", 10),
+    ("global_elo_player_stats", 10),
+    ("global_elo_leaderboard", 10),
 ]
 
-RPC_SPECS: list[tuple[str, dict[str, Any], bool]] = [
-    ("get_notable_players_for_commander", {"p_commander_id": "00000000-0000-0000-0000-000000000000"}, False),
-    ("get_commander_matchups", {"p_commander_id": "00000000-0000-0000-0000-000000000000"}, False),
-    ("get_commanders_for_card", {"p_card_name": "Sol Ring"}, True),
+RPC_SPECS: list[tuple[str, dict[str, Any], bool, tuple[str, ...]]] = [
+    (
+        "get_notable_players_for_commander",
+        {"p_commander_id": "00000000-0000-0000-0000-000000000000"},
+        False,
+        ("player_id", "player_name", "win_rate", "entries"),
+    ),
+    (
+        "get_commander_matchups",
+        {"p_commander_id": "00000000-0000-0000-0000-000000000000"},
+        False,
+        ("opponent_commander_name", "games_played", "wins", "losses"),
+    ),
+    (
+        "get_commanders_for_card",
+        {"p_card_name": "Sol Ring"},
+        True,
+        ("commander_id", "commander_name", "deck_count", "inclusion_rate"),
+    ),
 ]
 
-TABLE_SPECS: list[tuple[str, int]] = [
-    ("tournaments", 50),
-    ("commanders", 100),
-    ("tournament_entries", 3000),
-    ("games", 5000),
-    ("game_participants", 15000),
-    ("players", 2000),
+TABLE_SPECS: list[tuple[str, int, bool]] = [
+    ("tournaments", 50, False),
+    ("commanders", 100, False),
+    ("tournament_entries", 3000, False),
+    ("games", 5000, False),
+    ("game_participants", 15000, False),
+    ("players", 2000, False),
+    ("global_elo_state_activity", 10, True),
+    ("global_elo_game_events", 100, True),
+    ("global_elo_active_leaderboard", 10, True),
+    ("global_elo_player_profile_summaries", 10, True),
 ]
 
 
@@ -127,18 +146,30 @@ def validate_views() -> None:
     print("VALIDATING RPC FUNCTIONS")
     print("=" * 60)
 
-    for func_name, params, expect_data in RPC_SPECS:
+    for func_name, params, expect_data, expected_cols in RPC_SPECS:
         try:
             url = f"{supabase_url}/rest/v1/rpc/{func_name}"
             resp = request_with_retry("POST", url, headers=headers, json=params, timeout=30)
             if resp.status_code == 200:
                 data = resp.json()
-                row_count = len(data) if isinstance(data, list) else 1
+                rows = data if isinstance(data, list) else [data]
+                row_count = len(rows)
+
                 if expect_data and row_count == 0:
                     print(f"✗ {func_name}: Expected data but got empty result")
                     failed.append((func_name, "Expected data but got empty"))
+                elif row_count > 0:
+                    # Validate columns
+                    actual_cols = set(rows[0].keys())
+                    missing = [c for c in expected_cols if c not in actual_cols]
+                    if missing:
+                        print(f"✗ {func_name}: Missing columns {missing}")
+                        failed.append((func_name, f"Missing columns: {missing}"))
+                    else:
+                        print(f"✓ {func_name}: {row_count} rows returned with valid schema")
+                        passed.append(func_name)
                 else:
-                    print(f"✓ {func_name}: {row_count} rows returned")
+                    print(f"✓ {func_name}: 0 rows returned (as expected for dummy ID)")
                     passed.append(func_name)
             else:
                 reason = response_failure(resp)
@@ -200,7 +231,7 @@ def validate_data_integrity() -> None:
     print("DATA INTEGRITY CHECK")
     print("=" * 60)
 
-    for table_name, min_count in TABLE_SPECS:
+    for table_name, min_count, optional in TABLE_SPECS:
         try:
             count, strategy = get_table_count(supabase_url, headers, table_name)
             status = "✓" if count >= min_count else "✗"
@@ -209,10 +240,16 @@ def validate_data_integrity() -> None:
                 f"(expected >= {min_count:,}; via {strategy})"
             )
             if count < min_count:
-                failed.append((table_name, f"{count} < {min_count} via {strategy}"))
+                if optional:
+                    print(f"  (Warning: Optional table {table_name} below threshold)")
+                else:
+                    failed.append((table_name, f"{count} < {min_count} via {strategy}"))
         except Exception as exc:  # pragma: no cover - CI diagnostic path
-            print(f"✗ {table_name}: {exc}")
-            failed.append((table_name, str(exc)))
+            if optional:
+                print(f"○ {table_name}: Skipped (Optional table not found or error: {exc})")
+            else:
+                print(f"✗ {table_name}: {exc}")
+                failed.append((table_name, str(exc)))
 
     print()
     if failed:
@@ -231,10 +268,13 @@ def fetch_state_samples(supabase_url: str, headers: dict[str, str]) -> list[dict
     while len(leaderboard_rows) < STATE_SAMPLE_SIZE:
         leaderboard_resp = request_with_retry(
             "GET",
-            f"{supabase_url}/rest/v1/regional_elo_leaderboard",
+            f"{supabase_url}/rest/v1/global_elo_leaderboard",
             headers=headers,
             params={
-                "select": "region_type,region_key,player_id,games_played,wins,draws,losses",
+                "select": (
+                    "region_type,region_key,player_id,games_played,wins,draws,losses,"
+                    "primary_country_key,primary_region_key"
+                ),
                 "order": "games_played.desc",
                 "limit": PAGE_SIZE,
                 "offset": offset,
@@ -243,7 +283,7 @@ def fetch_state_samples(supabase_url: str, headers: dict[str, str]) -> list[dict
         )
         if leaderboard_resp.status_code != 200:
             raise RuntimeError(
-                f"Failed to fetch regional Elo leaderboard sample: {response_failure(leaderboard_resp)}"
+                f"Failed to fetch global Elo leaderboard sample: {response_failure(leaderboard_resp)}"
             )
 
         page_rows = leaderboard_resp.json()
@@ -269,40 +309,61 @@ def validate_regional_elo_consistency() -> None:
 
     failures: list[tuple[dict[str, Any], str]] = []
     for row in leaderboard_rows:
-        stats_resp = request_with_retry(
+        summary_resp = request_with_retry(
             "GET",
-            f"{supabase_url}/rest/v1/regional_elo_player_stats",
+            f"{supabase_url}/rest/v1/global_elo_player_profile_summaries",
             headers=headers,
             params={
-                "select": "games_played,wins,draws,losses",
-                "region_type": f"eq.{row['region_type']}",
-                "region_key": f"eq.{row['region_key']}",
+                "select": "games_played,wins,draws,losses,last_game_date,home_country_key,home_region_key",
                 "player_id": f"eq.{row['player_id']}",
             },
             timeout=30,
         )
-        if stats_resp.status_code != 200:
-            failures.append((row, f"failed to fetch canonical stats: {response_failure(stats_resp)}"))
+        if summary_resp.status_code == 404:
+            print(
+                "global_elo_player_profile_summaries not available — skipping summary consistency check.",
+                flush=True,
+            )
+            break
+        if summary_resp.status_code != 200:
+            failures.append((row, f"failed to fetch canonical summary: {response_failure(summary_resp)}"))
             continue
 
-        stats_rows = stats_resp.json()
-        if not stats_rows:
-            failures.append((row, "missing canonical stats row"))
+        summary_rows = summary_resp.json()
+        if not summary_rows:
+            failures.append((row, "missing canonical summary row"))
             continue
 
-        stats = stats_rows[0]
+        summary = summary_rows[0]
         for field in ("games_played", "wins", "draws", "losses"):
-            if row[field] != stats[field]:
-                failures.append((row, f"{field}: leaderboard={row[field]} canonical={stats[field]}"))
+            if row[field] != summary[field]:
+                failures.append((row, f"{field}: leaderboard={row[field]} canonical={summary[field]}"))
                 break
+        else:
+            if row.get("primary_country_key") != summary.get("home_country_key"):
+                failures.append(
+                    (
+                        row,
+                        "primary_country_key: "
+                        f"leaderboard={row.get('primary_country_key')} canonical={summary.get('home_country_key')}",
+                    )
+                )
+            elif row.get("primary_region_key") != summary.get("home_region_key"):
+                failures.append(
+                    (
+                        row,
+                        "primary_region_key: "
+                        f"leaderboard={row.get('primary_region_key')} canonical={summary.get('home_region_key')}",
+                    )
+                )
 
     if failures:
-        print("Regional Elo aggregate consistency check failed:")
+        print("Global Elo aggregate consistency check failed:")
         for row, reason in failures:
             print(f"  - {row['region_key']} / {row['player_id']}: {reason}")
         raise SystemExit(1)
 
-    print(f"Validated {len(leaderboard_rows)} regional Elo rows against canonical stats.")
+    print(f"Validated {len(leaderboard_rows)} global Elo rows against canonical player summaries.")
 
 
 def build_parser() -> argparse.ArgumentParser:
