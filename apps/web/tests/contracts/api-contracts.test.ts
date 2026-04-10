@@ -113,29 +113,27 @@ describe.skipIf(!canRunTests)("API Contract Tests", () => {
         const { data, error } = await supabase
           .from("commander_stats")
           .select("*")
-          .limit(1);
+          .eq("commander_id", TEST_COMMANDER_ID)
+          .single();
 
         expect(error).toBeNull();
         expect(data).toBeDefined();
 
         if (data) {
-          expect(data.length).toBeGreaterThan(0);
-
-          const sample = data[0];
-          const result = CommanderStatsSchema.safeParse(sample);
+          const result = CommanderStatsSchema.safeParse(data);
 
           if (!result.success) {
             console.error("Schema validation failed:", result.error.format());
-            console.error("Data:", JSON.stringify(sample, null, 2));
+            console.error("Data:", JSON.stringify(data, null, 2));
           }
 
           expect(result.success).toBe(true);
 
           // Verify key fields
-          expect(sample).toHaveProperty("commander_id");
-          expect(sample).toHaveProperty("commander_name");
-          expect(sample).toHaveProperty("total_entries");
-          expect(sample).toHaveProperty("avg_win_rate");
+          expect(data).toHaveProperty("commander_id");
+          expect(data).toHaveProperty("commander_name");
+          expect(data).toHaveProperty("total_entries");
+          expect(data).toHaveProperty("avg_win_rate");
         }
       });
     });

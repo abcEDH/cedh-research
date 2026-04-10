@@ -46,6 +46,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
@@ -59,7 +61,9 @@ jobs:
       - name: Run Ruff check
         run: |
           set -euo pipefail
-          changed_files=$(git diff --name-only "origin/${{ github.base_ref }}"...HEAD -- packages/backend/src | grep '\.py$' || true)
+          BASE_REF="${{ github.base_ref }}"
+          git fetch origin "$BASE_REF"
+          changed_files=$(git diff --name-only "origin/$BASE_REF"...HEAD -- packages/backend/src | grep '\.py$' || true)
           if [ -z "$changed_files" ]; then
             echo "No backend source Python files changed."
             exit 0
@@ -69,7 +73,9 @@ jobs:
       - name: Run Ruff format
         run: |
           set -euo pipefail
-          changed_files=$(git diff --name-only "origin/${{ github.base_ref }}"...HEAD -- packages/backend/src | grep '\.py$' || true)
+          BASE_REF="${{ github.base_ref }}"
+          git fetch origin "$BASE_REF"
+          changed_files=$(git diff --name-only "origin/$BASE_REF"...HEAD -- packages/backend/src | grep '\.py$' || true)
           if [ -z "$changed_files" ]; then
             echo "No backend source Python files changed."
             exit 0
