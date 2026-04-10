@@ -1,3 +1,10 @@
+## [1.7.2](https://github.com/abcEDH/cedh-research/compare/v1.7.1...v1.7.2) (2026-04-10)
+
+
+### Bug Fixes
+
+* simplify CD workflow to alias latest production deployment ([#93](https://github.com/abcEDH/cedh-research/issues/93)) ([5fe3c2f](https://github.com/abcEDH/cedh-research/commit/5fe3c2fc65f249bfccd0a0e5aaa615951eae3f22))
+
 ## [1.7.1](https://github.com/abcEDH/cedh-research/compare/v1.7.0...v1.7.1) (2026-04-10)
 
 
