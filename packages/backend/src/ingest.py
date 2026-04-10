@@ -435,6 +435,8 @@ class SupabaseClient:
                     logger.error(f"Query failed after {max_retries} retries: {e}")
                     raise
 
+        return []
+
 
 class DirectPostgresClient:
     """Client for direct Postgres connection using psycopg2 (faster for large batches)."""
