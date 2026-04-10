@@ -39,12 +39,19 @@ TOPDECK_STANDING_RATE_FIELDS = [
 SUPABASE_REST_BASE = "https://msjjihqbxtgjdtapywrj.supabase.co"
 
 
+import os
+from pathlib import Path
+
+# Ensure logs directory exists
+_log_dir = Path(__file__).parent.parent.parent / "logs"
+_log_dir.mkdir(parents=True, exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler("logs/ingest.log"),
+        logging.FileHandler(_log_dir / "ingest.log"),
     ],
 )
 logger = logging.getLogger(__name__)
