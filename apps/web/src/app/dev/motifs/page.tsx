@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { MotifLayer } from "@/components/motifs/MotifLayer";
 
 export default function MotifPreviewPage() {
@@ -16,12 +17,12 @@ export default function MotifPreviewPage() {
                 This route is a visual QA harness: legibility, contrast, and “does it fight the UI?”
               </p>
               <div className="mt-6 flex flex-wrap gap-3">
-                <a className="inline-flex items-center rounded-md bg-primary px-6 py-2 text-primary-foreground" href="/">
+                <Link className="inline-flex items-center rounded-md bg-primary px-6 py-2 text-primary-foreground" href="/">
                   Back home
-                </a>
-                <a className="inline-flex items-center rounded-md border border-border/70 bg-muted/30 px-6 py-2" href="/commanders">
+                </Link>
+                <Link className="inline-flex items-center rounded-md border border-border/70 bg-muted/30 px-6 py-2" href="/commanders">
                   Open dashboard
-                </a>
+                </Link>
               </div>
               <div className="mt-8 flex items-center gap-4">
                 <img src="/motifs/divider-sigil.svg" className="h-8 w-full opacity-80" alt="" />

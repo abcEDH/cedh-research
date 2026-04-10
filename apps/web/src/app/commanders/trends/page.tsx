@@ -9,6 +9,7 @@ import TrendMetricCharts, {
   TrendMetricPoint,
   TrendMetricSeries,
 } from "@/components/commanders/trend-metric-charts";
+import type { CommanderPeriodSnapshot } from "@/components/commanders/commander-trends-table";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +39,17 @@ type WeeklyTrendRow = {
   wins?: number | null;
   losses?: number | null;
   draws?: number | null;
+  total_players?: number | null;
+};
+
+type MonthlyTrendRow = {
+  commander_id: string;
+  month_key?: string | null;
+  entries: number;
+  wins?: number | null;
+  losses?: number | null;
+  draws?: number | null;
+  total_players?: number | null;
 };
 
 function normalizeDateKey(value: string | null | undefined) {
@@ -75,8 +87,8 @@ async function getCommanderPeriodSnapshots(commanderIds: string[], sizeFilter: S
     .in("commander_id", commanderIds)
     .order("month_key", { ascending: true });
 
-  let weeklyData: any[] = weeklyPrimary.data ?? [];
-  let monthlyData: any[] = monthlyPrimary.data ?? [];
+  let weeklyData: WeeklyTrendRow[] = weeklyPrimary.data ?? [];
+  let monthlyData: MonthlyTrendRow[] = monthlyPrimary.data ?? [];
 
   if (weeklyPrimary.error) {
     console.error("Error fetching weekly trends (with players):", weeklyPrimary.error);
@@ -105,24 +117,8 @@ async function getCommanderPeriodSnapshots(commanderIds: string[], sizeFilter: S
     console.error("Error fetching monthly trends:", monthlyPrimary.error);
   }
 
-  const weeklyRows = (weeklyData || []) as {
-    commander_id: string;
-    week_start_date: string;
-    entries: number;
-    wins: number;
-    losses: number;
-    draws: number;
-    total_players?: number | null;
-  }[];
-  const monthlyRows = (monthlyData || []) as {
-    commander_id: string;
-    month_key: string;
-    entries: number;
-    wins: number;
-    losses: number;
-    draws: number;
-    total_players?: number | null;
-  }[];
+  const weeklyRows = weeklyData;
+  const monthlyRows = monthlyData;
 
   const weeklyLatest = new Map<string, typeof weeklyRows[number]>();
   weeklyRows.forEach((row) => {
@@ -134,23 +130,29 @@ async function getCommanderPeriodSnapshots(commanderIds: string[], sizeFilter: S
     monthlyLatest.set(row.commander_id, row);
   });
 
-  const snapshots: Record<string, any> = {};
+  const snapshots: Record<string, CommanderPeriodSnapshot> = {};
   commanderIds.forEach((commanderId) => {
     const week = weeklyLatest.get(commanderId);
     const month = monthlyLatest.get(commanderId);
-    const weekGames = week ? week.wins + week.losses + week.draws : 0;
-    const monthGames = month ? month.wins + month.losses + month.draws : 0;
+    const weekWins = week?.wins ?? 0;
+    const weekLosses = week?.losses ?? 0;
+    const weekDraws = week?.draws ?? 0;
+    const monthWins = month?.wins ?? 0;
+    const monthLosses = month?.losses ?? 0;
+    const monthDraws = month?.draws ?? 0;
+    const weekGames = week ? weekWins + weekLosses + weekDraws : 0;
+    const monthGames = month ? monthWins + monthLosses + monthDraws : 0;
 
     snapshots[commanderId] = {
       weekStart: week?.week_start_date ?? null,
       weekEntries: week?.entries ?? null,
-      weekWinRate: weekGames ? (week!.wins / weekGames) * 100 : null,
-      weekPointsPerGame: weekGames ? (week!.wins * 5 + week!.draws) / weekGames : null,
+      weekWinRate: weekGames ? (weekWins / weekGames) * 100 : null,
+      weekPointsPerGame: weekGames ? (weekWins * 5 + weekDraws) / weekGames : null,
       weekPlayers: week?.total_players ?? null,
       monthKey: month?.month_key ?? null,
       monthEntries: month?.entries ?? null,
-      monthWinRate: monthGames ? (month!.wins / monthGames) * 100 : null,
-      monthPointsPerGame: monthGames ? (month!.wins * 5 + month!.draws) / monthGames : null,
+      monthWinRate: monthGames ? (monthWins / monthGames) * 100 : null,
+      monthPointsPerGame: monthGames ? (monthWins * 5 + monthDraws) / monthGames : null,
       monthPlayers: month?.total_players ?? null,
     };
   });
