@@ -1193,6 +1193,9 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    if args.smoke_days is not None and not args.dry_run:
+        raise SystemExit("--smoke-days is validation-only; add --dry-run to avoid rewriting live Elo tables.")
+
     supabase_url, supabase_key = load_credentials()
     client = SupabaseClient(supabase_url, supabase_key)
 

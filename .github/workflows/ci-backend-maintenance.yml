@@ -3,6 +3,14 @@ name: CI Backend Maintenance
 on:
   workflow_dispatch:
     inputs:
+      refresh_mode:
+        description: "Run a non-destructive smoke check or a full Elo refresh"
+        required: true
+        default: "smoke"
+        type: choice
+        options:
+          - smoke
+          - full
       smoke_days:
         description: "How many recent days to include in the Elo recompute"
         required: false
@@ -36,7 +44,12 @@ jobs:
         run: python packages/backend/src/ingest.py --days 7
 
       - name: Recompute global Elo, state activity, game events, and commander profiles
-        run: python packages/backend/src/regional_elo.py --smoke-days ${{ inputs.smoke_days }}
+        run: |
+          if [ "${{ inputs.refresh_mode }}" = "full" ]; then
+            python packages/backend/src/regional_elo.py
+          else
+            python packages/backend/src/regional_elo.py --smoke-days "${{ inputs.smoke_days }}" --dry-run
+          fi
 
       - name: Upload logs
         uses: actions/upload-artifact@v4
