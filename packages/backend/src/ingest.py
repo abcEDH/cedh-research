@@ -32,6 +32,8 @@ TOPDECK_STANDING_RATE_FIELDS = [
     ("primaryWinRate", "opponentWinRate"),
     ("primaryWinRateElo", "opponentWinRateElo"),
     ("primaryWinRateO", "opponentWinRateO"),
+    ("winRate", "opponentWinRate"),
+    ("successRate", "opponentSuccessRate"),
 ]
 
 
