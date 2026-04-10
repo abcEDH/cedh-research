@@ -1,0 +1,31 @@
+name: CI Pre-flight
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  hygiene:
+    name: Repo hygiene and documentation checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check repo hygiene
+        run: npm run docs:hygiene
+
+      - name: Check mermaid documentation
+        run: npm run docs:check

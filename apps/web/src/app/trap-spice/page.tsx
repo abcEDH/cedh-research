@@ -47,6 +47,38 @@ interface Commander {
 
 const ITEMS_PER_PAGE = 20;
 
+async function getCommanderUsageForCards(
+  cardNames: string[]
+): Promise<Map<string, CommanderUsage[]>> {
+  if (cardNames.length === 0) return new Map();
+
+  const { data, error } = await supabase
+    .from("card_frequencies_by_commander")
+    .select("card_name, commander_id, commander, deck_count, inclusion_rate")
+    .in("card_name", cardNames)
+    .order("deck_count", { ascending: false });
+
+  if (error) {
+    console.error("Error fetching commander usage:", error);
+    return new Map();
+  }
+
+  const usageMap = new Map<string, CommanderUsage[]>();
+  for (const row of data || []) {
+    const existing = usageMap.get(row.card_name) || [];
+    if (existing.length < 10) {
+      existing.push({
+        commander_id: row.commander_id,
+        commander: row.commander,
+        deck_count: row.deck_count,
+        inclusion_rate: row.inclusion_rate,
+      });
+      usageMap.set(row.card_name, existing);
+    }
+  }
+  return usageMap;
+}
+
 export default function TrapSpicePage() {
   const [commanders, setCommanders] = useState<Commander[]>([]);
   const [selectedCommander, setSelectedCommander] = useState<string>("");
@@ -119,38 +151,6 @@ export default function TrapSpicePage() {
 
     fetchCards();
   }, []);
-
-  async function getCommanderUsageForCards(
-    cardNames: string[]
-  ): Promise<Map<string, CommanderUsage[]>> {
-    if (cardNames.length === 0) return new Map();
-
-    const { data, error } = await supabase
-      .from("card_frequencies_by_commander")
-      .select("card_name, commander_id, commander, deck_count, inclusion_rate")
-      .in("card_name", cardNames)
-      .order("deck_count", { ascending: false });
-
-    if (error) {
-      console.error("Error fetching commander usage:", error);
-      return new Map();
-    }
-
-    const usageMap = new Map<string, CommanderUsage[]>();
-    for (const row of data || []) {
-      const existing = usageMap.get(row.card_name) || [];
-      if (existing.length < 10) {
-        existing.push({
-          commander_id: row.commander_id,
-          commander: row.commander,
-          deck_count: row.deck_count,
-          inclusion_rate: row.inclusion_rate,
-        });
-        usageMap.set(row.card_name, existing);
-      }
-    }
-    return usageMap;
-  }
 
   // Filter cards by selected commander
   const filteredTrapCards = selectedCommander
