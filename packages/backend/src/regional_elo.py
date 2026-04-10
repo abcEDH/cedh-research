@@ -428,8 +428,9 @@ def fail_job(client: SupabaseClient, job_id: str, error: str) -> None:
             },
             {"id": f"eq.{job_id}", "status": "in.(pending,dispatched,running)"},
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        # Best-effort: failure logging should not crash the process
+        print(f"Failed to record job failure for {job_id}: {exc}", flush=True)
 
 
 QueryParams = Mapping[str, Any] | Sequence[Tuple[str, Any]]
