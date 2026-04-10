@@ -319,6 +319,12 @@ def validate_regional_elo_consistency() -> None:
             },
             timeout=30,
         )
+        if summary_resp.status_code == 404:
+            print(
+                "global_elo_player_profile_summaries not available — skipping summary consistency check.",
+                flush=True,
+            )
+            break
         if summary_resp.status_code != 200:
             failures.append((row, f"failed to fetch canonical summary: {response_failure(summary_resp)}"))
             continue

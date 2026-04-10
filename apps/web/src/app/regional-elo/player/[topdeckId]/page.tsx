@@ -941,10 +941,12 @@ export default async function RegionalPlayerPage({
     ...row,
     country_key: row.country_key ?? inferCountryForRegion(row.region_key) ?? "UNKNOWN",
   }));
-  const [eventPlayerLogs, rawPlayerLogs] = await Promise.all([
+  const [eventPlayerLogsResult, rawPlayerLogsResult] = await Promise.allSettled([
     fetchPlayerEventLogs(player.id, ""),
     buildPlayerLogsFromRawHistory(entries),
   ]);
+  const eventPlayerLogs = eventPlayerLogsResult.status === "fulfilled" ? eventPlayerLogsResult.value : [];
+  const rawPlayerLogs = rawPlayerLogsResult.status === "fulfilled" ? rawPlayerLogsResult.value : [];
   const playerLogs =
     rawPlayerLogs.length >= eventPlayerLogs.length && rawPlayerLogs.length > 0
       ? rawPlayerLogs
