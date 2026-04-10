@@ -1,9 +1,6 @@
 SHELL := /bin/sh
 
-.PHONY: quickstart web-deps web-build web-dev web-start web-test web-test-contracts web-test-e2e backend-deps backend-ingest backend-help
-
-quickstart:
-	./scripts/quickstart.sh
+.PHONY: web-deps web-build web-dev web-start web-test web-test-contracts web-test-e2e backend-deps backend-ingest backend-help
 
 web-deps:
 	npm ci --prefix apps/web

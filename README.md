@@ -30,7 +30,7 @@ Safe templates live in:
 
 ## Quick Start
 Run one command from the repo root:
-- `make quickstart`
+- `just quickstart`
 
 What it does:
 1. Verifies required local commands are available (`node`, `npm`, `python`).
@@ -46,7 +46,7 @@ Then start the app with:
 - `npm run web:dev`
 
 Notes:
-- If you only need frontend setup, run `./scripts/quickstart.sh --no-backend`.
+- If you only need frontend setup, run `just quickstart-no-backend` (or `./scripts/quickstart.sh --no-backend`).
 - Existing env files are never overwritten.
 
 ## Frontend (apps/web)
