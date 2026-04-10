@@ -34,6 +34,9 @@ This PR tightens the regional Elo leaderboard/profile experience, expands player
   - makes displayed games, wins, draws, losses, and last played derive from canonical `global_elo_game_events` aggregates instead of potentially stale rating counters
 - Fixes PR follow-up issues:
   - resolves the frontend `next build` nullability failure in latest-tournament matching
+  - switches backend maintenance CI from stale inline workflow checks to the maintained `ci_backend_checks.py` script
+  - aligns backend maintenance validation with the currently deployed regional Elo schema and canonical state-activity consistency checks
+  - updates the backend data dictionary for the canonical leaderboard-count migration
   - keeps docs checks resilient to deleted tracked markdown files in the working tree
 
 ## Backend / Backfill
@@ -152,9 +155,26 @@ This PR tightens the regional Elo leaderboard/profile experience, expands player
 - Updated the global/regional leaderboard SQL views so displayed games, wins, draws, losses, and last played date come from canonical global game-event aggregates.
 - This removes drift between rating-table counters and the event stream while preserving the existing leaderboard ranking inputs.
 
+## Backend Maintenance CI
+
+- Replaced duplicated inline Python in [ci-backend-maintenance.yml](/Users/alexanderlien/Documents/GitHub/cedh-research/.github/workflows/ci-backend-maintenance.yml) with calls to the maintained [ci_backend_checks.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/ci_backend_checks.py) script.
+- Updated backend maintenance validation to match the currently deployed Supabase schema:
+  - validates `regional_elo_regions` and `regional_elo_game_event_log` instead of stale `global_elo_*` aliases missing from the current schema cache
+  - validates `regional_elo_state_activity` and `regional_elo_game_events` in the data-integrity pass
+  - compares `regional_elo_player_stats` against primary `regional_elo_state_activity` rows for consistency instead of sampling the currently empty `regional_elo_leaderboard` view
+- Removed a stale `country_key` dependency from the regional consistency sampler so the check still passes against older deployed `regional_elo_player_stats` definitions.
+
+## Data Dictionary
+
+- Updated [data_dictionary.md](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/docs/data_dictionary.md) for migration `20260409140000_fix_global_leaderboard_canonical_counts`.
+- Documented that `global_elo_leaderboard` displayed record fields now come from canonical `global_elo_game_events` aggregates rather than rating-table counters.
+
 ## Testing / Validation
 
 - `npm --workspace apps/web run test:ci`
 - `npm --workspace apps/web run build`
 - `npm run docs:check`
 - `npm run docs:hygiene`
+- `python3 packages/backend/src/ci_backend_checks.py views`
+- `python3 packages/backend/src/ci_backend_checks.py data-integrity`
+- `python3 packages/backend/src/ci_backend_checks.py regional-elo`
