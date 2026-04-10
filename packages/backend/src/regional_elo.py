@@ -315,6 +315,67 @@ def load_credentials() -> tuple[str, str]:
     return supabase_url, supabase_key
 
 
+# ---------------------------------------------------------------------------
+# Job lifecycle helpers for elo_maintenance_jobs tracking
+# ---------------------------------------------------------------------------
+
+MAINTENANCE_JOBS_TABLE = "elo_maintenance_jobs"
+
+
+def claim_job(client: SupabaseClient, job_id: str) -> bool:
+    """Transition job from pending/dispatched to running."""
+    try:
+        now = utc_now().isoformat()
+        client.upsert(
+            MAINTENANCE_JOBS_TABLE,
+            {"id": job_id, "status": "running", "started_at": now, "heartbeat_at": now},
+            on_conflict="id",
+        )
+        return True
+    except Exception as exc:
+        print(f"Failed to claim job {job_id}: {exc}", flush=True)
+        return False
+
+
+def update_job_heartbeat(client: SupabaseClient, job_id: str) -> None:
+    """Best-effort heartbeat so stale-job detection knows we are alive."""
+    try:
+        client.upsert(
+            MAINTENANCE_JOBS_TABLE,
+            {"id": job_id, "heartbeat_at": utc_now().isoformat()},
+            on_conflict="id",
+        )
+    except Exception:
+        pass
+
+
+def complete_job(client: SupabaseClient, job_id: str, metrics: dict) -> None:
+    """Mark job as completed with output metrics."""
+    now = utc_now().isoformat()
+    client.upsert(
+        MAINTENANCE_JOBS_TABLE,
+        {"id": job_id, "status": "completed", "completed_at": now, "heartbeat_at": now, **metrics},
+        on_conflict="id",
+    )
+
+
+def fail_job(client: SupabaseClient, job_id: str, error: str) -> None:
+    """Mark job as failed with error text."""
+    try:
+        client.upsert(
+            MAINTENANCE_JOBS_TABLE,
+            {
+                "id": job_id,
+                "status": "failed",
+                "completed_at": utc_now().isoformat(),
+                "error_text": error[:2000],
+            },
+            on_conflict="id",
+        )
+    except Exception:
+        pass
+
+
 QueryParams = Mapping[str, Any] | Sequence[Tuple[str, Any]]
 
 
