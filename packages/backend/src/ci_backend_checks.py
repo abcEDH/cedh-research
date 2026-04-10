@@ -33,14 +33,29 @@ VIEW_SPECS: list[tuple[str, int]] = [
     ("commander_momentum", 1),
     ("commander_first_appearances", 10),
     ("survival_summary", 10),
-    ("regional_elo_player_stats", 10),
-    ("regional_elo_leaderboard", 10),
+    ("global_elo_player_stats", 10),
+    ("global_elo_leaderboard", 10),
 ]
 
-RPC_SPECS: list[tuple[str, dict[str, Any], bool]] = [
-    ("get_notable_players_for_commander", {"p_commander_id": "00000000-0000-0000-0000-000000000000"}, False),
-    ("get_commander_matchups", {"p_commander_id": "00000000-0000-0000-0000-000000000000"}, False),
-    ("get_commanders_for_card", {"p_card_name": "Sol Ring"}, True),
+RPC_SPECS: list[tuple[str, dict[str, Any], bool, tuple[str, ...]]] = [
+    (
+        "get_notable_players_for_commander",
+        {"p_commander_id": "00000000-0000-0000-0000-000000000000"},
+        False,
+        ("player_id", "player_name", "win_rate", "entries"),
+    ),
+    (
+        "get_commander_matchups",
+        {"p_commander_id": "00000000-0000-0000-0000-000000000000"},
+        False,
+        ("opponent_commander_name", "games_played", "wins", "losses"),
+    ),
+    (
+        "get_commanders_for_card",
+        {"p_card_name": "Sol Ring"},
+        True,
+        ("commander_id", "commander_name", "deck_count", "inclusion_rate"),
+    ),
 ]
 
 TABLE_SPECS: list[tuple[str, int, bool]] = [
@@ -131,18 +146,30 @@ def validate_views() -> None:
     print("VALIDATING RPC FUNCTIONS")
     print("=" * 60)
 
-    for func_name, params, expect_data in RPC_SPECS:
+    for func_name, params, expect_data, expected_cols in RPC_SPECS:
         try:
             url = f"{supabase_url}/rest/v1/rpc/{func_name}"
             resp = request_with_retry("POST", url, headers=headers, json=params, timeout=30)
             if resp.status_code == 200:
                 data = resp.json()
-                row_count = len(data) if isinstance(data, list) else 1
+                rows = data if isinstance(data, list) else [data]
+                row_count = len(rows)
+
                 if expect_data and row_count == 0:
                     print(f"✗ {func_name}: Expected data but got empty result")
                     failed.append((func_name, "Expected data but got empty"))
+                elif row_count > 0:
+                    # Validate columns
+                    actual_cols = set(rows[0].keys())
+                    missing = [c for c in expected_cols if c not in actual_cols]
+                    if missing:
+                        print(f"✗ {func_name}: Missing columns {missing}")
+                        failed.append((func_name, f"Missing columns: {missing}"))
+                    else:
+                        print(f"✓ {func_name}: {row_count} rows returned with valid schema")
+                        passed.append(func_name)
                 else:
-                    print(f"✓ {func_name}: {row_count} rows returned")
+                    print(f"✓ {func_name}: 0 rows returned (as expected for dummy ID)")
                     passed.append(func_name)
             else:
                 reason = response_failure(resp)
@@ -241,7 +268,7 @@ def fetch_state_samples(supabase_url: str, headers: dict[str, str]) -> list[dict
     while len(leaderboard_rows) < STATE_SAMPLE_SIZE:
         leaderboard_resp = request_with_retry(
             "GET",
-            f"{supabase_url}/rest/v1/regional_elo_leaderboard",
+            f"{supabase_url}/rest/v1/global_elo_leaderboard",
             headers=headers,
             params={
                 "select": "region_type,region_key,player_id,games_played,wins,draws,losses",
@@ -253,7 +280,7 @@ def fetch_state_samples(supabase_url: str, headers: dict[str, str]) -> list[dict
         )
         if leaderboard_resp.status_code != 200:
             raise RuntimeError(
-                f"Failed to fetch regional Elo leaderboard sample: {response_failure(leaderboard_resp)}"
+                f"Failed to fetch global Elo leaderboard sample: {response_failure(leaderboard_resp)}"
             )
 
         page_rows = leaderboard_resp.json()
@@ -281,7 +308,7 @@ def validate_regional_elo_consistency() -> None:
     for row in leaderboard_rows:
         stats_resp = request_with_retry(
             "GET",
-            f"{supabase_url}/rest/v1/regional_elo_player_stats",
+            f"{supabase_url}/rest/v1/global_elo_player_stats",
             headers=headers,
             params={
                 "select": "games_played,wins,draws,losses",
@@ -307,12 +334,12 @@ def validate_regional_elo_consistency() -> None:
                 break
 
     if failures:
-        print("Regional Elo aggregate consistency check failed:")
+        print("Global Elo aggregate consistency check failed:")
         for row, reason in failures:
             print(f"  - {row['region_key']} / {row['player_id']}: {reason}")
         raise SystemExit(1)
 
-    print(f"Validated {len(leaderboard_rows)} regional Elo rows against canonical stats.")
+    print(f"Validated {len(leaderboard_rows)} global Elo rows against canonical stats.")
 
 
 def build_parser() -> argparse.ArgumentParser:
