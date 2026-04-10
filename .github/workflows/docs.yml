@@ -9,6 +9,8 @@ on:
       - "docs/supported-surfaces.md"
       - ".github/pull_request_template.md"
       - "CONTRIBUTING.md"
+      - "Justfile"
+      - "scripts/quickstart.sh"
       - ".github/workflows/docs.yml"
 
 jobs:
@@ -25,3 +27,21 @@ jobs:
         run: npm run docs:check
       - name: Repo hygiene
         run: npm run docs:hygiene
+
+  quickstart-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install just
+        uses: taiki-e/install-action@just
+      - name: Quickstart smoke test (no backend deps)
+        run: just quickstart-no-backend
