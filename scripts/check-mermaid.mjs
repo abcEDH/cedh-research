@@ -1,5 +1,5 @@
 import { execSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 const mdFiles = execSync('git ls-files "*.md"', { encoding: 'utf8' })
   .split('\n')
@@ -12,6 +12,9 @@ const mermaidBlockRegex = /```mermaid\n([\s\S]*?)```/g;
 const labelRegex = /\[[^\]]+\]/g;
 
 for (const file of mdFiles) {
+  if (!existsSync(file)) {
+    continue;
+  }
   const contents = readFileSync(file, 'utf8');
   let match;
   while ((match = mermaidBlockRegex.exec(contents)) !== null) {
