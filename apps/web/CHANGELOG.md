@@ -1,3 +1,10 @@
+## [1.7.1](https://github.com/abcEDH/cedh-research/compare/v1.7.0...v1.7.1) (2026-04-10)
+
+
+### Bug Fixes
+
+* **cd:** trigger alias step on version tags to bypass [skip ci] ([#88](https://github.com/abcEDH/cedh-research/issues/88)) ([28e191b](https://github.com/abcEDH/cedh-research/commit/28e191b68d0787576dcee96d53882705671baeb1))
+
 # [1.7.0](https://github.com/abcEDH/cedh-research/compare/v1.6.0...v1.7.0) (2026-04-08)
 
 

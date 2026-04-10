@@ -1,15 +1,20 @@
 name: CI Backend Maintenance
 
 on:
-  schedule:
-    - cron: "0 9 * * 3"
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "packages/backend/**"
-      - ".github/workflows/ci-backend.yml"
-      - ".github/workflows/ci-backend-maintenance.yml"
+    inputs:
+      refresh_mode:
+        description: "Run a non-destructive smoke check or a full Elo refresh"
+        required: true
+        default: "smoke"
+        type: choice
+        options:
+          - smoke
+          - full
+      smoke_days:
+        description: "How many recent days to include in the Elo recompute"
+        required: false
+        default: "30"
 
 concurrency:
   group: backend-maintenance-${{ github.ref }}
@@ -22,7 +27,7 @@ env:
 
 jobs:
   ingest:
-    name: Backend ingest and leaderboard
+    name: Backend ingest and manual Elo recompute
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -38,8 +43,13 @@ jobs:
       - name: Run data ingestion
         run: python packages/backend/src/ingest.py --days 7 --min-players 32
 
-      - name: Recompute leaderboard data
-        run: python packages/backend/src/regional_elo.py
+      - name: Recompute global Elo, state activity, game events, and commander profiles
+        run: |
+          if [ "${{ inputs.refresh_mode }}" = "full" ]; then
+            python packages/backend/src/regional_elo.py --apply
+          else
+            python packages/backend/src/regional_elo.py --smoke-days "${{ inputs.smoke_days }}" --dry-run
+          fi
 
       - name: Upload logs
         uses: actions/upload-artifact@v4

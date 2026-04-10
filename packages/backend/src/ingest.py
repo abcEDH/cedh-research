@@ -37,7 +37,7 @@ except ImportError:
     PSYCOPG2_AVAILABLE = False
 
 # Configure logging
-log_dir = Path("logs")
+log_dir = Path(__file__).parent.parent / "logs"
 log_dir.mkdir(exist_ok=True)
 log_file = log_dir / f"ingest_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 
