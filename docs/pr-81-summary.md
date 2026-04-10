@@ -12,12 +12,14 @@
   - `--entry-ids-file` resume can skip already-attempted IDs instead of rescanning from index `0`
   - retry mode uses cached retry IDs directly instead of conflicting with the normal resume path
   - attempt-cache loading strips NUL bytes before CSV parsing
-- Added a temporary dedicated URL rewrite script during iteration, then consolidated the real workflow back into the commander backfill.
+- Added `packages/backend/src/backfill_topdeck_decklist_urls.py` as a focused utility to rewrite stored Moxfield deck URLs to native TopDeck deck pages when those pages resolve cleanly.
+- Added `packages/backend/src/sweep_partner_commander_order.py` as a one-time normalization sweep for partner commander ordering, using observed usage plus explicit community-order overrides and documenting the review set in [partner-community-order-review.csv](/Users/alexanderlien/Documents/GitHub/cedh-research/docs/partner-community-order-review.csv).
 - Generated the in-range target manifest at `logs/moxfield_entry_ids_2023-12-08_to_2025-10-05.txt`.
 - Documented the post-run follow-up plan in [backfill-followups.md](/Users/alexanderlien/Documents/GitHub/cedh-research/docs/backfill-followups.md), including:
   - a gap pass for target IDs missing from the attempt cache
   - a transient retry pass for `topdeck_timeout`, `topdeck_connection_error`, `supabase_update_failed`, and `topdeck_http_error`
   - a final reconciliation check to confirm all target IDs are logged
+- Added `packages/backend/supabase/migrations/20260409140000_fix_global_leaderboard_canonical_counts.sql` so leaderboard and profile global counts come from canonical `global_elo_game_events` aggregates instead of potentially stale rating-table counters.
 
 ## Current Backfill Status
 
@@ -108,6 +110,11 @@
   - commander usage fetches
   - raw tournament entry fetches
 - Verified the Anthony GlacialCity / Albert Burse opponent counts are now symmetric at `11` games on both profile pages.
+
+## Canonical Count Fix
+
+- Updated the global/regional leaderboard SQL views so displayed games, wins, draws, losses, and last played date come from canonical global game-event aggregates.
+- This removes drift between rating-table counters and the event stream while preserving the existing leaderboard ranking inputs.
 
 ## PR / CI Follow-ups
 
