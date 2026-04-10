@@ -54,7 +54,7 @@ jobs:
           enable-cache: true
 
       - name: Create venv and install dependencies
-        run: uv venv .venv && uv pip install --python .venv/bin/python -r packages/backend/requirements.txt
+        run: uv venv .venv --clear && uv pip install --python .venv/bin/python -r packages/backend/requirements.txt
 
       - name: Run Ruff check
         run: |
@@ -93,7 +93,7 @@ jobs:
           enable-cache: true
 
       - name: Create venv and install dependencies
-        run: uv venv .venv && uv pip install --python .venv/bin/python -r packages/backend/requirements.txt
+        run: uv venv .venv --clear && uv pip install --python .venv/bin/python -r packages/backend/requirements.txt
 
       - name: Validate backend views and functions
         run: uv run python packages/backend/src/ci_backend_checks.py views
