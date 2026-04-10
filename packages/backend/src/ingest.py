@@ -920,10 +920,6 @@ class DataIngester:
                         for s in winner_seats
                         if s in participant_map and participant_map[s].get("entry_id")
                     ]
-                    loser_seats = [
-                        s for s in participant_map.keys() if s not in winner_seats and s not in draws
-                    ]
-
                     if not winner_ids:
                         continue
 

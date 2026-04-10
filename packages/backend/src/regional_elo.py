@@ -540,10 +540,7 @@ def build_player_profiles(
     lookback_days: int = 30,
 ) -> List[Dict[str, Any]]:
     """Build profile summary with recent activity indicators."""
-    cutoff = get_past_days_cutoff(lookback_days)
-    recent_set = set()
-    for row in player_rows:
-        pass
+    recent_set = {r["player_id"] for r in player_rows if r.get("last_activity") and r["last_activity"] >= cutoff}
     return [r for r in player_rows if r.get("player_id") in recent_set]
 
 
