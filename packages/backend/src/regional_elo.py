@@ -998,7 +998,7 @@ def fetch_commander_usage_rows(client: SupabaseClient) -> Dict[str, List[Command
         [
             (
                 "select",
-                "player_id,topdeck_id,player_name,commander_name,start_date",
+                "player_id,topdeck_id,player_name,commander_name,start_date,decklist_url",
             ),
             ("topdeck_id", "not.is.null"),
             ("commander_name", "not.is.null"),
@@ -1023,6 +1023,7 @@ def fetch_commander_usage_rows(client: SupabaseClient) -> Dict[str, List[Command
                 player_name=row.get("player_name"),
                 commander_name=commander_name,
                 start_date=str(start_date),
+                decklist_url=row.get("decklist_url"),
             )
         )
 
@@ -1030,14 +1031,83 @@ def fetch_commander_usage_rows(client: SupabaseClient) -> Dict[str, List[Command
     return by_topdeck_id
 
 
-def delete_optional_rows(client: SupabaseClient, table: str, filters: Dict[str, Any]) -> None:
+def resilient_delete(client: SupabaseClient, table: str, fallback_table: str, filters: Dict[str, Any]) -> None:
     try:
         client.delete(table, filters)
     except Exception as exc:
+        print(f"Delete failed for {table}, trying {fallback_table}. Error: {exc}", flush=True)
+        try:
+            client.delete(fallback_table, filters)
+        except Exception as exc2:
+            print(f"Delete failed for fallback {fallback_table}. Error: {exc2}", flush=True)
+            raise RuntimeError(
+                f"resilient_delete: both {table} and {fallback_table} failed"
+            ) from exc2
+
+
+def resilient_upsert(
+    client: SupabaseClient,
+    table: str,
+    fallback_table: str,
+    rows: List[Dict[str, Any]],
+    on_conflict: str,
+    delete_filters: Dict[str, Any] | None = None,
+) -> None:
+    try:
+        upsert_rows(client, table, rows, on_conflict=on_conflict)
+    except Exception as exc:
+        print(f"Upsert failed for {table}, trying {fallback_table}. Error: {exc}", flush=True)
+        if delete_filters is not None:
+            try:
+                client.delete(fallback_table, delete_filters)
+            except Exception as del_exc:
+                print(f"Could not pre-clear {fallback_table} before fallback upsert: {del_exc}", flush=True)
+        try:
+            upsert_rows(client, fallback_table, rows, on_conflict=on_conflict)
+        except Exception as exc2:
+            print(f"Upsert failed for fallback {fallback_table}. Error: {exc2}", flush=True)
+            raise RuntimeError(
+                f"resilient_upsert: both {table} and {fallback_table} failed"
+            ) from exc2
+
+
+def upsert_state_activity_rows(
+    client: SupabaseClient,
+    table: str,
+    fallback_table: str,
+    rows: List[Dict[str, Any]],
+    on_conflict: str,
+    delete_filters: Dict[str, Any] | None = None,
+) -> None:
+    """Upsert state-activity rows with a country_key-stripping fallback for pre-migration schemas."""
+    stripped = [{k: v for k, v in row.items() if k != "country_key"} for row in rows]
+    try:
+        upsert_rows(client, table, rows, on_conflict=on_conflict)
+        return
+    except Exception as exc:
         print(
-            f"Skipping delete for {table}; upsert will replace matching rows. Error: {exc}",
+            f"State-activity upsert failed for {table} (with country_key), retrying without. Error: {exc}",
             flush=True,
         )
+    try:
+        upsert_rows(client, table, stripped, on_conflict=on_conflict)
+        return
+    except Exception as exc:
+        print(
+            f"State-activity upsert failed for {table} (stripped), trying {fallback_table}. Error: {exc}",
+            flush=True,
+        )
+    if delete_filters is not None:
+        try:
+            client.delete(fallback_table, delete_filters)
+        except Exception as del_exc:
+            print(f"Could not pre-clear {fallback_table} before fallback upsert: {del_exc}", flush=True)
+    try:
+        upsert_rows(client, fallback_table, stripped, on_conflict=on_conflict)
+    except Exception as exc:
+        raise RuntimeError(
+            f"upsert_state_activity_rows: all paths failed for {table} and {fallback_table}"
+        ) from exc
 
 
 def selected_commander_rows(rows: List[CommanderUsage], reference: date) -> List[CommanderUsage]:
@@ -1159,29 +1229,6 @@ def dedupe_rows(rows: List[Dict[str, Any]], keys: Sequence[str]) -> List[Dict[st
     return list(deduped.values())
 
 
-def upsert_state_activity_rows(client: SupabaseClient, rows: List[Dict[str, Any]]) -> None:
-    try:
-        upsert_rows(
-            client,
-            "global_elo_state_activity",
-            rows,
-            on_conflict="region_type,region_key,player_id",
-        )
-    except Exception as exc:
-        print(
-            "Falling back to global_elo_state_activity without country_key. "
-            f"Apply the country-region migration to store country_key. Error: {exc}",
-            flush=True,
-        )
-        fallback_rows = [{key: value for key, value in row.items() if key != "country_key"} for row in rows]
-        upsert_rows(
-            client,
-            "global_elo_state_activity",
-            fallback_rows,
-            on_conflict="region_type,region_key,player_id",
-        )
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="Compute global Elo and derived state activity leaderboards")
     parser.add_argument(
@@ -1195,7 +1242,17 @@ def main() -> None:
         action="store_true",
         help="Compute output rows without writing leaderboard tables back to Supabase.",
     )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Write recompute output back to Supabase. Required for live refreshes.",
+    )
     args = parser.parse_args()
+
+    if args.smoke_days is not None and args.apply:
+        raise SystemExit("--smoke-days cannot be combined with --apply; smoke runs are validation-only.")
+    if not args.dry_run and not args.apply:
+        raise SystemExit("Live writes require --apply; use --dry-run for validation.")
 
     supabase_url, supabase_key = load_credentials()
     client = SupabaseClient(supabase_url, supabase_key)
@@ -1232,22 +1289,33 @@ def main() -> None:
         )
 
     print("Deleting existing global Elo, state activity, and event rows")
-    client.delete(ratings_table, {"region_type": f"eq.{GLOBAL_REGION_TYPE}"})
-    client.delete("global_elo_state_activity", {"region_type": f"eq.{STATE_REGION_TYPE}"})
-    delete_optional_rows(client, "global_elo_game_events", {"region_type": f"eq.{GLOBAL_REGION_TYPE}"})
+    resilient_delete(client, ratings_table, "regional_elo_ratings", {"region_type": f"eq.{GLOBAL_REGION_TYPE}"})
+    resilient_delete(client, "global_elo_state_activity", "regional_elo_state_activity", {"region_type": f"eq.{STATE_REGION_TYPE}"})
+    resilient_delete(client, "global_elo_game_events", "regional_elo_game_events", {"region_type": f"eq.{GLOBAL_REGION_TYPE}"})
 
-    upsert_rows(
+    resilient_upsert(
         client,
         ratings_table,
+        "regional_elo_ratings",
         rating_rows,
         on_conflict="region_type,region_key,player_id",
+        delete_filters={"region_type": f"eq.{GLOBAL_REGION_TYPE}"},
     )
-    upsert_state_activity_rows(client, state_activity_rows)
-    upsert_rows(
+    upsert_state_activity_rows(
+        client,
+        "global_elo_state_activity",
+        "regional_elo_state_activity",
+        state_activity_rows,
+        on_conflict="region_type,region_key,player_id",
+        delete_filters={"region_type": f"eq.{STATE_REGION_TYPE}"},
+    )
+    resilient_upsert(
         client,
         "global_elo_game_events",
+        "regional_elo_game_events",
         event_rows,
         on_conflict="region_type,region_key,game_id,player_id",
+        delete_filters={"region_type": f"eq.{GLOBAL_REGION_TYPE}"},
     )
 
     try:
