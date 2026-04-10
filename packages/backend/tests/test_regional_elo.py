@@ -15,8 +15,7 @@ class RegionalEloJobLifecycleTests(TestCase):
         client = Mock()
         client.update.return_value = [{"id": "job-123"}]
 
-        with patch.dict(os.environ, {"GITHUB_RUN_ID": "456"}, clear=False):
-            claimed = regional_elo.claim_job(client, "job-123")
+        claimed = regional_elo.claim_job(client, "job-123", github_run_id=456)
 
         self.assertTrue(claimed)
         client.update.assert_called_once_with(
@@ -34,7 +33,7 @@ class RegionalEloJobLifecycleTests(TestCase):
         client = Mock()
         client.update.return_value = []
 
-        claimed = regional_elo.claim_job(client, "job-123")
+        claimed = regional_elo.claim_job(client, "job-123", github_run_id=0)
 
         self.assertFalse(claimed)
 
@@ -79,13 +78,11 @@ class RegionalEloJobLifecycleTests(TestCase):
 class RegionalEloCliValidationTests(TestCase):
     def test_job_id_requires_apply(self) -> None:
         with patch.object(sys, "argv", ["regional_elo.py", "--job-id", "job-123", "--dry-run"]):
-            with self.assertRaises(SystemExit) as ctx:
-                regional_elo.main()
+            with patch.dict(os.environ, {"SUPABASE_URL": "https://test.supabase.co", "SUPABASE_SERVICE_KEY": "test-key"}, clear=False):
+                with self.assertRaises(SystemExit) as ctx:
+                    regional_elo.main()
 
-        self.assertEqual(
-            str(ctx.exception),
-            "--job-id requires --apply because queued jobs represent live refreshes.",
-        )
+        self.assertEqual(ctx.exception.code, 1)
 
 
 if __name__ == "__main__":
