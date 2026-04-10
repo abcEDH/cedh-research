@@ -1017,6 +1017,9 @@ def resilient_delete(client: SupabaseClient, table: str, fallback_table: str, fi
             client.delete(fallback_table, filters)
         except Exception as exc2:
             print(f"Delete failed for fallback {fallback_table}. Error: {exc2}", flush=True)
+            raise RuntimeError(
+                f"resilient_delete: both {table} and {fallback_table} failed"
+            ) from exc2
 
 
 def resilient_upsert(client: SupabaseClient, table: str, fallback_table: str, rows: List[Dict[str, Any]], on_conflict: str) -> None:
@@ -1028,6 +1031,9 @@ def resilient_upsert(client: SupabaseClient, table: str, fallback_table: str, ro
             upsert_rows(client, fallback_table, rows, on_conflict=on_conflict)
         except Exception as exc2:
             print(f"Upsert failed for fallback {fallback_table}. Error: {exc2}", flush=True)
+            raise RuntimeError(
+                f"resilient_upsert: both {table} and {fallback_table} failed"
+            ) from exc2
 
 
 def selected_commander_rows(rows: List[CommanderUsage], reference: date) -> List[CommanderUsage]:
