@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { MotifLayer } from "@/components/motifs/MotifLayer";
 
 export default function MotifPreviewPage() {
@@ -25,7 +26,15 @@ export default function MotifPreviewPage() {
                 </Link>
               </div>
               <div className="mt-8 flex items-center gap-4">
-                <img src="/motifs/divider-sigil.svg" className="h-8 w-full opacity-80" alt="" />
+                <div className="relative h-8 w-full">
+                  <Image
+                    src="/motifs/divider-sigil.svg"
+                    alt=""
+                    fill
+                    sizes="100vw"
+                    className="object-contain opacity-80"
+                  />
+                </div>
               </div>
             </div>
           </section>

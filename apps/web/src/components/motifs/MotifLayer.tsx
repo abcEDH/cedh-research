@@ -1,4 +1,19 @@
+import Image from "next/image";
 import * as React from "react";
+
+function MotifImage({
+  src,
+  className,
+}: {
+  src: string;
+  className: string;
+}) {
+  return (
+    <div className={className}>
+      <Image alt="" fill sizes="100vw" src={src} className="object-contain" />
+    </div>
+  );
+}
 
 export function MotifLayer({
   variant = "B",
@@ -20,50 +35,37 @@ export function MotifLayer({
       ].join(" ")}
       style={{ opacity }}
     >
-      <img
-        src="/motifs/gridlines.svg"
-        className="absolute inset-0 h-full w-full opacity-[0.12] mix-blend-screen"
-        alt=""
-      />
-      <img
-        src="/motifs/particles.svg"
-        className="absolute inset-0 h-full w-full opacity-[0.2] mix-blend-screen"
-        alt=""
-      />
+      <MotifImage src="/motifs/gridlines.svg" className="absolute inset-0 opacity-[0.12] mix-blend-screen" />
+      <MotifImage src="/motifs/particles.svg" className="absolute inset-0 opacity-[0.2] mix-blend-screen" />
 
       {variant === "A" && (
-        <img
+        <MotifImage
           src="/motifs/canopy-corner.svg"
-          className="absolute -top-40 -left-40 w-[1100px] opacity-[0.18] mix-blend-screen"
-          alt=""
+          className="absolute -top-40 -left-40 h-[1100px] w-[1100px] opacity-[0.18] mix-blend-screen"
         />
       )}
 
       {variant === "B" && (
-        <img
+        <MotifImage
           src="/motifs/transit-arc.svg"
-          className="absolute top-28 left-[-22%] w-[1500px] opacity-[0.18] mix-blend-screen"
-          alt=""
+          className="absolute top-28 left-[-22%] h-[1500px] w-[1500px] opacity-[0.18] mix-blend-screen"
         />
       )}
 
       {variant === "C" && (
-        <img
+        <MotifImage
           src="/motifs/spirit-core.svg"
-          className="absolute top-[-20%] left-[2%] w-[1400px] opacity-[0.28] mix-blend-screen"
-          alt=""
+          className="absolute top-[-20%] left-[2%] h-[1400px] w-[1400px] opacity-[0.28] mix-blend-screen"
         />
       )}
 
-      <img
+      <MotifImage
         src="/motifs/corner-glyph.svg"
-        className="absolute -top-24 -left-24 w-[560px] opacity-[0.10] mix-blend-screen"
-        alt=""
+        className="absolute -top-24 -left-24 h-[560px] w-[560px] opacity-[0.10] mix-blend-screen"
       />
-      <img
+      <MotifImage
         src="/motifs/corner-glyph.svg"
-        className="absolute -bottom-28 -right-28 w-[560px] rotate-180 opacity-[0.10] mix-blend-screen"
-        alt=""
+        className="absolute -bottom-28 -right-28 h-[560px] w-[560px] rotate-180 opacity-[0.10] mix-blend-screen"
       />
     </div>
   );

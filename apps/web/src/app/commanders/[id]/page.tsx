@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { notFound } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { normalizeDisplayString } from "@/lib/utils";
@@ -473,12 +474,14 @@ export default async function CommanderDetailPage({
               {commanderMeta?.scryfall_ids && commanderMeta.scryfall_ids.length > 0 && (
                 <div className="flex items-center gap-3">
                   {commanderMeta.scryfall_ids.slice(0, 2).map((scryfallId) => (
-                    <img
+                    <Image
                       key={scryfallId}
                       src={`https://cards.scryfall.io/art_crop/${scryfallId}.jpg`}
                       alt={normalizeDisplayString(commander.commander_name)}
+                      width={224}
+                      height={224}
+                      sizes="112px"
                       className="h-28 w-28 rounded-xl border border-border/60 object-cover shadow-lg"
-                      loading="lazy"
                     />
                   ))}
                 </div>
@@ -757,11 +760,11 @@ export default async function CommanderDetailPage({
                   </p>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-3">
-                    {recentFinishes.map((finish) => (
-                      <RecentFinishRow key={finish.id} finish={finish} commanderId={commander.commander_id} />
-                    ))}
-                  </div>
+                    <div className="space-y-3">
+                      {recentFinishes.map((finish) => (
+                        <RecentFinishRow key={finish.id} finish={finish} />
+                      ))}
+                    </div>
                 </CardContent>
               </Card>
             )}
