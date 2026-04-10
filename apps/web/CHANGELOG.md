@@ -1,3 +1,10 @@
+## [1.7.3](https://github.com/abcEDH/cedh-research/compare/v1.7.2...v1.7.3) (2026-04-10)
+
+
+### Bug Fixes
+
+* restore release aliasing workflows ([#94](https://github.com/abcEDH/cedh-research/issues/94)) ([99d08b0](https://github.com/abcEDH/cedh-research/commit/99d08b032ce9b2b9f62fca2fd4f46677f64fef39))
+
 ## [1.7.2](https://github.com/abcEDH/cedh-research/compare/v1.7.1...v1.7.2) (2026-04-10)
 
 
