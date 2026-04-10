@@ -11,7 +11,7 @@ import argparse
 import logging
 import time
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 import requests
 from dateutil import parser as date_parser
@@ -41,7 +41,6 @@ TOPDECK_STANDING_RATE_FIELDS = [
 SUPABASE_REST_BASE = "https://msjjihqbxtgjdtapywrj.supabase.co"
 
 
-import os
 from pathlib import Path
 
 # Ensure logs directory exists
@@ -274,8 +273,10 @@ class TopDeckClient:
         *,
         json_payload: dict[str, Any] | None = None,
         max_retries: int = 3,
-    ) -> dict[str, Any] | list[dict[str, Any]]:
+    ) -> dict[str, Any] | list[dict[str, Any]] | None:
         """Make an authenticated request to the TopDeck API."""
+        if max_retries <= 0:
+            return None
         headers = {"Authorization": f"Bearer {self.api_key}"}
 
         for attempt in range(max_retries):
@@ -304,6 +305,8 @@ class TopDeckClient:
                 else:
                     logger.error(f"Failed after {max_retries} retries: {e}")
                     raise
+
+        return None
 
     def search_tournaments(
         self,
@@ -393,6 +396,8 @@ class SupabaseClient:
                 else:
                     logger.error(f"Failed after {max_retries} retries: {e}")
                     raise
+
+        return None
 
     def select(
         self, table: str, filters: dict[str, str] | None = None, max_retries: int = 8
@@ -917,11 +922,6 @@ class DataIngester:
                     ]
                     loser_seats = [
                         s for s in participant_map.keys() if s not in winner_seats and s not in draws
-                    ]
-                    loser_ids = [
-                        participant_map[s]["entry_id"]
-                        for s in loser_seats
-                        if s in participant_map and participant_map[s].get("entry_id")
                     ]
 
                     if not winner_ids:
