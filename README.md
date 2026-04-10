@@ -29,20 +29,25 @@ Safe templates live in:
 - `packages/backend/.env.example`
 
 ## Quick Start
-1. Install prerequisites: Node.js 20+ and Python 3.12+.
-2. Install JavaScript dependencies from repo root:
-   - `npm install`
-3. Copy environment templates and fill in required values:
-   - `cp .env.example .env`
-   - `cp apps/web/.env.example apps/web/.env.local`
-   - `cp packages/backend/.env.example packages/backend/.env`
-4. Start the web app:
-   - `npm run web:dev`
-5. (Optional) Install backend Python dependencies:
-   - `npm run backend:install`
-6. Validate docs and repo hygiene before opening or reviewing a PR:
-   - `npm run docs:check`
-   - `npm run docs:hygiene`
+Run one command from the repo root:
+- `make quickstart`
+
+What it does:
+1. Verifies required local commands are available (`node`, `npm`, `python`).
+2. Installs JavaScript dependencies with `npm install`.
+3. Creates local env files from templates when missing:
+   - `.env` from `.env.example`
+   - `apps/web/.env.local` from `apps/web/.env.example`
+   - `packages/backend/.env` from `packages/backend/.env.example`
+4. Installs backend Python dependencies (`npm run backend:install`).
+5. Runs repo docs checks (`npm run docs:check` and `npm run docs:hygiene`).
+
+Then start the app with:
+- `npm run web:dev`
+
+Notes:
+- If you only need frontend setup, run `./scripts/quickstart.sh --no-backend`.
+- Existing env files are never overwritten.
 
 ## Frontend (apps/web)
 - Dev: `npm run web:dev`
