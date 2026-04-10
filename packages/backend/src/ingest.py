@@ -434,7 +434,7 @@ class SupabaseClient:
                 else:
                     logger.error(f"Query failed after {max_retries} retries: {e}")
                     raise
-
+        # This is a safety net; the loop above either returns or raises
         return []
 
 
