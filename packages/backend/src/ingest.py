@@ -11,6 +11,7 @@ import argparse
 import logging
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -39,9 +40,6 @@ TOPDECK_STANDING_RATE_FIELDS = [
 
 # Supabase constants
 SUPABASE_REST_BASE = "https://msjjihqbxtgjdtapywrj.supabase.co"
-
-
-from pathlib import Path
 
 # Ensure logs directory exists
 _log_dir = Path(__file__).parent.parent.parent / "logs"
@@ -363,6 +361,8 @@ class SupabaseClient:
         max_retries: int = 3,
     ) -> dict[str, Any] | None:
         """Upsert data into a table with retry logic."""
+        if max_retries <= 0:
+            return None
         endpoint = f"{self.url}/rest/v1/{table}"
 
         headers = self.headers.copy()
@@ -403,6 +403,8 @@ class SupabaseClient:
         self, table: str, filters: dict[str, str] | None = None, max_retries: int = 8
     ) -> list[dict[str, Any]]:
         """Select data from a table with retry logic."""
+        if max_retries <= 0:
+            return []
         endpoint = f"{self.url}/rest/v1/{table}"
         params = filters or {}
 
