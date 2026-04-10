@@ -1170,10 +1170,8 @@ function PerformanceCardRow({
 
 function RecentFinishRow({
   finish,
-  commanderId,
 }: {
   finish: RecentFinish;
-  commanderId: string;
 }) {
   const deckHost = (() => {
     if (!finish.decklist_url) return null;
