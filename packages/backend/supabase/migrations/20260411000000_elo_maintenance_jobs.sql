@@ -48,6 +48,8 @@ CREATE POLICY "Public read access"
   ON elo_maintenance_jobs FOR SELECT
   USING (true);
 
+GRANT SELECT ON elo_maintenance_jobs TO anon, authenticated;
+
 -- ============================================================
 -- enqueue_elo_refresh: insert a pending job if none are active
 -- ============================================================

@@ -15,6 +15,10 @@ on:
         description: "How many recent days to include in the Elo recompute"
         required: false
         default: "30"
+      job_id:
+        description: "Optional elo_maintenance_jobs UUID for cron-dispatched full refreshes"
+        required: false
+        default: ""
 
 concurrency:
   group: backend-maintenance-${{ github.ref }}
@@ -46,7 +50,11 @@ jobs:
       - name: Recompute global Elo, state activity, game events, and commander profiles
         run: |
           if [ "${{ inputs.refresh_mode }}" = "full" ]; then
-            python packages/backend/src/regional_elo.py --apply
+            if [ -n "${{ inputs.job_id }}" ]; then
+              python packages/backend/src/regional_elo.py --apply --job-id "${{ inputs.job_id }}"
+            else
+              python packages/backend/src/regional_elo.py --apply
+            fi
           else
             python packages/backend/src/regional_elo.py --smoke-days "${{ inputs.smoke_days }}" --dry-run
           fi

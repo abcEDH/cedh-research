@@ -323,15 +323,23 @@ MAINTENANCE_JOBS_TABLE = "elo_maintenance_jobs"
 
 
 def claim_job(client: SupabaseClient, job_id: str) -> bool:
-    """Transition job from pending/dispatched to running."""
+    """Transition a queued job from pending/dispatched to running."""
     try:
         now = utc_now().isoformat()
-        client.upsert(
+        github_run_id = os.getenv("GITHUB_RUN_ID")
+        payload: Dict[str, Any] = {
+            "status": "running",
+            "started_at": now,
+            "heartbeat_at": now,
+        }
+        if github_run_id:
+            payload["github_run_id"] = int(github_run_id)
+        updated = client.update(
             MAINTENANCE_JOBS_TABLE,
-            {"id": job_id, "status": "running", "started_at": now, "heartbeat_at": now},
-            on_conflict="id",
+            payload,
+            {"id": f"eq.{job_id}", "status": "in.(pending,dispatched)"},
         )
-        return True
+        return bool(updated)
     except Exception as exc:
         print(f"Failed to claim job {job_id}: {exc}", flush=True)
         return False
@@ -340,10 +348,10 @@ def claim_job(client: SupabaseClient, job_id: str) -> bool:
 def update_job_heartbeat(client: SupabaseClient, job_id: str) -> None:
     """Best-effort heartbeat so stale-job detection knows we are alive."""
     try:
-        client.upsert(
+        client.update(
             MAINTENANCE_JOBS_TABLE,
-            {"id": job_id, "heartbeat_at": utc_now().isoformat()},
-            on_conflict="id",
+            {"heartbeat_at": utc_now().isoformat()},
+            {"id": f"eq.{job_id}", "status": "eq.running"},
         )
     except Exception:
         pass
@@ -352,25 +360,24 @@ def update_job_heartbeat(client: SupabaseClient, job_id: str) -> None:
 def complete_job(client: SupabaseClient, job_id: str, metrics: dict) -> None:
     """Mark job as completed with output metrics."""
     now = utc_now().isoformat()
-    client.upsert(
+    client.update(
         MAINTENANCE_JOBS_TABLE,
-        {"id": job_id, "status": "completed", "completed_at": now, "heartbeat_at": now, **metrics},
-        on_conflict="id",
+        {"status": "completed", "completed_at": now, "heartbeat_at": now, **metrics},
+        {"id": f"eq.{job_id}", "status": "eq.running"},
     )
 
 
 def fail_job(client: SupabaseClient, job_id: str, error: str) -> None:
     """Mark job as failed with error text."""
     try:
-        client.upsert(
+        client.update(
             MAINTENANCE_JOBS_TABLE,
             {
-                "id": job_id,
                 "status": "failed",
                 "completed_at": utc_now().isoformat(),
                 "error_text": error[:2000],
             },
-            on_conflict="id",
+            {"id": f"eq.{job_id}", "status": "in.(pending,dispatched,running)"},
         )
     except Exception:
         pass
@@ -1308,124 +1315,165 @@ def main() -> None:
         action="store_true",
         help="Write recompute output back to Supabase. Required for live refreshes.",
     )
+    parser.add_argument(
+        "--job-id",
+        default=None,
+        help="Optional elo_maintenance_jobs UUID to claim and update while the refresh runs.",
+    )
     args = parser.parse_args()
 
     if args.smoke_days is not None and args.apply:
         raise SystemExit("--smoke-days cannot be combined with --apply; smoke runs are validation-only.")
     if not args.dry_run and not args.apply:
         raise SystemExit("Live writes require --apply; use --dry-run for validation.")
+    if args.job_id and not args.apply:
+        raise SystemExit("--job-id requires --apply because queued jobs represent live refreshes.")
 
     supabase_url, supabase_key = load_credentials()
     client = SupabaseClient(supabase_url, supabase_key)
+    started_at_monotonic = time.monotonic()
 
-    global_stats, state_activity, profile_activity, event_rows = compute_global_elo(smoke_days=args.smoke_days)
-    event_rows = dedupe_rows(event_rows, ["region_type", "region_key", "game_id", "player_id"])
-    rating_rows = build_upsert_rows(GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY, global_stats)
-    state_activity_rows = build_state_activity_rows(state_activity)
-    players_by_id = fetch_players_by_id(client, list(global_stats.keys()))
-    active_leaderboard_rows = build_active_leaderboard_rows(global_stats, state_activity, players_by_id)
-    profile_summary_rows = build_profile_summary_rows(global_stats, profile_activity, players_by_id)
-
-    if not rating_rows:
-        raise SystemExit("Refusing to clear Regional Elo rows because no global rating rows were computed.")
-
-    if args.dry_run:
-        print(
-            "regional_elo dry-run:",
-            f"ratings={len(rating_rows)}",
-            f"state_rows={len(state_activity_rows)}",
-            f"event_rows={len(event_rows)}",
-            f"active_leaderboard_rows={len(active_leaderboard_rows)}",
-            f"profile_summary_rows={len(profile_summary_rows)}",
-        )
-        return
-
-    commander_profile_rows = build_commander_profile_rows(client)
-
-    ratings_table = first_available_table(client, GLOBAL_ELO_RATINGS_TABLE_CANDIDATES)
-    if ratings_table != GLOBAL_ELO_RATINGS_TABLE_CANDIDATES[0]:
-        print(
-            f"Using fallback ratings table '{ratings_table}' because '{GLOBAL_ELO_RATINGS_TABLE_CANDIDATES[0]}' is unavailable.",
-            flush=True,
-        )
-
-    print("Deleting existing global Elo, state activity, and event rows")
-    resilient_delete(client, ratings_table, "regional_elo_ratings", {"region_type": f"eq.{GLOBAL_REGION_TYPE}"})
-    resilient_delete(client, "global_elo_state_activity", "regional_elo_state_activity", {"region_type": f"eq.{STATE_REGION_TYPE}"})
-    resilient_delete(client, "global_elo_game_events", "regional_elo_game_events", {"region_type": f"eq.{GLOBAL_REGION_TYPE}"})
-
-    resilient_upsert(
-        client,
-        ratings_table,
-        "regional_elo_ratings",
-        rating_rows,
-        on_conflict="region_type,region_key,player_id",
-        delete_filters={"region_type": f"eq.{GLOBAL_REGION_TYPE}"},
-    )
-    upsert_state_activity_rows(
-        client,
-        "global_elo_state_activity",
-        "regional_elo_state_activity",
-        state_activity_rows,
-        on_conflict="region_type,region_key,player_id",
-        delete_filters={"region_type": f"eq.{STATE_REGION_TYPE}"},
-    )
-    resilient_upsert(
-        client,
-        "global_elo_game_events",
-        "regional_elo_game_events",
-        event_rows,
-        on_conflict="region_type,region_key,game_id,player_id",
-        delete_filters={"region_type": f"eq.{GLOBAL_REGION_TYPE}"},
-    )
+    if args.job_id and not claim_job(client, args.job_id):
+        raise SystemExit(f"Unable to claim elo_maintenance_jobs row {args.job_id}.")
 
     try:
-        client.delete("global_elo_active_leaderboard", {"region_type": "not.is.null"})
-        upsert_rows(
+        global_stats, state_activity, profile_activity, event_rows = compute_global_elo(smoke_days=args.smoke_days)
+        event_rows = dedupe_rows(event_rows, ["region_type", "region_key", "game_id", "player_id"])
+        rating_rows = build_upsert_rows(GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY, global_stats)
+        state_activity_rows = build_state_activity_rows(state_activity)
+        players_by_id = fetch_players_by_id(client, list(global_stats.keys()))
+        active_leaderboard_rows = build_active_leaderboard_rows(global_stats, state_activity, players_by_id)
+        profile_summary_rows = build_profile_summary_rows(global_stats, profile_activity, players_by_id)
+
+        if not rating_rows:
+            raise SystemExit("Refusing to clear Regional Elo rows because no global rating rows were computed.")
+
+        if args.dry_run:
+            print(
+                "regional_elo dry-run:",
+                f"ratings={len(rating_rows)}",
+                f"state_rows={len(state_activity_rows)}",
+                f"event_rows={len(event_rows)}",
+                f"active_leaderboard_rows={len(active_leaderboard_rows)}",
+                f"profile_summary_rows={len(profile_summary_rows)}",
+            )
+            return
+
+        commander_profile_rows = build_commander_profile_rows(client)
+
+        ratings_table = first_available_table(client, GLOBAL_ELO_RATINGS_TABLE_CANDIDATES)
+        if ratings_table != GLOBAL_ELO_RATINGS_TABLE_CANDIDATES[0]:
+            print(
+                f"Using fallback ratings table '{ratings_table}' because '{GLOBAL_ELO_RATINGS_TABLE_CANDIDATES[0]}' is unavailable.",
+                flush=True,
+            )
+
+        print("Deleting existing global Elo, state activity, and event rows")
+        resilient_delete(client, ratings_table, "regional_elo_ratings", {"region_type": f"eq.{GLOBAL_REGION_TYPE}"})
+        resilient_delete(client, "global_elo_state_activity", "regional_elo_state_activity", {"region_type": f"eq.{STATE_REGION_TYPE}"})
+        resilient_delete(client, "global_elo_game_events", "regional_elo_game_events", {"region_type": f"eq.{GLOBAL_REGION_TYPE}"})
+
+        resilient_upsert(
             client,
-            "global_elo_active_leaderboard",
-            active_leaderboard_rows,
+            ratings_table,
+            "regional_elo_ratings",
+            rating_rows,
             on_conflict="region_type,region_key,player_id",
+            delete_filters={"region_type": f"eq.{GLOBAL_REGION_TYPE}"},
         )
-    except Exception as exc:
-        print(
-            "Skipping global_elo_active_leaderboard refresh. "
-            "Apply the active leaderboard migration to enable it. "
-            f"Error: {exc}",
-            flush=True,
-        )
-
-    try:
-        client.delete("global_elo_player_profile_summaries", {"player_id": "not.is.null"})
-        upsert_rows(
+        if args.job_id:
+            update_job_heartbeat(client, args.job_id)
+        upsert_state_activity_rows(
             client,
-            "global_elo_player_profile_summaries",
-            profile_summary_rows,
-            on_conflict="player_id",
+            "global_elo_state_activity",
+            "regional_elo_state_activity",
+            state_activity_rows,
+            on_conflict="region_type,region_key,player_id",
+            delete_filters={"region_type": f"eq.{STATE_REGION_TYPE}"},
         )
-    except Exception as exc:
-        print(
-            "Skipping global_elo_player_profile_summaries refresh. "
-            "Apply the player profile summary migration to enable it. "
-            f"Error: {exc}",
-            flush=True,
-        )
-
-    try:
-        client.delete("player_commander_profiles", {"topdeck_id": "not.is.null"})
-        upsert_rows(
+        if args.job_id:
+            update_job_heartbeat(client, args.job_id)
+        resilient_upsert(
             client,
-            "player_commander_profiles",
-            commander_profile_rows,
-            on_conflict="player_id",
+            "global_elo_game_events",
+            "regional_elo_game_events",
+            event_rows,
+            on_conflict="region_type,region_key,game_id,player_id",
+            delete_filters={"region_type": f"eq.{GLOBAL_REGION_TYPE}"},
         )
-    except Exception as exc:
-        print(
-            "Skipping player_commander_profiles refresh. "
-            "Apply the player_commander_profiles migration to enable it. "
-            f"Error: {exc}",
-            flush=True,
-        )
+        if args.job_id:
+            update_job_heartbeat(client, args.job_id)
+
+        try:
+            client.delete("global_elo_active_leaderboard", {"region_type": "not.is.null"})
+            upsert_rows(
+                client,
+                "global_elo_active_leaderboard",
+                active_leaderboard_rows,
+                on_conflict="region_type,region_key,player_id",
+            )
+        except Exception as exc:
+            print(
+                "Skipping global_elo_active_leaderboard refresh. "
+                "Apply the active leaderboard migration to enable it. "
+                f"Error: {exc}",
+                flush=True,
+            )
+        if args.job_id:
+            update_job_heartbeat(client, args.job_id)
+
+        try:
+            client.delete("global_elo_player_profile_summaries", {"player_id": "not.is.null"})
+            upsert_rows(
+                client,
+                "global_elo_player_profile_summaries",
+                profile_summary_rows,
+                on_conflict="player_id",
+            )
+        except Exception as exc:
+            print(
+                "Skipping global_elo_player_profile_summaries refresh. "
+                "Apply the player profile summary migration to enable it. "
+                f"Error: {exc}",
+                flush=True,
+            )
+        if args.job_id:
+            update_job_heartbeat(client, args.job_id)
+
+        try:
+            client.delete("player_commander_profiles", {"topdeck_id": "not.is.null"})
+            upsert_rows(
+                client,
+                "player_commander_profiles",
+                commander_profile_rows,
+                on_conflict="player_id",
+            )
+        except Exception as exc:
+            print(
+                "Skipping player_commander_profiles refresh. "
+                "Apply the player_commander_profiles migration to enable it. "
+                f"Error: {exc}",
+                flush=True,
+            )
+
+        if args.job_id:
+            complete_job(
+                client,
+                args.job_id,
+                {
+                    "ratings_count": len(rating_rows),
+                    "state_activity_count": len(state_activity_rows),
+                    "game_events_count": len(event_rows),
+                    "leaderboard_count": len(active_leaderboard_rows),
+                    "profile_count": len(profile_summary_rows),
+                    "commander_profile_count": len(commander_profile_rows),
+                    "duration_seconds": round(time.monotonic() - started_at_monotonic, 3),
+                },
+            )
+    except BaseException as exc:
+        if args.job_id:
+            fail_job(client, args.job_id, str(exc))
+        raise
 
 
 if __name__ == "__main__":

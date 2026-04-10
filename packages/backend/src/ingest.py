@@ -833,6 +833,26 @@ def parse_datetime(value) -> datetime | None:
     return parsed
 
 
+def normalize_rate_value(value: Any) -> Optional[float]:
+    """Normalize TopDeck rate fields to a 0-1 float."""
+    if value is None or value == "":
+        return None
+
+    try:
+        normalized = float(value)
+    except (TypeError, ValueError):
+        return None
+
+    if normalized < 0:
+        return None
+    if normalized > 1:
+        normalized = normalized / 100
+    if normalized > 1:
+        return None
+
+    return normalized
+
+
 def extract_standing_rates(standing: dict[str, Any]) -> tuple[Optional[float], Optional[float]]:
     primary_rate = None
     for primary_rate_key, _ in TOPDECK_STANDING_RATE_FIELDS:
