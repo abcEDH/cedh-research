@@ -1,15 +1,12 @@
 name: CI Backend Maintenance
 
 on:
-  schedule:
-    - cron: "0 9 * * 3"
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "packages/backend/**"
-      - ".github/workflows/ci-backend.yml"
-      - ".github/workflows/ci-backend-maintenance.yml"
+    inputs:
+      smoke_days:
+        description: "How many recent days to include in the Elo recompute"
+        required: false
+        default: "30"
 
 concurrency:
   group: backend-maintenance-${{ github.ref }}
@@ -22,7 +19,7 @@ env:
 
 jobs:
   ingest:
-    name: Backend ingest and leaderboard
+    name: Backend ingest and manual Elo recompute
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -39,7 +36,7 @@ jobs:
         run: python packages/backend/src/ingest.py --days 7
 
       - name: Recompute global Elo, state activity, game events, and commander profiles
-        run: python packages/backend/src/regional_elo.py
+        run: python packages/backend/src/regional_elo.py --smoke-days ${{ inputs.smoke_days }}
 
       - name: Upload logs
         uses: actions/upload-artifact@v4

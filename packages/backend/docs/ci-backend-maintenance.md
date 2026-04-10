@@ -1,6 +1,12 @@
 # Backend Maintenance Validation
 
-The GitHub Actions maintenance workflow and local checks use the same script:
+The GitHub Actions maintenance workflow is manual-only now. Use the dispatch UI or the CLI to run a recent Elo recompute:
+
+```bash
+gh workflow run ci-backend-maintenance.yml -f smoke_days=30
+```
+
+The local and CI checks use the same validation script:
 
 ```bash
 cd packages/backend
