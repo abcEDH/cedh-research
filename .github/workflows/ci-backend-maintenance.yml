@@ -46,7 +46,7 @@ jobs:
       - name: Recompute global Elo, state activity, game events, and commander profiles
         run: |
           if [ "${{ inputs.refresh_mode }}" = "full" ]; then
-            python packages/backend/src/regional_elo.py
+            python packages/backend/src/regional_elo.py --apply
           else
             python packages/backend/src/regional_elo.py --smoke-days "${{ inputs.smoke_days }}" --dry-run
           fi

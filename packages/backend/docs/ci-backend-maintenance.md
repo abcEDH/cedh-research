@@ -15,7 +15,12 @@ cd packages/backend
 uv run python src/regional_elo.py --smoke-days 30 --dry-run
 ```
 
-For a full refresh, run the script without `--smoke-days` from the real scheduler or an explicit maintenance task.
+For a full refresh, run the script with `--apply` and without `--smoke-days` from the real scheduler or an explicit maintenance task:
+
+```bash
+cd packages/backend
+uv run python src/regional_elo.py --apply
+```
 
 The local and CI checks use the same validation script:
 

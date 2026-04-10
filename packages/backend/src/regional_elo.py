@@ -1191,10 +1191,17 @@ def main() -> None:
         action="store_true",
         help="Compute output rows without writing leaderboard tables back to Supabase.",
     )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Write recompute output back to Supabase. Required for live refreshes.",
+    )
     args = parser.parse_args()
 
-    if args.smoke_days is not None and not args.dry_run:
-        raise SystemExit("--smoke-days is validation-only; add --dry-run to avoid rewriting live Elo tables.")
+    if args.smoke_days is not None and args.apply:
+        raise SystemExit("--smoke-days cannot be combined with --apply; smoke runs are validation-only.")
+    if not args.dry_run and not args.apply:
+        raise SystemExit("Live writes require --apply; use --dry-run for validation.")
 
     supabase_url, supabase_key = load_credentials()
     client = SupabaseClient(supabase_url, supabase_key)
