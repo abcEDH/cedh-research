@@ -36,27 +36,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
 
-      - name: Install dependencies
-        run: pip install -r packages/backend/requirements.txt
+      - name: Install dependencies (locked)
+        run: uv sync --frozen --project packages/backend
 
       - name: Run data ingestion
-        run: python packages/backend/src/ingest.py --days 7 --min-players 32
+        run: uv run --project packages/backend python packages/backend/src/ingest.py --days 7 --min-players 32
 
       - name: Recompute global Elo, state activity, game events, and commander profiles
         run: |
           if [ "${{ inputs.refresh_mode }}" = "full" ]; then
             if [ -n "${{ inputs.job_id }}" ]; then
-              python packages/backend/src/regional_elo.py --apply --job-id "${{ inputs.job_id }}"
+              uv run --project packages/backend python packages/backend/src/regional_elo.py --apply --job-id "${{ inputs.job_id }}"
             else
-              python packages/backend/src/regional_elo.py --apply
+              uv run --project packages/backend python packages/backend/src/regional_elo.py --apply
             fi
           else
-            python packages/backend/src/regional_elo.py --smoke-days "${{ inputs.smoke_days }}" --dry-run
+            uv run --project packages/backend python packages/backend/src/regional_elo.py --smoke-days "${{ inputs.smoke_days }}" --dry-run
           fi
 
       - name: Upload logs
@@ -73,16 +73,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
 
-      - name: Install dependencies
-        run: pip install requests
+      - name: Install dependencies (locked)
+        run: uv sync --frozen --project packages/backend
 
       - name: Validate backend views and functions
-        run: python packages/backend/src/ci_backend_checks.py views
+        run: uv run --project packages/backend python packages/backend/src/ci_backend_checks.py views
 
   validate-data-integrity:
     runs-on: ubuntu-latest
@@ -90,16 +90,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
 
-      - name: Install dependencies
-        run: pip install requests
+      - name: Install dependencies (locked)
+        run: uv sync --frozen --project packages/backend
 
       - name: Check data integrity
-        run: python packages/backend/src/ci_backend_checks.py data-integrity
+        run: uv run --project packages/backend python packages/backend/src/ci_backend_checks.py data-integrity
 
   validate-regional-elo-consistency:
     runs-on: ubuntu-latest
@@ -107,16 +107,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
 
-      - name: Install dependencies
-        run: pip install requests
+      - name: Install dependencies (locked)
+        run: uv sync --frozen --project packages/backend
 
       - name: Check regional Elo aggregate consistency
-        run: python packages/backend/src/ci_backend_checks.py regional-elo
+        run: uv run --project packages/backend python packages/backend/src/ci_backend_checks.py regional-elo
 
   benchmark-performance:
     runs-on: ubuntu-latest
@@ -124,21 +124,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
 
-      - name: Install dependencies
-        run: pip install -r packages/backend/requirements.txt
+      - name: Install dependencies (locked)
+        run: uv sync --frozen --project packages/backend
 
       - name: Benchmark analytics surfaces
         run: |
           if [ "${{ inputs.refresh_mode }}" = "full" ]; then
-            python packages/backend/src/ci_backend_checks.py benchmark \
+            uv run --project packages/backend python packages/backend/src/ci_backend_checks.py benchmark \
               --output benchmark_results.json
           else
-            python packages/backend/src/ci_backend_checks.py benchmark \
+            uv run --project packages/backend python packages/backend/src/ci_backend_checks.py benchmark \
               --smoke-only \
               --output benchmark_results.json
           fi
