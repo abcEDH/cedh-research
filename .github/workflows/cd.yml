@@ -5,17 +5,23 @@ on:
     branches: [main]
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      deployment_url:
+        description: 'Explicit Vercel deployment URL to alias, e.g. web-theta-blush-49.vercel.app'
+        required: false
+        type: string
 
 jobs:
   alias-production:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     environment:
       name: production
       url: https://cedh-research.vercel.app
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN || secrets.VERCEL_API_TOKEN }}
       VERCEL_SCOPE: ${{ vars.VERCEL_SCOPE || 'vem-3506s-projects' }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID || 'prj_XEEZuAvFCh7RFPafgWfAN0InbeGg' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,51 +31,6 @@ jobs:
       - name: Install Vercel CLI
         run: npm install -g vercel
 
-      - name: Get latest production deployment URL
-        run: |
-          echo "Fetching latest production deployment from Vercel API..."
-
-          if [ -z "$VERCEL_TOKEN" ]; then
-            echo "::error::VERCEL_TOKEN is empty. Add a VERCEL_TOKEN secret to the 'production' environment or repository secrets."
-            exit 1
-          fi
-
-          API_URL="https://api.vercel.com/v9/projects/cedh-research/deployments?target=production&limit=1&slug=$VERCEL_SCOPE"
-          HTTP_STATUS=$(curl -sS \
-            -o /tmp/vercel_deployments_response.json \
-            -w "%{http_code}" \
-            "$API_URL" \
-            -H "Authorization: Bearer $VERCEL_TOKEN")
-
-          RESPONSE=$(cat /tmp/vercel_deployments_response.json)
-
-          if [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -ge 300 ]; then
-            echo "::error::Vercel API request failed with HTTP $HTTP_STATUS"
-            echo "Response body: $RESPONSE"
-            exit 1
-          fi
-
-          if [ -z "$RESPONSE" ]; then
-            echo "Failed to fetch deployments from Vercel API"
-            exit 1
-          fi
-
-          DEPLOY_URL=$(echo "$RESPONSE" | node -e "
-            const data = JSON.parse(require('fs').readFileSync(0, 'utf8'));
-            const d = (data.deployments || [])[0];
-            if (d) console.log(d.url);
-          ")
-
-          if [ -z "$DEPLOY_URL" ]; then
-            echo "No production deployment found"
-            exit 1
-          fi
-
-          echo "Latest production deployment: $DEPLOY_URL"
-          echo "DEPLOY_URL=$DEPLOY_URL" >> $GITHUB_ENV
       - name: Alias production domain
         run: |
-          echo "Aliasing $DEPLOY_URL to cedh-research.vercel.app..."
-          vercel alias set "$DEPLOY_URL" "cedh-research.vercel.app" \
-            --token "$VERCEL_TOKEN" \
-            --scope "$VERCEL_SCOPE"
+          ./scripts/manual-vercel-alias.sh "${{ inputs.deployment_url }}"
