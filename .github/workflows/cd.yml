@@ -38,12 +38,12 @@ jobs:
             exit 1
           fi
 
-          # Get the most recent production deployment
+          # Get the most recent production deployment for this project
           DEPLOY_URL=$(echo "$DEPLOYMENTS" | node -e "
             const fs = require('fs');
             const data = JSON.parse(fs.readFileSync(0, 'utf8'));
             const deployments = data.deployments || [];
-            const prodDeploys = deployments.filter(d => d.target === 'production');
+            const prodDeploys = deployments.filter(d => d.name === 'cedh-research' && d.target === 'production');
             if (prodDeploys.length > 0) {
               console.log(prodDeploys[0].url);
             }
