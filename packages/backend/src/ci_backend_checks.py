@@ -1136,10 +1136,7 @@ def fetch_state_samples(supabase_url: str, headers: dict[str, str]) -> list[dict
             f"{supabase_url}/rest/v1/regional_elo_player_stats",
             headers=headers,
             params={
-                "select": (
-                    "region_type,region_key,player_id,games_played,wins,draws,losses,"
-                    "primary_country_key,primary_region_key"
-                ),
+                "select": "region_type,region_key,player_id,games_played,wins,draws,losses",
                 "order": "games_played.desc",
                 "limit": PAGE_SIZE,
                 "offset": offset,
