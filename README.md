@@ -66,6 +66,7 @@ Notes:
 - Backend workflows run from `.github/workflows/ci-backend.yml` on `packages/backend/**` changes.
 - Docs checks run from `.github/workflows/docs.yml` for markdown and repo-hygiene validation.
 - Release ownership: semantic release runs from `.github/workflows/frontend.yml`; production aliasing runs from `.github/workflows/cd.yml`; `.github/workflows/release.yml` remains a manual fallback only.
+- `cd.yml` expects `VERCEL_TOKEN` (or fallback `VERCEL_API_TOKEN`) plus a `VERCEL_SCOPE` repo/environment variable when the project is under a Vercel team.
 
 ## QA
 - Release lessons: `docs/release-lessons-2026-04-05-regional-elo.md`
