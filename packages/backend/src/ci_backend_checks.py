@@ -71,8 +71,8 @@ TABLE_SPECS: list[tuple[str, int, bool]] = [
     ("games", 5000, False),
     ("game_participants", 15000, False),
     ("players", 2000, False),
-    ("regional_elo_state_activity", 10, False),
-    ("regional_elo_game_events", 100, False),
+    ("regional_elo_state_activity", 10, True),
+    ("regional_elo_game_events", 100, True),
 ]
 
 
@@ -1212,7 +1212,6 @@ def validate_regional_elo_consistency() -> None:
                         f"state_activity={stats[canonical_field]}",
                     )
                 )
-
     if failures:
         print("Global Elo aggregate consistency check failed:")
         for row, reason in failures:
