@@ -4,7 +4,10 @@
  * This file is run before all tests to set up the test environment.
  */
 
+import { vi } from "vitest";
 import { config } from "dotenv";
+
+vi.mock("server-only", () => ({}));
 
 // Load environment variables from .env.local
 config({ path: ".env.local" });

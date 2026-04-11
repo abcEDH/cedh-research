@@ -23,9 +23,11 @@ Describe the decision this PR implements and why this scope is the right boundar
 1. Pull this branch.
 2. Run the commands listed in `Testing`.
 3. Confirm any user-facing or workflow-facing behavior described above.
+4. If this PR changes a visible UI surface, include screenshots or a screen recording in the PR comment thread.
 
 ## Testing
 - [ ] `...`
+- [ ] Screenshot or screen recording for any UI-facing change
 
 ## Risks
 - User-facing risk:

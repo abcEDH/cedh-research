@@ -11,6 +11,30 @@ export type TopDeckLeaderboardEntry = {
   youtube?: string | null;
 };
 
+export type TopDeckProfileStats = {
+  tournaments: number;
+  gamesPlayed: number;
+  wins: number;
+  draws: number;
+  losses: number;
+};
+
+type TopDeckProfileStatsResponse = {
+  yearlyStats?: Record<
+    string,
+    Record<
+      string,
+      | {
+          totalTournaments?: number | null;
+          wins?: number | null;
+          draws?: number | null;
+          losses?: number | null;
+        }
+      | undefined
+    >
+  >;
+};
+
 type TopDeckTournamentResponse = {
   data: {
     name: string;
@@ -24,8 +48,10 @@ type TopDeckTournamentResponse = {
     username?: string | null;
     standing: number;
     points: number;
-    winRate: number;
-    opponentWinRate: number;
+    winRate?: number | null;
+    opponentWinRate?: number | null;
+    successRate?: number | null;
+    opponentSuccessRate?: number | null;
     wins: number;
     draws: number;
     losses: number;
@@ -54,9 +80,61 @@ type TopDeckRound = {
 const CHAMPIONSHIP_LEADERBOARD_URL =
   "https://topdeck.gg/championship-series-2026/leaderboard";
 
+async function fetchTopdeckWithRetry(url: string, apiKey: string, attempts = 3) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const res = await fetch(url, {
+      headers: { Authorization: apiKey },
+      cache: "no-store",
+    });
+
+    if (res.ok) return res;
+
+    if (res.status !== 429 || attempt === attempts - 1) {
+      throw new Error(`TopDeck API failed (${res.status}). TOPDECK_API_KEY is set, so fallback was skipped.`);
+    }
+
+    const retryAfterHeader = res.headers.get("Retry-After");
+    const retryAfterMs = parseRetryAfterHeader(retryAfterHeader);
+    const waitMs = retryAfterMs !== null
+      ? retryAfterMs
+      : 5000 * (attempt + 1);
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+  }
+
+  throw new Error("TopDeck API retry budget exhausted.");
+}
+
+function parseRetryAfterHeader(value: string | null): number | null {
+  if (!value) return null;
+
+  const retryAfterSeconds = Number(value);
+  if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0) {
+    return retryAfterSeconds * 1000;
+  }
+
+  const retryAfterDate = Date.parse(value);
+  if (Number.isFinite(retryAfterDate)) {
+    return Math.max(retryAfterDate - Date.now(), 0);
+  }
+
+  return null;
+}
+
+function normalizeStandingRates<T extends TopDeckTournamentResponse>(response: T): T {
+  return {
+    ...response,
+    standings: response.standings.map((standing) => ({
+      ...standing,
+      winRate: standing.winRate ?? standing.successRate ?? 0,
+      opponentWinRate: standing.opponentWinRate ?? standing.opponentSuccessRate ?? 0,
+    })),
+  };
+}
+
 export function extractTournamentSlug(input: string): string {
   const value = input.trim();
   if (!value) return "";
+  if (!value.includes("/") && !value.includes(".")) return value;
 
   try {
     const normalized = value.startsWith("http://") || value.startsWith("https://")
@@ -77,7 +155,7 @@ export function extractTournamentSlug(input: string): string {
 }
 
 export async function fetchChampionshipLeaderboard(): Promise<TopDeckLeaderboardEntry[]> {
-  const res = await fetch(CHAMPIONSHIP_LEADERBOARD_URL, { cache: "no-store" });
+  const res = await fetch(CHAMPIONSHIP_LEADERBOARD_URL, { next: { revalidate: 60 * 15 } });
   if (!res.ok) {
     throw new Error(`TopDeck leaderboard fetch failed (${res.status})`);
   }
@@ -87,6 +165,40 @@ export async function fetchChampionshipLeaderboard(): Promise<TopDeckLeaderboard
     throw new Error("TopDeck leaderboard payload not found in HTML");
   }
   return JSON.parse(match[1]) as TopDeckLeaderboardEntry[];
+}
+
+export async function fetchTopDeckProfileStats(topdeckId: string): Promise<TopDeckProfileStats | null> {
+  const res = await fetch(`https://topdeck.gg/profile/${encodeURIComponent(topdeckId)}/stats`, {
+    next: { revalidate: 60 * 15 },
+  });
+  if (!res.ok) {
+    throw new Error(`TopDeck profile stats fetch failed (${res.status})`);
+  }
+
+  const payload = (await res.json()) as TopDeckProfileStatsResponse;
+  const yearlyStats = payload.yearlyStats ?? {};
+  const totals = Object.values(yearlyStats).reduce(
+    (current, year) => {
+      const edhStats = year["Magic: The Gathering: EDH"] ?? year.overall;
+      if (!edhStats) return current;
+      current.tournaments += edhStats.totalTournaments ?? 0;
+      current.wins += edhStats.wins ?? 0;
+      current.draws += edhStats.draws ?? 0;
+      current.losses += edhStats.losses ?? 0;
+      return current;
+    },
+    { tournaments: 0, wins: 0, draws: 0, losses: 0 }
+  );
+  const gamesPlayed = totals.wins + totals.draws + totals.losses;
+  if (totals.tournaments === 0 && gamesPlayed === 0) return null;
+
+  return {
+    tournaments: totals.tournaments,
+    gamesPlayed,
+    wins: totals.wins,
+    draws: totals.draws,
+    losses: totals.losses,
+  };
 }
 
 function withTournamentRecords(response: TopDeckTournamentResponse): TopDeckTournamentResponse {
@@ -163,18 +275,11 @@ function withActualDecklists(response: TopDeckTournamentResponse, slug: string):
 export async function fetchTournamentBySlug(slug: string): Promise<TopDeckTournamentResponse> {
   const apiKey = process.env.TOPDECK_API_KEY;
   if (apiKey) {
-    const res = await fetch(`https://topdeck.gg/api/v2/tournaments/${slug}`.trim(), {
-      headers: {
-        Authorization: apiKey,
-      },
-      cache: "no-store",
-    });
-    if (!res.ok) {
-      throw new Error(
-        `TopDeck API failed (${res.status}). TOPDECK_API_KEY is set, so fallback was skipped.`
-      );
-    }
-    return withActualDecklists(withTournamentRecords((await res.json()) as TopDeckTournamentResponse), slug);
+    const res = await fetchTopdeckWithRetry(`https://topdeck.gg/api/v2/tournaments/${slug}`.trim(), apiKey);
+    return withActualDecklists(
+      withTournamentRecords(normalizeStandingRates((await res.json()) as TopDeckTournamentResponse)),
+      slug
+    );
   }
 
   const [bracketResponse, playersResponse] = await Promise.all([
@@ -213,6 +318,8 @@ export async function fetchTournamentBySlug(slug: string): Promise<TopDeckTourna
         points: 0,
         winRate: 0,
         opponentWinRate: 0,
+        successRate: null,
+        opponentSuccessRate: null,
         wins: 0,
         draws: 0,
         losses: 0,

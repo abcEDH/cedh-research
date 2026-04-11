@@ -66,11 +66,11 @@ export const CommanderStatsSchema = z.object({
   total_wins: z.number().int().nonnegative(),
   total_losses: z.number().int().nonnegative(),
   total_draws: z.number().int().nonnegative(),
-  avg_win_rate: z.string(),
+  avg_win_rate: z.number(),
   top_16_count: z.number().int().nonnegative(),
-  conversion_rate_top_16: z.string(),
+  conversion_rate_top_16: z.number(),
   top_cut_count: z.number().int().nonnegative(),
-  conversion_rate_top_cut: z.string(),
+  conversion_rate_top_cut: z.number(),
 });
 
 export type CommanderStats = z.infer<typeof CommanderStatsSchema>;
@@ -82,7 +82,7 @@ export const GlobalCardFrequencySchema = z.object({
   card_name: z.string(),
   deck_count: z.number().int().nonnegative(),
   total_decks: z.number().int().positive(),
-  inclusion_rate: z.string(),
+  inclusion_rate: z.number(),
   commander_count: z.number().int().nonnegative(),
   tier: z.string(),
 });
@@ -95,13 +95,13 @@ export type GlobalCardFrequency = z.infer<typeof GlobalCardFrequencySchema>;
 export const TrapCardSchema = z.object({
   card_name: z.string(),
   deck_count: z.number().int().nonnegative(),
-  inclusion_rate: z.string(),
-  avg_win_rate: z.string(),
-  baseline_win_rate: z.string(),
-  win_rate_delta: z.string(),
-  top_16_rate: z.string(),
+  inclusion_rate: z.number(),
+  avg_win_rate: z.number(),
+  baseline_win_rate: z.number(),
+  win_rate_delta: z.number(),
+  top_16_rate: z.number(),
   commander_count: z.number().int().nonnegative(),
-  trap_score: z.string(),
+  trap_score: z.number(),
 });
 
 export type TrapCard = z.infer<typeof TrapCardSchema>;
@@ -112,11 +112,11 @@ export type TrapCard = z.infer<typeof TrapCardSchema>;
 export const SpiceCardSchema = z.object({
   card_name: z.string(),
   deck_count: z.number().int().nonnegative(),
-  inclusion_rate: z.string(),
-  avg_win_rate: z.string(),
-  baseline_win_rate: z.string(),
-  win_rate_delta: z.string(),
-  top_16_rate: z.string(),
+  inclusion_rate: z.number(),
+  avg_win_rate: z.number(),
+  baseline_win_rate: z.number(),
+  win_rate_delta: z.number(),
+  top_16_rate: z.number(),
   commander_count: z.number().int().nonnegative(),
 });
 

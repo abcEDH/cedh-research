@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Admin debug helper for regional Elo discrepancies.
+"""Admin debug helper for global Elo discrepancies.
 
 Usage:
   python packages/backend/src/regional_elo_debug.py --topdeck-id <TOPDECK_PROFILE_ID>
@@ -63,7 +63,7 @@ def print_json(label: str, payload: object) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Debug regional Elo data for one TopDeck profile")
+    parser = argparse.ArgumentParser(description="Debug global Elo data for one TopDeck profile")
     parser.add_argument("--topdeck-id", required=True, help="TopDeck profile UID")
     args = parser.parse_args()
 
@@ -83,18 +83,18 @@ def main() -> None:
     player = player_rows[0]
     print_json("PLAYER", player)
 
-    regional_rows = client.select(
-        "regional_elo_leaderboard",
+    global_rows = client.select(
+        "global_elo_leaderboard",
         {
             "select": "region_key,rank,rating,games_played,wins,draws,losses,last_game_date",
             "topdeck_id": f"eq.{args.topdeck_id}",
             "order": "games_played.desc",
         },
     )
-    print_json("REGIONAL LEADERBOARD ROWS", regional_rows)
+    print_json("GLOBAL LEADERBOARD ROWS", global_rows)
 
     raw_game_rows = client.select(
-        "regional_elo_game_results",
+        "global_elo_game_results",
         {
             "select": "game_id,start_date,state,tournament_name,round_number,table_number,result",
             "topdeck_id": f"eq.{args.topdeck_id}",
@@ -102,7 +102,7 @@ def main() -> None:
             "limit": "500",
         },
     )
-    print_json("REGIONAL RAW GAME ROWS (LATEST 500)", raw_game_rows[:50])
+    print_json("GLOBAL RAW GAME ROWS (LATEST 500)", raw_game_rows[:50])
 
     entry_rows = client.select(
         "player_commander_entries",
@@ -145,9 +145,9 @@ def main() -> None:
     ]
 
     summary = {
-        "regional_raw_game_count": len(raw_game_rows),
-        "regional_distinct_tournaments": len({row.get("tournament_name") for row in raw_game_rows}),
-        "regional_inferred_unique_game_count": len(duplicate_counter),
+        "global_raw_game_count": len(raw_game_rows),
+        "global_distinct_tournaments": len({row.get("tournament_name") for row in raw_game_rows}),
+        "global_inferred_unique_game_count": len(duplicate_counter),
         "entry_row_count": len(entry_rows),
         "entry_distinct_tournaments_by_date_and_commander": len(
             {
@@ -166,8 +166,8 @@ def main() -> None:
     }
     print_json("SUMMARY", summary)
 
-    if regional_rows:
-        top_region = regional_rows[0]
+    if global_rows:
+        top_region = global_rows[0]
         expected_games = top_region.get("games_played")
         if isinstance(expected_games, int):
             print("\n=== QUICK READ ===")
@@ -176,7 +176,7 @@ def main() -> None:
                 f"({top_region.get('wins')}-{top_region.get('draws')}-{top_region.get('losses')})."
             )
             print(
-                f"Raw regional rows found: {len(raw_game_rows)}. "
+                f"Raw global rows found: {len(raw_game_rows)}. "
                 f"Player commander entry rows found: {len(entry_rows)}."
             )
             if duplicate_groups:

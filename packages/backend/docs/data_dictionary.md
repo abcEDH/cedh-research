@@ -1,6 +1,6 @@
 # Data Dictionary
 
-Last reviewed: 2026-04-06
+Last reviewed: 2026-04-09
 Update policy: This file must be updated whenever migrations in `packages/backend/supabase/migrations` change.
 
 This describes the primary tables and analytical views used in the cEDH Analytics database.
@@ -143,6 +143,9 @@ erDiagram
   - `win_rate`, `opponent_win_rate`
   - `decklist_url`, `decklist_text`, `decklist_obj`
   - `made_top_cut`, `made_top_16` (Top 4 for tournaments with 34 or fewer players)
+- **TopDeck note**:
+  - league-style standings may expose `successRate` / `opponentSuccessRate` instead of `winRate` / `opponentWinRate`
+  - ingestion should normalize those source fields into `win_rate` / `opponent_win_rate`
 
 ### `games`
 - **Purpose**: individual pod games within a round.
@@ -150,6 +153,8 @@ erDiagram
   - `tournament_id`, `round_number`, `round_name`, `is_bracket`, `table_number`
   - `status`, `is_draw`, `winner_id`
   - `game_key`: deterministic key for idempotent upserts
+- **TopDeck note**:
+  - some league-style events return no `rounds`; those events should be treated as standings-only rather than as missing pod-data failures
 
 ### `game_participants`
 - **Purpose**: each player's seat and result in a game.
@@ -167,7 +172,7 @@ erDiagram
   - `won_against`, `commander_seat`, `opponent_seat`
   - `tournament_id`, `round_number`
 
-### `regional_elo_ratings`
+### `global_elo_ratings`
 - **Purpose**: persisted Elo-style ratings. Current production intent is one global row per player keyed as `('global', 'ALL')`; state leaderboards are derived from assigned-state activity rather than separate state rating pools.
 - **Key fields**:
   - `region_type`, `region_key`, `player_id`
@@ -177,20 +182,58 @@ erDiagram
   - row level security is enabled
   - public read access is allowed through a SELECT policy
 
-### `regional_elo_state_activity`
+### `global_elo_state_activity`
 - **Purpose**: per-player state activity snapshots used to assign each player to one primary state.
 - **Key fields**:
-  - `region_type`, `region_key`, `player_id`
+  - `region_type`, `region_key`, `country_key`, `player_id`
   - `games_30d`, `games_90d`, `games_365d`, `games_lifetime`
   - `wins`, `draws`, `losses`, `last_game_date`
   - `activity_score`, `is_primary_state`, `updated_at`
 
-### `regional_elo_game_events`
+### `global_elo_game_events`
 - **Purpose**: persisted per-game Elo deltas for the global Elo stream.
 - **Key fields**:
   - `region_type`, `region_key`, `game_id`, `player_id`
   - `expected_score`, `actual_score`
   - `rating_before`, `rating_delta`, `rating_after`
+
+### `global_elo_active_leaderboard`
+- **Purpose**: precomputed six-month-active leaderboard slices for fast Global Elo and profile rank reads.
+- **Key fields**:
+  - `region_type`, `region_key`, `country_key`, `rank`
+  - `player_id`, `player_name`, `topdeck_id`
+  - `rating`, `games_played`, `wins`, `draws`, `losses`, `last_game_date`
+  - `primary_country_key`, `primary_region_key`, `activity_score`, `updated_at`
+
+### `global_elo_player_profile_summaries`
+- **Purpose**: compact per-player Global Elo/profile summary populated by the backend recompute job.
+- **Key fields**:
+  - `player_id`, `topdeck_id`, `player_name`
+  - `games_played`, `wins`, `draws`, `losses`, `last_game_date`
+  - `home_country_key`, `home_region_key`, `state_assignments`, `updated_at`
+
+### `player_commander_profiles`
+- **Purpose**: compact per-player commander forecast snapshot populated by the weekly backend job for fast leaderboard, drilldown, and Tournament Prep reads.
+- **Key fields**:
+  - `player_id`, `topdeck_id`, `player_name`
+  - `active_commander`, `active_commander_entries`, `active_commander_prediction_score`
+  - `total_entries`, `commander_predictions`
+  - `latest_commander`, `latest_commander_date`, `latest_decklist_url`, `updated_at`
+
+### `elo_maintenance_jobs`
+- **Purpose**: queue and observability log for scheduled Global Elo maintenance runs.
+- **Key fields**:
+  - `id`, `status`, `trigger_source`, `github_run_id`
+  - `created_at`, `dispatched_at`, `started_at`, `completed_at`, `heartbeat_at`
+  - `ratings_count`, `state_activity_count`, `game_events_count`
+  - `leaderboard_count`, `profile_count`, `commander_profile_count`
+  - `duration_seconds`, `error_text`
+- **Status values**:
+  - `pending`, `dispatched`, `running`, `completed`, `failed`, `stale`
+- **Security**:
+  - row level security is enabled
+  - public read access is allowed through a SELECT policy
+  - writes are restricted to the service role and `SECURITY DEFINER` database functions
 
 ### `ingestion_backfill_runs`
 - **Purpose**: operational log for historical backfill runs driven from stable TID manifests.
@@ -222,6 +265,13 @@ erDiagram
   - `process_started`, `process_succeeded`, `process_failed`
   - `tournament_skipped`
 
+## Migration 20260408000000_security_hardening_part2
+- **Purpose**: lock down the remaining public-facing regional Elo and ingestion tables while keeping the public leaderboard view accessible through the service role.
+- **Key actions**:
+  - Enables Row-Level Security and service-role-only policies on `regional_elo_game_events`, `ingestion_backfill_batches`, `ingestion_backfill_runs`, and `ingestion_backfill_events`.
+  - Provides `public.is_service_role()` as the shared predicate for all restricted objects.
+  - Converts the regional Elo leaderboard/region/canonical views into `SECURITY INVOKER` forms and revokes `anon/authenticated` grants, while keeping `regional_elo_state_activity` readable via a dedicated policy.
+
 ## Analytical Views
 
 ### `commander_stats` (view)
@@ -252,13 +302,20 @@ erDiagram
 - **`commander_monthly_trends`**: per-commander monthly aggregates. Includes `month_start_date` and `month_key`.
 - **`commander_wow_mom`** (view): latest week/month deltas in entries (%) and win rate (percentage points).
 
-### Regional Elo Views
-- **`regional_elo_game_results`**: denormalized game-level input rows used to compute the global Elo stream and state activity from games, entries, players, and tournaments with location data.
-- **`regional_elo_game_event_log`**: global Elo per-game event log enriched with tournament, player, commander, and seat context.
-- **`regional_elo_primary_state_assignments`**: one row per player for the state currently assigned from recency-weighted activity.
-- **`regional_elo_player_stats`**: canonical assigned-state game counts and W/L/D totals sourced from `regional_elo_primary_state_assignments`.
-- **`regional_elo_leaderboard`**: assigned-state leaderboard by `region_type` and `region_key`, enriched with player names and TopDeck IDs. Rankings use global Elo; games/record fields come from assigned-state activity.
-- **`regional_elo_regions`**: assigned-state region summary with player counts and latest `updated_at` timestamp.
+### Global Elo And Region Views
+- **`global_elo_game_results`**: denormalized game-level input rows used to compute the global Elo stream and state activity from games, entries, players, and tournaments with location data.
+- **`global_elo_game_event_log`**: global Elo per-game event log enriched with tournament, player, commander, and seat context.
+- **`global_elo_primary_state_assignments`**: one row per player for the state currently assigned from recency-weighted activity.
+- **`global_elo_player_stats`**: canonical assigned-state game counts and W/L/D totals sourced from `global_elo_primary_state_assignments`.
+- **`global_elo_leaderboard`**: global, country, and assigned-state leaderboard rows by `region_type` and `region_key`, enriched with player names and TopDeck IDs. Rankings use global Elo. Displayed games, wins, draws, losses, and last-game date are sourced from canonical `global_elo_game_events` aggregates for the player's global `('global', 'ALL')` stream rather than from rating-table counters, so unknown-region games remain counted and stale rating counters do not leak into the leaderboard.
+- **`global_elo_regions`**: global, country, and assigned-state region summary with player counts, country grouping, and latest `updated_at` timestamp.
+
+## Migration 20260409140000_fix_global_leaderboard_canonical_counts
+- **Purpose**: make leaderboard/profile-facing global counts use canonical game-event aggregates instead of historical counters persisted on the rating rows.
+- **Key actions**:
+  - Rebuilds `regional_elo_leaderboard` from `global_elo_ratings` joined to aggregated `global_elo_game_events` counts for the global `ALL` stream.
+  - Keeps global/country/state leaderboard ranking based on rating plus the existing activity/order tie-breaks, while replacing displayed record fields with canonical aggregate values.
+  - Recreates `global_elo_leaderboard` as an alias of the updated `regional_elo_leaderboard` and reapplies `security_invoker` plus public `SELECT` grants.
 
 ### Card Analytics (materialized views)
 - **`card_frequencies_by_commander`**: per-commander card inclusion frequencies.

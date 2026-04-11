@@ -53,6 +53,10 @@ python src/commander_ev_simulations.py \
   --output-md reports/ev-simulations-shortlist.md
 ```
 
+## Git Policy
+
+Generated report outputs in this directory are ignored by git. Keep the checked-in files limited to this README and other intentionally versioned documentation.
+
 ## Data Sources
 
 Reports are generated from tournament data ingested from [TopDeck.gg](https://topdeck.gg).

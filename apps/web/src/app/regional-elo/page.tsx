@@ -1,9 +1,15 @@
 import { supabase } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
+import { buildProfiles, getCommanderUsageRows, selectCommanderForecastRows } from "@/lib/meta-prep";
+import { RegionalLeaderboardTable } from "./regional-leaderboard-table";
 import { RegionSelector } from "./region-selector";
+import { inferCountryForRegion } from "@/lib/region-countries";
 
 export const dynamic = "force-dynamic";
+const GLOBAL_REGION_KEY = "ALL";
+const LEADERBOARD_PAGE_SIZE = 50;
+const ACTIVE_PLAYER_LOOKBACK_MONTHS = 6;
 
 function readRegionParam(
   params: Awaited<Promise<{ region?: string | string[] }> | { region?: string | string[] }> | undefined
@@ -17,6 +23,23 @@ function readRegionParam(
     return (anyParams as URLSearchParams).get("region") ?? "";
   }
   const value = (anyParams as Record<string, string | string[] | undefined>).region;
+  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+}
+
+function readCountryParam(
+  params:
+    | Awaited<Promise<{ country?: string | string[] }> | { country?: string | string[] }>
+    | undefined
+) {
+  const anyParams = params as
+    | Record<string, string | string[] | undefined>
+    | URLSearchParams
+    | undefined;
+  if (!anyParams) return "";
+  if (typeof (anyParams as URLSearchParams).get === "function") {
+    return (anyParams as URLSearchParams).get("country") ?? "";
+  }
+  const value = (anyParams as Record<string, string | string[] | undefined>).country;
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
 }
 
@@ -37,9 +60,45 @@ function readScopeParam(
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
 }
 
+function readSearchParam(
+  params: Awaited<Promise<{ q?: string | string[] }> | { q?: string | string[] }> | undefined
+) {
+  const anyParams = params as
+    | Record<string, string | string[] | undefined>
+    | URLSearchParams
+    | undefined;
+  if (!anyParams) return "";
+  if (typeof (anyParams as URLSearchParams).get === "function") {
+    return (anyParams as URLSearchParams).get("q") ?? "";
+  }
+  const value = (anyParams as Record<string, string | string[] | undefined>).q;
+  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+}
+
+function readPageParam(
+  params:
+    | Awaited<Promise<Record<string, string | string[] | undefined>> | Record<string, string | string[] | undefined>>
+    | URLSearchParams
+    | undefined
+) {
+  const anyParams = params as
+    | Record<string, string | string[] | undefined>
+    | URLSearchParams
+    | undefined;
+  if (!anyParams) return 1;
+  const pageValue =
+    typeof (anyParams as URLSearchParams).get === "function"
+      ? (anyParams as URLSearchParams).get("page")
+      : (anyParams as Record<string, string | string[] | undefined>).page;
+  const rawValue = Array.isArray(pageValue) ? pageValue[0] ?? "" : pageValue ?? "";
+  const parsed = Number.parseInt(rawValue, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+}
+
 type RegionRow = {
   region_type: string;
   region_key: string;
+  country_key: string | null;
   player_count: number;
   updated_at: string | null;
 };
@@ -47,6 +106,8 @@ type RegionRow = {
 type LeaderboardRow = {
   region_type: string;
   region_key: string;
+  country_key?: string | null;
+  primary_country_key?: string | null;
   primary_region_key?: string | null;
   player_id: string;
   player_name: string;
@@ -62,31 +123,22 @@ type LeaderboardRow = {
 
 type LatestCommanderRow = {
   topdeck_id: string | null;
-  commander_name: string | null;
-  start_date: string | null;
-};
-
-type RegionalValidityRow = {
-  region_type: string;
-  region_key: string | null;
-  scope: "global" | "region";
-  total_tournaments: number;
-  tournaments_with_state: number;
-  tournaments_missing_state: number;
-  total_games: number;
-  included_games: number;
-  excluded_games_missing_state: number;
-  excluded_games_with_byes: number;
-  excluded_games_insufficient_players: number;
-  included_players: number;
-  earliest_game_date: string | null;
-  latest_game_date: string | null;
+  active_commander: string | null;
+  active_commander_decklist_url: string | null;
+  latest_tournament_name: string | null;
+  latest_tournament_date: string | null;
+  latest_tournament_topdeck_tid: string | null;
 };
 
 function isKnownCommander(commanderName: string | null | undefined) {
   const normalized = (commanderName ?? "").trim().toLowerCase();
   return normalized.length > 0 && normalized !== "unknown commander";
 }
+
+type LeaderboardPage = {
+  rows: LeaderboardRow[];
+  totalCount: number;
+};
 
 function formatDate(value: string | null) {
   if (!value) return "—";
@@ -97,189 +149,645 @@ function formatDate(value: string | null) {
   });
 }
 
-async function fetchLeaderboardRows(regionType: "global" | "state", regionKey: string): Promise<LeaderboardRow[]> {
-  const pageSize = 1000;
-  const rows: LeaderboardRow[] = [];
+function activePlayerCutoffDate() {
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - ACTIVE_PLAYER_LOOKBACK_MONTHS);
+  return cutoff.toISOString().slice(0, 10);
+}
 
-  for (let offset = 0; ; offset += pageSize) {
+async function fetchLeaderboardRows(
+  regionType: "global" | "country" | "state",
+  regionKey: string,
+  page: number,
+  pageSize: number,
+  searchQuery = ""
+): Promise<LeaderboardPage> {
+  if (regionType === "country") {
+    return fetchCountryLeaderboardRows(regionKey, page, pageSize, searchQuery);
+  }
+
+  const cutoffDate = activePlayerCutoffDate();
+  const normalizedSearch = searchQuery.trim();
+  const pageStart = (page - 1) * pageSize;
+  const pageEnd = pageStart + pageSize - 1;
+
+  let query = supabase
+    .from("global_elo_active_leaderboard")
+    .select(
+      "region_type, region_key, country_key, primary_country_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank",
+      { count: "exact" }
+    )
+    .eq("region_type", regionType)
+    .order("rank", { ascending: true })
+    .range(pageStart, pageEnd);
+
+  if (normalizedSearch) {
+    query = query.ilike("player_name", `%${normalizedSearch}%`);
+  }
+
+  if (regionType === "global") {
+    query = query.eq("region_key", GLOBAL_REGION_KEY);
+  } else {
+    query = query.eq("region_key", regionKey);
+  }
+
+  const { data, error, count } = await query;
+
+  if (error) {
+    return fetchLeaderboardRowsFromView(regionType, regionKey, page, pageSize, cutoffDate, normalizedSearch);
+  }
+
+  return {
+    rows: (data as LeaderboardRow[]) ?? [],
+    totalCount: count ?? 0,
+  };
+}
+
+async function fetchLeaderboardRowsFromView(
+  regionType: "global" | "country" | "state",
+  regionKey: string,
+  page: number,
+  pageSize: number,
+  cutoffDate: string,
+  searchQuery = ""
+): Promise<LeaderboardPage> {
+  if (regionType === "country") {
+    return fetchCountryLeaderboardRows(regionKey, page, pageSize, searchQuery);
+  }
+
+  const pageStart = (page - 1) * pageSize;
+  const pageEnd = pageStart + pageSize - 1;
+  let query = supabase
+    .from("global_elo_leaderboard")
+    .select(
+      "region_type, region_key, country_key, primary_country_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank",
+      { count: "exact" }
+    )
+    .eq("region_type", regionType)
+    .eq("region_key", regionKey)
+    .gte("last_game_date", cutoffDate)
+    .order("rating", { ascending: false })
+    .order("games_played", { ascending: false })
+    .range(pageStart, pageEnd);
+
+  if (searchQuery) {
+    query = query.ilike("player_name", `%${searchQuery}%`);
+  }
+
+  const { data, error, count } = await query;
+
+  if (error) {
+    return fetchLegacyLeaderboardRows(
+      regionType,
+      regionType === "global" ? GLOBAL_REGION_KEY : regionKey,
+      page,
+      pageSize,
+      searchQuery
+    );
+  }
+
+  return {
+    rows: await applyGlobalLeaderboardTotals(regionType, (data as LeaderboardRow[]) ?? []),
+    totalCount: count ?? 0,
+  };
+}
+
+async function fetchCountryLeaderboardRows(
+  countryKey: string,
+  page: number,
+  pageSize: number,
+  searchQuery = ""
+): Promise<LeaderboardPage> {
+  const cutoffDate = activePlayerCutoffDate();
+  const pageStart = (page - 1) * pageSize;
+  const batchSize = 1000;
+  const filteredRows: LeaderboardRow[] = [];
+  let totalCount = 0;
+  for (let offset = 0; ; offset += batchSize) {
     let query = supabase
       .from("regional_elo_leaderboard")
       .select(
         "region_type, region_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank"
       )
-      .eq("region_type", regionType)
-      .order("rating", { ascending: false })
-      .range(offset, offset + pageSize - 1);
+      .eq("region_type", "global")
+      .eq("region_key", GLOBAL_REGION_KEY)
+      .gte("last_game_date", cutoffDate)
+      .order("rank", { ascending: true })
+      .range(offset, offset + batchSize - 1);
 
-    if (regionType === "global") {
-      query = query.eq("region_key", "ALL");
-    } else {
-      query = query.eq("region_key", regionKey);
+    if (searchQuery) {
+      query = query.ilike("player_name", `%${searchQuery}%`);
     }
 
     const { data, error } = await query;
 
-    if (error || !data?.length) break;
-    rows.push(...(data as LeaderboardRow[]));
-    if (data.length < pageSize) break;
+    if (error) {
+      console.error("Error fetching country leaderboard rows:", error);
+      return { rows: [], totalCount: 0 };
+    }
+
+    const pageRows = (data as LeaderboardRow[]) ?? [];
+    if (pageRows.length === 0) break;
+
+    for (const row of pageRows) {
+      const homeCountry = row.primary_region_key ? inferCountryForRegion(row.primary_region_key) : null;
+      if (homeCountry !== countryKey) continue;
+      if (totalCount >= pageStart && filteredRows.length < pageSize) {
+        filteredRows.push(row);
+      }
+      totalCount += 1;
+    }
+
+    if (pageRows.length < batchSize) break;
+  }
+
+  return {
+    rows: await applyGlobalLeaderboardTotals("country", filteredRows),
+    totalCount,
+  };
+}
+
+async function fetchLegacyLeaderboardRows(
+  regionType: "global" | "country" | "state",
+  regionKey: string,
+  page: number,
+  pageSize: number,
+  searchQuery = ""
+): Promise<LeaderboardPage> {
+  if (regionType === "country") {
+    return fetchCountryLeaderboardRows(regionKey, page, pageSize, searchQuery);
+  }
+
+  const cutoffDate = activePlayerCutoffDate();
+  const pageStart = (page - 1) * pageSize;
+  const pageEnd = pageStart + pageSize - 1;
+  let query = supabase
+    .from("regional_elo_leaderboard")
+    .select(
+      "region_type, region_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank",
+      { count: "exact" }
+    )
+    .eq("region_type", regionType)
+    .eq("region_key", regionKey)
+    .gte("last_game_date", cutoffDate)
+    .order("rank", { ascending: true })
+    .range(pageStart, pageEnd);
+
+  if (searchQuery) {
+    query = query.ilike("player_name", `%${searchQuery}%`);
+  }
+
+  const { data, error, count } = await query;
+
+  if (error) {
+    console.error("Error fetching legacy leaderboard rows:", error);
+    return { rows: [], totalCount: 0 };
+  }
+
+  return {
+    rows: await applyGlobalLeaderboardTotals(regionType, (data as LeaderboardRow[]) ?? []),
+    totalCount: count ?? 0,
+  };
+}
+
+async function applyGlobalLeaderboardTotals(
+  regionType: "global" | "country" | "state",
+  rows: LeaderboardRow[]
+): Promise<LeaderboardRow[]> {
+  if (regionType === "global" || rows.length === 0) return rows;
+
+  const playerIds = rows.map((row) => row.player_id).filter(Boolean);
+  const eventLogTotals = await fetchEventLogTotals(playerIds);
+  for (const table of ["global_elo_active_leaderboard", "global_elo_leaderboard", "regional_elo_leaderboard"]) {
+    const { data, error } = await supabase
+      .from(table)
+      .select("player_id, games_played, wins, draws, losses, last_game_date")
+      .eq("region_type", "global")
+      .eq("region_key", GLOBAL_REGION_KEY)
+      .in("player_id", playerIds);
+
+    if (error) continue;
+    const totalsByPlayer = new Map(
+      ((data as Array<Pick<LeaderboardRow, "player_id" | "games_played" | "wins" | "draws" | "losses" | "last_game_date">>) ?? [])
+        .map((row) => [row.player_id, row])
+    );
+    if (totalsByPlayer.size === 0) continue;
+    return rows.map((row) => {
+      const totals = eventLogTotals.get(row.player_id) ?? totalsByPlayer.get(row.player_id);
+      return totals
+        ? {
+            ...row,
+            games_played: totals.games_played,
+            wins: totals.wins,
+            draws: totals.draws,
+            losses: totals.losses,
+            last_game_date: totals.last_game_date,
+          }
+        : row;
+    });
   }
 
   return rows;
 }
 
-async function fetchLatestCommanders(topdeckIds: string[]): Promise<Map<string, LatestCommanderRow>> {
+async function fetchEventLogTotals(playerIds: string[]) {
+  const totalsByPlayer = new Map<
+    string,
+    Pick<LeaderboardRow, "player_id" | "games_played" | "wins" | "draws" | "losses" | "last_game_date">
+  >();
+  if (playerIds.length === 0) return totalsByPlayer;
+
+  for (const table of ["global_elo_game_event_log", "regional_elo_game_event_log"]) {
+    let tableHadRows = false;
+    let tableMissing = false;
+    for (const playerIdChunk of chunkArray(playerIds, 10)) {
+      for (let offset = 0; ; offset += 1000) {
+        const { data, error } = await supabase
+          .from(table)
+          .select("player_id, game_result, game_date")
+          .in("player_id", playerIdChunk)
+          .order("player_id", { ascending: true })
+          .order("game_date", { ascending: true })
+          .range(offset, offset + 999);
+
+        if (error) {
+          tableMissing = true;
+          break;
+        }
+        const page = (data as Array<{ player_id: string; game_result: string | null; game_date: string | null }>) ?? [];
+        tableHadRows = tableHadRows || page.length > 0;
+        for (const row of page) {
+          const current = totalsByPlayer.get(row.player_id) ?? {
+            player_id: row.player_id,
+            games_played: 0,
+            wins: 0,
+            draws: 0,
+            losses: 0,
+            last_game_date: null,
+          };
+          current.games_played += 1;
+          if (row.game_result === "win") {
+            current.wins += 1;
+          } else if (row.game_result === "draw") {
+            current.draws += 1;
+          } else if (row.game_result === "loss") {
+            current.losses += 1;
+          }
+          if (row.game_date && (!current.last_game_date || row.game_date > current.last_game_date)) {
+            current.last_game_date = row.game_date;
+          }
+          totalsByPlayer.set(row.player_id, current);
+        }
+        if (page.length < 1000) break;
+      }
+      if (tableMissing) {
+        totalsByPlayer.clear();
+        break;
+      }
+    }
+    if (tableHadRows && !tableMissing) break;
+  }
+
+  return totalsByPlayer;
+}
+
+async function fetchRegionRows(): Promise<{ rows: RegionRow[]; supportsCountry: boolean }> {
+  const { data, error } = await supabase
+    .from("global_elo_regions")
+    .select("region_type, region_key, country_key, player_count, updated_at")
+    .order("region_type", { ascending: true })
+    .order("region_key", { ascending: true });
+
+  if (!error) {
+    return { rows: (data ?? []) as RegionRow[], supportsCountry: true };
+  }
+
+  const { data: fallbackData, error: fallbackError } = await supabase
+    .from("regional_elo_regions")
+    .select("region_type, region_key, player_count, updated_at")
+    .order("region_type", { ascending: true })
+    .order("region_key", { ascending: true });
+
+  if (fallbackError) {
+    console.error("Error fetching region rows:", fallbackError);
+    return { rows: [], supportsCountry: false };
+  }
+
+  const fallbackRows = ((fallbackData ?? []) as Omit<RegionRow, "country_key">[]).map((row) => ({
+    ...row,
+    country_key: row.region_type === "state" ? inferCountryForRegion(row.region_key) : null,
+  }));
+  const inferredCountries = new Map<string, RegionRow>();
+  for (const row of fallbackRows) {
+    if (row.region_type !== "state" || !row.country_key) continue;
+    const existing = inferredCountries.get(row.country_key);
+    inferredCountries.set(row.country_key, {
+      region_type: "country",
+      region_key: row.country_key,
+      country_key: row.country_key,
+      player_count: (existing?.player_count ?? 0) + Number(row.player_count ?? 0),
+      updated_at:
+        existing?.updated_at && row.updated_at
+          ? existing.updated_at > row.updated_at
+            ? existing.updated_at
+            : row.updated_at
+          : existing?.updated_at ?? row.updated_at ?? null,
+    });
+  }
+  const legacyCountryRows: RegionRow[] =
+    fallbackRows.some((row) => row.region_type === "country")
+      ? []
+      : Array.from(inferredCountries.values()).sort((a, b) =>
+          a.region_key.localeCompare(b.region_key)
+        );
+
+  return {
+    rows: [
+      ...legacyCountryRows,
+      ...fallbackRows.map((row) => ({
+        ...row,
+        country_key: row.country_key ?? null,
+      })),
+    ],
+    supportsCountry: false,
+  };
+}
+
+function chunkArray<T>(values: T[], chunkSize: number) {
+  const chunks: T[][] = [];
+  for (let index = 0; index < values.length; index += chunkSize) {
+    chunks.push(values.slice(index, index + chunkSize));
+  }
+  return chunks;
+}
+
+async function fetchLatestCommanders(rows: LeaderboardRow[]): Promise<Map<string, LatestCommanderRow>> {
+  const topdeckIds = rows
+    .map((row) => row.topdeck_id)
+    .filter((value): value is string => Boolean(value));
   if (topdeckIds.length === 0) return new Map();
+  const playerIdByTopdeckId = new Map<string, string>();
+  const topdeckIdByPlayerId = new Map<string, string>();
+  const lastGameDateByTopdeckId = new Map<string, string | null>();
+  for (const row of rows) {
+    if (!row.topdeck_id) continue;
+    playerIdByTopdeckId.set(row.topdeck_id, row.player_id);
+    topdeckIdByPlayerId.set(row.player_id, row.topdeck_id);
+    lastGameDateByTopdeckId.set(row.topdeck_id, row.last_game_date);
+  }
 
-  const pageSize = 1000;
-  const rows: LatestCommanderRow[] = [];
-  for (let offset = 0; ; offset += pageSize) {
+  const profileRows: Array<{ topdeck_id: string | null; active_commander: string | null }> = [];
+  for (const topdeckIdChunk of chunkArray(topdeckIds, 250)) {
     const { data, error } = await supabase
-      .from("player_commander_entries")
-      .select("topdeck_id, commander_name, start_date")
-      .in("topdeck_id", topdeckIds)
-      .order("start_date", { ascending: false })
-      .range(offset, offset + pageSize - 1);
+      .from("player_commander_profiles")
+      .select("topdeck_id, active_commander")
+      .in("topdeck_id", topdeckIdChunk);
 
-    if (error || !data?.length) break;
-    rows.push(...(data as LatestCommanderRow[]));
-    if (data.length < pageSize) break;
+    if (error || !data?.length) continue;
+    profileRows.push(...(data as Array<{ topdeck_id: string | null; active_commander: string | null }>));
   }
 
   const latestByPlayer = new Map<string, LatestCommanderRow>();
-  for (const row of rows) {
-    if (!row.topdeck_id || latestByPlayer.has(row.topdeck_id)) continue;
-    if (!isKnownCommander(row.commander_name)) continue;
-    latestByPlayer.set(row.topdeck_id, row);
-  }
-  return latestByPlayer;
-}
+  const profileActiveCommanderByTopdeckId = new Map<string, string>();
+  const latestPlayedEventByPlayerId = new Map<
+    string,
+    { tournament_id: string | null; tournament_name: string | null; game_date: string | null }
+  >();
+  const tournamentsById = new Map<
+    string,
+    { id: string; name: string | null; start_date: string | null; topdeck_tid: string | null }
+  >();
+  const pageSize = 1000;
+  const playerIds = Array.from(topdeckIdByPlayerId.keys());
 
-async function fetchRegionalValidity(): Promise<RegionalValidityRow[]> {
-  const { data, error } = await supabase
-    .from("regional_elo_data_validity")
-    .select(
-      [
-        "region_type",
-        "region_key",
-        "scope",
-        "total_tournaments",
-        "tournaments_with_state",
-        "tournaments_missing_state",
-        "total_games",
-        "included_games",
-        "excluded_games_missing_state",
-        "excluded_games_with_byes",
-        "excluded_games_insufficient_players",
-        "included_players",
-        "earliest_game_date",
-        "latest_game_date",
-      ].join(", ")
+  for (const table of ["global_elo_game_event_log", "regional_elo_game_event_log"]) {
+    let tableWorked = false;
+    for (const playerIdChunk of chunkArray(playerIds, 100)) {
+      for (let offset = 0; ; offset += pageSize) {
+        const { data, error } = await supabase
+          .from(table)
+          .select("player_id, game_date, tournament_name, tournament_id")
+          .in("player_id", playerIdChunk)
+          .order("game_date", { ascending: false })
+          .range(offset, offset + pageSize - 1);
+
+        if (error) {
+          latestPlayedEventByPlayerId.clear();
+          tableWorked = false;
+          break;
+        }
+
+        const page =
+          (data as Array<{
+            player_id: string;
+            game_date: string | null;
+            tournament_name: string | null;
+            tournament_id: string | null;
+          }>) ?? [];
+        tableWorked = tableWorked || page.length > 0;
+        for (const row of page) {
+          const existing = latestPlayedEventByPlayerId.get(row.player_id);
+          if (!existing || (row.game_date && (!existing.game_date || row.game_date > existing.game_date))) {
+            latestPlayedEventByPlayerId.set(row.player_id, {
+              tournament_id: row.tournament_id ?? null,
+              tournament_name: row.tournament_name ?? null,
+              game_date: row.game_date ?? null,
+            });
+          }
+        }
+
+        if (page.length < pageSize) break;
+      }
+      if (!tableWorked && latestPlayedEventByPlayerId.size === 0) continue;
+    }
+    if (tableWorked || latestPlayedEventByPlayerId.size > 0) break;
+  }
+
+  const latestTournamentIds = Array.from(
+    new Set(
+      Array.from(latestPlayedEventByPlayerId.values())
+        .map((row) => row.tournament_id)
+        .filter((value): value is string => Boolean(value))
     )
-    .eq("region_type", "state");
+  );
+  for (const idChunk of chunkArray(latestTournamentIds, 100)) {
+    const { data, error } = await supabase
+      .from("tournaments")
+      .select("id, name, start_date, topdeck_tid")
+      .in("id", idChunk);
 
-  if (error) {
-    console.error("Error fetching leaderboard validity stats:", error);
-    return [];
+    if (error || !data?.length) continue;
+    for (const row of data as Array<{ id: string; name: string | null; start_date: string | null; topdeck_tid: string | null }>) {
+      tournamentsById.set(row.id, row);
+    }
   }
 
-  const rows = ((data ?? []) as unknown as Record<string, unknown>[]);
+  for (const topdeckId of topdeckIds) {
+    latestByPlayer.set(topdeckId, {
+      topdeck_id: topdeckId,
+      active_commander: null,
+      active_commander_decklist_url: null,
+      latest_tournament_name: null,
+      latest_tournament_date: null,
+      latest_tournament_topdeck_tid: null,
+    });
+  }
 
-  return rows.map((row) => ({
-    region_type: String(row.region_type ?? ""),
-    region_key: row.region_key ? String(row.region_key) : null,
-    scope: row.scope === "global" ? "global" : "region",
-    total_tournaments: Number(row.total_tournaments ?? 0),
-    tournaments_with_state: Number(row.tournaments_with_state ?? 0),
-    tournaments_missing_state: Number(row.tournaments_missing_state ?? 0),
-    total_games: Number(row.total_games ?? 0),
-    included_games: Number(row.included_games ?? 0),
-    excluded_games_missing_state: Number(row.excluded_games_missing_state ?? 0),
-    excluded_games_with_byes: Number(row.excluded_games_with_byes ?? 0),
-    excluded_games_insufficient_players: Number(row.excluded_games_insufficient_players ?? 0),
-    included_players: Number(row.included_players ?? 0),
-    earliest_game_date: row.earliest_game_date ? String(row.earliest_game_date) : null,
-    latest_game_date: row.latest_game_date ? String(row.latest_game_date) : null,
-  }));
-}
+  for (const [playerId, latestPlayed] of latestPlayedEventByPlayerId.entries()) {
+    const topdeckId = topdeckIdByPlayerId.get(playerId);
+    if (!topdeckId) continue;
+    const existing = latestByPlayer.get(topdeckId);
+    if (!existing || !latestPlayed.game_date) continue;
+    const matchedTournament = latestPlayed.tournament_id
+      ? (tournamentsById.get(latestPlayed.tournament_id) ?? null)
+      : null;
 
-function formatPercent(value: number) {
-  return `${(value * 100).toFixed(1)}%`;
+    existing.latest_tournament_name = matchedTournament?.name ?? latestPlayed.tournament_name;
+    existing.latest_tournament_date = matchedTournament?.start_date ?? latestPlayed.game_date;
+    existing.latest_tournament_topdeck_tid = matchedTournament?.topdeck_tid ?? null;
+  }
+
+  const referenceDate = new Date();
+  const usageRows = await getCommanderUsageRows(topdeckIds, "1900-01-01");
+  const forecastRows = selectCommanderForecastRows(topdeckIds, usageRows, referenceDate);
+  const profiles = buildProfiles(topdeckIds, forecastRows, 1, referenceDate.toISOString());
+  for (const profile of profiles.players) {
+    const commander = profile.commanders[0]?.commander ?? null;
+    if (isKnownCommander(commander)) {
+      profileActiveCommanderByTopdeckId.set(profile.topdeckId, commander);
+      const existing = latestByPlayer.get(profile.topdeckId);
+      if (existing) {
+        existing.active_commander_decklist_url =
+          profile.commanders[0]?.latestTopdeckDecklistUrl ||
+          profile.commanders[0]?.latestDecklistUrl ||
+          null;
+      }
+    }
+  }
+
+  for (const row of profileRows) {
+    const activeCommander = row.active_commander;
+    if (row.topdeck_id && activeCommander && isKnownCommander(activeCommander)) {
+      profileActiveCommanderByTopdeckId.set(row.topdeck_id, activeCommander);
+    }
+  }
+
+  for (const [topdeckId, activeCommander] of profileActiveCommanderByTopdeckId.entries()) {
+    const existing = latestByPlayer.get(topdeckId);
+    if (!existing) continue;
+    existing.active_commander = activeCommander;
+  }
+
+  return latestByPlayer;
 }
 
 export default async function RegionalEloPage({
   searchParams,
 }: {
   searchParams?:
-    | { region?: string | string[]; scope?: string | string[] }
-    | Promise<{ region?: string | string[]; scope?: string | string[] }>;
+    | { country?: string | string[]; q?: string | string[]; region?: string | string[]; scope?: string | string[] }
+    | Promise<{ country?: string | string[]; q?: string | string[]; region?: string | string[]; scope?: string | string[] }>;
 }) {
   const resolvedSearchParams = await Promise.resolve(searchParams);
-  const [{ data: regionsData }, validityRows] = await Promise.all([
-    supabase
-      .from("regional_elo_regions")
-      .select("region_type, region_key, player_count, updated_at")
-      .order("region_type", { ascending: true })
-      .order("region_key", { ascending: true }),
-    fetchRegionalValidity(),
-  ]);
+  const regionResult = await fetchRegionRows();
 
-  const regions = (regionsData ?? []) as RegionRow[];
+  const regions = regionResult.rows;
+  const supportsCountryRegions = regionResult.supportsCountry;
   const requestedScope = readScopeParam(resolvedSearchParams).trim().toLowerCase();
+  const requestedCountry = decodeURIComponent(readCountryParam(resolvedSearchParams)).trim();
   const requestedRegion = decodeURIComponent(readRegionParam(resolvedSearchParams)).trim();
-  const defaultRegion = regions.find(
-    (region) => region.region_type === "state" && region.region_key === "CALIFORNIA"
-  )?.region_key;
-  const selectedScope: "global" | "state" = requestedScope === "state" ? "state" : "global";
-  const selectedRegion =
-    regions.find((region) => region.region_type === "state" && region.region_key === requestedRegion)?.region_key ||
-    regions.find(
-      (region) =>
-        region.region_type === "state" && region.region_key.toUpperCase() === requestedRegion.toUpperCase()
-    )
+  const playerSearch = decodeURIComponent(readSearchParam(resolvedSearchParams)).trim();
+  const requestedPage = readPageParam(resolvedSearchParams);
+  const countryRegions = regions.filter((region) => region.region_type === "country");
+  const hasCountryOptions = countryRegions.length > 0;
+  const selectedScope: "global" | "country" =
+    hasCountryOptions && requestedScope === "country" ? "country" : "global";
+  const defaultCountry =
+    countryRegions.find((region) => region.region_key === "UNITED STATES")?.region_key ||
+    countryRegions[0]?.region_key;
+  const selectedCountry =
+    countryRegions.find((region) => region.region_key === requestedCountry)?.region_key ||
+    countryRegions.find((region) => region.region_key.toUpperCase() === requestedCountry.toUpperCase())
       ?.region_key ||
-    defaultRegion ||
-    regions.find((region) => region.region_type === "state")?.region_key;
+    defaultCountry;
+  const stateRegionsForCountry = hasCountryOptions
+    ? regions.filter((region) => region.region_type === "state" && region.country_key === selectedCountry)
+    : regions.filter((region) => region.region_type === "state");
+  const selectedRegion =
+    stateRegionsForCountry.find((region) => region.region_key === requestedRegion)?.region_key ||
+    stateRegionsForCountry.find(
+      (region) =>
+        region.region_key.toUpperCase() === requestedRegion.toUpperCase()
+    )?.region_key;
+  const activeRegionType =
+    selectedScope === "global" ? "global" : selectedRegion ? "state" : "country";
+  const activeRegionKey =
+    selectedScope === "global" ? GLOBAL_REGION_KEY : selectedRegion || selectedCountry || "";
 
-  const leaderboard =
-    selectedScope === "global"
-      ? await fetchLeaderboardRows("global", "ALL")
-      : selectedRegion
-      ? await fetchLeaderboardRows("state", selectedRegion)
-      : [];
+  const leaderboardPage =
+    activeRegionKey
+      ? supportsCountryRegions
+        ? await fetchLeaderboardRows(
+            activeRegionType,
+            activeRegionKey,
+            requestedPage,
+            LEADERBOARD_PAGE_SIZE,
+            playerSearch
+          )
+        : await fetchLegacyLeaderboardRows(
+            activeRegionType,
+            activeRegionType === "global" ? GLOBAL_REGION_KEY : activeRegionKey,
+            requestedPage,
+            LEADERBOARD_PAGE_SIZE,
+            playerSearch
+          )
+      : { rows: [], totalCount: 0 };
 
-  const topdeckIds = leaderboard
-    .map((row) => row.topdeck_id)
-    .filter((value): value is string => Boolean(value));
-  const latestByPlayer = await fetchLatestCommanders(topdeckIds);
+  const totalPages = Math.max(Math.ceil(leaderboardPage.totalCount / LEADERBOARD_PAGE_SIZE), 1);
+  const currentPage = Math.min(requestedPage, totalPages);
+  const leaderboardRows =
+    currentPage === requestedPage
+      ? leaderboardPage.rows
+      : activeRegionKey
+        ? (
+            supportsCountryRegions
+              ? await fetchLeaderboardRows(
+                  activeRegionType,
+                  activeRegionKey,
+                  currentPage,
+                  LEADERBOARD_PAGE_SIZE,
+                  playerSearch
+                )
+              : await fetchLegacyLeaderboardRows(
+                  activeRegionType,
+                  activeRegionType === "global" ? GLOBAL_REGION_KEY : activeRegionKey,
+                  currentPage,
+                  LEADERBOARD_PAGE_SIZE,
+                  playerSearch
+                )
+          ).rows
+        : [];
+  const leaderboard = leaderboardRows;
+
+  const latestByPlayer = await fetchLatestCommanders(leaderboard);
+  const latestByPlayerRecord = Object.fromEntries(latestByPlayer.entries());
 
   const updatedAt =
     regions.find((r) =>
-      selectedScope === "global"
-        ? r.region_type === "global" && r.region_key === "ALL"
-        : r.region_type === "state" && r.region_key === selectedRegion
+      activeRegionType === "global"
+        ? r.region_type === "global" && r.region_key === GLOBAL_REGION_KEY
+        : r.region_type === activeRegionType && r.region_key === activeRegionKey
     )?.updated_at ?? null;
-  const globalValidity = validityRows.find((row) => row.scope === "global");
-  const selectedRegionValidity = validityRows.find(
-    (row) => row.scope === "region" && row.region_key === selectedRegion
-  );
-  const hasValidityData = validityRows.length > 0;
-  const includedCoverage =
-    globalValidity && globalValidity.total_games > 0
-      ? globalValidity.included_games / globalValidity.total_games
-      : 0;
-  const selectedRegionCoverage =
-    selectedRegionValidity && selectedRegionValidity.total_games > 0
-      ? selectedRegionValidity.included_games / selectedRegionValidity.total_games
-      : 0;
-
   return (
     <div className="min-h-screen">
       <main className="container mx-auto px-4 pb-24 pt-10">
         <header className="flex flex-col gap-6 border-b border-border/60 pb-8">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="knd-chip">Leaderboard</p>
-              <h1 className="mt-4 text-3xl font-semibold text-foreground md:text-4xl">Leaderboard</h1>
+              <p className="knd-chip">Global Elo</p>
+              <h1 className="mt-4 text-3xl font-semibold text-foreground md:text-4xl">
+                Global Leaderboard
+              </h1>
             </div>
             <nav className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
               <Link className="transition hover:text-foreground" href="/">
@@ -294,8 +802,8 @@ export default async function RegionalEloPage({
             </nav>
           </div>
           <p className="max-w-4xl text-base text-muted-foreground">
-            Elo is computed globally across all included games. Players are then assigned to the
-            state where they are most active, using a weighted mix of recency and game volume.
+            Elo is computed globally across all included games. Country and state views are
+            filtered slices of that global rating set.
           </p>
           <p className="text-sm text-muted-foreground">
             Rating model details:{" "}
@@ -306,16 +814,18 @@ export default async function RegionalEloPage({
         </header>
 
         <div className="mt-8 space-y-6">
-          <div className="grid gap-6 xl:grid-cols-[300px_minmax(0,1fr)_minmax(0,1fr)]">
+          <div className="grid gap-6 xl:grid-cols-[300px]">
             <Card className="knd-panel">
               <CardHeader>
-                <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">View</CardTitle>
+                <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">Region</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <RegionSelector
                   regions={regions}
                   selectedScope={selectedScope}
+                  selectedCountry={selectedCountry}
                   selectedRegion={selectedRegion}
+                  supportsCountryRegions={hasCountryOptions}
                 />
                 <div className="text-xs text-muted-foreground">
                   Updated {updatedAt ? formatDate(updatedAt) : "—"}
@@ -323,189 +833,58 @@ export default async function RegionalEloPage({
               </CardContent>
             </Card>
 
-            <Card className="knd-panel">
-              <CardHeader>
-                <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
-                  Global Validity
-                </CardTitle>
-                <p className="text-xs text-muted-foreground">
-                  State assignment only counts games from tournaments with populated state metadata and excludes pods with byes.
-                </p>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm">
-                {!hasValidityData ? (
-                  <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
-                    Validity stats are unavailable in this deployment. The backend view
-                    <span className="mx-1 font-mono text-foreground">regional_elo_data_validity</span>
-                    likely has not been applied yet.
-                  </div>
-                ) : null}
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-muted-foreground">Included games</span>
-                  <span className="font-mono text-foreground">
-                    {globalValidity
-                      ? `${globalValidity.included_games.toLocaleString()} / ${globalValidity.total_games.toLocaleString()}`
-                      : "—"}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-muted-foreground">Coverage rate</span>
-                  <span className="font-mono text-primary">
-                    {globalValidity ? formatPercent(includedCoverage) : "—"}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-muted-foreground">Missing state tournaments</span>
-                  <span className="font-mono text-foreground">
-                    {globalValidity ? globalValidity.tournaments_missing_state.toLocaleString() : "—"}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-muted-foreground">Games dropped for byes</span>
-                  <span className="font-mono text-foreground">
-                    {globalValidity ? globalValidity.excluded_games_with_byes.toLocaleString() : "—"}
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="knd-panel">
-              <CardHeader>
-                <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
-                  {selectedScope === "global" ? "Global" : selectedRegion ?? "Selected State"}
-                </CardTitle>
-                <p className="text-xs text-muted-foreground">
-                  {selectedScope === "global"
-                    ? "Global leaderboard scope and coverage."
-                    : "State-specific sample quality for the active leaderboard."}
-                </p>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm">
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-muted-foreground">Ranked players</span>
-                  <span className="font-mono text-foreground">
-                    {(regions.find((row) =>
-                      selectedScope === "global"
-                        ? row.region_type === "global" && row.region_key === "ALL"
-                        : row.region_type === "state" && row.region_key === selectedRegion
-                    )?.player_count ?? 0).toLocaleString()}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-muted-foreground">Tracked tournaments</span>
-                  <span className="font-mono text-foreground">
-                    {selectedScope === "global"
-                      ? globalValidity?.total_tournaments.toLocaleString() ?? "—"
-                      : selectedRegionValidity?.total_tournaments.toLocaleString() ?? "—"}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-muted-foreground">Included games</span>
-                  <span className="font-mono text-foreground">
-                    {selectedScope === "global"
-                      ? globalValidity?.included_games.toLocaleString() ?? "—"
-                      : selectedRegionValidity?.included_games.toLocaleString() ?? "—"}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-muted-foreground">Games dropped for byes</span>
-                  <span className="font-mono text-foreground">
-                    {selectedScope === "global"
-                      ? globalValidity?.excluded_games_with_byes.toLocaleString() ?? "—"
-                      : selectedRegionValidity?.excluded_games_with_byes.toLocaleString() ?? "—"}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-muted-foreground">Sample freshness</span>
-                  <span className="font-mono text-foreground">
-                    {selectedScope === "global"
-                      ? formatDate(globalValidity?.latest_game_date ?? null)
-                      : selectedRegionValidity
-                      ? formatDate(selectedRegionValidity.latest_game_date)
-                      : "—"}
-                  </span>
-                </div>
-                <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-3 text-xs text-muted-foreground">
-                  {!hasValidityData
-                    ? "This panel will populate after the leaderboard validity migration is applied to the deployed database."
-                    : selectedScope === "global"
-                    ? `${formatPercent(includedCoverage)} of tracked games currently qualify for state assignment coverage.`
-                    : selectedRegionValidity
-                    ? `${formatPercent(selectedRegionCoverage)} of tracked ${selectedRegion} games currently qualify for state assignment coverage.`
-                    : "No validity summary available for this state yet."}
-                </div>
-              </CardContent>
-            </Card>
           </div>
 
           <Card className="knd-panel">
-            <CardHeader>
-              <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
-                Top Players
-              </CardTitle>
-              <p className="text-xs text-muted-foreground">
-                Active view: {selectedScope === "global" ? "Global" : selectedRegion ?? "—"}
-              </p>
+            <CardHeader className="gap-4 md:flex-row md:items-end md:justify-between">
+              <div className="space-y-2">
+                <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
+                  Top Players
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Active view: {activeRegionType === "global" ? "Global" : activeRegionKey || "—"}
+                </p>
+              </div>
+              <form action="/regional-elo" method="get" className="flex w-full flex-col gap-2 md:max-w-sm md:flex-row">
+                <input type="hidden" name="scope" value={selectedScope} />
+                {selectedScope === "country" && selectedCountry ? (
+                  <input type="hidden" name="country" value={selectedCountry} />
+                ) : null}
+                {selectedScope === "country" && selectedRegion ? (
+                  <input type="hidden" name="region" value={selectedRegion} />
+                ) : null}
+                <input type="hidden" name="page" value="1" />
+                <label className="sr-only" htmlFor="leaderboard-player-search">
+                  Player search
+                </label>
+                <input
+                  id="leaderboard-player-search"
+                  type="search"
+                  name="q"
+                  defaultValue={playerSearch}
+                  className="knd-input"
+                  placeholder="Search player name"
+                />
+                <button
+                  type="submit"
+                  className="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-background"
+                >
+                  Search
+                </button>
+              </form>
             </CardHeader>
             <CardContent>
-              <div className="max-h-[70vh] overflow-auto">
-                <table className="w-full text-sm">
-                  <thead className="text-left text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                    <tr>
-                      <th className="px-2 py-3">Rank</th>
-                      <th className="px-2 py-3">Player</th>
-                      <th className="px-2 py-3">Elo</th>
-                      <th className="px-2 py-3">Games</th>
-                      <th className="px-2 py-3">W-L-D</th>
-                      <th className="px-2 py-3">Latest</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {leaderboard.map((row) => {
-                      const latestCommander = row.topdeck_id
-                        ? latestByPlayer.get(row.topdeck_id)
-                        : undefined;
-                      return (
-                        <tr key={row.player_id} className="border-t border-border/60">
-                          <td className="px-2 py-3 text-muted-foreground">#{row.rank}</td>
-                          <td className="px-2 py-3">
-                            {row.topdeck_id ? (
-                              <div className="space-y-1">
-                                <Link
-                                  className="font-medium text-foreground hover:text-primary"
-                                  href={`/regional-elo/player/${row.topdeck_id}`}
-                                >
-                                {row.player_name}
-                                </Link>
-                              </div>
-                            ) : (
-                              <div className="font-medium text-foreground">{row.player_name}</div>
-                            )}
-                          </td>
-                          <td className="px-2 py-3 font-semibold text-primary">{Math.round(row.rating)}</td>
-                          <td className="px-2 py-3 text-muted-foreground">{row.games_played}</td>
-                          <td className="px-2 py-3 text-muted-foreground">
-                            {row.wins}-{row.losses}-{row.draws}
-                          </td>
-                          <td className="px-2 py-3 text-xs text-muted-foreground">
-                            <div>{formatDate(row.last_game_date)}</div>
-                            <div className="truncate text-[11px]">
-                              {latestCommander?.commander_name || "No commander data"}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {leaderboard.length === 0 && (
-                      <tr>
-                        <td colSpan={6} className="py-6 text-center text-sm text-muted-foreground">
-                          No leaderboard data yet. Run the Elo job to populate this leaderboard.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+              <RegionalLeaderboardTable
+                latestByPlayer={latestByPlayerRecord}
+                leaderboard={leaderboard}
+                currentPage={currentPage}
+                totalCount={leaderboardPage.totalCount}
+                pageSize={LEADERBOARD_PAGE_SIZE}
+                selectedScope={selectedScope}
+                selectedCountry={selectedCountry}
+                selectedRegion={selectedRegion}
+                playerSearch={playerSearch}
+              />
             </CardContent>
           </Card>
         </div>

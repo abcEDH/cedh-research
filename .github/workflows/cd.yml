@@ -3,49 +3,34 @@ name: CD
 on:
   push:
     branches: [main]
+    tags: ['v*']
   workflow_dispatch:
+    inputs:
+      deployment_url:
+        description: 'Explicit Vercel deployment URL to alias, e.g. web-theta-blush-49.vercel.app'
+        required: false
+        type: string
 
 jobs:
   alias-production:
     runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    environment:
+      name: production
+      url: https://cedh-research.vercel.app
     env:
-      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      VERCEL_TEAM_ID: vem-3506s-projects
-      VERCEL_PROJECT_NAME: cedh-research
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN || secrets.VERCEL_API_TOKEN }}
+      VERCEL_SCOPE: ${{ vars.VERCEL_SCOPE || 'vem-3506s-projects' }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID || 'prj_XEEZuAvFCh7RFPafgWfAN0InbeGg' }}
     steps:
-      - name: Alias production domain to latest deploy
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel
+
+      - name: Alias production domain
         run: |
-          if [ -z "$VERCEL_TOKEN" ]; then
-            echo "VERCEL_TOKEN is not set; skipping alias step."
-            exit 0
-          fi
-
-          PROJECT_JSON=$(curl -s -H "Authorization: Bearer $VERCEL_TOKEN" \
-            "https://api.vercel.com/v9/projects/$VERCEL_PROJECT_NAME?teamId=$VERCEL_TEAM_ID")
-          PROJECT_ID=$(echo "$PROJECT_JSON" | node -e "const fs=require('fs');const d=JSON.parse(fs.readFileSync(0,'utf8'));console.log(d.id||'')")
-          if [ -z "$PROJECT_ID" ]; then
-            echo "Could not resolve Vercel project id for $VERCEL_PROJECT_NAME"
-            exit 1
-          fi
-
-          echo "Looking for production deployment for commit $GITHUB_SHA..."
-          DEPLOY_URL=""
-          for i in $(seq 1 12); do
-            DEPLOY_JSON=$(curl -s -H "Authorization: Bearer $VERCEL_TOKEN" \
-              "https://api.vercel.com/v6/deployments?projectId=$PROJECT_ID&target=production&limit=20&teamId=$VERCEL_TEAM_ID")
-            DEPLOY_URL=$(echo "$DEPLOY_JSON" | node -e "const fs=require('fs');const d=JSON.parse(fs.readFileSync(0,'utf8'));const sha=process.env.GITHUB_SHA;const list=d.deployments||[];const match=list.find(dep=>dep.meta&&dep.meta.githubCommitSha===sha);console.log(match?match.url:'')")
-            if [ -n "$DEPLOY_URL" ]; then
-              echo "Found deployment: $DEPLOY_URL"
-              break
-            fi
-            echo "Deployment not found yet, waiting... ($i/12)"
-            sleep 15
-          done
-
-          if [ -z "$DEPLOY_URL" ]; then
-            echo "Could not resolve production deployment for commit $GITHUB_SHA"
-            exit 1
-          fi
-
-          npx vercel@latest alias set "https://$DEPLOY_URL" cedh-research.vercel.app \
-            --scope "$VERCEL_TEAM_ID" --token "$VERCEL_TOKEN"
+          ./scripts/manual-vercel-alias.sh "${{ inputs.deployment_url }}"

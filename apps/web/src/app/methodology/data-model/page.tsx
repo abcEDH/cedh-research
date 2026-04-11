@@ -27,7 +27,7 @@ const sections = [
       "card_frequencies_by_commander / card_frequencies_global: Inclusion rates.",
       "card_performance_by_commander / card_performance_global: Card performance.",
       "player_tournament_journey / pod_composition / player_seat_distribution: Round-level journeys.",
-      "regional_elo_* views: Regional Elo ratings and leaderboards.",
+      "global_elo_* views: Global Elo ratings and leaderboards.",
       "player_commander_entries: Fast per-player commander history for meta prep.",
     ],
   },

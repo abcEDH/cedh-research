@@ -8,7 +8,8 @@ Unified backend ingestion + frontend dashboard for cEDH analytics.
 
 ## Requirements
 - Node.js 20+
-- Python 3.12+ (3.14 recommended)
+- Python 3.12+
+- just (https://github.com/casey/just) for one-command onboarding
 
 ## Environment
 Use separate env files for frontend and backend. Do not put server-only keys in frontend env files.
@@ -28,6 +29,28 @@ Safe templates live in:
 - `apps/web/.env.example`
 - `packages/backend/.env.example`
 
+## Quick Start
+Run one command from the repo root:
+- `just quickstart`
+
+What it does:
+1. Verifies required local commands are available (`node`, `npm`, `python`).
+2. Installs JavaScript dependencies with `npm install`.
+3. Creates local env files from templates when missing:
+   - `.env` from `.env.example`
+   - `apps/web/.env.local` from `apps/web/.env.example`
+   - `packages/backend/.env` from `packages/backend/.env.example`
+4. Installs backend Python dependencies (`npm run backend:install`).
+5. Runs repo docs checks (`npm run docs:check` and `npm run docs:hygiene`).
+
+Then start the app with:
+- `npm run web:dev`
+
+Notes:
+- If you only need frontend setup, run `just quickstart-no-backend` (or `./scripts/quickstart.sh --no-backend`).
+- Existing env files are never overwritten.
+- Instant spec: `docs/instant-spec-quickstart.md`
+
 ## Frontend (apps/web)
 - Dev: `npm run web:dev`
 - Build: `npm run web:build`
@@ -39,13 +62,11 @@ Safe templates live in:
 - Migrations live in `packages/backend/supabase/migrations/`
 
 ## CI
-- Frontend workflows run on `apps/web/**` changes
-- Backend workflows run on `packages/backend/**` changes
-- `ci.yml` provides a tight regression loop for Regional Elo changes:
-  - frontend regression tests
-  - canonical regional aggregate proof
-  - uploaded evidence artifact for human review
-- Release ownership: semantic release runs from `.github/workflows/frontend.yml`; production aliasing runs from `.github/workflows/cd.yml`; `.github/workflows/release.yml` remains a manual fallback only
+- Frontend workflows run from `.github/workflows/frontend.yml` on `apps/web/**` changes.
+- Backend workflows run from `.github/workflows/ci-backend.yml` on `packages/backend/**` changes.
+- Docs checks run from `.github/workflows/docs.yml` for markdown and repo-hygiene validation.
+- Release ownership: semantic release runs from `.github/workflows/frontend.yml`; production aliasing runs from `.github/workflows/cd.yml`; `.github/workflows/release.yml` remains a manual fallback only.
+- `cd.yml` expects `VERCEL_TOKEN` (or fallback `VERCEL_API_TOKEN`) plus a `VERCEL_SCOPE` repo/environment variable when the project is under a Vercel team.
 
 ## QA
 - Release lessons: `docs/release-lessons-2026-04-05-regional-elo.md`
