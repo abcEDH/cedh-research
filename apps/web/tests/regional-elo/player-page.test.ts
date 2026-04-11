@@ -345,15 +345,13 @@ describe("RegionalPlayerPage", () => {
     const html = renderToStaticMarkup(element);
 
     expect(html).toContain("Alex Lien");
-    expect(html).toContain("TopDeck");
+    expect(html).toContain("TopDeck Rank");
     expect(html).toContain("1255 points");
     expect(html).toContain("Unique Opponents");
     expect(html).toContain("Global Rank");
-    expect(html).toContain("Home Region");
+    expect(html).toContain("State Rank");
+    expect(html).toContain("Country Rank");
     expect(html).toContain("Home region");
-    expect(html).toContain(
-      "TopDeck rank, points, games played, and record come from TopDeck."
-    );
     expect(html).toMatch(/Games Played[\s\S]*?>3</);
     expect(html).toMatch(/Record[\s\S]*?>1-1-1</);
     expect(html).toMatch(/CALIFORNIA[\s\S]*?Home region[\s\S]*?>3<[\s\S]*?>1-1-1</);
