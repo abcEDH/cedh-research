@@ -1,6 +1,6 @@
 # Data Dictionary
 
-Last reviewed: 2026-04-09
+Last reviewed: 2026-04-11
 Update policy: This file must be updated whenever migrations in `packages/backend/supabase/migrations` change.
 
 This describes the primary tables and analytical views used in the cEDH Analytics database.
@@ -266,11 +266,13 @@ erDiagram
   - `tournament_skipped`
 
 ## Migration 20260408000000_security_hardening_part2
-- **Purpose**: lock down the remaining public-facing regional Elo and ingestion tables while keeping the public leaderboard view accessible through the service role.
+- **Purpose**: lock down the remaining public-facing regional Elo and ingestion tables while preserving public leaderboard reads through explicitly allowed views and policies.
 - **Key actions**:
-  - Enables Row-Level Security and service-role-only policies on `regional_elo_game_events`, `ingestion_backfill_batches`, `ingestion_backfill_runs`, and `ingestion_backfill_events`.
+  - Enables Row-Level Security on `regional_elo_game_events`, `regional_elo_state_activity`, `ingestion_backfill_batches`, `ingestion_backfill_runs`, and `ingestion_backfill_events`.
   - Provides `public.is_service_role()` as the shared predicate for all restricted objects.
-  - Converts the regional Elo leaderboard/region/canonical views into `SECURITY INVOKER` forms and revokes `anon/authenticated` grants, while keeping `regional_elo_state_activity` readable via a dedicated policy.
+  - Applies service-role-only write policies to `regional_elo_state_activity` while preserving a dedicated public `SELECT` policy for leaderboard reads.
+  - Converts the exposed regional Elo views to `SECURITY INVOKER`, keeping public grants on `regional_elo_leaderboard`, `regional_elo_regions`, `regional_elo_data_validity`, `regional_elo_player_stats`, and `regional_elo_primary_state_assignments`.
+  - Restricts `regional_elo_game_event_log` to `service_role` only.
 
 ## Analytical Views
 
