@@ -1,3 +1,10 @@
+## [1.7.4](https://github.com/abcEDH/cedh-research/compare/v1.7.3...v1.7.4) (2026-04-11)
+
+
+### Bug Fixes
+
+* pin cedh-research.vercel.app alias to release tags only ([#96](https://github.com/abcEDH/cedh-research/issues/96)) ([4ecc67a](https://github.com/abcEDH/cedh-research/commit/4ecc67a7a15bbbb4af1e7c5b04403a2497f9fe4e))
+
 ## [1.7.3](https://github.com/abcEDH/cedh-research/compare/v1.7.2...v1.7.3) (2026-04-10)
 
 
