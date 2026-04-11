@@ -45,6 +45,7 @@ Codex review is advisory. Human reviewers are responsible for merge approval.
 - When migrations change, update the data dictionary.
 - Keep docs aligned with the supported surfaces in `docs/supported-surfaces.md`.
 - If a workflow validates a surface, that surface should still be supported.
+- Keep third-party GitHub Actions pinned to full commit SHAs and update them through the policy in `docs/github-actions-pinning.md`.
 
 ## Release Expectations
 
