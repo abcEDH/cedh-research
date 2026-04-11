@@ -28,33 +28,24 @@ jobs:
       - name: Install Vercel CLI
         run: npm install -g vercel
 
-      - name: Get release deployment URL
+      - name: Get latest production deployment URL
         run: |
-          echo "Fetching production deployments..."
-          DEPLOYMENTS=$(vercel ls cedh-research --token "$VERCEL_TOKEN" --scope vem-3506s-projects --json 2>/dev/null)
+          echo "Fetching latest production deployment..."
+          DEPLOYMENTS=$(vercel ls --token "$VERCEL_TOKEN" --scope vem-3506s-projects --json 2>/dev/null)
 
           if [ -z "$DEPLOYMENTS" ]; then
             echo "Failed to list deployments"
             exit 1
           fi
 
-          # Find the production deployment matching the tagged commit SHA.
-          # Falls back to the most recent production deployment if no SHA match is found.
-          DEPLOY_URL=$(echo "$DEPLOYMENTS" | COMMIT_SHA="${{ github.sha }}" node -e "
+          # Get the most recent production deployment for this project
+          DEPLOY_URL=$(echo "$DEPLOYMENTS" | node -e "
             const fs = require('fs');
             const data = JSON.parse(fs.readFileSync(0, 'utf8'));
-            const deployments = Array.isArray(data) ? data : (data.deployments || []);
-            const prodDeploys = deployments.filter(d => d.target === 'production');
-            const sha = process.env.COMMIT_SHA;
-
-            // Prefer the deployment whose commit SHA matches the tag's commit.
-            const match = prodDeploys.find(d =>
-              d.meta && (d.meta.githubCommitSha === sha || d.meta.commitSha === sha)
-            );
-            const deploy = match || prodDeploys[0];
-            if (deploy) {
-              if (!match) process.stderr.write('Warning: no deployment matched commit SHA ' + sha + ', using most recent.\n');
-              console.log(deploy.url);
+            const deployments = data.deployments || [];
+            const prodDeploys = deployments.filter(d => d.name === 'cedh-research' && d.target === 'production');
+            if (prodDeploys.length > 0) {
+              console.log(prodDeploys[0].url);
             }
           ")
 
@@ -63,7 +54,7 @@ jobs:
             exit 1
           fi
 
-          echo "Release deployment: $DEPLOY_URL"
+          echo "Latest production deployment: $DEPLOY_URL"
           echo "DEPLOY_URL=$DEPLOY_URL" >> $GITHUB_ENV
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
