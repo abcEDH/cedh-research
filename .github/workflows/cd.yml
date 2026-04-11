@@ -2,13 +2,14 @@ name: CD
 
 on:
   push:
+    branches: [main]
     tags: ['v*']
   workflow_dispatch:
 
 jobs:
   alias-production:
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     environment:
       name: production
       url: https://cedh-research.vercel.app
@@ -18,35 +19,25 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "24"
-          cache: "npm"
-          cache-dependency-path: package-lock.json
-
       - name: Install Vercel CLI
         run: npm install -g vercel
 
       - name: Get latest production deployment URL
         run: |
-          echo "Fetching latest production deployment..."
-          DEPLOYMENTS=$(vercel ls --token "$VERCEL_TOKEN" --scope vem-3506s-projects --json 2>/dev/null)
+          echo "Fetching latest production deployment from Vercel API..."
+          RESPONSE=$(curl -sf \
+            "https://api.vercel.com/v9/projects/cedh-research/deployments?target=production&limit=1&slug=vem-3506s-projects" \
+            -H "Authorization: Bearer $VERCEL_TOKEN")
 
-          if [ -z "$DEPLOYMENTS" ]; then
-            echo "Failed to list deployments"
+          if [ -z "$RESPONSE" ]; then
+            echo "Failed to fetch deployments from Vercel API"
             exit 1
           fi
 
-          # Get the most recent production deployment for this project
-          DEPLOY_URL=$(echo "$DEPLOYMENTS" | node -e "
-            const fs = require('fs');
-            const data = JSON.parse(fs.readFileSync(0, 'utf8'));
-            const deployments = data.deployments || [];
-            const prodDeploys = deployments.filter(d => d.name === 'cedh-research' && d.target === 'production');
-            if (prodDeploys.length > 0) {
-              console.log(prodDeploys[0].url);
-            }
+          DEPLOY_URL=$(echo "$RESPONSE" | node -e "
+            const data = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+            const d = (data.deployments || [])[0];
+            if (d) console.log(d.url);
           ")
 
           if [ -z "$DEPLOY_URL" ]; then
@@ -61,11 +52,6 @@ jobs:
 
       - name: Alias production domain
         run: |
-          if [ -z "$DEPLOY_URL" ]; then
-            echo "No deployment URL available"
-            exit 1
-          fi
-          
           echo "Aliasing https://$DEPLOY_URL to cedh-research.vercel.app..."
           vercel alias set "https://$DEPLOY_URL" "cedh-research.vercel.app" \
             --token "$VERCEL_TOKEN" \
