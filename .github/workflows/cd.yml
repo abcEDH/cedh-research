@@ -5,17 +5,23 @@ on:
     branches: [main]
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      deployment_url:
+        description: 'Explicit Vercel deployment URL to alias, e.g. web-theta-blush-49.vercel.app'
+        required: false
+        type: string
 
 jobs:
   alias-production:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     environment:
       name: production
       url: https://cedh-research.vercel.app
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN || secrets.VERCEL_API_TOKEN }}
       VERCEL_SCOPE: ${{ vars.VERCEL_SCOPE || 'vem-3506s-projects' }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID || 'prj_XEEZuAvFCh7RFPafgWfAN0InbeGg' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,7 +40,14 @@ jobs:
             exit 1
           fi
 
-          API_URL="https://api.vercel.com/v9/projects/cedh-research/deployments?target=production&limit=1&slug=$VERCEL_SCOPE"
+          if [ -n "${{ inputs.deployment_url }}" ]; then
+            DEPLOY_URL="${{ inputs.deployment_url }}"
+            echo "Using manual deployment URL override: $DEPLOY_URL"
+            echo "DEPLOY_URL=$DEPLOY_URL" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          API_URL="https://api.vercel.com/v6/deployments?projectId=$VERCEL_PROJECT_ID&target=production&state=READY&limit=1&slug=$VERCEL_SCOPE"
           HTTP_STATUS=$(curl -sS \
             -o /tmp/vercel_deployments_response.json \
             -w "%{http_code}" \
