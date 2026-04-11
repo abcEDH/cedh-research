@@ -32,29 +32,31 @@ jobs:
       - name: Get latest production deployment URL
         run: |
           echo "Fetching latest production deployment..."
-          DEPLOYMENTS=$(vercel ls --token "$VERCEL_TOKEN" --scope vem-3506s-projects --json 2>/dev/null)
-          
+          DEPLOYMENTS=$(vercel ls cedh-research --token "$VERCEL_TOKEN" --scope vem-3506s-projects --json 2>/dev/null)
+
           if [ -z "$DEPLOYMENTS" ]; then
             echo "Failed to list deployments"
             exit 1
           fi
-          
-          # Get the most recent production deployment
+
+          # Get the most recent production deployment.
+          # vercel ls --json outputs a plain JSON array in current CLI versions,
+          # but guard against older object-wrapped format too.
           DEPLOY_URL=$(echo "$DEPLOYMENTS" | node -e "
             const fs = require('fs');
             const data = JSON.parse(fs.readFileSync(0, 'utf8'));
-            const deployments = data.deployments || [];
+            const deployments = Array.isArray(data) ? data : (data.deployments || []);
             const prodDeploys = deployments.filter(d => d.target === 'production');
             if (prodDeploys.length > 0) {
               console.log(prodDeploys[0].url);
             }
           ")
-          
+
           if [ -z "$DEPLOY_URL" ]; then
             echo "No production deployment found"
             exit 1
           fi
-          
+
           echo "Latest production deployment: $DEPLOY_URL"
           echo "DEPLOY_URL=$DEPLOY_URL" >> $GITHUB_ENV
         env:
