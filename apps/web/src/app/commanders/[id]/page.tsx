@@ -68,6 +68,17 @@ interface CommanderMeta {
   commander_names: string[] | null;
 }
 
+type TrendRow = {
+  week_key?: string | null;
+  week_start_date?: string | null;
+  month_key?: string | null;
+  entries: number;
+  wins?: number | null;
+  losses?: number | null;
+  draws?: number | null;
+  total_players?: number | null;
+};
+
 function normalizeDateKey(value: string | null | undefined) {
   if (!value) return "";
   return value.length >= 10 ? value.slice(0, 10) : value;
@@ -290,8 +301,8 @@ async function getCommanderTrendSeries(commanderId: string) {
     .eq("commander_id", commanderId)
     .order("month_key", { ascending: true });
 
-  let weeklyData: any[] = weeklyPrimary.data ?? [];
-  let monthlyData: any[] = monthlyPrimary.data ?? [];
+  let weeklyData: TrendRow[] = weeklyPrimary.data ?? [];
+  let monthlyData: TrendRow[] = monthlyPrimary.data ?? [];
 
   if (weeklyPrimary.error) {
     console.error("Error fetching weekly trends (with players):", weeklyPrimary.error);

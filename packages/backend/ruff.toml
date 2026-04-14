@@ -1,0 +1,17 @@
+# packages/backend/ruff.toml
+# Sensible defaults for cEDH Analytics backend
+
+line-length = 120
+target-version = "py312"
+
+[lint]
+# Enable Pyflakes (F) and Pycodestyle (E, W)
+# Plus isort (I) for organized imports
+select = ["F", "E", "W", "I", "N", "UP", "B", "C4"]
+ignore = []
+
+[format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"

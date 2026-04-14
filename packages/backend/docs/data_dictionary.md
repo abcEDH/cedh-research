@@ -220,6 +220,21 @@ erDiagram
   - `total_entries`, `commander_predictions`
   - `latest_commander`, `latest_commander_date`, `latest_decklist_url`, `updated_at`
 
+### `elo_maintenance_jobs`
+- **Purpose**: queue and observability log for scheduled Global Elo maintenance runs.
+- **Key fields**:
+  - `id`, `status`, `trigger_source`, `github_run_id`
+  - `created_at`, `dispatched_at`, `started_at`, `completed_at`, `heartbeat_at`
+  - `ratings_count`, `state_activity_count`, `game_events_count`
+  - `leaderboard_count`, `profile_count`, `commander_profile_count`
+  - `duration_seconds`, `error_text`
+- **Status values**:
+  - `pending`, `dispatched`, `running`, `completed`, `failed`, `stale`
+- **Security**:
+  - row level security is enabled
+  - public read access is allowed through a SELECT policy
+  - writes are restricted to the service role and `SECURITY DEFINER` database functions
+
 ### `ingestion_backfill_runs`
 - **Purpose**: operational log for historical backfill runs driven from stable TID manifests.
 - **Key fields**:

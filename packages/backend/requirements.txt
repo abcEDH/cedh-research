@@ -4,6 +4,12 @@
 requests>=2.31.0
 python-dateutil>=2.8.2
 
+# Quality tools
+ruff>=0.9.10
+mypy>=1.15.0
+types-requests>=2.31.0.20240406
+types-python-dateutil>=2.8.19.20240311
+
 # Optional: Direct Postgres connection (10x faster for large batches)
 # Install with: pip install psycopg2-binary
 # or for production: pip install psycopg2
