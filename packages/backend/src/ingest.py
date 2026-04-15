@@ -516,8 +516,16 @@ class TopDeckClient:
                     retry_after = 60
                     try:
                         retry_after = int(response.json().get("retryAfterSeconds", retry_after))
-                    except (TypeError, ValueError, requests.exceptions.JSONDecodeError):
-                        pass
+                    except (
+                        TypeError,
+                        ValueError,
+                        requests.exceptions.JSONDecodeError,
+                    ) as e:
+                        logger.debug(
+                            "Unable to parse TopDeck retryAfterSeconds; using default %ss (%s)",
+                            retry_after,
+                            e,
+                        )
                     if attempt < max_retries - 1:
                         wait_time = max(retry_after, 1)
                         logger.warning(
