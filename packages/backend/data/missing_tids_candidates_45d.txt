@@ -1,7 +1,6 @@
 # Candidate missing tournament IDs from a TopDeck search scrub
 # Review before promotion to all_time_tids.supplemental.txt
 # Search window: last 45 days
-# Minimum players: 16
 # Candidate count: 527
 
 cedh-league-season-3-week-5

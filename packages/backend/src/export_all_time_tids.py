@@ -3,7 +3,7 @@
 
 Usage:
   python src/export_all_time_tids.py
-  python src/export_all_time_tids.py --out data/all_time_tids.txt --min-players 16
+  python src/export_all_time_tids.py --out data/all_time_tids.txt
 
 Important:
   This script is not a true all-time discovery job. It only exports tournament IDs
@@ -71,7 +71,6 @@ def fetch_all_tournaments(client: SupabaseClient) -> list[dict[str, Any]]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Export all-time tournament IDs from Supabase")
     parser.add_argument("--out", default="data/all_time_tids.txt", help="Output manifest path")
-    parser.add_argument("--min-players", type=int, default=0, help="Optional player_count floor")
     parser.add_argument(
         "--supplemental",
         action="append",
@@ -88,7 +87,6 @@ def main() -> None:
         row["topdeck_tid"].strip()
         for row in rows
         if row.get("topdeck_tid")
-        and int(row.get("player_count") or 0) >= args.min_players
     ]
 
     deduped: list[str] = []
@@ -115,7 +113,6 @@ def main() -> None:
                 "# All-time tournament ID manifest",
                 "# Source: Supabase public.tournaments.topdeck_tid plus optional supplemental files",
                 "# Ordering: start_date ASC, topdeck_tid ASC",
-                f"# Filter: player_count >= {args.min_players}",
                 "# Note: this is not true all-time discovery; it only exports already-ingested tournaments",
                 "# Refresh with: python src/export_all_time_tids.py [--supplemental data/all_time_tids.supplemental.txt]",
                 "",

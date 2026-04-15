@@ -44,26 +44,20 @@ export default function AboutPage() {
           </div>
         </div>
 
-        {/* Data Inclusion Criteria */}
+        {/* Data Inclusion */}
         <Card className="bg-card/60 border-border/60 mb-8">
           <CardHeader>
-            <CardTitle className="text-[hsl(var(--knd-amber))]">Data Inclusion Criteria</CardTitle>
+            <CardTitle className="text-[hsl(var(--knd-amber))]">Data Inclusion</CardTitle>
           </CardHeader>
           <CardContent className="text-muted-foreground space-y-4">
             <div className="p-4 bg-muted/30 rounded-lg border border-[hsl(var(--knd-amber))]/30">
               <p className="text-foreground font-medium mb-2">
-                All findings are based on events with 32+ players
-              </p>
-              <p className="text-sm">
-                We only include tournaments with at least 32 participants to ensure
-                statistical relevance. Smaller events are excluded as they don&apos;t
-                provide enough data points to draw meaningful conclusions about
-                commander performance.
+                All findings are based on games played on the Topdeck platform.
               </p>
             </div>
             <ul className="list-disc list-inside space-y-2 text-sm">
-              <li>Tournament data sourced from TopDeck.gg API</li>
-              <li>Only completed tournaments with published standings are included</li>
+              <li>Tournament and League data sourced from TopDeck.gg API</li>
+              <li>Only completed tournaments/leagues with published standings are included</li>
               <li>Decklist data parsed and normalized for card frequency analysis</li>
               <li>Partner commanders are tracked as a single combined commander identity</li>
             </ul>

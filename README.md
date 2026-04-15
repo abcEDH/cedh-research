@@ -58,7 +58,7 @@ Notes:
 
 ## Backend (packages/backend)
 - Install deps: `npm run backend:install`
-- Ingest (example): `python packages/backend/src/ingest.py --days 7 --min-players 32`
+- Ingest (example): `python packages/backend/src/ingest.py --days 7`
 - Migrations live in `packages/backend/supabase/migrations/`
 
 ## CI

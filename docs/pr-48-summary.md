@@ -33,7 +33,7 @@ This PR shifts Global Elo from state-scoped ratings to a global all-games leader
 - Adds backfill inputs/manifests for missing TopDeck historical tournament IDs and batches `--tids-file` ingestion requests with a configurable `--tids-batch-size`.
 - Updates the weekly backend workflow so the scheduled recompute step explicitly covers global Elo, assigned-state activity, active leaderboard rows, player profile summaries, commander profiles, and per-game Elo event data.
 - Adopts `main`'s split backend/frontend CI workflow structure and keeps the Global Elo backend smoke command (`regional_elo.py --smoke-days 30 --dry-run`) working for pull request checks.
-- Removes the forced `--min-players 32` floor from the weekly `ingest.py --days 7` job.
+- Removes the forced player-count floor from the weekly `ingest.py --days 7` job.
 - Updates CI/backend validation scripts to check the global `ALL` Elo aggregate instead of state rows and to validate the new Global Elo tables/views.
 - Fixes follow-up CI issues on the branch by importing `Any` for backend type annotations, declaring the `server-only` frontend dependency explicitly, and hardening shared test setup for server-only imports.
 - Fixes follow-up frontend build regressions in `regional-elo/page.tsx` by normalizing `page` search params to a string before parsing and widening the helper input type to match Next.js page `searchParams`.
