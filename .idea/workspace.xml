@@ -6,16 +6,6 @@
   <component name="ChangeListManager">
     <list default="true" id="5578a0ab-1e26-4f4d-b242-0ac96e28ea2f" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/apps/web/src/app/about/page.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/apps/web/src/app/about/page.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docs/pr-48-summary.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/pr-48-summary.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/package-lock.json" beforeDir="false" afterPath="$PROJECT_DIR$/package-lock.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/packages/backend/CLAUDE.md" beforeDir="false" afterPath="$PROJECT_DIR$/packages/backend/CLAUDE.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/packages/backend/data/all_time_tids.txt" beforeDir="false" afterPath="$PROJECT_DIR$/packages/backend/data/all_time_tids.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/packages/backend/data/missing_tids_candidates_45d.txt" beforeDir="false" afterPath="$PROJECT_DIR$/packages/backend/data/missing_tids_candidates_45d.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/packages/backend/src/export_all_time_tids.py" beforeDir="false" afterPath="$PROJECT_DIR$/packages/backend/src/export_all_time_tids.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/packages/backend/src/ingest.py" beforeDir="false" afterPath="$PROJECT_DIR$/packages/backend/src/ingest.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/packages/backend/src/scrub_missing_tids.py" beforeDir="false" afterPath="$PROJECT_DIR$/packages/backend/src/scrub_missing_tids.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -82,7 +72,7 @@
       <workItem from="1775738053559" duration="9275000" />
       <workItem from="1775773449489" duration="5416000" />
       <workItem from="1776184916488" duration="2645000" />
-      <workItem from="1776230856690" duration="8416000" />
+      <workItem from="1776230856690" duration="11008000" />
     </task>
     <servers />
   </component>

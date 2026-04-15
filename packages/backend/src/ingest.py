@@ -32,7 +32,6 @@ except ImportError:
 # TopDeck API constants
 TOPDECK_API_BASE = "https://topdeck.gg/api/v2"
 TOPDECK_FIRESTORE_PROJECT = "eminence-1b40b"
-TOPDECK_FIRESTORE_API_KEY = "AIzaSyBISF4HIfUsepAAqqYHte2NE_L8eaT6iwI"
 TOPDECK_STANDING_RATE_FIELDS = [
     ("primaryWinRate", "opponentWinRate"),
     ("primaryWinRateElo", "opponentWinRateElo"),
@@ -583,10 +582,18 @@ class TopDeckClient:
 
     def get_firestore_tournament(self, tid: str) -> dict[str, Any] | None:
         """Fetch a legacy bracket tournament from TopDeck's Firestore document."""
+        firestore_api_key = os.environ.get("TOPDECK_FIRESTORE_API_KEY")
+        if not firestore_api_key:
+            logger.warning(
+                f"Skipping TopDeck Firestore fallback for {tid}: "
+                "TOPDECK_FIRESTORE_API_KEY is not set"
+            )
+            return None
+
         url = (
             "https://firestore.googleapis.com/v1/projects/"
             f"{TOPDECK_FIRESTORE_PROJECT}/databases/(default)/documents/"
-            f"tournaments/{tid}?key={TOPDECK_FIRESTORE_API_KEY}"
+            f"tournaments/{tid}?key={firestore_api_key}"
         )
         response = requests.get(url, timeout=30)
         if response.status_code == 404:
