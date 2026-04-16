@@ -91,6 +91,9 @@ async function getTopRisingCommandersByTwoWeekTrend(): Promise<RisingCommander[]
     const { data: maxRows, error: maxErr } = await supabase
       .from("commander_weekly_trends")
       .select("week_start_date")
+      .not("commander_name", "ilike", "unknown commander")
+      .not("commander_name", "is", null)
+      .neq("commander_name", "")
       .order("week_start_date", { ascending: false })
       .limit(1);
 
@@ -105,6 +108,9 @@ async function getTopRisingCommandersByTwoWeekTrend(): Promise<RisingCommander[]
     const { data: trendRows, error: trendErr } = await supabase
       .from("commander_weekly_trends")
       .select("commander_id, commander_name, week_start_date, entries")
+      .not("commander_name", "ilike", "unknown commander")
+      .not("commander_name", "is", null)
+      .neq("commander_name", "")
       .gte("week_start_date", windowStart)
       .lte("week_start_date", latestWeek);
 
@@ -160,7 +166,6 @@ async function getTopRisingCommandersByTwoWeekTrend(): Promise<RisingCommander[]
         recent_entries: v.recent,
         prior_entries: v.prior,
       }))
-      .filter((x) => isKnownCommanderName(x.commander_name))
       .filter((x) => x.meta_share_delta > 0)
       .sort((a, b) => b.meta_share_delta - a.meta_share_delta)
       .slice(0, 3);
