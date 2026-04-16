@@ -76,6 +76,11 @@ function addDaysIso(isoDate: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+function isKnownCommanderName(value: string | null | undefined): value is string {
+  const normalized = (value ?? "").trim().toLowerCase();
+  return normalized.length > 0 && normalized !== "unknown commander";
+}
+
 /**
  * Orders commanders by the largest gain in weekly tournament entries: sums the two most recent
  * ISO weeks from `commander_weekly_trends` and subtracts the sum for the two weeks before that
@@ -155,7 +160,7 @@ async function getTopRisingCommandersByTwoWeekTrend(): Promise<RisingCommander[]
         recent_entries: v.recent,
         prior_entries: v.prior,
       }))
-      .filter((x) => x.commander_name?.toLowerCase() !== "unknown commander")
+      .filter((x) => isKnownCommanderName(x.commander_name))
       .filter((x) => x.meta_share_delta > 0)
       .sort((a, b) => b.meta_share_delta - a.meta_share_delta)
       .slice(0, 3);
@@ -212,6 +217,8 @@ async function getStats() {
         .select("commander_id, commander_name, total_entries, avg_win_rate, conversion_rate_top_16, color_identity")
         .gt("total_entries", 20)
         .not("commander_name", "ilike", "unknown commander")
+        .not("commander_name", "is", null)
+        .neq("commander_name", "")
         .order("total_entries", { ascending: false })
         .limit(21),
       supabase
@@ -219,6 +226,8 @@ async function getStats() {
         .select("commander_id, commander_name, total_entries, avg_win_rate, conversion_rate_top_16, color_identity")
         .gt("total_entries", 30)
         .not("commander_name", "ilike", "unknown commander")
+        .not("commander_name", "is", null)
+        .neq("commander_name", "")
         .order("avg_win_rate", { ascending: false })
         .limit(10),
       getTopRisingCommandersByTwoWeekTrend(),
@@ -245,8 +254,12 @@ async function getStats() {
     return {
       tournamentCount: tournamentResult.count ?? 0,
       commanderCount: commanderResult.count ?? 0,
-      topCommanders: (topCommandersResult.data ?? []) as TopCommander[],
-      topWinRate: (topWinRateResult.data ?? []) as TopCommander[],
+      topCommanders: ((topCommandersResult.data ?? []) as TopCommander[]).filter((row) =>
+        isKnownCommanderName(row.commander_name)
+      ),
+      topWinRate: ((topWinRateResult.data ?? []) as TopCommander[]).filter((row) =>
+        isKnownCommanderName(row.commander_name)
+      ),
       topRisingCommanders,
       metaEntryTotal,
       topPlayers,
