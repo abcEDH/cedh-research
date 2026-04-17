@@ -41,6 +41,10 @@ export function HomeSearchBar() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
     if (query.trim().length < 2) {
       setResults([]);
       setOpen(false);
@@ -131,7 +135,7 @@ export function HomeSearchBar() {
 
   return (
     <div ref={containerRef} className="relative w-full max-w-xl">
-      <div className="flex items-center gap-2 rounded-xl border border-border/70 bg-background px-4 py-3 shadow-sm focus-within:border-primary/60 focus-within:ring-1 focus-within:ring-primary/30 transition">
+      <div className="flex items-center gap-2 rounded-xl border border-border/70 bg-muted/40 px-4 py-3 shadow-sm focus-within:border-primary/60 focus-within:ring-1 focus-within:ring-primary/30 transition">
         <svg
           className="h-4 w-4 shrink-0 text-muted-foreground"
           fill="none"
