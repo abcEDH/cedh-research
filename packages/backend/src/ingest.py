@@ -9,8 +9,11 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
+import re
+import sys
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -28,7 +31,8 @@ except ImportError:
 
 
 # TopDeck API constants
-TOPDECK_API_BASE = "https://api.topdeck.gg/v2"
+TOPDECK_API_BASE = "https://topdeck.gg/api/v2"
+TOPDECK_FIRESTORE_PROJECT = "eminence-1b40b"
 TOPDECK_STANDING_RATE_FIELDS = [
     ("primaryWinRate", "opponentWinRate"),
     ("primaryWinRateElo", "opponentWinRateElo"),
@@ -36,6 +40,36 @@ TOPDECK_STANDING_RATE_FIELDS = [
     ("winRate", "opponentWinRate"),
     ("successRate", "opponentSuccessRate"),
 ]
+
+
+def normalize_topdeck_tournament_payload(
+    tournament: dict[str, Any],
+    tid: str | None = None,
+) -> dict[str, Any]:
+    """Flatten current TopDeck v2 tournament payloads into the ingester shape."""
+    if not isinstance(tournament, dict):
+        return tournament
+
+    if isinstance(tournament.get("data"), dict):
+        normalized = dict(tournament["data"])
+        for key in ("standings", "rounds", "eventData"):
+            if key in tournament and key not in normalized:
+                normalized[key] = tournament[key]
+    else:
+        normalized = dict(tournament)
+
+    topdeck_tid = tid or normalized.get("id") or normalized.get("TID")
+    if topdeck_tid:
+        normalized["id"] = topdeck_tid
+        normalized["TID"] = topdeck_tid
+
+    if "name" not in normalized and normalized.get("tournamentName"):
+        normalized["name"] = normalized["tournamentName"]
+
+    normalized.setdefault("standings", [])
+    normalized.setdefault("rounds", [])
+    normalized.setdefault("eventData", {})
+    return normalized
 
 
 # Supabase constants
@@ -54,6 +88,18 @@ logging.basicConfig(
     ],
 )
 logger = logging.getLogger(__name__)
+
+
+def load_local_env() -> None:
+    """Load local env files without overriding already-exported variables."""
+    for env_path in (Path("packages/backend/.env"), Path(".env"), Path(__file__).resolve().parents[1] / ".env"):
+        if not env_path.exists():
+            continue
+        for line in env_path.read_text().splitlines():
+            if "=" not in line or line.lstrip().startswith("#"):
+                continue
+            key, value = line.split("=", 1)
+            os.environ.setdefault(key, value)
 
 
 def normalize_rate_value(value: Any) -> float | None:
@@ -257,6 +303,349 @@ def normalize_region_name(
     return normalized
 
 
+def should_use_firestore_tournament_fallback(tournament: Any) -> bool:
+    """Return true for legacy TopDeck events where v2 returns an empty shell."""
+    if not isinstance(tournament, dict):
+        return False
+
+    rounds = tournament.get("rounds")
+    standings = tournament.get("standings")
+    if rounds or standings:
+        return False
+
+    data = tournament.get("data")
+    if isinstance(data, dict):
+        name = data.get("name")
+        start_date = data.get("startDate")
+        return not start_date or name in (None, "", "Unknown Name")
+
+    return not tournament.get("startDate")
+
+
+def decode_firestore_value(value: dict[str, Any]) -> Any:
+    """Decode Firestore REST typed values into plain Python values."""
+    if "stringValue" in value:
+        return value["stringValue"]
+    if "integerValue" in value:
+        return int(value["integerValue"])
+    if "doubleValue" in value:
+        return float(value["doubleValue"])
+    if "booleanValue" in value:
+        return value["booleanValue"]
+    if "nullValue" in value:
+        return None
+    if "timestampValue" in value:
+        return value["timestampValue"]
+    if "arrayValue" in value:
+        return [
+            decode_firestore_value(item)
+            for item in value.get("arrayValue", {}).get("values", [])
+        ]
+    if "mapValue" in value:
+        return {
+            key: decode_firestore_value(item)
+            for key, item in value.get("mapValue", {}).get("fields", {}).items()
+        }
+    return None
+
+
+def firestore_bracket_name(round_data: dict[str, Any]) -> str | None:
+    """Map TopDeck's legacy bracket codes to stable round labels."""
+    bracket = round_data.get("Bracket")
+    if not bracket:
+        return None
+
+    bracket_name_map = {
+        "Quart": "Quarterfinals",
+        "Semi": "Semifinals",
+        "Fin": "Finals",
+    }
+    if bracket in bracket_name_map:
+        return bracket_name_map[bracket]
+    return f"Top {bracket}" if isinstance(bracket, str) else str(bracket)
+
+
+def firestore_status(round_data: dict[str, Any], pod: dict[str, Any]) -> str:
+    """Normalize legacy round/pod state to the games.status values we store."""
+    state = str(round_data.get("State") or "").lower()
+    if pod.get("Locked") or state == "complete":
+        return "Completed"
+    if state == "active":
+        return "Active"
+    return "Pending"
+
+
+def firestore_tournament_to_topdeck_payload(
+    tid: str, data: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Convert a legacy TopDeck Firestore tournament document to v2-like data."""
+    players = data.get("Players") or {}
+    rounds = data.get("Rounds") or []
+    config = data.get("Config") or {}
+    metadata = data.get("Metadata") or {}
+
+    if not isinstance(players, dict) or not isinstance(rounds, list):
+        return None
+    if not players and not rounds:
+        return None
+
+    standings: list[dict[str, Any]] = []
+    for player_id, player in players.items():
+        if not isinstance(player, dict):
+            continue
+        standings.append(
+            {
+                "id": player_id,
+                "name": player.get("name") or player.get("discord") or "Unknown",
+                "decklist": player.get("decklist") or "",
+                "rank": player.get("standing"),
+                "points": player.get("points"),
+                "wins": player.get("gamesWon"),
+                "draws": player.get("gamesDrawn"),
+                "losses": player.get("gamesLost"),
+            }
+        )
+    standings.sort(key=lambda row: row.get("rank") or 999999)
+
+    table_start = config.get("TableStart") or 1
+    converted_rounds: list[dict[str, Any]] = []
+    swiss_round_count = 0
+    for round_index, round_data in enumerate(rounds, start=1):
+        if not isinstance(round_data, dict):
+            continue
+
+        round_name = firestore_bracket_name(round_data)
+        round_value: int | str
+        if round_name:
+            round_value = round_name
+        else:
+            swiss_round_count += 1
+            round_value = swiss_round_count
+
+        tables: list[dict[str, Any]] = []
+        pods = round_data.get("Pods") or []
+        if not isinstance(pods, list):
+            pods = []
+        for pod_index, pod in enumerate(pods):
+            if not isinstance(pod, dict):
+                continue
+
+            winner = pod.get("Winner")
+            winner_id = "Draw" if winner == "_DRAW_" else winner
+            pod_players = []
+            for player_topdeck_id in pod.get("Players") or []:
+                player = players.get(player_topdeck_id) or {}
+                pod_players.append(
+                    {
+                        "id": player_topdeck_id,
+                        "name": player.get("name") or player.get("discord") or "Unknown",
+                        "decklist": player.get("decklist"),
+                    }
+                )
+
+            tables.append(
+                {
+                    "table": table_start + pod_index,
+                    "players": pod_players,
+                    "winner_id": winner_id,
+                    "winner": (
+                        None
+                        if winner_id in (None, "Draw")
+                        else (players.get(winner_id) or {}).get("name")
+                    ),
+                    "status": firestore_status(round_data, pod),
+                }
+            )
+
+        converted_rounds.append({"round": round_value, "tables": tables})
+
+    start_date = None
+    for round_data in rounds:
+        if isinstance(round_data, dict) and round_data.get("StartTime"):
+            start_date = int(round_data["StartTime"]) / 1000
+            break
+    if not start_date:
+        start_date = config.get("DateCreated")
+
+    return {
+        "id": tid,
+        "TID": tid,
+        "name": config.get("Name") or metadata.get("Name") or tid,
+        "game": metadata.get("Game"),
+        "startDate": start_date,
+        "swissNum": swiss_round_count,
+        "topCut": len(rounds) - swiss_round_count,
+        "standings": standings,
+        "rounds": converted_rounds,
+        "eventData": {},
+        "_source": "topdeck_firestore",
+    }
+
+
+def firestore_timestamp_seconds(value: Any) -> int | float | None:
+    """Convert Firestore millisecond timestamps to TopDeck's second timestamps."""
+    if not isinstance(value, (int, float)):
+        return None
+    if value > 10_000_000_000:
+        return value / 1000
+    return value
+
+
+def normalize_standing_row(standing: dict[str, Any]) -> dict[str, Any]:
+    """Preserve current TopDeck standing fields in the legacy ingester shape."""
+    normalized = dict(standing)
+    normalized["rank"] = standing.get("rank") or standing.get("standing")
+    return normalized
+
+
+def is_placeholder_player_name(name: Any) -> bool:
+    """Return true for names synthesized when TopDeck only exposes a player id."""
+    return not name or str(name).strip().lower() == "unknown"
+
+
+def flat_firestore_league_to_topdeck_payload(
+    tid: str,
+    data: dict[str, Any],
+    base_tournament: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Convert TopDeck's flat league bracket document to v2-like data."""
+    table_rows: list[tuple[int, int, dict[str, Any]]] = []
+    entry_to_player_id: dict[int, str] = {}
+
+    for key, value in data.items():
+        table_match = re.fullmatch(r"S(\d+):T(\d+)", key)
+        if table_match and isinstance(value, dict):
+            table_rows.append((int(table_match.group(1)), int(table_match.group(2)), value))
+            continue
+
+        entry_match = re.fullmatch(r"E(\d+):P\d+", key)
+        if entry_match and value:
+            entry_to_player_id[int(entry_match.group(1))] = str(value)
+
+    if not table_rows or not entry_to_player_id:
+        return None
+
+    base_tournament = base_tournament or {}
+    base_standings = base_tournament.get("standings") or []
+    standing_by_player_id = {
+        str(standing.get("id")): normalize_standing_row(standing)
+        for standing in base_standings
+        if isinstance(standing, dict) and standing.get("id")
+    }
+
+    players_by_id: dict[str, dict[str, Any]] = {}
+    for player_id in entry_to_player_id.values():
+        standing = standing_by_player_id.get(player_id, {})
+        players_by_id[player_id] = {
+            "id": player_id,
+            "name": standing.get("name") or "Unknown",
+            "decklist": standing.get("decklist") or "",
+        }
+
+    if standing_by_player_id:
+        standings = list(standing_by_player_id.values())
+        for player_id in players_by_id:
+            if player_id in standing_by_player_id:
+                continue
+            standings.append(
+                {
+                    "id": player_id,
+                    "name": players_by_id[player_id]["name"],
+                    "decklist": players_by_id[player_id]["decklist"],
+                    "rank": None,
+                    "points": 0,
+                }
+            )
+    else:
+        standings = [
+            {
+                "id": player_id,
+                "name": players_by_id[player_id]["name"],
+                "decklist": players_by_id[player_id]["decklist"],
+                "rank": None,
+            }
+            for player_id in sorted(players_by_id)
+        ]
+    standings.sort(key=lambda row: row.get("rank") or 999999)
+
+    rounds_by_number: dict[int, list[dict[str, Any]]] = {}
+    for stage_number, table_number, table_data in sorted(table_rows):
+        if table_data.get("Mute"):
+            continue
+
+        winner_entry = table_data.get("Winner")
+        if winner_entry is None:
+            continue
+
+        entry_numbers = table_data.get("Es") or []
+        if not isinstance(entry_numbers, list):
+            continue
+
+        players: list[dict[str, Any]] = []
+        for entry_number in entry_numbers:
+            try:
+                player_id = entry_to_player_id.get(int(entry_number))
+            except (TypeError, ValueError):
+                player_id = None
+            if not player_id:
+                continue
+            players.append(players_by_id[player_id])
+
+        if not players:
+            continue
+
+        if winner_entry == "_DRAW_":
+            winner_id = "Draw"
+            winner_name = None
+        else:
+            try:
+                winner_player_id = entry_to_player_id.get(int(winner_entry))
+            except (TypeError, ValueError):
+                winner_player_id = None
+            if not winner_player_id:
+                continue
+            winner_id = winner_player_id
+            winner_name = players_by_id.get(winner_player_id, {}).get("name")
+
+        rounds_by_number.setdefault(stage_number, []).append(
+            {
+                "table": table_number,
+                "players": players,
+                "winner_id": winner_id,
+                "winner": winner_name,
+                "status": "Completed" if table_data.get("End") else "Active",
+            }
+        )
+
+    converted_rounds = [
+        {"round": round_number, "tables": tables}
+        for round_number, tables in sorted(rounds_by_number.items())
+    ]
+    if not converted_rounds:
+        return None
+
+    start_date = (
+        firestore_timestamp_seconds(data.get("StartDate"))
+        or firestore_timestamp_seconds(data.get("DateCreated"))
+        or base_tournament.get("startDate")
+    )
+
+    return {
+        "id": tid,
+        "TID": tid,
+        "name": data.get("Name") or base_tournament.get("name") or tid,
+        "game": data.get("Game") or base_tournament.get("game"),
+        "format": data.get("Format") or base_tournament.get("format"),
+        "startDate": start_date,
+        "swissNum": max(rounds_by_number) if rounds_by_number else 0,
+        "topCut": base_tournament.get("topCut") or 0,
+        "standings": standings,
+        "rounds": converted_rounds,
+        "eventData": base_tournament.get("eventData") or {},
+        "_source": "topdeck_firestore_flat_league",
+    }
+
+
 class TopDeckClient:
     """Client for TopDeck.gg API v2."""
 
@@ -275,7 +664,7 @@ class TopDeckClient:
         """Make an authenticated request to the TopDeck API."""
         if max_retries <= 0:
             return None
-        headers = {"Authorization": f"Bearer {self.api_key}"}
+        headers = {"Authorization": self.api_key}
 
         for attempt in range(max_retries):
             try:
@@ -287,6 +676,28 @@ class TopDeckClient:
                     )
                 else:
                     raise ValueError(f"Unsupported HTTP method: {method}")
+
+                if response.status_code == 429:
+                    retry_after = 60
+                    try:
+                        retry_after = int(response.json().get("retryAfterSeconds", retry_after))
+                    except (
+                        TypeError,
+                        ValueError,
+                        requests.exceptions.JSONDecodeError,
+                    ) as e:
+                        logger.debug(
+                            "Unable to parse TopDeck retryAfterSeconds; using default %ss (%s)",
+                            retry_after,
+                            e,
+                        )
+                    if attempt < max_retries - 1:
+                        wait_time = max(retry_after, 1)
+                        logger.warning(
+                            f"TopDeck rate limited, retrying in {wait_time}s... ({attempt + 1}/{max_retries})"
+                        )
+                        time.sleep(wait_time)
+                        continue
 
                 if response.status_code >= 400:
                     logger.error(f"TopDeck API error: {response.text}")
@@ -310,35 +721,75 @@ class TopDeckClient:
         self,
         start_date: str | None = None,
         end_date: str | None = None,
-        min_players: int = 16,
+        leagues: bool = False,
     ) -> list[dict[str, Any]]:
         """Search for tournaments within a date range."""
-        params = {"pageSize": 100}
+        params: dict[str, Any] = {
+            "game": "Magic: The Gathering",
+            "format": "EDH",
+        }
         if start_date:
-            params["startDate"] = start_date
+            params["start"] = int(date_parser.parse(start_date).timestamp())
         if end_date:
-            params["endDate"] = end_date
+            params["end"] = int(date_parser.parse(end_date).timestamp())
+        if leagues:
+            params["leagues"] = True
 
         url = f"{self.base_url}/tournaments"
         response = self._request("POST", url, json_payload=params)
 
-        tournaments = response.get("tournaments", [])
-        logger.info(
-            f"Found {len(tournaments)} tournaments in search (min {min_players} players)"
-        )
+        tournaments = response if isinstance(response, list) else response.get("tournaments", [])
+        logger.info(f"Found {len(tournaments)} tournaments in search")
 
         return [
-            t
+            normalize_topdeck_tournament_payload(t)
             for t in tournaments
-            if t.get("playerCount", 0) >= min_players
-            or t.get("players", []) is not None
-            and len(t.get("players", [])) >= min_players
         ]
 
     def get_tournament(self, tid: str) -> dict[str, Any]:
         """Get detailed tournament data including standings."""
         url = f"{self.base_url}/tournaments/{tid}"
-        return self._request("GET", url)
+        tournament = normalize_topdeck_tournament_payload(self._request("GET", url), tid=tid)
+        if should_use_firestore_tournament_fallback(tournament) or not tournament.get("rounds"):
+            firestore_tournament = self.get_firestore_tournament(tid, tournament)
+            if firestore_tournament:
+                return firestore_tournament
+        return tournament
+
+    def get_firestore_tournament(
+        self,
+        tid: str,
+        base_tournament: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        """Fetch a legacy bracket tournament from TopDeck's Firestore document."""
+        firestore_api_key = os.environ.get("TOPDECK_FIRESTORE_API_KEY")
+        url = (
+            "https://firestore.googleapis.com/v1/projects/"
+            f"{TOPDECK_FIRESTORE_PROJECT}/databases/(default)/documents/"
+            f"tournaments/{tid}"
+        )
+        if firestore_api_key:
+            url = f"{url}?key={firestore_api_key}"
+
+        response = requests.get(url, timeout=30)
+        if response.status_code == 404:
+            return None
+        if response.status_code >= 400:
+            logger.warning(
+                f"TopDeck Firestore fallback failed for {tid}: {response.text}"
+            )
+            response.raise_for_status()
+
+        document = response.json()
+        fields = document.get("fields")
+        if not isinstance(fields, dict):
+            return None
+
+        data = {key: decode_firestore_value(value) for key, value in fields.items()}
+        return (
+            firestore_tournament_to_topdeck_payload(tid, data)
+            or flat_firestore_league_to_topdeck_payload(tid, data, base_tournament)
+        )
 
 
 class SupabaseClient:
@@ -585,9 +1036,14 @@ def normalize_commander_name(commanders: list[str]) -> str:
     Sorts partner commander names alphabetically to ensure consistent ordering.
     Single commanders are returned as-is.
     """
-    if not commanders:
-        return ""
-    return " / ".join(sorted(commanders))
+    clean_names = [
+        clean_commander_card_name(value)
+        for value in commanders
+        if clean_commander_card_name(value)
+    ]
+    if not clean_names:
+        return "Unknown Commander"
+    return " / ".join(sorted(clean_names))
 
 
 class DataIngester:
@@ -597,11 +1053,9 @@ class DataIngester:
         self,
         topdeck: TopDeckClient,
         supabase: SupabaseClient,
-        min_players: int = 16,
     ):
         self.topdeck = topdeck
         self.supabase = supabase
-        self.min_players = min_players
         self.commander_cache: dict[str, str] = {}  # name -> id
         self.player_cache: dict[str, str] = {}  # topdeck_id -> id
 
@@ -661,7 +1115,7 @@ class DataIngester:
             return {}
 
         data = [
-            {"name": name, "commander_names": names}
+            {"name": name, "commander_names": names or [name]}
             for name, names in commander_data.items()
         ]
 
@@ -676,6 +1130,26 @@ class DataIngester:
         """Batch upsert players and return topdeck_id -> id mapping."""
         if not player_data:
             return {}
+
+        unknown_topdeck_ids = [
+            topdeck_id
+            for topdeck_id, name in player_data.items()
+            if is_placeholder_player_name(name)
+        ]
+        for start in range(0, len(unknown_topdeck_ids), 100):
+            chunk = unknown_topdeck_ids[start : start + 100]
+            existing_players = self.supabase.select(
+                "players",
+                {
+                    "topdeck_id": f"in.({','.join(chunk)})",
+                    "select": "topdeck_id,name",
+                },
+            )
+            for existing_player in existing_players:
+                topdeck_id = existing_player.get("topdeck_id")
+                existing_name = existing_player.get("name")
+                if topdeck_id and not is_placeholder_player_name(existing_name):
+                    player_data[topdeck_id] = existing_name
 
         data = [{"topdeck_id": tid, "name": name} for tid, name in player_data.items()]
 
@@ -693,14 +1167,29 @@ class DataIngester:
         if not entries:
             return {}
 
+        entry_keys_by_player_id = {
+            entry["player_id"]: entry.get("topdeck_entry_id")
+            for entry in entries
+            if entry.get("player_id") and entry.get("topdeck_entry_id")
+        }
+        db_entries = [
+            {k: v for k, v in entry.items() if k != "topdeck_entry_id"}
+            for entry in entries
+        ]
+
         result = self.supabase.upsert(
-            "tournament_entries", entries, on_conflict="topdeck_entry_id"
+            "tournament_entries", db_entries, on_conflict="tournament_id,player_id"
         )
         if not result:
             logger.error("Failed to batch upsert tournament entries")
             return {}
 
-        return {r["topdeck_entry_id"]: r["id"] for r in result}
+        entry_id_map: dict[str, str] = {}
+        for row in result:
+            topdeck_entry_id = entry_keys_by_player_id.get(row.get("player_id"))
+            if topdeck_entry_id:
+                entry_id_map[topdeck_entry_id] = row["id"]
+        return entry_id_map
 
     def process_tournament(self, tournament: dict[str, Any]) -> dict[str, Any] | None:
         """Process a single tournament and ingest all data.
@@ -722,13 +1211,6 @@ class DataIngester:
         effective_top_cut = reported_top_cut
         if player_count <= 34:
             effective_top_cut = 4
-
-        # Skip if too few players
-        if player_count < self.min_players:
-            logger.info(
-                f"Skipping {name}: only {player_count} players (min: {self.min_players})"
-            )
-            return None
 
         logger.info(
             f"Processing: {name} ({player_count} players, {len(rounds)} rounds)"
@@ -821,11 +1303,20 @@ class DataIngester:
                     "name": player_name,
                     "commander_name": commander_name,
                     "decklist": decklist,
-                    "rank": standing.get("rank"),
-                    "points": standing.get("points"),
+                    "rank": standing.get("rank") or standing.get("standing"),
+                    "points": standing.get("points") or 0,
                     "omw": standing.get("omw"),
                     "gw": standing.get("gw"),
                     "pgw": standing.get("pgw"),
+                    "primaryWinRate": standing.get("primaryWinRate"),
+                    "primaryWinRateElo": standing.get("primaryWinRateElo"),
+                    "primaryWinRateO": standing.get("primaryWinRateO"),
+                    "winRate": standing.get("winRate"),
+                    "successRate": standing.get("successRate"),
+                    "opponentWinRate": standing.get("opponentWinRate"),
+                    "opponentWinRateElo": standing.get("opponentWinRateElo"),
+                    "opponentWinRateO": standing.get("opponentWinRateO"),
+                    "opponentSuccessRate": standing.get("opponentSuccessRate"),
                 }
             )
 
@@ -841,6 +1332,7 @@ class DataIngester:
 
         # Step 4: Build entry records
         entries: list[dict[str, Any]] = []
+        seen_entry_player_ids: set[str] = set()
         for info in standing_info:
             commander_id = commander_id_map.get(info["commander_name"])
             player_id = player_id_map.get(info["topdeck_id"])
@@ -852,18 +1344,23 @@ class DataIngester:
                 )
                 continue
 
+            if player_id in seen_entry_player_ids:
+                logger.warning(
+                    f"Skipping duplicate standing for player {info['topdeck_id']} "
+                    f"in tournament {tid}"
+                )
+                continue
+            seen_entry_player_ids.add(player_id)
+
             primary_rate, opponent_rate = extract_standing_rates(info)
 
             entry = {
                 "tournament_id": tournament_id,
                 "player_id": player_id,
                 "commander_id": commander_id,
-                "rank": info["rank"],
+                "final_standing": info["rank"],
                 "points": info["points"],
-                "omw": info["omw"],
-                "gw": info["gw"],
-                "pgw": info["pgw"],
-                "primary_win_rate": primary_rate,
+                "win_rate": primary_rate,
                 "opponent_win_rate": opponent_rate,
                 "decklist_text": info["decklist"],
                 "topdeck_entry_id": f"{tid}_{info['topdeck_id']}",
@@ -876,6 +1373,14 @@ class DataIngester:
 
         # Step 6: Process game results
         games_processed = 0
+        entries_by_topdeck_id = {
+            e.get("topdeck_entry_id", "").removeprefix(f"{tid}_"): (e, db_id)
+            for e, db_id in (
+                (entry, entry_id_map.get(entry.get("topdeck_entry_id")))
+                for entry in entries
+            )
+            if e.get("topdeck_entry_id") and db_id
+        }
         entries_by_rank = sorted(
             [
                 (
@@ -890,59 +1395,147 @@ class DataIngester:
 
         # Process each round
         for round_data in rounds:
-            round_num = round_data.get("round", 0)
+            round_value = round_data.get("round")
+            round_num = round_value if isinstance(round_value, int) else None
+            round_name = None if isinstance(round_value, int) else str(round_value) if round_value else None
+            is_bracket = round_num is None
             tables = round_data.get("tables", [])
 
             for table in tables:
-                table_num = table.get("table", 0)
-                game_id = f"{tid}_R{round_num}_T{table_num}"
+                table_num = table.get("table") or table.get("table_number") or table.get("tableNumber")
                 seats = table.get("seats", [])
+                players = table.get("players", [])
 
                 # Build game participants map
                 participant_map: dict[int, dict[str, Any]] = {}
-                for seat in seats:
-                    seat_num = seat.get("seat", 0)
-                    entry_id = seat.get("entryId")
-                    # Find the entry by topdeck_entry_id
-                    for e, db_id, _ in entries_by_rank:
-                        if e.get("topdeck_entry_id") == entry_id:
+                if players:
+                    for seat_num, player in enumerate(players):
+                        player_topdeck_id = player.get("id")
+                        entry_pair = entries_by_topdeck_id.get(player_topdeck_id)
+                        if entry_pair:
+                            standing, db_id = entry_pair
                             participant_map[seat_num] = {
                                 "entry_id": db_id,
-                                "standing": e,
+                                "standing": standing,
+                                "topdeck_id": player_topdeck_id,
                             }
-                            break
+                else:
+                    for seat in seats:
+                        seat_num = seat.get("seat", 0)
+                        entry_id = seat.get("entryId")
+                        # Find the entry by topdeck_entry_id
+                        for e, db_id, _ in entries_by_rank:
+                            if e.get("topdeck_entry_id") == entry_id:
+                                participant_map[seat_num] = {
+                                    "entry_id": db_id,
+                                    "standing": e,
+                                    "topdeck_id": e.get("topdeck_id"),
+                                }
+                                break
 
-                # Process results
+                if not participant_map:
+                    continue
+
+                game_key = build_game_key(tournament_id, round_num, round_name, table_num, is_bracket)
+                winner_topdeck_id = table.get("winner_id") or table.get("winnerId")
+                uses_topdeck_winner_id = players and (
+                    "winner_id" in table or "winnerId" in table
+                )
+
+                # Process current TopDeck v2 results.
+                if uses_topdeck_winner_id:
+                    is_draw = is_draw_winner_id(winner_topdeck_id)
+                    winner_player_id = None if is_draw else player_id_map.get(str(winner_topdeck_id))
+
+                    game_record = {
+                        "tournament_id": tournament_id,
+                        "round_number": round_num,
+                        "round_name": round_name,
+                        "is_bracket": is_bracket,
+                        "table_number": table_num,
+                        "status": table.get("status") or "Completed",
+                        "is_draw": is_draw,
+                        "winner_id": winner_player_id,
+                        "game_key": game_key,
+                    }
+
+                    try:
+                        game_result = self.supabase.upsert(
+                            "games", game_record, on_conflict="game_key"
+                        )
+                        if game_result:
+                            games_processed += 1
+                            participant_records: list[dict[str, Any]] = []
+
+                            for seat_num, participant in participant_map.items():
+                                entry_id = participant.get("entry_id")
+                                if not entry_id:
+                                    continue
+
+                                is_winner = (
+                                    not is_draw
+                                    and participant.get("topdeck_id") == winner_topdeck_id
+                                )
+                                result_text = "draw" if is_draw else "win" if is_winner else "loss"
+
+                                participant_record = {
+                                    "game_id": game_result[0]["id"],
+                                    "entry_id": entry_id,
+                                    "seat_position": seat_num,
+                                    "result": result_text,
+                                    "points_earned": 1 if is_draw else 5 if is_winner else 0,
+                                }
+                                participant_records.append(participant_record)
+                            if participant_records:
+                                self.supabase.upsert(
+                                    "game_participants",
+                                    participant_records,
+                                    on_conflict="game_id,entry_id",
+                                )
+                    except Exception as e:
+                        logger.warning(f"Failed to upsert game {game_key}: {e}")
+                    continue
+
+                # Process legacy TopDeck results.
                 results = table.get("results", [])
                 for result in results:
                     winner_seats = result.get("winners", [])
                     draws = result.get("draws", [])
 
                     # Get winner/loser IDs
-                    winner_ids = [
+                    winner_entry_ids = [
                         participant_map[s]["entry_id"]
                         for s in winner_seats
                         if s in participant_map and participant_map[s].get("entry_id")
                     ]
-                    if not winner_ids:
+                    if not winner_entry_ids and not draws:
                         continue
+                    winner_player_id = None
+                    if len(winner_seats) == 1 and winner_seats[0] in participant_map:
+                        winner_topdeck_id = participant_map[winner_seats[0]].get("topdeck_id")
+                        winner_player_id = player_id_map.get(winner_topdeck_id)
 
                     # Create game record
                     game_record = {
                         "tournament_id": tournament_id,
-                        "game_id": game_id,
-                        "round": round_num,
+                        "round_number": round_num,
+                        "round_name": round_name,
+                        "is_bracket": is_bracket,
                         "table_number": table_num,
-                        "winners": winner_ids,
+                        "status": table.get("status") or "Completed",
+                        "is_draw": bool(draws) and not winner_entry_ids,
+                        "winner_id": winner_player_id,
+                        "game_key": game_key,
                     }
 
                     # Upsert game
                     try:
                         game_result = self.supabase.upsert(
-                            "games", game_record, on_conflict="game_id"
+                            "games", game_record, on_conflict="game_key"
                         )
                         if game_result:
                             games_processed += 1
+                            participant_records: list[dict[str, Any]] = []
 
                             # Create participant records
                             for seat_num, participant in participant_map.items():
@@ -952,30 +1545,32 @@ class DataIngester:
 
                                 is_winner = seat_num in winner_seats
                                 is_draw = seat_num in draws
-
-                                standing = participant.get("standing", {})
-                                primary_rate, opponent_rate = extract_standing_rates(standing)
+                                result_text = "draw" if is_draw else "win" if is_winner else "loss"
 
                                 participant_record = {
                                     "game_id": game_result[0]["id"],
                                     "entry_id": entry_id,
                                     "seat_position": seat_num,
-                                    "won": is_winner,
-                                    "draw": is_draw,
-                                    "primary_win_rate": primary_rate,
-                                    "opponent_win_rate": opponent_rate,
+                                    "result": result_text,
+                                    "points_earned": 1 if is_draw else 5 if is_winner else 0,
                                 }
+                                participant_records.append(participant_record)
+                            if participant_records:
                                 self.supabase.upsert(
-                                    "game_participants", participant_record
+                                    "game_participants",
+                                    participant_records,
+                                    on_conflict="game_id,entry_id",
                                 )
                     except Exception as e:
-                        logger.warning(f"Failed to upsert game {game_id}: {e}")
+                        logger.warning(f"Failed to upsert game {game_key}: {e}")
 
         logger.info(
             f"Completed {name}: {len(entries)} entries, {games_processed} games"
         )
         return {
             "tournament_id": tournament_id,
+            "name": name,
+            "topdeck_tid": tid,
             "entries": len(entries),
             "games": games_processed,
         }
@@ -1002,12 +1597,26 @@ def normalize_tournament_name(name: str) -> str:
 
 def build_game_key(
     tournament_id: str,
-    round_num: int,
-    table_num: int,
-    seat_num: int,
+    round_num: int | None,
+    round_name: str | None,
+    table_num: int | None,
+    is_bracket: bool,
 ) -> str:
-    """Build a unique key for a game."""
-    return f"{tournament_id}_R{round_num}_T{table_num}_S{seat_num}"
+    """Build the canonical game key used by the database trigger."""
+    return "|".join(
+        [
+            tournament_id,
+            str(round_num) if round_num is not None else "RNULL",
+            round_name if round_name is not None else "RNNULL",
+            str(table_num) if table_num is not None else "TNULL",
+            str(is_bracket).lower(),
+        ]
+    )
+
+
+def is_draw_winner_id(winner_id: Any) -> bool:
+    """TopDeck v2 represents drawn pods as winner_id='Draw'."""
+    return winner_id is None or str(winner_id).strip().lower() == "draw"
 
 
 def extract_name_and_tid(tournament: dict[str, Any]) -> tuple[str | None, str | None]:
@@ -1032,19 +1641,12 @@ def main():
         help="Number of recent days to search for tournaments",
     )
     parser.add_argument(
-        "--min-players",
-        type=int,
-        default=16,
-        help="Minimum player count for tournaments to include",
-    )
-    parser.add_argument(
         "--stop-on-error",
         action="store_true",
         help="Fail fast instead of continuing to later tournaments after an error in --tids-file mode",
     )
     parser.add_argument("--names-file", type=str, help="Path to file with one tournament name per line")
     parser.add_argument("--resolve-days", type=int, default=120, help="Days back to search when resolving names to IDs")
-    parser.add_argument("--resolve-min-players", type=int, default=0, help="Min players for name resolution search")
     parser.add_argument("--tids-out", type=str, help="Write resolved tournament IDs to this file")
     parser.add_argument(
         "--resolve-include-ambiguous",
@@ -1054,6 +1656,13 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Don't write to database")
     parser.add_argument("--limit", type=int, default=0, help="Maximum number of tournaments to process")
     parser.add_argument(
+        "--leagues",
+        "--league",
+        dest="leagues",
+        action="store_true",
+        help="Include leagues=true in the TopDeck tournament search payload",
+    )
+    parser.add_argument(
         "--direct",
         action="store_true",
         help="Use direct Postgres connection for faster ingestion",
@@ -1062,20 +1671,19 @@ def main():
     args = parser.parse_args()
 
     # Load environment variables
-    topdeck_api_key = (
-        "dev"  # TODO: Replace with actual key loading from env
-    )
-    supabase_url = SUPABASE_REST_BASE
-    supabase_key = (
-        "dev"  # TODO: Replace with actual key loading from env
-    )
+    load_local_env()
+    topdeck_api_key = os.environ.get("TOPDECK_API_KEY")
+    supabase_url = os.environ.get("SUPABASE_URL", SUPABASE_REST_BASE)
+    supabase_key = os.environ.get("SUPABASE_SERVICE_KEY")
+    if not topdeck_api_key or not supabase_key:
+        raise SystemExit("TOPDECK_API_KEY and SUPABASE_SERVICE_KEY are required")
 
     # Initialize clients
     topdeck = TopDeckClient(topdeck_api_key)
     supabase = SupabaseClient(supabase_url, supabase_key)
 
     # Initialize ingester
-    ingester = DataIngester(topdeck, supabase, min_players=args.min_players)
+    ingester = DataIngester(topdeck, supabase)
 
     if args.tournament_id:
         # Ingest single tournament
@@ -1085,7 +1693,7 @@ def main():
         if ingester:
             result = ingester.process_tournament(tournament)
             logger.info(f"Result: {result}")
-    elif args.tids_file:
+    elif getattr(args, "tids_file", None):
         tids_path = Path(args.tids_file)
         if not tids_path.exists():
             logger.error(f"TIDs file not found: {tids_path}")
@@ -1498,9 +2106,11 @@ def main():
             )
     else:
         # Search and ingest recent tournaments
-        logger.info(f"Searching for tournaments in the last {args.days} days")
+        start_date = (datetime.now() - timedelta(days=args.days)).date().isoformat()
+        end_date = datetime.now().date().isoformat()
+        logger.info(f"Searching for tournaments from {start_date} through {end_date} ({args.days} days)")
         tournaments = topdeck.search_tournaments(
-            start_date=f"{args.days} days ago", min_players=args.min_players
+            start_date=start_date, end_date=end_date, leagues=args.leagues
         )
         logger.info(f"Found {len(tournaments)} tournaments to process")
 
@@ -1509,15 +2119,29 @@ def main():
             tournaments = tournaments[: args.limit]
 
         for t in tournaments:
+            tid = t.get("id") or t.get("TID")
+            tournament = t
+            if tid:
+                tournament = topdeck.get_tournament(tid)
+                for key in (
+                    "swissNum",
+                    "topCut",
+                    "averageElo",
+                    "medianElo",
+                    "topElo",
+                    "eventData",
+                ):
+                    if key not in tournament and key in t:
+                        tournament[key] = t[key]
             if ingester:
                 try:
-                    result = ingester.process_tournament(t)
+                    result = ingester.process_tournament(tournament)
                     if result:
                         logger.info(f"Processed: {result['name']}")
                 except Exception as e:
-                    logger.error(f"Failed to process {t.get('tournamentName')}: {e}")
+                    logger.error(f"Failed to process {tournament.get('name') or t.get('tournamentName')}: {e}")
             else:
-                logger.info(f"Would process: {t.get('tournamentName')} ({len(t.get('standings', []))} players)")
+                logger.info(f"Would process: {tournament.get('name')} ({len(tournament.get('standings', []))} players)")
 
     # Cleanup direct Postgres connection
     if args.direct and db_client:

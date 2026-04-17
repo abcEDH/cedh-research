@@ -27,7 +27,7 @@ supabase/
 uv run python src/ingest.py --tournament-id steel-city-spectacular-20k-cedh-main-event
 
 # Ingest recent tournaments
-uv run python src/ingest.py --days 7 --min-players 4
+uv run python src/ingest.py --days 7
 
 # Use direct Postgres for ~10x faster batch operations (requires psycopg2)
 uv run python src/ingest.py --tournament-id TID --direct

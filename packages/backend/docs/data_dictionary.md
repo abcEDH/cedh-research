@@ -1,6 +1,6 @@
 # Data Dictionary
 
-Last reviewed: 2026-04-11
+Last reviewed: 2026-04-16
 Update policy: This file must be updated whenever migrations in `packages/backend/supabase/migrations` change.
 
 This describes the primary tables and analytical views used in the cEDH Analytics database.
@@ -220,6 +220,18 @@ erDiagram
   - `total_entries`, `commander_predictions`
   - `latest_commander`, `latest_commander_date`, `latest_decklist_url`, `updated_at`
 
+### `topdeck_player_elos`
+- **Purpose**: stores TopDeck's published global EDH Elo snapshot separately from locally computed Global Elo tables.
+- **Key fields**:
+  - `topdeck_id`: TopDeck player UID and table primary key
+  - `player_id`: optional link to the local `players` row
+  - `name`, `username`, `profile_image_url`
+  - `elo`, `games_played`, `ranking`
+  - `source_url`, `fetched_at`, `updated_at`
+- **Security**:
+  - row level security is enabled
+  - public read access is allowed through a SELECT policy
+
 ### `elo_maintenance_jobs`
 - **Purpose**: queue and observability log for scheduled Global Elo maintenance runs.
 - **Key fields**:
@@ -318,6 +330,15 @@ erDiagram
   - Rebuilds `regional_elo_leaderboard` from `global_elo_ratings` joined to aggregated `global_elo_game_events` counts for the global `ALL` stream.
   - Keeps global/country/state leaderboard ranking based on rating plus the existing activity/order tie-breaks, while replacing displayed record fields with canonical aggregate values.
   - Recreates `global_elo_leaderboard` as an alias of the updated `regional_elo_leaderboard` and reapplies `security_invoker` plus public `SELECT` grants.
+
+## Migration 20260415020000_topdeck_player_elos
+- **Purpose**: add a dedicated table for importing TopDeck's published EDH Elo feed without overwriting or conflating locally computed Global Elo ratings.
+- **Key actions**:
+  - Creates `topdeck_player_elos` keyed by `topdeck_id`.
+  - Stores TopDeck player display metadata, published Elo, games played, ranking, source URL, and fetch timestamps.
+  - Links imported rows to local `players.id` when a matching TopDeck ID is known.
+  - Adds indexes for local-player lookup, ranking order, and Elo order.
+  - Enables RLS and grants public read access through an explicit SELECT policy.
 
 ### Card Analytics (materialized views)
 - **`card_frequencies_by_commander`**: per-commander card inclusion frequencies.

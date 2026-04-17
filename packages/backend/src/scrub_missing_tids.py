@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import re
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from ingest import (
@@ -52,8 +53,9 @@ def load_credentials() -> tuple[str, str, str]:
     return topdeck_key, supabase_url, supabase_key
 
 
-def fetch_topdeck_search_tids(topdeck: TopDeckClient, *, days: int, min_players: int) -> list[dict]:
-    rows = topdeck.search_tournaments(days=days, min_players=min_players, light=True)
+def fetch_topdeck_search_tids(topdeck: TopDeckClient, *, days: int) -> list[dict]:
+    start_date = (datetime.now() - timedelta(days=days)).date().isoformat()
+    rows = topdeck.search_tournaments(start_date=start_date)
     now_ts = int(time.time())
     candidates: list[dict] = []
     for row in rows:
@@ -105,7 +107,6 @@ def fetch_existing_tids(client: SupabaseClient) -> set[str]:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Scrub TopDeck search results for missing tournaments")
     parser.add_argument("--days", type=int, default=45, help="Search window for TopDeck search_tournaments")
-    parser.add_argument("--min-players", type=int, default=16, help="Minimum player count for candidate output")
     parser.add_argument(
         "--out",
         default="data/missing_tids_candidates.txt",
@@ -117,7 +118,7 @@ def main() -> None:
     topdeck = TopDeckClient(topdeck_key)
     supabase = SupabaseClient(supabase_url, supabase_key)
 
-    topdeck_rows = fetch_topdeck_search_tids(topdeck, days=args.days, min_players=args.min_players)
+    topdeck_rows = fetch_topdeck_search_tids(topdeck, days=args.days)
     existing_tids = fetch_existing_tids(supabase)
 
     missing_rows = [row for row in topdeck_rows if row["tid"] not in existing_tids]
@@ -127,7 +128,6 @@ def main() -> None:
         "# Candidate missing tournament IDs from a TopDeck search scrub",
         "# Review before promotion to all_time_tids.supplemental.txt",
         f"# Search window: last {args.days} days",
-        f"# Minimum players: {args.min_players}",
         f"# Candidate count: {len(missing_tids)}",
     ]
     write_tids(Path(args.out), missing_tids, header_lines=header_lines)

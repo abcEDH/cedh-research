@@ -1,7 +1,6 @@
 # All-time tournament ID manifest
 # Source: Supabase public.tournaments.topdeck_tid plus optional supplemental files
 # Ordering: start_date ASC, topdeck_tid ASC
-# Filter: player_count >= 0
 # Note: this is not true all-time discovery; it only exports already-ingested tournaments
 # Refresh with: python src/export_all_time_tids.py [--supplemental data/all_time_tids.supplemental.txt]
 
