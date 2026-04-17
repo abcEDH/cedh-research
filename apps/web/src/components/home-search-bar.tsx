@@ -39,6 +39,7 @@ export function HomeSearchBar() {
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const requestIdRef = useRef(0);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -53,6 +54,7 @@ export function HomeSearchBar() {
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
+      const id = ++requestIdRef.current;
       setLoading(true);
       const pattern = `%${query.trim()}%`;
 
@@ -71,6 +73,9 @@ export function HomeSearchBar() {
           .not("topdeck_id", "is", null)
           .limit(5),
       ]);
+
+      // Discard if a newer request has since been issued
+      if (id !== requestIdRef.current) return;
 
       const commanders: SearchResult[] = (commanderRes.data ?? []).map((r) => ({
         kind: "commander",
@@ -124,7 +129,7 @@ export function HomeSearchBar() {
       setActiveIndex((i) => Math.min(i + 1, results.length - 1));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      setActiveIndex((i) => Math.max(i - 1, 0));
+      setActiveIndex((i) => (i <= 0 ? 0 : i - 1));
     } else if (e.key === "Enter" && activeIndex >= 0) {
       e.preventDefault();
       navigate(results[activeIndex]);
@@ -189,7 +194,7 @@ export function HomeSearchBar() {
       {open && results.length > 0 && (
         <ul className="absolute left-0 right-0 top-full z-50 mt-1.5 overflow-hidden rounded-xl border border-border/60 bg-background shadow-xl">
           {results.map((result, i) => (
-            <li key={result.kind === "commander" ? result.id : result.topdeck_id}>
+            <li key={result.kind === "commander" ? `commander-${result.id}` : `player-${result.topdeck_id}`}>
               <button
                 type="button"
                 className={`flex w-full items-center gap-3 px-4 py-2.5 text-left transition ${
