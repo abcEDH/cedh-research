@@ -2,11 +2,14 @@
 
 ## Summary
 
-This PR fixes missing TopDeck flat Firestore pod games and updates player profiles to make tournament finishes easier to inspect. The backend changes make future ingests include completed flat pod rounds, while the backfill script repairs historical Supabase rows. The frontend changes add a paginated, searchable Achievements section to player profiles and make profile totals use the game-log source of truth.
+This PR fixes missing TopDeck flat Firestore pod games, updates player profiles to make tournament finishes easier to inspect, and improves Tournament Prep expected field-share behavior. The backend changes make future ingests include completed flat pod rounds, while the backfill script repairs historical Supabase rows. The frontend changes add a paginated, searchable Achievements section to player profiles, make profile totals use the game-log source of truth, and make Tournament Prep reveal the full top-three-player-weighted commander field progressively.
 
 Changed files in PR 106:
 
 - [page.tsx](/Users/alexanderlien/Documents/GitHub/cedh-research/apps/web/src/app/regional-elo/player/[topdeckId]/page.tsx)
+- [page.tsx](/Users/alexanderlien/Documents/GitHub/cedh-research/apps/web/src/app/tournament-likelihood/page.tsx)
+- [field-share-list.tsx](/Users/alexanderlien/Documents/GitHub/cedh-research/apps/web/src/app/tournament-likelihood/field-share-list.tsx)
+- [tournament-analysis-tables.tsx](/Users/alexanderlien/Documents/GitHub/cedh-research/apps/web/src/app/tournament-likelihood/tournament-analysis-tables.tsx)
 - [pr-106-summary.md](/Users/alexanderlien/Documents/GitHub/cedh-research/docs/pr-106-summary.md)
 - [backfill_flat_firestore_games.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/backfill_flat_firestore_games.py)
 - [ingest.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/ingest.py)
@@ -42,6 +45,22 @@ Changed files in PR 106:
 - Keeps the Achievements section label as `Tournament finishes`.
 - Updates top-level Games/Record profile cards to use totals from the current player game logs, matching the Overall row in Seat Distribution instead of falling back to potentially stale summary rows.
 - Updates the Played Commanders helper text to say: `Commanders from all stored games for this player, sorted by last played.`
+
+## Tournament Prep
+
+- Updates [page.tsx](/Users/alexanderlien/Documents/GitHub/cedh-research/apps/web/src/app/tournament-likelihood/page.tsx) so Expected Field Share includes every commander that appears in at least one attendee's top three commander predictions.
+- Removes the old `15` commander cap from the player-weighted expected field-share list.
+- Limits each precomputed attendee profile to its top three commander predictions before contributing to Expected Field Share, matching the intended top-three player-weighted model.
+- Adds [field-share-list.tsx](/Users/alexanderlien/Documents/GitHub/cedh-research/apps/web/src/app/tournament-likelihood/field-share-list.tsx) for progressive rendering of the Expected Field Share list.
+- Defaults Expected Field Share to the top four commanders.
+- Adds a `Show more` button that reveals four additional commanders on each click.
+- Leaves completed-tournament `Field Share` fully visible without the progressive show-more control.
+- Optimizes [tournament-analysis-tables.tsx](/Users/alexanderlien/Documents/GitHub/cedh-research/apps/web/src/app/tournament-likelihood/tournament-analysis-tables.tsx) so the attendee forecast table is less laggy:
+  - memoizes profile and Elo lookup maps
+  - memoizes derived attendee rows
+  - memoizes filtered, sorted, and visible page rows
+  - defers search filtering with `useDeferredValue`
+  - moves search-triggered page resets into `startTransition`
 
 ## Backend Ingest
 
@@ -116,11 +135,14 @@ Changed files in PR 106:
 
 ## Validation
 
-- Confirmed the GitHub PR file list for PR 106 contains four files:
+- Confirmed the original GitHub PR file list for PR 106 contained four files before the Tournament Prep follow-up changes:
   - player profile page
   - PR summary doc
   - flat Firestore backfill script
   - ingest flat-round merge support
+- Verified the Tournament Prep follow-up with:
+  - `npm run lint --workspace apps/web`
+  - lint passed with existing warnings only
 - Post-backfill full scan reported `Found 0 tournaments with missing flat pod games`.
 - Spot checks:
   - CriticalEDH August 2025 League has `1,350` numeric flat-pod games.
