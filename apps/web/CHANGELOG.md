@@ -1,3 +1,13 @@
+## [1.7.5](https://github.com/abcEDH/cedh-research/compare/v1.7.4...v1.7.5) (2026-04-17)
+
+
+### Bug Fixes
+
+* **cd:** add manual Vercel alias override ([#101](https://github.com/abcEDH/cedh-research/issues/101)) ([3e093ff](https://github.com/abcEDH/cedh-research/commit/3e093ffc6687b53d56ef76516dbb9cde4322168d))
+* **cd:** drop project name from vercel ls to fix deployment lookup ([#97](https://github.com/abcEDH/cedh-research/issues/97)) ([25a6c11](https://github.com/abcEDH/cedh-research/commit/25a6c116fba6a9739bce147134091a74527e238e))
+* **cd:** use Vercel REST API and fire on merge to main ([#98](https://github.com/abcEDH/cedh-research/issues/98)) ([4fa8856](https://github.com/abcEDH/cedh-research/commit/4fa88560ce4fec477ad86ccac9850892ae5159f3))
+* **hygiene:** guard generated report paths ([#78](https://github.com/abcEDH/cedh-research/issues/78)) ([04dfaaa](https://github.com/abcEDH/cedh-research/commit/04dfaaa1216f21a100f675f35dfad729391382ce))
+
 ## [1.7.4](https://github.com/abcEDH/cedh-research/compare/v1.7.3...v1.7.4) (2026-04-11)
 
 
