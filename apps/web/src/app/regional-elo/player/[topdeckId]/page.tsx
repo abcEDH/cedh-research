@@ -13,6 +13,7 @@ export const dynamic = "force-dynamic";
 const SUPABASE_PAGE_SIZE = 1000;
 const SUPABASE_IN_CHUNK_SIZE = 100;
 const ACTIVE_PLAYER_LOOKBACK_MONTHS = 6;
+const ACHIEVEMENTS_PAGE_SIZE = 10;
 
 type PlayerRow = {
   id: string;
@@ -134,6 +135,51 @@ type PlayerCommanderUsageQueryRow = {
     | null;
 };
 
+type PlayerAchievementQueryRow = {
+  final_standing: number | null;
+  wins: number | null;
+  draws: number | null;
+  losses: number | null;
+  decklist_url: string | null;
+  commanders:
+    | {
+        name: string | null;
+      }
+    | Array<{
+        name: string | null;
+      }>
+    | null;
+  tournaments:
+    | {
+        name: string | null;
+        start_date: string | null;
+        player_count: number | null;
+        topdeck_tid: string | null;
+      }
+    | Array<{
+        name: string | null;
+        start_date: string | null;
+        player_count: number | null;
+        topdeck_tid: string | null;
+      }>
+    | null;
+};
+
+type PlayerAchievementRow = {
+  tournamentName: string;
+  tournamentUrl: string | null;
+  startDate: string | null;
+  playerCount: number | null;
+  placement: number | null;
+  finishRatio: number | null;
+  commanderName: string | null;
+  decklistUrl: string | null;
+  wins: number;
+  draws: number;
+  losses: number;
+  recordGames: number;
+};
+
 type PlayerCommanderProfileRow = {
   active_commander: string | null;
 };
@@ -235,6 +281,56 @@ function readRegionParam(
   }
   const value = (params as Record<string, string | string[] | undefined>).region;
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+}
+
+function readPositiveIntParam(
+  params:
+    | Record<string, string | string[] | undefined>
+    | URLSearchParams
+    | undefined,
+  key: string,
+  fallback = 1
+) {
+  if (!params) return fallback;
+  const rawValue =
+    typeof (params as URLSearchParams).get === "function"
+      ? (params as URLSearchParams).get(key)
+      : (params as Record<string, string | string[] | undefined>)[key];
+  const value = Array.isArray(rawValue) ? rawValue[0] : rawValue;
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function readStringParam(
+  params:
+    | Record<string, string | string[] | undefined>
+    | URLSearchParams
+    | undefined,
+  key: string
+) {
+  if (!params) return "";
+  const rawValue =
+    typeof (params as URLSearchParams).get === "function"
+      ? (params as URLSearchParams).get(key)
+      : (params as Record<string, string | string[] | undefined>)[key];
+  const value = Array.isArray(rawValue) ? rawValue[0] : rawValue;
+  return (value ?? "").trim();
+}
+
+function buildPlayerProfileHref(
+  topdeckId: string,
+  regionFilter: string,
+  achievementsPage: number,
+  achievementTournamentSearch = "",
+  achievementCommanderSearch = ""
+) {
+  const params = new URLSearchParams();
+  if (regionFilter) params.set("region", regionFilter);
+  if (achievementTournamentSearch) params.set("achievementTournament", achievementTournamentSearch);
+  if (achievementCommanderSearch) params.set("achievementCommander", achievementCommanderSearch);
+  if (achievementsPage > 1) params.set("achievementsPage", String(achievementsPage));
+  const query = params.toString();
+  return `/regional-elo/player/${topdeckId}${query ? `?${query}` : ""}`;
 }
 
 async function fetchPlayer(topdeckId: string): Promise<PlayerRow | null> {
@@ -595,6 +691,66 @@ function formatShortDate(value: string | null | undefined) {
 
 function formatPct(value: number) {
   return `${Math.round(value * 100)}%`;
+}
+
+function formatPlacementRatio(placement: number | null, playerCount: number | null) {
+  if (!placement || !playerCount) return "—";
+  return `${placement} / ${playerCount}`;
+}
+
+function achievementTournamentKey(tournamentName: string | null | undefined, startDate: string | null | undefined) {
+  return `${tournamentName ?? "Unknown tournament"}:${(startDate ?? "").slice(0, 10)}`;
+}
+
+async function fetchPlayerAchievements(playerId: string, topdeckId: string): Promise<PlayerAchievementRow[]> {
+  const rows: PlayerAchievementQueryRow[] = [];
+  for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("tournament_entries")
+      .select("final_standing, wins, draws, losses, decklist_url, commanders(name), tournaments(name, start_date, player_count, topdeck_tid)")
+      .eq("player_id", playerId)
+      .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
+
+    if (error) throw new Error(`Error fetching player achievements: ${error.message}`);
+    rows.push(...((data as PlayerAchievementQueryRow[]) ?? []));
+    if (!data || data.length < SUPABASE_PAGE_SIZE) break;
+  }
+
+  return rows
+    .map((row) => {
+      const tournament = firstRelation(row.tournaments);
+      const commander = firstRelation(row.commanders);
+      const placement = row.final_standing ?? null;
+      const playerCount = tournament?.player_count ?? null;
+      const finishRatio =
+        placement && playerCount && playerCount > 0 ? placement / playerCount : null;
+
+      return {
+        tournamentName: tournament?.name ?? "Unknown tournament",
+        tournamentUrl: buildTopdeckTournamentUrl(tournament?.topdeck_tid),
+        startDate: tournament?.start_date ?? null,
+        playerCount,
+        placement,
+        finishRatio,
+        commanderName: isKnownCommanderName(commander?.name) ? commander?.name ?? null : null,
+        decklistUrl: row.decklist_url || buildTopdeckDecklistUrl(tournament?.topdeck_tid, topdeckId),
+        wins: Number(row.wins ?? 0),
+        draws: Number(row.draws ?? 0),
+        losses: Number(row.losses ?? 0),
+        recordGames: Number(row.wins ?? 0) + Number(row.draws ?? 0) + Number(row.losses ?? 0),
+      };
+    })
+    .sort((a, b) => {
+      if (a.finishRatio === null && b.finishRatio !== null) return 1;
+      if (b.finishRatio === null && a.finishRatio !== null) return -1;
+      if (a.finishRatio !== null && b.finishRatio !== null && a.finishRatio !== b.finishRatio) {
+        return a.finishRatio - b.finishRatio;
+      }
+      if ((b.playerCount ?? 0) !== (a.playerCount ?? 0)) {
+        return (b.playerCount ?? 0) - (a.playerCount ?? 0);
+      }
+      return (b.startDate ?? "").localeCompare(a.startDate ?? "");
+    });
 }
 
 async function fetchPlayerCommanderUsageRows(
@@ -993,14 +1149,17 @@ export default async function RegionalPlayerPage({
 }: {
   params: Promise<{ topdeckId: string }> | { topdeckId: string };
   searchParams?:
-    | Promise<{ region?: string | string[] }>
-    | { region?: string | string[] };
+    | Promise<Record<string, string | string[] | undefined>>
+    | Record<string, string | string[] | undefined>;
 }) {
   const resolvedParams = await Promise.resolve(params);
   const resolvedSearchParams = await Promise.resolve(searchParams);
   const topdeckId = resolvedParams.topdeckId;
   const requestedRegion = decodeURIComponent(readRegionParam(resolvedSearchParams)).trim().toUpperCase();
   const regionFilter = requestedRegion === "ALL" ? "" : requestedRegion;
+  const requestedAchievementsPage = readPositiveIntParam(resolvedSearchParams, "achievementsPage");
+  const achievementTournamentSearch = readStringParam(resolvedSearchParams, "achievementTournament");
+  const achievementCommanderSearch = readStringParam(resolvedSearchParams, "achievementCommander");
 
   const player = await fetchPlayer(topdeckId);
   if (!player) {
@@ -1011,13 +1170,14 @@ export default async function RegionalPlayerPage({
     );
   }
 
-  const [globalSnapshot, globalEloRank, regionalRanks, profileSummary, entries, commanderUsageRows] = await Promise.all([
+  const [globalSnapshot, globalEloRank, regionalRanks, profileSummary, entries, commanderUsageRows, fetchedAchievementRows] = await Promise.all([
     fetchGlobalSnapshot(topdeckId),
     fetchGlobalEloRank(player.id),
     fetchRegionalRanks(player.id),
     fetchPlayerProfileSummary(player.id),
     fetchEntries(player.id),
     fetchPlayerCommanderUsageRows(player.id, topdeckId, player.name),
+    fetchPlayerAchievements(player.id, topdeckId),
   ]);
   const activeCommander = await fetchActiveCommander(player.id, topdeckId, player.name, commanderUsageRows);
   const regionalRankRows = regionalRanks.map((row) => ({
@@ -1034,6 +1194,55 @@ export default async function RegionalPlayerPage({
     rawPlayerLogs.length >= eventPlayerLogs.length && rawPlayerLogs.length > 0
       ? rawPlayerLogs
       : eventPlayerLogs;
+  const achievementResultByTournament = playerLogs.reduce(
+    (results, log) => {
+      const key = achievementTournamentKey(log.tournamentName, log.startDate);
+      const current = results.get(key) ?? { wins: 0, draws: 0, losses: 0, games: 0 };
+      current.games += 1;
+      if (log.result === "win") {
+        current.wins += 1;
+      } else if (log.result === "draw") {
+        current.draws += 1;
+      } else if (log.result === "loss") {
+        current.losses += 1;
+      }
+      results.set(key, current);
+      return results;
+    },
+    new Map<string, { wins: number; draws: number; losses: number; games: number }>()
+  );
+  const allAchievementRows = fetchedAchievementRows
+    .map((row) => {
+      const gameResults = achievementResultByTournament.get(
+        achievementTournamentKey(row.tournamentName, row.startDate)
+      );
+      if (!gameResults?.games) return row;
+      return {
+        ...row,
+        wins: gameResults.wins,
+        draws: gameResults.draws,
+        losses: gameResults.losses,
+        recordGames: gameResults.games,
+      };
+    })
+    .filter((row) => row.recordGames > 0);
+  const normalizedAchievementTournamentSearch = achievementTournamentSearch.toLocaleLowerCase();
+  const normalizedAchievementCommanderSearch = achievementCommanderSearch.toLocaleLowerCase();
+  const achievementRows = allAchievementRows.filter((row) => {
+    const matchesTournament =
+      !normalizedAchievementTournamentSearch ||
+      row.tournamentName.toLocaleLowerCase().includes(normalizedAchievementTournamentSearch);
+    const matchesCommander =
+      !normalizedAchievementCommanderSearch ||
+      (row.commanderName ?? "Unknown").toLocaleLowerCase().includes(normalizedAchievementCommanderSearch);
+    return matchesTournament && matchesCommander;
+  });
+  const achievementPageCount = Math.max(1, Math.ceil(achievementRows.length / ACHIEVEMENTS_PAGE_SIZE));
+  const achievementPage = Math.min(requestedAchievementsPage, achievementPageCount);
+  const visibleAchievementRows = achievementRows.slice(
+    (achievementPage - 1) * ACHIEVEMENTS_PAGE_SIZE,
+    achievementPage * ACHIEVEMENTS_PAGE_SIZE
+  );
 
   const {
     totalGames,
@@ -1048,10 +1257,10 @@ export default async function RegionalPlayerPage({
     bestCommanderMatchup,
     worstCommanderMatchup,
   } = summarizePlayerLogs(playerLogs);
-  const canonicalGames = globalSnapshot?.gamesPlayed ?? profileSummary?.games_played ?? globalEloRank?.games_played ?? totalGames;
-  const canonicalWins = globalSnapshot?.wins ?? profileSummary?.wins ?? globalEloRank?.wins ?? totalWins;
-  const canonicalDraws = globalSnapshot?.draws ?? profileSummary?.draws ?? globalEloRank?.draws ?? totalDraws;
-  const canonicalLosses = globalSnapshot?.losses ?? profileSummary?.losses ?? globalEloRank?.losses ?? totalLosses;
+  const canonicalGames = totalGames;
+  const canonicalWins = totalWins;
+  const canonicalDraws = totalDraws;
+  const canonicalLosses = totalLosses;
   const assignmentRowsByRegion = new Map<string, StateAssignmentRow>();
   const historicalRegionKeys = new Set<string>();
   if (profileSummary?.state_assignments?.length) {
@@ -1398,7 +1607,7 @@ export default async function RegionalPlayerPage({
                 Played Commanders
               </CardTitle>
               <p className="text-xs text-muted-foreground">
-                Commanders from all stored games for this player, sorted by total games.
+                Commanders from all stored games for this player, sorted by last played.
               </p>
             </CardHeader>
             <CardContent>
@@ -1716,6 +1925,170 @@ export default async function RegionalPlayerPage({
               </CardContent>
             </Card>
           </div>
+
+          <Card className="knd-panel">
+            <CardHeader>
+              <CardTitle className="text-sm uppercase tracking-[0.2em] text-muted-foreground">
+                Achievements
+              </CardTitle>
+              <p className="text-xs text-muted-foreground">Tournament finishes</p>
+            </CardHeader>
+            <CardContent>
+              <form method="get" className="mb-4 grid gap-3 md:grid-cols-[1fr_1fr_auto_auto]">
+                {regionFilter ? <input type="hidden" name="region" value={regionFilter} /> : null}
+                <label className="space-y-1 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                  Tournament
+                  <input
+                    type="search"
+                    name="achievementTournament"
+                    defaultValue={achievementTournamentSearch}
+                    placeholder="Search tournaments"
+                    className="mt-1 w-full rounded-md border border-border/70 bg-background px-3 py-2 text-sm normal-case tracking-normal text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/60"
+                  />
+                </label>
+                <label className="space-y-1 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                  Commander
+                  <input
+                    type="search"
+                    name="achievementCommander"
+                    defaultValue={achievementCommanderSearch}
+                    placeholder="Search commanders"
+                    className="mt-1 w-full rounded-md border border-border/70 bg-background px-3 py-2 text-sm normal-case tracking-normal text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/60"
+                  />
+                </label>
+                <button
+                  type="submit"
+                  className="self-end rounded-md border border-border/70 px-3 py-2 text-sm text-foreground hover:border-primary/40 hover:text-primary"
+                >
+                  Search
+                </button>
+                {achievementTournamentSearch || achievementCommanderSearch ? (
+                  <Link
+                    href={buildPlayerProfileHref(topdeckId, regionFilter, 1)}
+                    className="self-end rounded-md border border-border/70 px-3 py-2 text-center text-sm text-foreground hover:border-primary/40 hover:text-primary"
+                  >
+                    Clear
+                  </Link>
+                ) : null}
+              </form>
+              <div className="overflow-auto">
+                <table className="w-full text-sm">
+                  <thead className="text-left text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                    <tr>
+                      <th className="px-2 py-3">Tournament</th>
+                      <th className="px-2 py-3">Date</th>
+                      <th className="px-2 py-3">Commander</th>
+                      <th className="px-2 py-3 text-right">Finish</th>
+                      <th className="px-2 py-3 text-right">W-L-D</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleAchievementRows.map((row, index) => (
+                      <tr
+                        key={`${row.tournamentUrl ?? row.tournamentName}:${row.startDate ?? index}`}
+                        className="border-t border-border/60"
+                      >
+                        <td className="px-2 py-3">
+                          {row.tournamentUrl ? (
+                            <a
+                              href={row.tournamentUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-foreground hover:text-primary"
+                            >
+                              {row.tournamentName}
+                            </a>
+                          ) : (
+                            <span className="text-foreground">{row.tournamentName}</span>
+                          )}
+                        </td>
+                        <td className="px-2 py-3 text-muted-foreground">
+                          {formatShortDate(row.startDate)}
+                        </td>
+                        <td className="px-2 py-3 text-muted-foreground">
+                          {row.commanderName && row.decklistUrl ? (
+                            <a
+                              href={row.decklistUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-foreground hover:text-primary"
+                            >
+                              {row.commanderName}
+                            </a>
+                          ) : (
+                            row.commanderName ?? "Unknown"
+                          )}
+                        </td>
+                        <td className="px-2 py-3 text-right font-mono text-muted-foreground">
+                          {formatPlacementRatio(row.placement, row.playerCount)}
+                        </td>
+                        <td className="px-2 py-3 text-right font-mono text-muted-foreground">
+                          {row.recordGames > 0 ? `${row.wins}-${row.losses}-${row.draws}` : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                    {achievementRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-2 py-6 text-center text-sm text-muted-foreground">
+                          No tournament finishes with recorded games found for this player.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+              {achievementRows.length > ACHIEVEMENTS_PAGE_SIZE ? (
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4 text-sm text-muted-foreground">
+                  <span>
+                    Showing {(achievementPage - 1) * ACHIEVEMENTS_PAGE_SIZE + 1}-
+                    {Math.min(achievementPage * ACHIEVEMENTS_PAGE_SIZE, achievementRows.length)} of{" "}
+                    {achievementRows.length}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {achievementPage > 1 ? (
+                      <Link
+                        href={buildPlayerProfileHref(
+                          topdeckId,
+                          regionFilter,
+                          achievementPage - 1,
+                          achievementTournamentSearch,
+                          achievementCommanderSearch
+                        )}
+                        className="rounded-md border border-border/70 px-3 py-1.5 text-foreground hover:border-primary/40 hover:text-primary"
+                      >
+                        Previous
+                      </Link>
+                    ) : (
+                      <span className="rounded-md border border-border/40 px-3 py-1.5 text-muted-foreground/60">
+                        Previous
+                      </span>
+                    )}
+                    <span className="font-mono text-xs">
+                      Page {achievementPage} / {achievementPageCount}
+                    </span>
+                    {achievementPage < achievementPageCount ? (
+                      <Link
+                        href={buildPlayerProfileHref(
+                          topdeckId,
+                          regionFilter,
+                          achievementPage + 1,
+                          achievementTournamentSearch,
+                          achievementCommanderSearch
+                        )}
+                        className="rounded-md border border-border/70 px-3 py-1.5 text-foreground hover:border-primary/40 hover:text-primary"
+                      >
+                        Next
+                      </Link>
+                    ) : (
+                      <span className="rounded-md border border-border/40 px-3 py-1.5 text-muted-foreground/60">
+                        Next
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
         </div>
       </main>
     </div>
