@@ -646,6 +646,43 @@ def flat_firestore_league_to_topdeck_payload(
     }
 
 
+def merge_firestore_flat_league_rounds(
+    primary_tournament: dict[str, Any] | None,
+    flat_league_tournament: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Merge flat Firestore league pods into another TopDeck-like payload."""
+    if not primary_tournament:
+        return flat_league_tournament
+    if not flat_league_tournament:
+        return primary_tournament
+
+    existing_rounds = list(primary_tournament.get("rounds") or [])
+    existing_round_keys = {str(round_row.get("round")) for round_row in existing_rounds}
+    flat_rounds = [
+        round_row
+        for round_row in flat_league_tournament.get("rounds") or []
+        if str(round_row.get("round")) not in existing_round_keys
+    ]
+    if not flat_rounds:
+        return primary_tournament
+
+    merged = dict(primary_tournament)
+    merged["rounds"] = flat_rounds + existing_rounds
+    merged["swissNum"] = max(
+        int(primary_tournament.get("swissNum") or 0),
+        int(flat_league_tournament.get("swissNum") or 0),
+    )
+    merged["_source"] = "+".join(
+        source
+        for source in (
+            primary_tournament.get("_source"),
+            flat_league_tournament.get("_source"),
+        )
+        if source
+    ) or primary_tournament.get("_source") or flat_league_tournament.get("_source")
+    return merged
+
+
 class TopDeckClient:
     """Client for TopDeck.gg API v2."""
 
@@ -754,6 +791,8 @@ class TopDeckClient:
             firestore_tournament = self.get_firestore_tournament(tid, tournament)
             if firestore_tournament:
                 return firestore_tournament
+        elif flat_firestore_tournament := self.get_firestore_flat_tournament(tid, tournament):
+            return merge_firestore_flat_league_rounds(tournament, flat_firestore_tournament) or tournament
         return tournament
 
     def get_firestore_tournament(
@@ -786,10 +825,50 @@ class TopDeckClient:
             return None
 
         data = {key: decode_firestore_value(value) for key, value in fields.items()}
-        return (
-            firestore_tournament_to_topdeck_payload(tid, data)
-            or flat_firestore_league_to_topdeck_payload(tid, data, base_tournament)
+        firestore_tournament = firestore_tournament_to_topdeck_payload(tid, data)
+        flat_league_tournament = flat_firestore_league_to_topdeck_payload(
+            tid,
+            data,
+            base_tournament or firestore_tournament,
         )
+        return merge_firestore_flat_league_rounds(
+            firestore_tournament,
+            flat_league_tournament,
+        )
+
+    def get_firestore_flat_tournament(
+        self,
+        tid: str,
+        base_tournament: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Load only TopDeck's flat Firestore pod rows for API payload augmentation."""
+        firestore_api_key = os.environ.get("TOPDECK_FIRESTORE_API_KEY")
+        url = (
+            "https://firestore.googleapis.com/v1/projects/"
+            f"{TOPDECK_FIRESTORE_PROJECT}/databases/(default)/documents/"
+            f"tournaments/{tid}"
+        )
+        if firestore_api_key:
+            url = f"{url}?key={firestore_api_key}"
+
+        response = requests.get(url, timeout=30)
+        if response.status_code == 404:
+            return None
+        if response.status_code >= 400:
+            logger.warning(
+                "TopDeck Firestore flat tournament fetch failed for %s: %s %s",
+                tid,
+                response.status_code,
+                response.text[:200],
+            )
+            return None
+
+        fields = response.json().get("fields")
+        if not isinstance(fields, dict):
+            return None
+
+        data = {key: decode_firestore_value(value) for key, value in fields.items()}
+        return flat_firestore_league_to_topdeck_payload(tid, data, base_tournament)
 
 
 class SupabaseClient:
