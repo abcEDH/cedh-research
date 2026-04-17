@@ -339,7 +339,7 @@ export default async function Home() {
               Competitive Commander analytics
             </h2>
             <p className="text-base text-muted-foreground">
-              Meta shifts, win rates, and player stats for cEDH.
+              Your finger on the pulse of the cEDH meta.
             </p>
           </div>
           <HomeSearchBar />
