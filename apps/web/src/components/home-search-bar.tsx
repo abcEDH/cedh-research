@@ -46,11 +46,7 @@ export function HomeSearchBar() {
   }, []);
 
   useEffect(() => {
-    if (query.trim().length < 2) {
-      setResults([]);
-      setOpen(false);
-      return;
-    }
+    if (query.trim().length < 2) return;
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
@@ -75,7 +71,10 @@ export function HomeSearchBar() {
       ]);
 
       // Discard if a newer request has since been issued
-      if (id !== requestIdRef.current) return;
+      if (id !== requestIdRef.current) {
+        setLoading(false);
+        return;
+      }
 
       const commanders: SearchResult[] = (commanderRes.data ?? []).map((r) => ({
         kind: "commander",
@@ -115,6 +114,7 @@ export function HomeSearchBar() {
   function navigate(result: SearchResult) {
     setOpen(false);
     setQuery("");
+    setResults([]);
     if (result.kind === "commander") {
       router.push(`/commanders/${result.id}`);
     } else {
@@ -157,7 +157,14 @@ export function HomeSearchBar() {
           className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
           placeholder="Search commanders or players…"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => {
+            const val = e.target.value;
+            setQuery(val);
+            if (val.trim().length < 2) {
+              setResults([]);
+              setOpen(false);
+            }
+          }}
           onKeyDown={handleKeyDown}
           onFocus={() => results.length > 0 && setOpen(true)}
           autoComplete="off"
@@ -181,7 +188,7 @@ export function HomeSearchBar() {
           <button
             type="button"
             className="shrink-0 text-muted-foreground hover:text-foreground transition"
-            onClick={() => { setQuery(""); setOpen(false); inputRef.current?.focus(); }}
+            onClick={() => { setQuery(""); setResults([]); setOpen(false); inputRef.current?.focus(); }}
             aria-label="Clear"
           >
             <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
