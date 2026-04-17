@@ -13,6 +13,7 @@ import { normalizeDisplayString } from "@/lib/utils";
 import Link from "next/link";
 import { fetchChampionshipLeaderboard } from "@/lib/topdeck";
 import { buildTopdeckProfileHref } from "@/lib/topdeck-profile";
+import { HomeSearchBar } from "@/components/home-search-bar";
 
 // Force dynamic rendering - fetch fresh data on each request
 export const dynamic = "force-dynamic";
@@ -332,25 +333,26 @@ export default async function Home() {
           </div>
         </header>
 
-        <section className="mt-10">
-          <div className="max-w-3xl space-y-6">
-            <div className="space-y-4">
-              <h2 className="text-4xl font-semibold leading-tight text-foreground md:text-5xl">
-                A clean command layer for competitive Commander analytics.
-              </h2>
-              <p className="text-lg text-muted-foreground">
-                Track meta shifts, conversion rates, and archetype pressure with an interface tuned for fast reads and
-                deep dives.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <Button asChild size="lg">
-                <Link href="/commanders">Open dashboard</Link>
-              </Button>
-              <Button asChild size="lg" variant="outline" className="border-border/70 bg-muted/30">
-                <Link href="/about">View methodology</Link>
-              </Button>
-            </div>
+        <section className="mt-16 flex flex-col items-center gap-8 py-8 text-center">
+          <div className="space-y-3">
+            <h2 className="text-3xl font-semibold leading-tight text-foreground md:text-4xl">
+              Competitive Commander analytics
+            </h2>
+            <p className="text-base text-muted-foreground">
+              Your finger on the pulse of the cEDH meta.
+            </p>
+          </div>
+          <HomeSearchBar />
+          <div className="flex flex-wrap justify-center gap-3">
+            <Button asChild size="sm" variant="outline" className="border-border/70 bg-muted/30">
+              <Link href="/commanders">Commanders</Link>
+            </Button>
+            <Button asChild size="sm" variant="outline" className="border-border/70 bg-muted/30">
+              <Link href="/regional-elo">Leaderboard</Link>
+            </Button>
+            <Button asChild size="sm" variant="outline" className="border-border/70 bg-muted/30">
+              <Link href="/about">Methodology</Link>
+            </Button>
           </div>
         </section>
 
