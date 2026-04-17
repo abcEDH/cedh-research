@@ -14,6 +14,7 @@ import type { MetaShareRow, PlayerCommanderProfile } from "@/lib/meta-prep";
 import { extractTournamentSlug, fetchTournamentBySlug } from "@/lib/topdeck";
 import Link from "next/link";
 import { unstable_cache } from "next/cache";
+import { FieldShareList } from "./field-share-list";
 import { TournamentAnalysisTables } from "./tournament-analysis-tables";
 
 export const dynamic = "force-dynamic";
@@ -212,7 +213,7 @@ async function fetchPrecomputedProfiles(
   const metaTotals = new Map<string, number>();
   const players = topdeckIds.map((topdeckId) => {
     const row = rowsByTopdeckId.get(topdeckId);
-    const commanders = (row?.commander_predictions ?? []).map((commander) => {
+    const commanders = (row?.commander_predictions ?? []).slice(0, 3).map((commander) => {
       metaTotals.set(
         commander.commander,
         (metaTotals.get(commander.commander) ?? 0) + commander.prediction_share
@@ -399,7 +400,7 @@ export default async function TournamentLikelihoodPage({
 
   const weightedMeta = new Map<string, number>();
   for (const player of profiles.players) {
-    for (const commander of player.commanders) {
+    for (const commander of player.commanders.slice(0, 3)) {
       weightedMeta.set(
         commander.commander,
         (weightedMeta.get(commander.commander) ?? 0) + commander.predictionShare
@@ -412,8 +413,7 @@ export default async function TournamentLikelihoodPage({
       fieldShare: standings.length ? expectedPlayers / standings.length : 0,
       expectedPlayers,
     }))
-    .sort((a, b) => b.expectedPlayers - a.expectedPlayers)
-    .slice(0, 15);
+    .sort((a, b) => b.expectedPlayers - a.expectedPlayers);
 
   const actualMeta = new Map<string, number>();
   for (const standing of standings) {
@@ -595,24 +595,7 @@ export default async function TournamentLikelihoodPage({
                     "This estimate weights each player by how concentrated their recent commander usage is."
                   )}
                 </div>
-                <div className="grid gap-3 md:grid-cols-2">
-                  {fieldShareRows.map((row) => (
-                    <div key={row.commander} className="flex items-center justify-between text-sm">
-                      <span className="text-foreground">{row.commander}</span>
-                      <span className="text-primary">
-                        {formatPercent(row.fieldShare)} ·{" "}
-                        {hasTournamentResults ? row.expectedPlayers : row.expectedPlayers.toFixed(1)} players
-                      </span>
-                    </div>
-                  ))}
-                  {!fieldShareRows.length && (
-                    <div className="text-sm text-muted-foreground">
-                      {hasTournamentResults
-                        ? "No submitted decklists found for the players in this event."
-                        : "No known commander history for the players in this event."}
-                    </div>
-                  )}
-                </div>
+                <FieldShareList rows={fieldShareRows} hasTournamentResults={hasTournamentResults} />
               </CardContent>
             </Card>
 
