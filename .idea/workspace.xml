@@ -6,8 +6,10 @@
   <component name="ChangeListManager">
     <list default="true" id="5578a0ab-1e26-4f4d-b242-0ac96e28ea2f" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/web/src/app/regional-elo/player/[topdeckId]/player-stats.ts" beforeDir="false" afterPath="$PROJECT_DIR$/apps/web/src/app/regional-elo/player/[topdeckId]/player-stats.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/web/src/app/tournament-likelihood/field-share-list.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/apps/web/src/app/tournament-likelihood/field-share-list.tsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/apps/web/src/app/tournament-likelihood/page.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/apps/web/src/app/tournament-likelihood/page.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/apps/web/src/app/tournament-likelihood/tournament-analysis-tables.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/apps/web/src/app/tournament-likelihood/tournament-analysis-tables.tsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/player-matchup-algorithm.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/player-matchup-algorithm.md" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

@@ -21,9 +21,7 @@ function formatPercent(value: number) {
 }
 
 export function FieldShareList({ rows, hasTournamentResults }: FieldShareListProps) {
-  const [visibleCount, setVisibleCount] = useState(
-    hasTournamentResults ? rows.length : INITIAL_EXPECTED_ROWS
-  );
+  const [visibleCount, setVisibleCount] = useState(INITIAL_EXPECTED_ROWS);
   const visibleRows = rows.slice(0, visibleCount);
   const hasMore = visibleCount < rows.length;
 
@@ -47,7 +45,7 @@ export function FieldShareList({ rows, hasTournamentResults }: FieldShareListPro
           </div>
         )}
       </div>
-      {!hasTournamentResults && hasMore ? (
+      {hasMore ? (
         <button
           type="button"
           className="mt-4 rounded-md border border-border/70 px-3 py-2 text-sm text-foreground hover:border-primary/40 hover:text-primary"
