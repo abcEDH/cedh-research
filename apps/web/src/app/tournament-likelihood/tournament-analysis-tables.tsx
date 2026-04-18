@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useState } from "react";
+import { startTransition, useDeferredValue, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
@@ -253,41 +253,63 @@ export function TournamentAnalysisTables({
   const [sortDirection, setSortDirection] = useState<SortDirection>(
     defaultDirectionForSort(defaultSortKey)
   );
-  const profileByPlayer = new Map(profiles.map((profile) => [profile.topdeckId, profile]));
-  const eloByPlayer = new Map(
-    eloAttendees
-      .filter((attendee) => attendee.topdeck_id)
-      .map((attendee) => [attendee.topdeck_id as string, attendee])
+  const deferredSearch = useDeferredValue(search);
+  const profileByPlayer = useMemo(
+    () => new Map(profiles.map((profile) => [profile.topdeckId, profile])),
+    [profiles]
   );
-  const query = normalizeSearch(search);
-  const rows = standings.map((standing) => {
-    const elo = eloByPlayer.get(standing.id);
-    return {
-      standing,
-      profile: profileByPlayer.get(standing.id),
-      rating: elo?.rating ?? null,
-      regionKey: elo?.region_key ?? null,
-    };
-  });
-  const filteredRows = query
-    ? rows.filter((row) => {
-        const commanders = row.profile?.commanders.map((commander) => commander.commander).join(" ");
-        return (
-          includesSearch(row.standing.standing, query) ||
-          includesSearch(row.standing.name, query) ||
-          includesSearch(row.standing.username, query) ||
-          includesSearch(row.standing.id, query) ||
-          includesSearch(row.rating, query) ||
-          includesSearch(row.regionKey, query) ||
-          includesSearch(row.standing.actualDeckCommander, query) ||
-          includesSearch(row.standing.points, query) ||
-          includesSearch(formatTournamentRecord(row.standing), query) ||
-          includesSearch(commanders, query)
-        );
-      })
-    : rows;
-  const sortedRows = sortRows(filteredRows, sortKey, sortDirection);
-  const visibleRows = sortedRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const eloByPlayer = useMemo(
+    () =>
+      new Map(
+        eloAttendees
+          .filter((attendee) => attendee.topdeck_id)
+          .map((attendee) => [attendee.topdeck_id as string, attendee])
+      ),
+    [eloAttendees]
+  );
+  const rows = useMemo(
+    () =>
+      standings.map((standing) => {
+        const elo = eloByPlayer.get(standing.id);
+        return {
+          standing,
+          profile: profileByPlayer.get(standing.id),
+          rating: elo?.rating ?? null,
+          regionKey: elo?.region_key ?? null,
+        };
+      }),
+    [eloByPlayer, profileByPlayer, standings]
+  );
+  const query = normalizeSearch(deferredSearch);
+  const filteredRows = useMemo(
+    () =>
+      query
+        ? rows.filter((row) => {
+            const commanders = row.profile?.commanders.map((commander) => commander.commander).join(" ");
+            return (
+              includesSearch(row.standing.standing, query) ||
+              includesSearch(row.standing.name, query) ||
+              includesSearch(row.standing.username, query) ||
+              includesSearch(row.standing.id, query) ||
+              includesSearch(row.rating, query) ||
+              includesSearch(row.regionKey, query) ||
+              includesSearch(row.standing.actualDeckCommander, query) ||
+              includesSearch(row.standing.points, query) ||
+              includesSearch(formatTournamentRecord(row.standing), query) ||
+              includesSearch(commanders, query)
+            );
+          })
+        : rows,
+    [query, rows]
+  );
+  const sortedRows = useMemo(
+    () => sortRows(filteredRows, sortKey, sortDirection),
+    [filteredRows, sortDirection, sortKey]
+  );
+  const visibleRows = useMemo(
+    () => sortedRows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [page, sortedRows]
+  );
 
   function handleSort(column: SortKey) {
     startTransition(() => {
@@ -319,8 +341,11 @@ export function TournamentAnalysisTables({
           <input
             className="knd-input"
             onChange={(event) => {
-              setSearch(event.target.value);
-              setPage(1);
+              const value = event.target.value;
+              setSearch(value);
+              startTransition(() => {
+                setPage(1);
+              });
             }}
             placeholder={
               showActualDecks
