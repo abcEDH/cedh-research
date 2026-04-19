@@ -69,7 +69,8 @@ export type PlayerLogSummary = {
   worstCommanderMatchup: MatchupInsight | null;
 };
 
-const MATCHUP_PRIOR_GAMES = 20;
+const OPPONENT_MATCHUP_PRIOR_GAMES = 60;
+const COMMANDER_MATCHUP_PRIOR_GAMES = 100;
 const DRAW_SCORE = 0.2;
 
 function scoreRate(wins: number, draws: number, games: number) {
@@ -82,7 +83,7 @@ function posteriorScore(
   draws: number,
   games: number,
   baselineScore: number,
-  priorGames = MATCHUP_PRIOR_GAMES
+  priorGames: number
 ) {
   return (wins + draws * DRAW_SCORE + baselineScore * priorGames) / (games + priorGames);
 }
@@ -92,9 +93,10 @@ function buildMatchupInsight(
   baselineScore: number,
   label: string,
   subtitle: string,
+  priorGames: number,
   href?: string
 ): MatchupInsight {
-  const posterior = posteriorScore(record.wins, record.draws, record.games, baselineScore);
+  const posterior = posteriorScore(record.wins, record.draws, record.games, baselineScore, priorGames);
   return {
     label,
     subtitle,
@@ -109,10 +111,17 @@ function buildMatchupInsight(
   };
 }
 
+function isKnownMatchupLabel(label: string) {
+  const normalized = label.trim().toLowerCase();
+  return normalized.length > 0 && normalized !== "unknown" && normalized !== "unknown player";
+}
+
 function selectBestAndWorstMatchups(
   insights: MatchupInsight[]
 ): { best: MatchupInsight | null; worst: MatchupInsight | null } {
-  const nonEmpty = insights.filter((insight) => insight.games > 0);
+  const nonEmpty = insights.filter(
+    (insight) => insight.games > 0 && isKnownMatchupLabel(insight.label)
+  );
   if (nonEmpty.length === 0) {
     return { best: null, worst: null };
   }
@@ -200,6 +209,7 @@ export function summarizePlayerLogs(logs: PlayerGameLog[]): PlayerLogSummary {
       baselineScore,
       record.opponentName,
       "Opponent",
+      OPPONENT_MATCHUP_PRIOR_GAMES,
       record.opponentTopdeckId ? `/regional-elo/player/${record.opponentTopdeckId}` : undefined
     )
   );
@@ -208,7 +218,8 @@ export function summarizePlayerLogs(logs: PlayerGameLog[]): PlayerLogSummary {
       record,
       baselineScore,
       record.commanderName,
-      "Commander"
+      "Commander",
+      COMMANDER_MATCHUP_PRIOR_GAMES
     )
   );
   const { best: bestOpponentMatchup, worst: worstOpponentMatchup } =

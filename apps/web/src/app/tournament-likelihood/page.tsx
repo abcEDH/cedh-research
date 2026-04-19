@@ -426,8 +426,7 @@ export default async function TournamentLikelihoodPage({
       fieldShare: standings.length ? players / standings.length : 0,
       expectedPlayers: players,
     }))
-    .sort((a, b) => b.expectedPlayers - a.expectedPlayers)
-    .slice(0, 15);
+    .sort((a, b) => b.expectedPlayers - a.expectedPlayers);
 
   const fieldShareRows = hasTournamentResults ? actualMetaRows : weightedMetaRows;
   const topCommander = fieldShareRows[0];
