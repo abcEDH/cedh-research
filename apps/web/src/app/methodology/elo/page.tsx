@@ -46,7 +46,7 @@ export default function EloMethodologyPage() {
               <code>1/n</code> (draw with n players)
             </p>
             <p>
-              Update rule: <code>R&#39; = R + K × (S - E)</code>, with <code>K = 30</code> in current
+              Update rule: <code>R&#39; = R + K × (S - E)</code>, with <code>K = 48</code> in current
               implementation.
             </p>
           </CardContent>

@@ -15,6 +15,8 @@ type LeaderboardRow = {
   losses: number;
   last_game_date: string | null;
   rank: number;
+  hidden_rating?: number;
+  topdeck_elo?: number | null;
 };
 
 type LatestCommanderRow = {
@@ -90,7 +92,7 @@ export function RegionalLeaderboardTable({
             <tr>
               <th className="px-2 py-3">Rank</th>
               <th className="px-2 py-3">Player</th>
-              <th className="px-2 py-3">Elo</th>
+              <th className="px-2 py-3">TopDeck Elo</th>
               <th className="px-2 py-3">Active Commander</th>
               <th className="px-2 py-3">Games</th>
               <th className="px-2 py-3">W-L-D</th>
@@ -125,7 +127,9 @@ export function RegionalLeaderboardTable({
                       <div className="font-medium text-foreground">{row.player_name}</div>
                     )}
                   </td>
-                  <td className="px-2 py-3 font-semibold text-primary">{Math.round(row.rating)}</td>
+                  <td className="px-2 py-3 font-semibold text-primary">
+                    {row.topdeck_elo == null ? "-" : Math.round(row.rating)}
+                  </td>
                   <td className="px-2 py-3 text-xs text-muted-foreground">
                     <div className="truncate">
                       {latestCommander?.active_commander_decklist_url && latestCommander?.active_commander ? (
@@ -169,7 +173,7 @@ export function RegionalLeaderboardTable({
             {leaderboard.length === 0 && (
               <tr>
                 <td colSpan={7} className="py-6 text-center text-sm text-muted-foreground">
-                  No Global Elo data yet. Run the Global Elo job to populate this leaderboard.
+                  No TopDeck Elo data available for this view.
                 </td>
               </tr>
             )}

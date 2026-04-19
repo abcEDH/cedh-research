@@ -12,6 +12,7 @@ import {
 } from "@/lib/meta-prep";
 import type { MetaShareRow, PlayerCommanderProfile } from "@/lib/meta-prep";
 import { extractTournamentSlug, fetchTournamentBySlug } from "@/lib/topdeck";
+import { fetchTopdeckEloMap } from "@/lib/topdeck-elo";
 import Link from "next/link";
 import { unstable_cache } from "next/cache";
 import { FieldShareList } from "./field-share-list";
@@ -38,7 +39,9 @@ type TournamentStanding = {
 type EloRow = {
   topdeck_id: string | null;
   player_name: string;
-  rating: number;
+  rating: number | null;
+  hidden_rating?: number;
+  topdeck_elo?: number | null;
   games_played: number;
   region_key: string;
 };
@@ -143,15 +146,28 @@ async function fetchBestEloRows(topdeckIds: string[]): Promise<EloRow[]> {
     throw new Error(`Error fetching Elo rows: ${rows.error.message}`);
   }
 
-  return ((rows.data ?? []) as RegionalLeaderboardQueryRow[])
-    .map((row) => ({
-      topdeck_id: row.topdeck_id,
-      player_name: row.player_name,
-      rating: row.rating,
-      games_played: row.games_played,
-      region_key: row.primary_region_key ?? row.region_key,
-    }))
-    .sort((a, b) => b.rating - a.rating);
+  const topdeckEloById = await fetchTopdeckEloMap(topdeckIds);
+  const rowsByTopdeckId = new Map(
+    ((rows.data ?? []) as RegionalLeaderboardQueryRow[])
+      .filter((row) => row.topdeck_id)
+      .map((row) => [row.topdeck_id as string, row])
+  );
+
+  return Array.from(new Set(topdeckIds))
+    .map((topdeckId) => {
+      const row = rowsByTopdeckId.get(topdeckId);
+      const topdeckElo = topdeckEloById.get(topdeckId) ?? null;
+      return {
+        topdeck_id: topdeckId,
+        player_name: row?.player_name ?? "",
+        rating: topdeckElo,
+        hidden_rating: row?.rating,
+        topdeck_elo: topdeckElo,
+        games_played: row?.games_played ?? 0,
+        region_key: row?.primary_region_key ?? row?.region_key ?? "",
+      };
+    })
+    .sort((a, b) => (b.rating ?? -Infinity) - (a.rating ?? -Infinity));
 }
 
 async function fetchLatestPlayerNames(topdeckIds: string[]): Promise<Map<string, string>> {
@@ -260,7 +276,6 @@ type TournamentAnalysis = {
   };
   standings: TournamentStanding[];
   profiles: { players: PlayerCommanderProfile[]; metaShare: MetaShareRow[] };
-  eloRows: EloRow[];
   hasRounds: boolean;
 };
 
@@ -277,19 +292,14 @@ const getCachedTournamentAnalysis = unstable_cache(
     const lookbackStart = lookbackStartDate(lookbackMonths, referenceDate);
     const fallbackLookbackStart = lookbackStartDate(COMMANDER_FALLBACK_LOOKBACK_MONTHS, referenceDate);
     const lookbackEnd = anchorToStartDate ? referenceDate.toISOString().slice(0, 10) : undefined;
-    const [precomputedProfiles, decklistRows, eloRows, latestPlayerNames] = await Promise.all([
+    const [precomputedProfiles, decklistRows, latestPlayerNames] = await Promise.all([
       anchorToStartDate ? Promise.resolve(null) : fetchPrecomputedProfiles(topdeckIds),
       getCommanderDecklistRows(topdeckIds, lookbackEnd),
-      fetchBestEloRows(topdeckIds),
       fetchLatestPlayerNames(topdeckIds),
     ]);
     const latestStandings = standings.map((standing) => ({
       ...standing,
       name: latestPlayerNames.get(standing.id) ?? standing.name,
-    }));
-    const latestEloRows = eloRows.map((row) => ({
-      ...row,
-      player_name: row.topdeck_id ? latestPlayerNames.get(row.topdeck_id) ?? row.player_name : row.player_name,
     }));
     if (precomputedProfiles) {
       return {
@@ -299,7 +309,6 @@ const getCachedTournamentAnalysis = unstable_cache(
           attachLatestDecklistUrls(precomputedProfiles, decklistRows),
           latestPlayerNames
         ),
-        eloRows: latestEloRows,
         hasRounds: (response.rounds ?? []).length > 0,
       };
     }
@@ -337,11 +346,10 @@ const getCachedTournamentAnalysis = unstable_cache(
         attachLatestDecklistUrls(profiles, decklistRows),
         latestPlayerNames
       ),
-      eloRows: latestEloRows,
       hasRounds: (response.rounds ?? []).length > 0,
     };
   },
-  ["tournament-likelihood-analysis-v21"],
+  ["tournament-likelihood-analysis-v22"],
   { revalidate: 60 * 15 }
 );
 
@@ -380,7 +388,11 @@ export default async function TournamentLikelihoodPage({
       tournament = analysis.tournament;
       standings = analysis.standings;
       profiles = analysis.profiles;
-      eloRows = analysis.eloRows;
+      const latestStandingNameById = new Map(standings.map((standing) => [standing.id, standing.name]));
+      eloRows = (await fetchBestEloRows(standings.map((standing) => standing.id).filter(Boolean))).map((row) => ({
+        ...row,
+        player_name: row.topdeck_id ? latestStandingNameById.get(row.topdeck_id) ?? row.player_name : row.player_name,
+      }));
       hasRounds = analysis.hasRounds;
     } catch (error) {
       errorMessage = (error as Error).message;

@@ -48,7 +48,9 @@ type TournamentStanding = {
 type EloAttendee = {
   topdeck_id: string | null;
   player_name: string;
-  rating: number;
+  rating: number | null;
+  hidden_rating?: number;
+  topdeck_elo?: number | null;
   region_key: string;
   standing?: TournamentStanding;
   profile?: PlayerCommanderProfile;
@@ -333,8 +335,8 @@ export function TournamentAnalysisTables({
       <CardContent>
         <div className="mb-4 text-sm text-muted-foreground">
           {showActualDecks
-            ? "Players in the field with tournament standing, best global Elo, and commander data."
-            : "Players in the field with best global Elo and recent commander forecast."}
+            ? "Players in the field with tournament standing, TopDeck Elo, and commander data."
+            : "Players in the field with TopDeck Elo and recent commander forecast."}
         </div>
         <label className="mb-4 flex flex-col gap-2 text-sm text-muted-foreground">
           Search attendees
@@ -349,10 +351,10 @@ export function TournamentAnalysisTables({
             }}
             placeholder={
               showActualDecks
-                ? "Standing, player, Elo, region, record, profile ID, or commander"
+                ? "Standing, player, TopDeck Elo, region, record, profile ID, or commander"
                 : showTournamentRecord
-                  ? "Player, Elo, region, record, profile ID, or commander"
-                  : "Player, Elo, region, profile ID, or commander"
+                  ? "Player, TopDeck Elo, region, record, profile ID, or commander"
+                  : "Player, TopDeck Elo, region, profile ID, or commander"
             }
             type="search"
             value={search}
@@ -376,7 +378,7 @@ export function TournamentAnalysisTables({
                   </SortHeader>
                 )}
                 <SortHeader column="elo" direction={sortDirection} onSort={handleSort} sortKey={sortKey}>
-                  Elo
+                  TopDeck Elo
                 </SortHeader>
                 <SortHeader column="homeRegion" direction={sortDirection} onSort={handleSort} sortKey={sortKey}>
                   Region
