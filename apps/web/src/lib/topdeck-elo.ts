@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase";
 
 const TOPDECK_ELO_CHUNK_SIZE = 250;
+const TOPDECK_ELO_PAGE_SIZE = 1000;
 
 type TopdeckEloRow = {
   uid: string | null;
@@ -30,6 +31,26 @@ export async function fetchTopdeckEloMap(topdeckIds: string[]) {
         eloByTopdeckId.set(row.uid, row.elo);
       }
     }
+  }
+  return eloByTopdeckId;
+}
+
+export async function fetchAllTopdeckEloMap() {
+  const eloByTopdeckId = new Map<string, number>();
+  for (let offset = 0; ; offset += TOPDECK_ELO_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("topdeck_player_elos")
+      .select("uid, elo")
+      .order("uid", { ascending: true })
+      .range(offset, offset + TOPDECK_ELO_PAGE_SIZE - 1);
+
+    if (error || !data?.length) break;
+    for (const row of data as TopdeckEloRow[]) {
+      if (row.uid && typeof row.elo === "number") {
+        eloByTopdeckId.set(row.uid, row.elo);
+      }
+    }
+    if (data.length < TOPDECK_ELO_PAGE_SIZE) break;
   }
   return eloByTopdeckId;
 }
