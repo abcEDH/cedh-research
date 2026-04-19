@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buildProfiles, selectCommanderForecastRows, type CommanderUsageRow } from "@/lib/meta-prep";
 import { supabase } from "@/lib/supabase";
 import { fetchChampionshipLeaderboard, fetchTopDeckProfileStats } from "@/lib/topdeck";
+import { fetchTopdeckElo } from "@/lib/topdeck-elo";
 import { buildTopdeckProfileHref } from "@/lib/topdeck-profile";
 import { inferCountryForRegion } from "@/lib/region-countries";
 import { OpponentRecordsTable } from "./opponent-records-table";
@@ -1170,8 +1171,18 @@ export default async function RegionalPlayerPage({
     );
   }
 
-  const [globalSnapshot, globalEloRank, regionalRanks, profileSummary, entries, commanderUsageRows, fetchedAchievementRows] = await Promise.all([
+  const [
+    globalSnapshot,
+    topdeckElo,
+    globalEloRank,
+    regionalRanks,
+    profileSummary,
+    entries,
+    commanderUsageRows,
+    fetchedAchievementRows,
+  ] = await Promise.all([
     fetchGlobalSnapshot(topdeckId),
+    fetchTopdeckElo(topdeckId),
     fetchGlobalEloRank(player.id),
     fetchRegionalRanks(player.id),
     fetchPlayerProfileSummary(player.id),
@@ -1452,7 +1463,7 @@ export default async function RegionalPlayerPage({
             </div>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-8">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-9">
             <Card className="knd-panel">
               <CardHeader>
                 <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
@@ -1562,7 +1573,17 @@ export default async function RegionalPlayerPage({
             <Card className="knd-panel">
               <CardHeader>
                 <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Elo
+                  TopDeck Elo
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-2xl font-semibold text-foreground">
+                {topdeckElo === null ? "—" : Math.round(topdeckElo)}
+              </CardContent>
+            </Card>
+            <Card className="knd-panel">
+              <CardHeader>
+                <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                  Hidden Elo
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-2xl font-semibold text-foreground">

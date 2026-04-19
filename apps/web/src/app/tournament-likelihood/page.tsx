@@ -12,6 +12,7 @@ import {
 } from "@/lib/meta-prep";
 import type { MetaShareRow, PlayerCommanderProfile } from "@/lib/meta-prep";
 import { extractTournamentSlug, fetchTournamentBySlug } from "@/lib/topdeck";
+import { fetchTopdeckEloMap } from "@/lib/topdeck-elo";
 import Link from "next/link";
 import { unstable_cache } from "next/cache";
 import { FieldShareList } from "./field-share-list";
@@ -38,7 +39,9 @@ type TournamentStanding = {
 type EloRow = {
   topdeck_id: string | null;
   player_name: string;
-  rating: number;
+  rating: number | null;
+  hidden_rating?: number;
+  topdeck_elo?: number | null;
   games_played: number;
   region_key: string;
 };
@@ -143,15 +146,19 @@ async function fetchBestEloRows(topdeckIds: string[]): Promise<EloRow[]> {
     throw new Error(`Error fetching Elo rows: ${rows.error.message}`);
   }
 
+  const topdeckEloById = await fetchTopdeckEloMap(topdeckIds);
+
   return ((rows.data ?? []) as RegionalLeaderboardQueryRow[])
     .map((row) => ({
       topdeck_id: row.topdeck_id,
       player_name: row.player_name,
-      rating: row.rating,
+      rating: row.topdeck_id ? topdeckEloById.get(row.topdeck_id) ?? null : null,
+      hidden_rating: row.rating,
+      topdeck_elo: row.topdeck_id ? topdeckEloById.get(row.topdeck_id) ?? null : null,
       games_played: row.games_played,
       region_key: row.primary_region_key ?? row.region_key,
     }))
-    .sort((a, b) => b.rating - a.rating);
+    .sort((a, b) => (b.rating ?? -Infinity) - (a.rating ?? -Infinity));
 }
 
 async function fetchLatestPlayerNames(topdeckIds: string[]): Promise<Map<string, string>> {

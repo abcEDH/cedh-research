@@ -18,7 +18,7 @@ import requests
 
 from ingest import SupabaseClient, load_local_env
 
-K_FACTOR = 30
+K_FACTOR = 48
 DEFAULT_RATING = 1500.0
 ELO_BASE = 2
 ELO_DIVISOR = 200

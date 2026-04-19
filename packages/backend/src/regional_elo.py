@@ -17,7 +17,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
 
 from ingest import SupabaseClient
 
-K_FACTOR = 30
+K_FACTOR = 48
 DEFAULT_RATING = 1500.0
 ELO_BASE = 2
 ELO_DIVISOR = 200

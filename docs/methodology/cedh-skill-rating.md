@@ -45,7 +45,7 @@ This is a softmax-style model (logit -> exponent -> normalized probability).
 
 Where:
 
-- `K` is learning rate (`30` in our current implementation)
+- `K` is learning rate (`48` in our current implementation)
 - `S_A` is actual result (`1` win, `0` loss, `1/n` draw in n-player pod)
 - `E_A` is expected result:
 
@@ -93,7 +93,7 @@ Suggested policy: keep games in ratings for stability, but remove cheaters from 
 Our code follows the equity-based Elo variant above and currently uses:
 
 - `Initial rating = 1500`
-- `K = 30`
+- `K = 48`
 - `Equity = 2^(R/200)`
 - `Draw = 1/n`
 - A single global rating computed from all included games

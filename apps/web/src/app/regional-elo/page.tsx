@@ -5,6 +5,7 @@ import { buildProfiles, getCommanderUsageRows, selectCommanderForecastRows } fro
 import { RegionalLeaderboardTable } from "./regional-leaderboard-table";
 import { RegionSelector } from "./region-selector";
 import { inferCountryForRegion } from "@/lib/region-countries";
+import { fetchTopdeckEloMap } from "@/lib/topdeck-elo";
 
 export const dynamic = "force-dynamic";
 const GLOBAL_REGION_KEY = "ALL";
@@ -119,6 +120,8 @@ type LeaderboardRow = {
   losses: number;
   last_game_date: string | null;
   rank: number;
+  hidden_rating?: number;
+  topdeck_elo?: number | null;
 };
 
 type LatestCommanderRow = {
@@ -388,6 +391,32 @@ async function applyGlobalLeaderboardTotals(
   }
 
   return rows;
+}
+
+async function applyTopdeckElo(rows: LeaderboardRow[]): Promise<LeaderboardRow[]> {
+  const topdeckIds = rows
+    .map((row) => row.topdeck_id)
+    .filter((value): value is string => Boolean(value));
+  if (topdeckIds.length === 0) return rows;
+
+  const topdeckEloById = await fetchTopdeckEloMap(topdeckIds);
+  if (topdeckEloById.size === 0) {
+    return rows.map((row) => ({
+      ...row,
+      hidden_rating: row.rating,
+      topdeck_elo: null,
+    }));
+  }
+
+  return rows.map((row) => {
+    const topdeckElo = row.topdeck_id ? topdeckEloById.get(row.topdeck_id) : undefined;
+    return {
+      ...row,
+      hidden_rating: row.rating,
+      topdeck_elo: topdeckElo ?? null,
+      rating: topdeckElo ?? row.rating,
+    };
+  });
 }
 
 async function fetchEventLogTotals(playerIds: string[]) {
@@ -767,7 +796,7 @@ export default async function RegionalEloPage({
                 )
           ).rows
         : [];
-  const leaderboard = leaderboardRows;
+  const leaderboard = await applyTopdeckElo(leaderboardRows);
 
   const latestByPlayer = await fetchLatestCommanders(leaderboard);
   const latestByPlayerRecord = Object.fromEntries(latestByPlayer.entries());
@@ -784,7 +813,7 @@ export default async function RegionalEloPage({
         <header className="flex flex-col gap-6 border-b border-border/60 pb-8">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="knd-chip">Global Elo</p>
+              <p className="knd-chip">TopDeck Elo</p>
               <h1 className="mt-4 text-3xl font-semibold text-foreground md:text-4xl">
                 Global Leaderboard
               </h1>
@@ -802,8 +831,8 @@ export default async function RegionalEloPage({
             </nav>
           </div>
           <p className="max-w-4xl text-base text-muted-foreground">
-            Elo is computed globally across all included games. Country and state views are
-            filtered slices of that global rating set.
+            TopDeck Elo is shown for players with a published TopDeck Elo snapshot. Country and
+            state views are filtered slices of the local active player set.
           </p>
           <p className="text-sm text-muted-foreground">
             Rating model details:{" "}
