@@ -6,6 +6,8 @@ This PR switches the project Elo learning rate to `K=48`, refreshes the Supabase
 
 Follow-up changes in this PR also make TopDeck Elo the sort source wherever the UI is sorting by Elo, and keep Tournament Prep Elo reads fresh instead of serving cached Elo rows.
 
+This PR also reduces player-profile load time by preferring precomputed event logs, caching heavy per-player reads, and avoiding full in-memory active-leaderboard sorts during TopDeck Elo rank lookups.
+
 Changed files in PR 109:
 
 - [page.tsx](/Users/alexanderlien/Documents/GitHub/cedh-research/apps/web/src/app/methodology/elo/page.tsx)
@@ -138,6 +140,21 @@ Top five app-computed ratings after the rebuild:
 - Expands the profile stat grid to fit the additional Elo card.
 - Shows `-` when no TopDeck Elo is available for the player.
 - Recomputes displayed global, country, and state ranks from TopDeck Elo ordering instead of using the precomputed hidden-Elo rank.
+- Prefers precomputed player event logs as the canonical game-history source and only falls back to raw-history reconstruction when event logs are unavailable.
+- Caches expensive per-player reads with `unstable_cache`, including:
+  - global snapshot
+  - global rank
+  - country rank
+  - regional rank list
+  - profile summary
+  - achievements
+  - commander usage
+  - event logs
+- Reworks TopDeck Elo rank lookup to walk the published `topdeck_player_elos` table in Elo order and probe matching active leaderboard rows, instead of loading and sorting the full active leaderboard in memory for each profile request.
+- Measured local load time for `CCIQroaCHHQi7EELyNXlHiHQiQy1`:
+  - before optimization: about `43.7s`
+  - after cold request: about `19.4s`
+  - after warm cached request: about `0.45s`
 
 ## Tournament Prep
 
@@ -167,6 +184,7 @@ npm run build --workspace apps/web
 - Build passed.
 - Local smoke checks:
   - `http://localhost:3000/regional-elo` returned `200` and displayed rows sorted by TopDeck Elo.
+  - `http://localhost:3000/regional-elo/player/CCIQroaCHHQi7EELyNXlHiHQiQy1` returned `200` before and after the profile-performance changes.
   - `http://localhost:3000/tournament-likelihood?tournament=https%3A%2F%2Ftopdeck.gg%2Fbracket%2Fthe-quest-part-1` returned `200` and displayed current TopDeck Elo values from Supabase.
 - Verified backend syntax with:
 
