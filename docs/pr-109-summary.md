@@ -4,6 +4,8 @@
 
 This PR switches the project Elo learning rate to `K=48`, refreshes the Supabase-derived Elo tables with that value, and changes user-facing Elo displays to use the published TopDeck Elo snapshot where available. The app-computed Elo remains available on player profiles as Hidden Elo.
 
+Follow-up changes in this PR also make TopDeck Elo the sort source wherever the UI is sorting by Elo, and keep Tournament Prep Elo reads fresh instead of serving cached Elo rows.
+
 Changed files in PR 109:
 
 - [page.tsx](/Users/alexanderlien/Documents/GitHub/cedh-research/apps/web/src/app/methodology/elo/page.tsx)
@@ -113,6 +115,7 @@ Top five app-computed ratings after the rebuild:
 
 - Adds [topdeck-elo.ts](/Users/alexanderlien/Documents/GitHub/cedh-research/apps/web/src/lib/topdeck-elo.ts) to read published Elo values from the Supabase `topdeck_player_elos` table.
 - Supports single-player and chunked multi-player lookups by TopDeck `uid`.
+- Supports paged full-table reads for large leaderboard and rank sorts.
 - Deduplicates requested IDs and chunks multi-player reads in batches of `250`.
 - The table is expected to contain `name`, `profileImage`, `elo`, and `uid`.
 - Confirmed the table is readable through the app's Supabase client with `9,704` available TopDeck Elo rows.
@@ -123,7 +126,10 @@ Top five app-computed ratings after the rebuild:
 - Overlays each displayed leaderboard row with the matching TopDeck Elo value when available.
 - Preserves the app-computed rating on the row as `hidden_rating`.
 - Displays `-` for players without a published TopDeck Elo value.
-- Keeps country and state views tied to the local active player set while using TopDeck Elo as the displayed Elo number.
+- Sorts visible leaderboard pages by TopDeck Elo instead of the app-computed hidden Elo.
+- Applies pagination after TopDeck Elo sorting so page order matches the displayed Elo values.
+- Keeps country and state views tied to the local active player set while using TopDeck Elo as the displayed Elo number and sort key.
+- Adds a faster TopDeck-sorted active leaderboard path for global and state views so normal leaderboard pages do not need to fully sort every active row in memory.
 
 ## Player Profiles
 
@@ -131,6 +137,7 @@ Top five app-computed ratings after the rebuild:
 - Adds a Hidden Elo stat card for the app-computed rating from the local Elo rebuild.
 - Expands the profile stat grid to fit the additional Elo card.
 - Shows `-` when no TopDeck Elo is available for the player.
+- Recomputes displayed global, country, and state ranks from TopDeck Elo ordering instead of using the precomputed hidden-Elo rank.
 
 ## Tournament Prep
 
@@ -139,6 +146,12 @@ Top five app-computed ratings after the rebuild:
 - Uses TopDeck Elo as the visible rating when available.
 - Sorts available Elo rows by TopDeck Elo with missing TopDeck values last.
 - Updates tournament analysis table labels and empty states from Global Elo or Best Elo to TopDeck Elo.
+- Fetches Tournament Prep Elo rows outside the cached tournament analysis payload so updated `topdeck_player_elos` values are reflected on each request.
+- Builds Tournament Prep Elo rows from every tournament attendee TopDeck ID, so players with a published TopDeck Elo can display even when they do not have a local hidden-Elo leaderboard row.
+- Verified `the-quest-part-1` Tournament Prep page against Supabase `topdeck_player_elos` values:
+  - Tino: displayed `2034`, Supabase `2033.6366158163835`
+  - Evan Pierce: displayed `1954`, Supabase `1954.3983787363259`
+  - Alex Lien: displayed `1899`, Supabase `1899.4242922873698`
 
 ## Validation
 
@@ -152,6 +165,9 @@ npm run build --workspace apps/web
 
 - Lint passed with existing warnings only.
 - Build passed.
+- Local smoke checks:
+  - `http://localhost:3000/regional-elo` returned `200` and displayed rows sorted by TopDeck Elo.
+  - `http://localhost:3000/tournament-likelihood?tournament=https%3A%2F%2Ftopdeck.gg%2Fbracket%2Fthe-quest-part-1` returned `200` and displayed current TopDeck Elo values from Supabase.
 - Verified backend syntax with:
 
 ```bash
