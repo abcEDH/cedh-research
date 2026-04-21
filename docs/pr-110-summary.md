@@ -10,6 +10,8 @@ The main fixes are:
 - add a reusable rebuild for `player_commander_profiles`
 - add a repair script for `Unknown Commander` entries that can now be re-parsed from stored decklists
 - add canonical partner-order normalization so repaired commander pairs match existing project ordering
+- prune stale `player_commander_profiles` rows that no longer have any qualifying known-commander history
+- normalize escaped apostrophes in commander names so rows like `Kraum, Ludevic\\'s Opus / Tymna the Weaver` merge into their canonical forms
 - add a sweep script that can merge duplicate partner-pair commander rows back into the canonical rows
 - invalidate the player-profile and Tournament Prep caches so repaired data appears in the UI
 - add a skip-existing ingestion mode so large backfills do not waste time reprocessing tournaments already in Supabase
@@ -84,6 +86,7 @@ GitHub source checked against the live PR diff:
   - `latest_decklist_url`
 - Supports direct Postgres reads through `SUPABASE_DB_URL` and falls back to Supabase REST when direct DB access is unavailable.
 - Uses keyset pagination on `tournament_entries.id` for the REST path so the rebuild can complete on large datasets.
+- Deletes stale `player_commander_profiles` rows before upserting the rebuilt set, so old profile rows are removed when a player no longer has any qualifying known-commander source rows.
 - Upserts rebuilt rows into `player_commander_profiles` on `player_id`.
 
 ## Unknown Commander Repair
@@ -116,6 +119,8 @@ GitHub source checked against the live PR diff:
   - `regional-player-event-logs-v1` -> `regional-player-event-logs-v2`
 - Bumps the Tournament Prep analysis cache key in [page.tsx](/Users/alexanderlien/Documents/GitHub/cedh-research/apps/web/src/app/tournament-likelihood/page.tsx):
   - `tournament-likelihood-analysis-v22` -> `tournament-likelihood-analysis-v25`
+- Adds a follow-up Tournament Prep cache bump after the escaped-name cleanup:
+  - `tournament-likelihood-analysis-v25` -> `tournament-likelihood-analysis-v26`
 
 These cache-key changes force refreshed reads after repairing commander rows and rebuilding `player_commander_profiles`.
 
@@ -129,17 +134,29 @@ Using the scripts in this PR:
 - merged `9` duplicate partner commander rows into their canonical rows
 - repointed affected `tournament_entries` to the canonical commander IDs
 - rebuilt `player_commander_profiles` again after the partner-order merge
+- fixed the rebuild process so it deletes stale profile rows instead of leaving outdated commander summaries behind
+- deleted `336` stale `player_commander_profiles` rows during the pruning rebuild
+- normalized commander names containing escaped apostrophes and merged them into clean canonical rows
+- updated `5` escaped-name commander rows in place
+- merged `17` escaped-name commander rows into existing clean commander rows
+- rebuilt `player_commander_profiles` again after the escaped-name cleanup
 
 Verified outcomes:
 
 - duplicate partner-pair commander rows remaining in Supabase: `0`
 - canonical rows such as `Rograkh, Son of Rohgahh / Ishai, Ojutai Dragonspeaker` and `Tymna the Weaver / Thrasios, Triton Hero` remain
 - non-canonical duplicates such as `Ishai, Ojutai Dragonspeaker / Rograkh, Son of Rohgahh` and `Thrasios, Triton Hero / Tymna the Weaver` were removed
+- commander rows with escaped apostrophes remaining in Supabase: `0`
 - Sam Black (`8v3PyNSil7X6PhFayKUBFa60x973`) now resolves correctly in `player_commander_profiles` with:
   - `active_commander = Rograkh, Son of Rohgahh / Thrasios, Triton Hero`
   - `latest_commander = Rograkh, Son of Rohgahh / Thrasios, Triton Hero`
   - `latest_commander_date = 2026-04-18`
   - `Misplay on the Lake` reflected as the latest Rog/Thras decklist
+- Eric V - Tap For Hope (`ihW7aupIQ5TV7qfJl9vJPHJjQXi1`) now resolves correctly with:
+  - recent `tournament_entries` using `Tymna the Weaver / Kraum, Ludevic's Opus`
+  - `player_commander_profiles.active_commander = Tymna the Weaver / Kraum, Ludevic's Opus`
+  - `player_commander_profiles.latest_commander = Tymna the Weaver / Kraum, Ludevic's Opus`
+  - the prior escaped-name variant removed from source data
 
 ## Ingestion Backfill Follow-Up
 
@@ -176,4 +193,6 @@ Operational checks completed:
 
 - `repair_unknown_commanders_from_decklists.py` completed successfully after the ingest and lookup fixes
 - `rebuild_player_commander_profiles.py` completed successfully and upserted `26,965` profile rows from `110,294` qualifying usage rows
+- the pruning rebuild deleted `336` stale profile rows before the upsert
 - partner-order duplicate check after the sweep returned `0` duplicate partner-pair commander keys
+- escaped-apostrophe commander cleanup completed with `5` direct updates and `17` merges
