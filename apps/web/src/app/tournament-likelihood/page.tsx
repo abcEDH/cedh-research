@@ -349,7 +349,7 @@ const getCachedTournamentAnalysis = unstable_cache(
       hasRounds: (response.rounds ?? []).length > 0,
     };
   },
-  ["tournament-likelihood-analysis-v25"],
+  ["tournament-likelihood-analysis-v26"],
   { revalidate: 60 * 15 }
 );
 
