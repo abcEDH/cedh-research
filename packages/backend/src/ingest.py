@@ -148,7 +148,8 @@ def clean_commander_card_name(name: str) -> str:
     """Strip set indicator suffix and normalize commander card names."""
     if not name:
         return ""
-    return name.split("[")[0].strip()
+    cleaned = name.replace("\\'", "'").replace('\\"', '"')
+    return cleaned.split("[")[0].strip()
 
 
 PARTNER_ORDER_OVERRIDES: dict[tuple[str, str], tuple[str, str]] = {

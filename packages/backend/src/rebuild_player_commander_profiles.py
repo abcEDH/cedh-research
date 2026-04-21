@@ -10,6 +10,7 @@ from collections import defaultdict
 from datetime import date, datetime, timezone
 from typing import Any
 
+import requests
 from dateutil import parser as date_parser
 
 from ingest import SUPABASE_REST_BASE, SupabaseClient, load_local_env
@@ -75,6 +76,48 @@ def is_known_commander(commander_name: str | None) -> bool:
 
 def chunked(values: list[Any], size: int) -> list[list[Any]]:
     return [values[index : index + size] for index in range(0, len(values), size)]
+
+
+def fetch_existing_profile_player_ids(client: SupabaseClient) -> list[str]:
+    player_ids: list[str] = []
+    last_player_id: str | None = None
+    while True:
+        filters = {
+            "select": "player_id",
+            "order": "player_id.asc",
+            "limit": str(PAGE_SIZE),
+        }
+        if last_player_id:
+            filters["player_id"] = f"gt.{last_player_id}"
+        page = client.select("player_commander_profiles", filters)
+        if not page:
+            break
+        player_ids.extend(
+            row["player_id"]
+            for row in page
+            if isinstance(row.get("player_id"), str) and row["player_id"]
+        )
+        last_player_id = page[-1].get("player_id")
+        if len(page) < PAGE_SIZE:
+            break
+    return player_ids
+
+
+def delete_profile_rows_by_player_ids(client: SupabaseClient, player_ids: list[str]) -> int:
+    deleted = 0
+    endpoint = f"{client.url}/rest/v1/player_commander_profiles"
+    for chunk in chunked(player_ids, UPSERT_CHUNK_SIZE):
+        if not chunk:
+            continue
+        response = requests.delete(
+            endpoint,
+            headers=client.headers,
+            params={"player_id": f"in.({','.join(chunk)})"},
+            timeout=60,
+        )
+        response.raise_for_status()
+        deleted += len(chunk)
+    return deleted
 
 
 def fetch_usage_rows_via_rest(client: SupabaseClient) -> list[dict[str, Any]]:
@@ -352,6 +395,17 @@ def main() -> None:
     logger.info("Building player commander profiles using reference date %s", reference_date.isoformat())
     profile_rows = build_profile_rows(usage_rows, reference_date)
     logger.info("Built %s player commander profiles", len(profile_rows))
+
+    existing_player_ids = set(fetch_existing_profile_player_ids(client))
+    rebuilt_player_ids = {
+        row["player_id"]
+        for row in profile_rows
+        if isinstance(row.get("player_id"), str) and row["player_id"]
+    }
+    stale_player_ids = sorted(existing_player_ids - rebuilt_player_ids)
+    if stale_player_ids:
+        deleted = delete_profile_rows_by_player_ids(client, stale_player_ids)
+        logger.info("Deleted %s stale player commander profiles", deleted)
 
     total_upserted = 0
     for chunk in chunked(profile_rows, UPSERT_CHUNK_SIZE):
