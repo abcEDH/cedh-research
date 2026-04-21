@@ -1228,26 +1228,26 @@ const fetchCachedRegionalRanks = unstable_cache(
 
 const fetchCachedPlayerProfileSummary = unstable_cache(
   async (playerId: string) => fetchPlayerProfileSummary(playerId),
-  ["regional-player-profile-summary-v1"],
+  ["regional-player-profile-summary-v2"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
 const fetchCachedPlayerAchievements = unstable_cache(
   async (playerId: string, topdeckId: string) => fetchPlayerAchievements(playerId, topdeckId),
-  ["regional-player-achievements-v1"],
+  ["regional-player-achievements-v2"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
 const fetchCachedPlayerCommanderUsageRows = unstable_cache(
   async (playerId: string, topdeckId: string, playerName: string) =>
     fetchPlayerCommanderUsageRows(playerId, topdeckId, playerName),
-  ["regional-player-commander-usage-v1"],
+  ["regional-player-commander-usage-v2"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
 const fetchCachedPlayerEventLogs = unstable_cache(
   async (playerId: string, regionFilter: string) => fetchPlayerEventLogs(playerId, regionFilter),
-  ["regional-player-event-logs-v1"],
+  ["regional-player-event-logs-v2"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 

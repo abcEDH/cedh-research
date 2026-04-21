@@ -79,6 +79,16 @@ type TopDeckRound = {
 
 const CHAMPIONSHIP_LEADERBOARD_URL =
   "https://topdeck.gg/championship-series-2026/leaderboard";
+const TOPDECK_FIRESTORE_PROJECT_ID = "eminence-1b40b";
+const TOPDECK_FIRESTORE_API_KEY = "AIzaSyBISF4HIfUsepAAqqYHte2NE_L8eaT6iwI";
+
+type FirestoreFieldValue = {
+  integerValue?: string;
+  doubleValue?: number;
+  stringValue?: string;
+  booleanValue?: boolean;
+  nullValue?: null;
+};
 
 async function fetchTopdeckWithRetry(url: string, apiKey: string, attempts = 3) {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -258,6 +268,40 @@ function buildTopdeckDecklistUrl(tournamentSlug: string, topdeckId: string) {
   return `https://topdeck.gg/deck/${tournamentSlug}/${topdeckId}`;
 }
 
+function readFirestoreUnixSeconds(field: FirestoreFieldValue | undefined) {
+  if (!field) return null;
+  if (typeof field.integerValue === "string") {
+    const parsed = Number(field.integerValue);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  if (typeof field.doubleValue === "number" && Number.isFinite(field.doubleValue)) {
+    return field.doubleValue;
+  }
+  return null;
+}
+
+async function fetchTopDeckEventTiming(slug: string): Promise<{ startDate: number | null; endDate: number | null }> {
+  const url =
+    `https://firestore.googleapis.com/v1/projects/${TOPDECK_FIRESTORE_PROJECT_ID}` +
+    `/databases/(default)/documents/otherEvents/${encodeURIComponent(slug)}?key=${TOPDECK_FIRESTORE_API_KEY}`;
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) {
+    return { startDate: null, endDate: null };
+  }
+
+  const payload = (await res.json()) as {
+    fields?: {
+      startDate?: FirestoreFieldValue;
+      endDate?: FirestoreFieldValue;
+    };
+  };
+
+  return {
+    startDate: readFirestoreUnixSeconds(payload.fields?.startDate),
+    endDate: readFirestoreUnixSeconds(payload.fields?.endDate),
+  };
+}
+
 function withActualDecklists(response: TopDeckTournamentResponse, slug: string): TopDeckTournamentResponse {
   return {
     ...response,
@@ -282,6 +326,7 @@ export async function fetchTournamentBySlug(slug: string): Promise<TopDeckTourna
     );
   }
 
+  const eventTiming = await fetchTopDeckEventTiming(slug);
   const [bracketResponse, playersResponse] = await Promise.all([
     fetch(`https://topdeck.gg/bracket/${slug}`.trim(), { cache: "no-store" }),
     fetch(`https://topdeck.gg/PublicPData/${slug}`.trim(), { cache: "no-store" }),
@@ -307,7 +352,7 @@ export async function fetchTournamentBySlug(slug: string): Promise<TopDeckTourna
       name: title || slug,
       game: "Magic: The Gathering",
       format: "EDH",
-      startDate: "",
+      startDate: eventTiming.startDate ?? "",
     },
     standings: players
       .map((player, index) => ({

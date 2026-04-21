@@ -148,7 +148,115 @@ def clean_commander_card_name(name: str) -> str:
     """Strip set indicator suffix and normalize commander card names."""
     if not name:
         return ""
-    return name.split("[")[0].strip()
+    cleaned = name.replace("\\'", "'").replace('\\"', '"')
+    return cleaned.split("[")[0].strip()
+
+
+PARTNER_ORDER_OVERRIDES: dict[tuple[str, str], tuple[str, str]] = {
+    tuple(sorted(["Kraum, Ludevic's Opus", "Tymna the Weaver"])): ("Tymna the Weaver", "Kraum, Ludevic's Opus"),
+    tuple(sorted(["Thrasios, Triton Hero", "Tymna the Weaver"])): ("Tymna the Weaver", "Thrasios, Triton Hero"),
+    tuple(sorted(["Rograkh, Son of Rohgahh", "Thrasios, Triton Hero"])): (
+        "Rograkh, Son of Rohgahh",
+        "Thrasios, Triton Hero",
+    ),
+    tuple(sorted(["Rograkh, Son of Rohgahh", "Silas Renn, Seeker Adept"])): (
+        "Rograkh, Son of Rohgahh",
+        "Silas Renn, Seeker Adept",
+    ),
+    tuple(sorted(["Malcolm, Keen-Eyed Navigator", "Tymna the Weaver"])): (
+        "Malcolm, Keen-Eyed Navigator",
+        "Tymna the Weaver",
+    ),
+    tuple(sorted(["Kraum, Ludevic's Opus", "Tevesh Szat, Doom of Fools"])): (
+        "Tevesh Szat, Doom of Fools",
+        "Kraum, Ludevic's Opus",
+    ),
+    tuple(sorted(["Dargo, the Shipwrecker", "Tymna the Weaver"])): ("Dargo, the Shipwrecker", "Tymna the Weaver"),
+    tuple(sorted(["Krark, the Thumbless", "Sakashima of a Thousand Faces"])): (
+        "Krark, the Thumbless",
+        "Sakashima of a Thousand Faces",
+    ),
+    tuple(sorted(["Tevesh Szat, Doom of Fools", "Thrasios, Triton Hero"])): (
+        "Tevesh Szat, Doom of Fools",
+        "Thrasios, Triton Hero",
+    ),
+    tuple(sorted(["Pako, Arcane Retriever", "Haldan, Avid Arcanist"])): (
+        "Pako, Arcane Retriever",
+        "Haldan, Avid Arcanist",
+    ),
+    tuple(sorted(["Tana, the Bloodsower", "Tymna the Weaver"])): ("Tymna the Weaver", "Tana, the Bloodsower"),
+    tuple(sorted(["Vial Smasher the Fierce", "Malcolm, Keen-Eyed Navigator"])): (
+        "Malcolm, Keen-Eyed Navigator",
+        "Vial Smasher the Fierce",
+    ),
+    tuple(sorted(["Kediss, Emberclaw Familiar", "Malcolm, Keen-Eyed Navigator"])): (
+        "Malcolm, Keen-Eyed Navigator",
+        "Kediss, Emberclaw Familiar",
+    ),
+    tuple(sorted(["Bruse Tarl, Boorish Herder", "Thrasios, Triton Hero"])): (
+        "Bruse Tarl, Boorish Herder",
+        "Thrasios, Triton Hero",
+    ),
+    tuple(sorted(["Ikra Shidiqi, the Usurper", "Kraum, Ludevic's Opus"])): (
+        "Ikra Shidiqi, the Usurper",
+        "Kraum, Ludevic's Opus",
+    ),
+    tuple(sorted(["Francisco, Fowl Marauder", "Thrasios, Triton Hero"])): (
+        "Francisco, Fowl Marauder",
+        "Thrasios, Triton Hero",
+    ),
+    tuple(sorted(["Malcolm, Keen-Eyed Navigator", "Tana, the Bloodsower"])): (
+        "Malcolm, Keen-Eyed Navigator",
+        "Tana, the Bloodsower",
+    ),
+    tuple(sorted(["Malcolm, Keen-Eyed Navigator", "Francisco, Fowl Marauder"])): (
+        "Malcolm, Keen-Eyed Navigator",
+        "Francisco, Fowl Marauder",
+    ),
+    tuple(sorted(["Jeska, Thrice Reborn", "Tymna the Weaver"])): ("Jeska, Thrice Reborn", "Tymna the Weaver"),
+    tuple(sorted(["Kodama of the East Tree", "Tymna the Weaver"])): ("Kodama of the East Tree", "Tymna the Weaver"),
+    tuple(sorted(["Rograkh, Son of Rohgahh", "Tymna the Weaver"])): (
+        "Rograkh, Son of Rohgahh",
+        "Tymna the Weaver",
+    ),
+    tuple(sorted(["Rograkh, Son of Rohgahh", "Tevesh Szat, Doom of Fools"])): (
+        "Rograkh, Son of Rohgahh",
+        "Tevesh Szat, Doom of Fools",
+    ),
+    tuple(sorted(["Ardenn, Intrepid Archaeologist", "Tana, the Bloodsower"])): (
+        "Ardenn, Intrepid Archaeologist",
+        "Tana, the Bloodsower",
+    ),
+    tuple(sorted(["Jeska, Thrice Reborn", "Ishai, Ojutai Dragonspeaker"])): (
+        "Jeska, Thrice Reborn",
+        "Ishai, Ojutai Dragonspeaker",
+    ),
+    tuple(sorted(["Rograkh, Son of Rohgahh", "Ishai, Ojutai Dragonspeaker"])): (
+        "Rograkh, Son of Rohgahh",
+        "Ishai, Ojutai Dragonspeaker",
+    ),
+    tuple(sorted(["Rograkh, Son of Rohgahh", "Reyhan, Last of the Abzan"])): (
+        "Rograkh, Son of Rohgahh",
+        "Reyhan, Last of the Abzan",
+    ),
+    tuple(sorted(["Ukkima, Stalking Shadow", "Cazur, Ruthless Stalker"])): (
+        "Ukkima, Stalking Shadow",
+        "Cazur, Ruthless Stalker",
+    ),
+}
+
+
+def normalize_partner_order(names: list[str]) -> list[str]:
+    """Return canonical partner ordering for a list of commander names."""
+    clean_names = [
+        clean_commander_card_name(value)
+        for value in names
+        if clean_commander_card_name(value)
+    ]
+    if len(clean_names) != 2:
+        return clean_names
+    pair_key = tuple(sorted(clean_names))
+    return list(PARTNER_ORDER_OVERRIDES.get(pair_key, pair_key))
 
 
 def normalize_region_name(
@@ -501,6 +609,57 @@ def normalize_standing_row(standing: dict[str, Any]) -> dict[str, Any]:
 def is_placeholder_player_name(name: Any) -> bool:
     """Return true for names synthesized when TopDeck only exposes a player id."""
     return not name or str(name).strip().lower() == "unknown"
+
+
+def fetch_existing_tids(
+    client: "SupabaseClient",
+    tids: list[str] | None = None,
+) -> set[str]:
+    """Return existing TopDeck tournament IDs from Supabase.
+
+    When tids are provided, query only those IDs in chunks instead of scanning the
+    whole tournaments table.
+    """
+    if tids is not None:
+        existing_tids: set[str] = set()
+        chunk_size = 200
+        for start in range(0, len(tids), chunk_size):
+            chunk = [tid for tid in tids[start : start + chunk_size] if tid]
+            if not chunk:
+                continue
+            page = client.select(
+                "tournaments",
+                {
+                    "select": "topdeck_tid",
+                    "topdeck_tid": f"in.({','.join(chunk)})",
+                },
+            )
+            existing_tids.update(
+                row["topdeck_tid"] for row in page if row.get("topdeck_tid")
+            )
+        return existing_tids
+
+    rows: list[dict[str, Any]] = []
+    offset = 0
+    limit = 1000
+    while True:
+        page = client.select(
+            "tournaments",
+            {
+                "select": "topdeck_tid",
+                "topdeck_tid": "not.is.null",
+                "order": "start_date.desc,topdeck_tid.asc",
+                "limit": str(limit),
+                "offset": str(offset),
+            },
+        )
+        if not page:
+            break
+        rows.extend(page)
+        if len(page) < limit:
+            break
+        offset += limit
+    return {row["topdeck_tid"] for row in rows if row.get("topdeck_tid")}
 
 
 def flat_firestore_league_to_topdeck_payload(
@@ -1080,10 +1239,14 @@ def extract_commanders(decklist: str) -> list[str]:
     if not decklist:
         return []
 
+    # TopDeck sometimes returns decklists with literal escaped newlines instead of
+    # actual line breaks. Normalize those first so the section parser can work.
+    normalized_decklist = decklist.replace("\\r\\n", "\n").replace("\\n", "\n")
+
     commanders: list[str] = []
     in_commanders = False
 
-    for line in decklist.split("\n"):
+    for line in normalized_decklist.split("\n"):
         line = line.strip()
 
         # Detect commander section
@@ -1112,17 +1275,13 @@ def extract_commanders(decklist: str) -> list[str]:
 def normalize_commander_name(commanders: list[str]) -> str:
     """Normalize commander pair name for consistent matching.
 
-    Sorts partner commander names alphabetically to ensure consistent ordering.
+    Applies the project's canonical partner ordering for partner pairs.
     Single commanders are returned as-is.
     """
-    clean_names = [
-        clean_commander_card_name(value)
-        for value in commanders
-        if clean_commander_card_name(value)
-    ]
+    clean_names = normalize_partner_order(commanders)
     if not clean_names:
         return "Unknown Commander"
-    return " / ".join(sorted(clean_names))
+    return " / ".join(clean_names)
 
 
 class DataIngester:
@@ -1724,9 +1883,19 @@ def main():
         action="store_true",
         help="Fail fast instead of continuing to later tournaments after an error in --tids-file mode",
     )
+    parser.add_argument("--tids-file", type=str, help="Path to file with one TopDeck tournament ID per line")
     parser.add_argument("--names-file", type=str, help="Path to file with one tournament name per line")
     parser.add_argument("--resolve-days", type=int, default=120, help="Days back to search when resolving names to IDs")
     parser.add_argument("--tids-out", type=str, help="Write resolved tournament IDs to this file")
+    parser.add_argument("--selected-tids-out", type=str, help="Write filtered manifest TIDs to this file")
+    parser.add_argument("--skip-existing-tids", action="store_true", help="Skip manifest TIDs already present in Supabase")
+    parser.add_argument("--only-failed-from-run-key", type=str, help="Restrict manifest TIDs to those marked failed for a recorded backfill run")
+    parser.add_argument("--batch-size", type=int, default=250, help="Batch size for --tids-file mode")
+    parser.add_argument("--batch-index", type=int, help="Only run the selected zero-based batch index from --tids-file mode")
+    parser.add_argument("--run-key", type=str, help="Logical run key for recorded --tids-file backfills")
+    parser.add_argument("--record-backfill", action="store_true", help="Record backfill run/batch progress in Supabase metadata tables")
+    parser.add_argument("--start-date", type=str, help="Optional lower bound used when recording --tids-file backfill metadata")
+    parser.add_argument("--end-date", type=str, help="Optional upper bound used when recording --tids-file backfill metadata")
     parser.add_argument(
         "--resolve-include-ambiguous",
         action="store_true",
@@ -1746,6 +1915,11 @@ def main():
         action="store_true",
         help="Use direct Postgres connection for faster ingestion",
     )
+    parser.add_argument(
+        "--skip-existing-tournaments",
+        action="store_true",
+        help="Skip tournaments whose topdeck_tid already exists in Supabase",
+    )
 
     args = parser.parse_args()
 
@@ -1760,12 +1934,21 @@ def main():
     # Initialize clients
     topdeck = TopDeckClient(topdeck_api_key)
     supabase = SupabaseClient(supabase_url, supabase_key)
+    db_client = None
 
     # Initialize ingester
     ingester = DataIngester(topdeck, supabase)
 
     if args.tournament_id:
         # Ingest single tournament
+        if args.skip_existing_tournaments:
+            existing_tids = fetch_existing_tids(supabase, [args.tournament_id])
+            if args.tournament_id in existing_tids:
+                logger.info(
+                    "Skipping existing tournament %s because --skip-existing-tournaments was set",
+                    args.tournament_id,
+                )
+                return
         logger.info(f"Fetching tournament: {args.tournament_id}")
         tournament = topdeck.get_tournament(args.tournament_id)
         tournament["TID"] = args.tournament_id
@@ -1802,6 +1985,15 @@ def main():
             logger.info(
                 f"Skipped {original_count - len(tids)} tids already present in tournaments.topdeck_tid; "
                 f"{len(tids)} remaining"
+            )
+
+        if args.skip_existing_tournaments:
+            existing_tids = fetch_existing_tids(ingester.supabase, tids)
+            original_count = len(tids)
+            tids = [tid for tid in tids if tid not in existing_tids]
+            logger.info(
+                f"Skipped {original_count - len(tids)} tids already present because "
+                f"--skip-existing-tournaments was set; {len(tids)} remaining"
             )
 
         if args.selected_tids_out:
@@ -2192,6 +2384,20 @@ def main():
             start_date=start_date, end_date=end_date, leagues=args.leagues
         )
         logger.info(f"Found {len(tournaments)} tournaments to process")
+
+        if args.skip_existing_tournaments:
+            search_tids = [tid for t in tournaments if (tid := t.get("id") or t.get("TID"))]
+            existing_tids = fetch_existing_tids(ingester.supabase, search_tids)
+            original_count = len(tournaments)
+            tournaments = [
+                t
+                for t in tournaments
+                if (t.get("id") or t.get("TID")) not in existing_tids
+            ]
+            logger.info(
+                f"Skipped {original_count - len(tournaments)} existing tournaments because "
+                f"--skip-existing-tournaments was set; {len(tournaments)} remaining"
+            )
 
         if args.limit > 0 and len(tournaments) > args.limit:
             logger.info(f"Limiting to {args.limit} tournaments (from {len(tournaments)})")

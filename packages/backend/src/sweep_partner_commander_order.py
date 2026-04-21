@@ -14,231 +14,10 @@ from backfill_moxfield_commanders import (
     load_credentials,
 )
 from ingest import (
+    PARTNER_ORDER_OVERRIDES,
     SupabaseClient,
     clean_commander_card_name,
-    extract_moxfield_commanders,
-    extract_moxfield_deck_id,
 )
-
-
-COMMUNITY_ORDER_OVERRIDES = {
-    tuple(
-        sorted(
-            [
-                "Kraum, Ludevic's Opus",
-                "Tymna the Weaver",
-            ]
-        )
-    ): ("Tymna the Weaver", "Kraum, Ludevic's Opus"),
-    tuple(
-        sorted(
-            [
-                "Thrasios, Triton Hero",
-                "Tymna the Weaver",
-            ]
-        )
-    ): ("Tymna the Weaver", "Thrasios, Triton Hero"),
-    tuple(
-        sorted(
-            [
-                "Rograkh, Son of Rohgahh",
-                "Thrasios, Triton Hero",
-            ]
-        )
-    ): ("Rograkh, Son of Rohgahh", "Thrasios, Triton Hero"),
-    tuple(
-        sorted(
-            [
-                "Rograkh, Son of Rohgahh",
-                "Silas Renn, Seeker Adept",
-            ]
-        )
-    ): ("Rograkh, Son of Rohgahh", "Silas Renn, Seeker Adept"),
-    tuple(
-        sorted(
-            [
-                "Malcolm, Keen-Eyed Navigator",
-                "Tymna the Weaver",
-            ]
-        )
-    ): ("Malcolm, Keen-Eyed Navigator", "Tymna the Weaver"),
-    tuple(
-        sorted(
-            [
-                "Kraum, Ludevic's Opus",
-                "Tevesh Szat, Doom of Fools",
-            ]
-        )
-    ): ("Tevesh Szat, Doom of Fools", "Kraum, Ludevic's Opus"),
-    tuple(
-        sorted(
-            [
-                "Dargo, the Shipwrecker",
-                "Tymna the Weaver",
-            ]
-        )
-    ): ("Dargo, the Shipwrecker", "Tymna the Weaver"),
-    tuple(
-        sorted(
-            [
-                "Krark, the Thumbless",
-                "Sakashima of a Thousand Faces",
-            ]
-        )
-    ): ("Krark, the Thumbless", "Sakashima of a Thousand Faces"),
-    tuple(
-        sorted(
-            [
-                "Tevesh Szat, Doom of Fools",
-                "Thrasios, Triton Hero",
-            ]
-        )
-    ): ("Tevesh Szat, Doom of Fools", "Thrasios, Triton Hero"),
-    tuple(
-        sorted(
-            [
-                "Pako, Arcane Retriever",
-                "Haldan, Avid Arcanist",
-            ]
-        )
-    ): ("Pako, Arcane Retriever", "Haldan, Avid Arcanist"),
-    tuple(
-        sorted(
-            [
-                "Tana, the Bloodsower",
-                "Tymna the Weaver",
-            ]
-        )
-    ): ("Tymna the Weaver", "Tana, the Bloodsower"),
-    tuple(
-        sorted(
-            [
-                "Vial Smasher the Fierce",
-                "Malcolm, Keen-Eyed Navigator",
-            ]
-        )
-    ): ("Malcolm, Keen-Eyed Navigator", "Vial Smasher the Fierce"),
-    tuple(
-        sorted(
-            [
-                "Kediss, Emberclaw Familiar",
-                "Malcolm, Keen-Eyed Navigator",
-            ]
-        )
-    ): ("Malcolm, Keen-Eyed Navigator", "Kediss, Emberclaw Familiar"),
-    tuple(
-        sorted(
-            [
-                "Bruse Tarl, Boorish Herder",
-                "Thrasios, Triton Hero",
-            ]
-        )
-    ): ("Bruse Tarl, Boorish Herder", "Thrasios, Triton Hero"),
-    tuple(
-        sorted(
-            [
-                "Ikra Shidiqi, the Usurper",
-                "Kraum, Ludevic's Opus",
-            ]
-        )
-    ): ("Ikra Shidiqi, the Usurper", "Kraum, Ludevic's Opus"),
-    tuple(
-        sorted(
-            [
-                "Francisco, Fowl Marauder",
-                "Thrasios, Triton Hero",
-            ]
-        )
-    ): ("Francisco, Fowl Marauder", "Thrasios, Triton Hero"),
-    tuple(
-        sorted(
-            [
-                "Malcolm, Keen-Eyed Navigator",
-                "Tana, the Bloodsower",
-            ]
-        )
-    ): ("Malcolm, Keen-Eyed Navigator", "Tana, the Bloodsower"),
-    tuple(
-        sorted(
-            [
-                "Malcolm, Keen-Eyed Navigator",
-                "Francisco, Fowl Marauder",
-            ]
-        )
-    ): ("Malcolm, Keen-Eyed Navigator", "Francisco, Fowl Marauder"),
-    tuple(
-        sorted(
-            [
-                "Jeska, Thrice Reborn",
-                "Tymna the Weaver",
-            ]
-        )
-    ): ("Jeska, Thrice Reborn", "Tymna the Weaver"),
-    tuple(
-        sorted(
-            [
-                "Kodama of the East Tree",
-                "Tymna the Weaver",
-            ]
-        )
-    ): ("Kodama of the East Tree", "Tymna the Weaver"),
-    tuple(
-        sorted(
-            [
-                "Rograkh, Son of Rohgahh",
-                "Tymna the Weaver",
-            ]
-        )
-    ): ("Rograkh, Son of Rohgahh", "Tymna the Weaver"),
-    tuple(
-        sorted(
-            [
-                "Rograkh, Son of Rohgahh",
-                "Tevesh Szat, Doom of Fools",
-            ]
-        )
-    ): ("Rograkh, Son of Rohgahh", "Tevesh Szat, Doom of Fools"),
-    tuple(
-        sorted(
-            [
-                "Ardenn, Intrepid Archaeologist",
-                "Tana, the Bloodsower",
-            ]
-        )
-    ): ("Ardenn, Intrepid Archaeologist", "Tana, the Bloodsower"),
-    tuple(
-        sorted(
-            [
-                "Jeska, Thrice Reborn",
-                "Ishai, Ojutai Dragonspeaker",
-            ]
-        )
-    ): ("Jeska, Thrice Reborn", "Ishai, Ojutai Dragonspeaker"),
-    tuple(
-        sorted(
-            [
-                "Rograkh, Son of Rohgahh",
-                "Ishai, Ojutai Dragonspeaker",
-            ]
-        )
-    ): ("Rograkh, Son of Rohgahh", "Ishai, Ojutai Dragonspeaker"),
-    tuple(
-        sorted(
-            [
-                "Rograkh, Son of Rohgahh",
-                "Reyhan, Last of the Abzan",
-            ]
-        )
-    ): ("Rograkh, Son of Rohgahh", "Reyhan, Last of the Abzan"),
-    tuple(
-        sorted(
-            [
-                "Ukkima, Stalking Shadow",
-                "Cazur, Ruthless Stalker",
-            ]
-        )
-    ): ("Ukkima, Stalking Shadow", "Cazur, Ruthless Stalker"),
-}
 
 
 def canonical_pair_key(names: list[str]) -> tuple[str, ...]:
@@ -287,17 +66,7 @@ def observe_pair_order(
     observed: list[str] = []
 
     try:
-        if "moxfield.com" in decklist_url:
-            deck_id = extract_moxfield_deck_id(decklist_url)
-            if deck_id:
-                response = session.get(
-                    f"https://api.moxfield.com/v2/decks/all/{deck_id}",
-                    headers={"Accept": "application/json", "User-Agent": "cedh-research/1.0"},
-                    timeout=timeout,
-                )
-                response.raise_for_status()
-                observed = extract_moxfield_commanders(response.json())
-        elif "topdeck.gg/deck/" in decklist_url:
+        if "topdeck.gg/deck/" in decklist_url:
             player_topdeck_id = players.get("topdeck_id")
             tournament_topdeck_id = tournaments.get("topdeck_tid")
             if player_topdeck_id and tournament_topdeck_id:
@@ -334,7 +103,7 @@ def choose_target_order(
     current_order: tuple[str, str],
     observations: collections.Counter[tuple[str, str]],
 ) -> tuple[str, str]:
-    override = COMMUNITY_ORDER_OVERRIDES.get(canonical_pair_key(list(current_order)))
+    override = PARTNER_ORDER_OVERRIDES.get(canonical_pair_key(list(current_order)))
     if override:
         return override
     if not observations:
@@ -345,6 +114,50 @@ def choose_target_order(
     if current_order in top_orders:
         return current_order
     return sorted(top_orders)[0]
+
+
+def repoint_tournament_entries(
+    client: SupabaseClient,
+    source_commander_id: str,
+    target_commander_id: str,
+) -> None:
+    endpoint = f"{client.url}/rest/v1/tournament_entries"
+    response = requests.patch(
+        endpoint,
+        headers=client.headers,
+        params={"commander_id": f"eq.{source_commander_id}"},
+        json={"commander_id": target_commander_id},
+        timeout=60,
+    )
+    response.raise_for_status()
+
+
+def update_commander_row(
+    client: SupabaseClient,
+    commander_id: str,
+    target_name: str,
+    target_order: tuple[str, str],
+) -> None:
+    endpoint = f"{client.url}/rest/v1/commanders"
+    response = requests.patch(
+        endpoint,
+        headers=client.headers,
+        params={"id": f"eq.{commander_id}"},
+        json={"name": target_name, "commander_names": list(target_order)},
+        timeout=60,
+    )
+    response.raise_for_status()
+
+
+def delete_commander_row(client: SupabaseClient, commander_id: str) -> None:
+    endpoint = f"{client.url}/rest/v1/commanders"
+    response = requests.delete(
+        endpoint,
+        headers=client.headers,
+        params={"id": f"eq.{commander_id}"},
+        timeout=60,
+    )
+    response.raise_for_status()
 
 
 def main() -> None:
@@ -370,34 +183,38 @@ def main() -> None:
 
     report_lines = ["commander_id,current_name,target_name,observations,current_order,target_order,updated"]
     updated = 0
-    skipped_conflict = 0
+    merged = 0
 
     for commander in partner_rows:
         current_order = current_pair_order(commander)
         if not current_order:
             continue
-        rows = fetch_entries_for_commander(client, commander["id"], args.sample_limit)
+        override = PARTNER_ORDER_OVERRIDES.get(canonical_pair_key(list(current_order)))
         observed_orders: collections.Counter[tuple[str, str]] = collections.Counter()
-        seen_sources: set[str] = set()
+        if override:
+            target_order = override
+        else:
+            rows = fetch_entries_for_commander(client, commander["id"], args.sample_limit)
+            seen_sources: set[str] = set()
 
-        for row in rows:
-            source_key = (row.get("decklist_url") or "").strip()
-            if not source_key:
-                players = row.get("players") or {}
-                tournaments = row.get("tournaments") or {}
-                source_key = f"{tournaments.get('topdeck_tid','')}::{players.get('topdeck_id','')}"
-            if source_key in seen_sources:
-                continue
-            seen_sources.add(source_key)
+            for row in rows:
+                source_key = (row.get("decklist_url") or "").strip()
+                if not source_key:
+                    players = row.get("players") or {}
+                    tournaments = row.get("tournaments") or {}
+                    source_key = f"{tournaments.get('topdeck_tid','')}::{players.get('topdeck_id','')}"
+                if source_key in seen_sources:
+                    continue
+                seen_sources.add(source_key)
 
-            observed = observe_pair_order({**row, **{"commander_names": list(current_order)}}, session, args.timeout)
-            if not observed:
-                continue
-            observed_orders[observed] += 1
-            if sum(observed_orders.values()) >= args.observation_limit:
-                break
+                observed = observe_pair_order({**row, **{"commander_names": list(current_order)}}, session, args.timeout)
+                if not observed:
+                    continue
+                observed_orders[observed] += 1
+                if sum(observed_orders.values()) >= args.observation_limit:
+                    break
 
-        target_order = choose_target_order(current_order, observed_orders)
+            target_order = choose_target_order(current_order, observed_orders)
         current_name = commander["name"]
         target_name = " / ".join(target_order)
         observations = "; ".join(
@@ -407,17 +224,16 @@ def main() -> None:
         if target_name != current_name:
             conflict_id = name_to_id.get(target_name)
             if conflict_id and conflict_id != commander["id"]:
-                skipped_conflict += 1
+                if not args.dry_run:
+                    repoint_tournament_entries(client, commander["id"], conflict_id)
+                    delete_commander_row(client, commander["id"])
+                merged += 1
                 report_lines.append(
-                    f'{commander["id"]},"{current_name}","{target_name}","{observations}","{" / ".join(current_order)}","{" / ".join(target_order)}",conflict'
+                    f'{commander["id"]},"{current_name}","{target_name}","{observations}","{" / ".join(current_order)}","{" / ".join(target_order)}",merged'
                 )
                 continue
             if not args.dry_run:
-                client.update(
-                    "commanders",
-                    {"name": target_name, "commander_names": list(target_order)},
-                    {"id": f'eq.{commander["id"]}'},
-                )
+                update_commander_row(client, commander["id"], target_name, target_order)
             name_to_id.pop(current_name, None)
             name_to_id[target_name] = commander["id"]
             updated += 1
@@ -433,7 +249,7 @@ def main() -> None:
     Path(args.report).write_text("\n".join(report_lines) + "\n")
     print(f"partner_rows={len(partner_rows)}")
     print(f"updated={updated}")
-    print(f"skipped_conflict={skipped_conflict}")
+    print(f"merged={merged}")
     print(f"report={args.report}")
 
 
