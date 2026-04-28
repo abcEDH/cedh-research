@@ -579,6 +579,27 @@ def compute_commander_recency_weight(
     return min(1.0, max(0.5, weight))
 
 
+MATERIALIZED_VIEW_REFRESH_FUNCTIONS = [
+    "refresh_commander_trends",
+    "refresh_card_frequencies",
+    "refresh_card_performance",
+]
+
+
+def refresh_materialized_views(client: SupabaseClient) -> int:
+    """Refresh downstream materialized views. Returns count of successful refreshes."""
+    success_count = 0
+    for fn_name in MATERIALIZED_VIEW_REFRESH_FUNCTIONS:
+        try:
+            print(f"Refreshing materialized views via {fn_name}()...")
+            client.rpc(fn_name)
+            success_count += 1
+            print(f"  {fn_name}() completed.")
+        except Exception as exc:
+            print(f"  {fn_name}() failed (non-fatal): {exc}", flush=True)
+    return success_count
+
+
 # === CLI Entry Point ===
 import sys
 
@@ -764,6 +785,13 @@ def main() -> None:
             event_rows,
             on_conflict="",
         )
+
+    update_job_heartbeat(client, job_id)
+
+    # Refresh downstream materialized views
+    print("Refreshing materialized views...")
+    mv_count = refresh_materialized_views(client)
+    print(f"Refreshed {mv_count}/{len(MATERIALIZED_VIEW_REFRESH_FUNCTIONS)} materialized views.")
 
     update_job_heartbeat(client, job_id)
 

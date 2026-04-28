@@ -1164,6 +1164,48 @@ class SupabaseClient:
                     raise
         return []
 
+    def rpc(
+        self,
+        function_name: str,
+        payload: dict[str, Any] | None = None,
+        max_retries: int = 3,
+        timeout: int = 120,
+    ) -> Any:
+        """Call a Supabase stored procedure via POST /rest/v1/rpc/{function_name}."""
+        if max_retries <= 0:
+            return None
+        endpoint = f"{self.url}/rest/v1/rpc/{function_name}"
+
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(
+                    endpoint,
+                    json=payload or {},
+                    headers=self.headers,
+                    timeout=timeout,
+                )
+                if response.status_code >= 400:
+                    logger.error(f"Supabase RPC error ({function_name}): {response.text}")
+                    response.raise_for_status()
+                if response.status_code == 204:
+                    return None
+                return response.json()
+            except (
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+                requests.exceptions.ReadTimeout,
+            ) as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2**attempt
+                    logger.warning(
+                        f"RPC {function_name} failed, retrying in {wait_time}s... ({attempt + 1}/{max_retries})"
+                    )
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"RPC {function_name} failed after {max_retries} retries: {e}")
+                    raise
+        return None
+
 
 class DirectPostgresClient:
     """Client for direct Postgres connection using psycopg2 (faster for large batches)."""

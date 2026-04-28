@@ -106,5 +106,38 @@ class SupabaseClientUpdateTests(unittest.TestCase):
         self.assertEqual(result, [])
 
 
+class SupabaseClientRpcTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.client = SupabaseClient("https://test.supabase.co", "test-service-key")
+
+    @patch("ingest.requests.post")
+    def test_rpc_sends_post_to_correct_endpoint(self, mock_post: Mock) -> None:
+        mock_response = Mock()
+        mock_response.status_code = 204
+        mock_post.return_value = mock_response
+
+        result = self.client.rpc("refresh_commander_trends")
+
+        mock_post.assert_called_once_with(
+            "https://test.supabase.co/rest/v1/rpc/refresh_commander_trends",
+            json={},
+            headers=self.client.headers,
+            timeout=120,
+        )
+        self.assertIsNone(result)
+
+    @patch("ingest.requests.post")
+    def test_rpc_uses_higher_timeout(self, mock_post: Mock) -> None:
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"ok": True}
+        mock_post.return_value = mock_response
+
+        self.client.rpc("refresh_card_frequencies", timeout=120)
+
+        call_kwargs = mock_post.call_args.kwargs
+        self.assertEqual(call_kwargs["timeout"], 120)
+
+
 if __name__ == "__main__":
     unittest.main()
