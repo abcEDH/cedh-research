@@ -1,0 +1,157 @@
+name: CI Backend Ingestion
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: "ingestion_jobs UUID for cron-dispatched runs"
+        required: false
+        default: ""
+
+concurrency:
+  group: backend-ingestion-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TOPDECK_API_KEY: ${{ secrets.TOPDECK_API_KEY }}
+  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+  SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
+# Required secrets:
+#   GitHub Actions:
+#     TOPDECK_API_KEY       — TopDeck.gg API v2 key
+#     SUPABASE_URL          — Supabase project URL
+#     SUPABASE_SERVICE_KEY  — Supabase service_role key
+#     GH_PAT_ACTIONS        — GitHub PAT with actions:write for dispatching Elo workflow
+#   Edge Function (trigger-ingestion-refresh):
+#     GITHUB_PAT            — GitHub fine-grained PAT with actions:write
+#     SUPABASE_URL          — same as above
+#     SUPABASE_SERVICE_ROLE_KEY — same key as SUPABASE_SERVICE_KEY
+#     SUPABASE_ANON_KEY     — Supabase anon/public key
+#   pg_cron Vault secrets:
+#     project_url           — Supabase project URL
+#     anon_key              — Supabase anon key
+
+jobs:
+  ingest:
+    name: Ingest recent tournament data
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies (locked)
+        run: uv sync --frozen --project packages/backend
+
+      - name: Run data ingestion
+        run: |
+          JOB_FLAGS=""
+          if [ -n "${{ inputs.job_id }}" ]; then
+            JOB_FLAGS="--job-id ${{ inputs.job_id }}"
+          fi
+          uv run --project packages/backend python packages/backend/src/ingest.py --days 7 --min-players 32 $JOB_FLAGS
+
+      - name: Upload logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ingestion-logs
+          path: packages/backend/logs/
+          retention-days: 30
+
+  chain-elo:
+    name: Chain Elo maintenance after successful ingestion
+    runs-on: ubuntu-latest
+    needs: ingest
+    if: ${{ inputs.job_id != '' }}
+    steps:
+      - name: Enqueue Elo refresh and dispatch maintenance workflow
+        env:
+          GH_PAT_ACTIONS: ${{ secrets.GH_PAT_ACTIONS }}
+          INGESTION_JOB_ID: ${{ inputs.job_id }}
+        run: |
+          # Enqueue Elo refresh via Supabase RPC
+          elo_response=$(curl --fail-with-body --silent --show-error \
+            -X POST \
+            "$SUPABASE_URL/rest/v1/rpc/enqueue_elo_refresh" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "Content-Type: application/json" \
+            --data '{"p_trigger_source": "edge_function"}')
+
+          elo_job_id=$(echo "$elo_response" | python3 -c "import sys,json; v=json.load(sys.stdin); print(v if isinstance(v,str) else '')" 2>/dev/null || echo "")
+
+          if [ -z "$elo_job_id" ] || [ "$elo_job_id" = "null" ]; then
+            echo "Elo enqueue returned null — an Elo job may already be active. Skipping chain."
+            exit 0
+          fi
+
+          echo "Enqueued Elo job: $elo_job_id"
+
+          # Link ingestion job to chained Elo job
+          curl --fail-with-body --silent --show-error \
+            -X PATCH \
+            "$SUPABASE_URL/rest/v1/ingestion_jobs?id=eq.${INGESTION_JOB_ID}" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=minimal" \
+            --data "{\"chained_elo_job_id\": \"$elo_job_id\"}"
+
+          # Dispatch Elo maintenance workflow
+          curl --fail-with-body --silent --show-error \
+            -X POST \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/ci-backend-maintenance.yml/dispatches" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_PAT_ACTIONS" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            --data "{\"ref\": \"main\", \"inputs\": {\"refresh_mode\": \"full\", \"job_id\": \"$elo_job_id\"}}"
+
+          echo "Dispatched Elo maintenance workflow with job_id=$elo_job_id"
+
+  mark-ingestion-failed:
+    name: Mark ingestion job as failed
+    runs-on: ubuntu-latest
+    needs:
+      - ingest
+      - chain-elo
+    if: >-
+      ${{
+        always() &&
+        inputs.job_id != '' &&
+        (
+          contains(join(needs.*.result, ','), 'failure') ||
+          contains(join(needs.*.result, ','), 'cancelled')
+        )
+      }}
+    steps:
+      - name: Mark ingestion job as failed in Supabase
+        env:
+          JOB_ID: ${{ inputs.job_id }}
+          JOB_ERROR: GitHub Actions ingestion workflow failed in run ${{ github.run_id }}.
+        run: |
+          payload="$(python3 - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+
+          print(json.dumps({
+              "status": "failed",
+              "completed_at": datetime.now(timezone.utc).isoformat(),
+              "error_text": os.environ["JOB_ERROR"][:2000],
+          }))
+          PY
+          )"
+
+          curl --fail-with-body --silent --show-error \
+            -X PATCH \
+            "$SUPABASE_URL/rest/v1/ingestion_jobs?id=eq.${JOB_ID}&status=in.(pending,dispatched,running)" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=minimal" \
+            --data "$payload"
