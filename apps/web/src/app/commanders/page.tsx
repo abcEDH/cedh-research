@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { unstable_cache } from "next/cache";
 import { supabase } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -12,6 +13,7 @@ import TrendMetricCharts, {
 } from "@/components/commanders/trend-metric-charts";
 
 export const dynamic = "force-dynamic";
+const COMMANDERS_CACHE_REVALIDATE_SECONDS = 60 * 30; // 30 minutes
 
 interface CommanderStat {
   commander_id: string;
@@ -274,17 +276,41 @@ async function getGlobalTrendSeries() {
   return { weekly, monthly } satisfies TrendMetricSeries;
 }
 
+const getCachedCommanders = unstable_cache(
+  getCommanders,
+  ["commanders-list-v1"],
+  { revalidate: COMMANDERS_CACHE_REVALIDATE_SECONDS }
+);
+
+const getCachedCommanderPeriodSnapshots = unstable_cache(
+  async (commanderIds: string[]) => getCommanderPeriodSnapshots(commanderIds),
+  ["commander-period-snapshots-v1"],
+  { revalidate: COMMANDERS_CACHE_REVALIDATE_SECONDS }
+);
+
+const getCachedWeeklyEntries = unstable_cache(
+  async (commanderIds: string[], weeks: number) => getWeeklyEntries(commanderIds, weeks),
+  ["commander-weekly-entries-v1"],
+  { revalidate: COMMANDERS_CACHE_REVALIDATE_SECONDS }
+);
+
+const getCachedGlobalTrendSeries = unstable_cache(
+  getGlobalTrendSeries,
+  ["commander-global-trends-v1"],
+  { revalidate: COMMANDERS_CACHE_REVALIDATE_SECONDS }
+);
+
 export default async function CommandersPage() {
-  const commanders = await getCommanders();
+  const commanders = await getCachedCommanders();
   const topCommanders = [...commanders].sort((a, b) => b.total_entries - a.total_entries).slice(0, 30);
-  const snapshotsByCommanderId = await getCommanderPeriodSnapshots(
+  const snapshotsByCommanderId = await getCachedCommanderPeriodSnapshots(
     topCommanders.map((commander) => commander.commander_id)
   );
-  const weeklyEntriesByCommanderId = await getWeeklyEntries(
+  const weeklyEntriesByCommanderId = await getCachedWeeklyEntries(
     topCommanders.map((commander) => commander.commander_id),
     12
   );
-  const globalSeries = await getGlobalTrendSeries();
+  const globalSeries = await getCachedGlobalTrendSeries();
 
   const totalEntries = commanders.reduce((sum, c) => sum + c.total_entries, 0);
   const avgWinRate =
