@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { normalizeDateKey } from "@/lib/format-utils";
 import { BackLink } from "@/components/ui/back-link";
 import { StatCard } from "@/components/ui/stat-card";
+import { ColorBadge } from "@/components/ui/color-badge";
 import { type CommanderStat } from "@/lib/types";
 import { normalizeDisplayString } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -993,28 +994,6 @@ export default async function CommanderDetailPage({
 
       </main>
     </div>
-  );
-}
-
-function ColorBadge({ color, size = "sm" }: { color: string; size?: "sm" | "lg" }) {
-  const colors: Record<string, string> = {
-    W: "bg-amber-200/80 text-amber-950",
-    U: "bg-sky-500/90 text-white",
-    B: "bg-purple-900/90 text-purple-100",
-    R: "bg-red-500/90 text-white",
-    G: "bg-emerald-500/90 text-white",
-  };
-
-  const sizeClass = size === "lg" ? "w-8 h-8 text-sm" : "w-5 h-5 text-xs";
-
-  return (
-    <span
-      className={`${sizeClass} rounded-full flex items-center justify-center font-bold ${
-        colors[color] || "bg-slate-500 text-white"
-      }`}
-    >
-      {color}
-    </span>
   );
 }
 

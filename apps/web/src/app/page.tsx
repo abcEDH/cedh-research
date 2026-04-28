@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { ColorBadge } from "@/components/ui/color-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { unstable_cache } from "next/cache";
 import {
@@ -512,26 +513,6 @@ function CommanderRow({
         <p className="text-xs text-muted-foreground">win rate</p>
       </div>
     </Link>
-  );
-}
-
-function ColorBadge({ color }: { color: string }) {
-  const colors: Record<string, string> = {
-    W: "bg-amber-200/80 text-amber-950",
-    U: "bg-sky-500/90 text-white",
-    B: "bg-purple-900/90 text-purple-100",
-    R: "bg-red-500/90 text-white",
-    G: "bg-emerald-500/90 text-white",
-  };
-
-  return (
-    <span
-      className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold ${
-        colors[color] || "bg-slate-500 text-white"
-      }`}
-    >
-      {color}
-    </span>
   );
 }
 
