@@ -6,11 +6,13 @@ import { RegionalLeaderboardTable } from "./regional-leaderboard-table";
 import { RegionSelector } from "./region-selector";
 import { inferCountryForRegion } from "@/lib/region-countries";
 import { fetchAllTopdeckEloMap, fetchTopdeckEloMap } from "@/lib/topdeck-elo";
+import { unstable_cache } from "next/cache";
 
 export const dynamic = "force-dynamic";
 const GLOBAL_REGION_KEY = "ALL";
 const LEADERBOARD_PAGE_SIZE = 50;
 const ACTIVE_PLAYER_LOOKBACK_MONTHS = 6;
+const REGIONAL_ELO_CACHE_REVALIDATE_SECONDS = 60 * 15; // 15 minutes
 
 function readRegionParam(
   params: Awaited<Promise<{ region?: string | string[] }> | { region?: string | string[] }> | undefined
@@ -866,6 +868,45 @@ async function fetchLatestCommanders(rows: LeaderboardRow[]): Promise<Map<string
   return latestByPlayer;
 }
 
+const getCachedRegionRows = unstable_cache(
+  fetchRegionRows,
+  ["regional-elo-regions-v1"],
+  { revalidate: REGIONAL_ELO_CACHE_REVALIDATE_SECONDS }
+);
+
+const getCachedLeaderboardRows = unstable_cache(
+  async (
+    regionType: "global" | "country" | "state",
+    regionKey: string,
+    page: number,
+    pageSize: number,
+    searchQuery: string
+  ) => fetchLeaderboardRows(regionType, regionKey, page, pageSize, searchQuery),
+  ["regional-elo-leaderboard-v1"],
+  { revalidate: REGIONAL_ELO_CACHE_REVALIDATE_SECONDS }
+);
+
+const getCachedLegacyLeaderboardRows = unstable_cache(
+  async (
+    regionType: "global" | "country" | "state",
+    regionKey: string,
+    page: number,
+    pageSize: number,
+    searchQuery: string
+  ) => fetchLegacyLeaderboardRows(regionType, regionKey, page, pageSize, searchQuery),
+  ["regional-elo-legacy-leaderboard-v1"],
+  { revalidate: REGIONAL_ELO_CACHE_REVALIDATE_SECONDS }
+);
+
+const getCachedLatestCommanders = unstable_cache(
+  async (rows: LeaderboardRow[]) => {
+    const map = await fetchLatestCommanders(rows);
+    return Object.fromEntries(map.entries());
+  },
+  ["regional-elo-latest-commanders-v1"],
+  { revalidate: REGIONAL_ELO_CACHE_REVALIDATE_SECONDS }
+);
+
 export default async function RegionalEloPage({
   searchParams,
 }: {
@@ -874,7 +915,7 @@ export default async function RegionalEloPage({
     | Promise<{ country?: string | string[]; q?: string | string[]; region?: string | string[]; scope?: string | string[] }>;
 }) {
   const resolvedSearchParams = await Promise.resolve(searchParams);
-  const regionResult = await fetchRegionRows();
+  const regionResult = await getCachedRegionRows();
 
   const regions = regionResult.rows;
   const supportsCountryRegions = regionResult.supportsCountry;
@@ -912,14 +953,14 @@ export default async function RegionalEloPage({
   const leaderboardPage =
     activeRegionKey
       ? supportsCountryRegions
-        ? await fetchLeaderboardRows(
+        ? await getCachedLeaderboardRows(
             activeRegionType,
             activeRegionKey,
             requestedPage,
             LEADERBOARD_PAGE_SIZE,
             playerSearch
           )
-        : await fetchLegacyLeaderboardRows(
+        : await getCachedLegacyLeaderboardRows(
             activeRegionType,
             activeRegionType === "global" ? GLOBAL_REGION_KEY : activeRegionKey,
             requestedPage,
@@ -936,14 +977,14 @@ export default async function RegionalEloPage({
       : activeRegionKey
         ? (
             supportsCountryRegions
-              ? await fetchLeaderboardRows(
+              ? await getCachedLeaderboardRows(
                   activeRegionType,
                   activeRegionKey,
                   currentPage,
                   LEADERBOARD_PAGE_SIZE,
                   playerSearch
                 )
-              : await fetchLegacyLeaderboardRows(
+              : await getCachedLegacyLeaderboardRows(
                   activeRegionType,
                   activeRegionType === "global" ? GLOBAL_REGION_KEY : activeRegionKey,
                   currentPage,
@@ -954,8 +995,7 @@ export default async function RegionalEloPage({
         : [];
   const leaderboard = leaderboardRows;
 
-  const latestByPlayer = await fetchLatestCommanders(leaderboard);
-  const latestByPlayerRecord = Object.fromEntries(latestByPlayer.entries());
+  const latestByPlayerRecord = await getCachedLatestCommanders(leaderboard);
 
   const updatedAt =
     regions.find((r) =>
