@@ -8,7 +8,7 @@ import { fetchTopdeckElo } from "@/lib/topdeck-elo";
 import { buildTopdeckProfileHref } from "@/lib/topdeck-profile";
 import { isKnownCommanderName } from "@/lib/commander-utils";
 import { chunkArray } from "@/lib/array-utils";
-import { formatDate } from "@/lib/format-utils";
+import { formatDate, formatPct } from "@/lib/format-utils";
 import { inferCountryForRegion } from "@/lib/region-countries";
 import { OpponentRecordsTable } from "./opponent-records-table";
 import { summarizePlayerLogs, type PlayerGameLog } from "./player-stats";
@@ -730,9 +730,6 @@ function buildTopdeckTournamentUrl(tournamentSlug: string | null | undefined) {
 }
 
 
-function formatPct(value: number) {
-  return `${Math.round(value * 100)}%`;
-}
 
 function formatPlacementRatio(placement: number | null, playerCount: number | null) {
   if (!placement || !playerCount) return "—";

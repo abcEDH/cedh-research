@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { formatPct } from "@/lib/format-utils";
 
 export type FieldShareRow = {
   commander: string;
@@ -16,9 +17,6 @@ type FieldShareListProps = {
 const INITIAL_EXPECTED_ROWS = 4;
 const SHOW_MORE_INCREMENT = 4;
 
-function formatPercent(value: number) {
-  return `${Math.round(value * 100)}%`;
-}
 
 export function FieldShareList({ rows, hasTournamentResults }: FieldShareListProps) {
   const [visibleCount, setVisibleCount] = useState(INITIAL_EXPECTED_ROWS);
@@ -32,7 +30,7 @@ export function FieldShareList({ rows, hasTournamentResults }: FieldShareListPro
           <div key={row.commander} className="flex items-center justify-between text-sm">
             <span className="text-foreground">{row.commander}</span>
             <span className="text-primary">
-              {formatPercent(row.fieldShare)} ·{" "}
+              {formatPct(row.fieldShare)} ·{" "}
               {hasTournamentResults ? row.expectedPlayers : row.expectedPlayers.toFixed(1)} players
             </span>
           </div>
