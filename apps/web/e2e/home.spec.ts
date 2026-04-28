@@ -6,8 +6,8 @@ test.describe("Home Page", () => {
   });
 
   test("loads and displays hero section", async ({ page }) => {
-    await expect(page.getByRole("heading", { name: /cEDH Analytics/i })).toBeVisible();
-    await expect(page.getByRole("heading", { name: /competitive Commander analytics/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /tedh\.gg/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /competitive Commander, simplified/i })).toBeVisible();
   });
 
   test("displays top commanders list with real data", async ({ page }) => {
