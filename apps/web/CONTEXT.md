@@ -3,7 +3,7 @@
 ## Project Overview
 A Next.js 14 dashboard for competitive Magic: The Gathering (cEDH) tournament analytics, consuming data from a Supabase PostgreSQL backend with pre-computed materialized views.
 
-**Live Site:** https://cedh-research.vercel.app
+**Live Site:** https://tedh.gg
 **Backend Repo:** ~/Documents/Repositories/personal/cedh-research
 
 ## Tech Stack

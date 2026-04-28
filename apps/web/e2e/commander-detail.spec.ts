@@ -10,6 +10,7 @@ test.describe("Commander Detail Page", () => {
 
     // Get the first commander's link to extract ID
     const firstCommanderLink = page.locator('a[href^="/commanders/"]').first();
+    await expect(firstCommanderLink).toBeVisible({ timeout: 30000 });
     const href = await firstCommanderLink.getAttribute("href");
     commanderId = href?.replace("/commanders/", "") || "";
     await page.close();

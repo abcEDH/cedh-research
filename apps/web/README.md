@@ -1,6 +1,6 @@
-# cEDH Research
+# tedh.gg
 
-A data-driven dashboard for cEDH players who want sharper reads on the meta. Track commander performance, card inclusion pressure, and tournament trends with a clean, Kamigawa: Neon Dynasty-inspired interface.
+tedh.gg is a cEDH site for players who want a fast read on commanders, tournaments, and trends with a clean, Kamigawa: Neon Dynasty-inspired interface.
 
 ## What you can do
 

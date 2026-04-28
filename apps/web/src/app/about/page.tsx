@@ -2,9 +2,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
 
 export const metadata = {
-  title: "About | cEDH Analytics",
+  title: "About | tedh.gg",
   description:
-    "Methodology, statistics, and technical details behind cEDH Analytics",
+    "Methodology, statistics, and technical details behind tedh.gg",
 };
 
 export default function AboutPage() {
@@ -21,7 +21,7 @@ export default function AboutPage() {
               ← Back to Home
             </Link>
             <h1 className="mt-4 text-3xl font-semibold text-foreground md:text-4xl">
-              About cEDH Analytics
+              About tedh.gg
             </h1>
             <p className="text-muted-foreground mt-2">
               Methodology, statistics, and technical details.

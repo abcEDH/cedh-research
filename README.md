@@ -1,6 +1,6 @@
-# cEDH Research
+# tedh.gg
 
-Unified backend ingestion + frontend dashboard for cEDH analytics.
+Unified backend ingestion + frontend app for tedh.gg.
 
 ## Structure
 - apps/web: Next.js dashboard (App Router, Tailwind, Recharts)
