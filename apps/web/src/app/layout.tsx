@@ -3,8 +3,8 @@ import "./globals.css";
 import { MotifLayer } from "@/components/motifs/MotifLayer";
 
 export const metadata: Metadata = {
-  title: "cEDH Analytics",
-  description: "Data-driven insights for competitive Commander. Track commander performance, card frequencies, and meta trends.",
+  title: "tedh.gg",
+  description: "tedh.gg for competitive Commander. Track commander performance, card trends, and tournament results.",
 };
 
 export default function RootLayout({

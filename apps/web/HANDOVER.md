@@ -27,7 +27,9 @@ If you add these, we can swap the UI to read directly from the materialized view
 ## Release/versioning automation
 - Semantic Release runs on push to `main` via `.github/workflows/frontend.yml` and also remains available as a manual fallback in `.github/workflows/release.yml`.
 - The semantic release step updates `CHANGELOG.md`, bumps `package.json` version, creates a git tag, and publishes a GitHub Release.
-- Production aliasing is owned by `.github/workflows/cd.yml`, which resolves the matching Vercel deployment for the current `main` commit and points `cedh-research.vercel.app` at it.
+- Production aliasing is owned by `.github/workflows/cd.yml`, which resolves the matching Vercel deployment for the current `main` commit and points `tedh.gg` at it.
+- The alias target is also configurable through the GitHub repository variable `PRODUCTION_DOMAIN` if production hostname changes again.
+- As of April 28, 2026, `tedh.gg`, `www.tedh.gg`, and `web-theta-blush-49.vercel.app` all resolved to the latest production deployment, while `cedh-research.vercel.app` remained on an older deployment and should be treated as a legacy alias until explicitly handled.
 - Deploy tags were removed; deploy state is tracked by Vercel deployment metadata and GitHub release history instead.
 - Requires GitHub Actions permissions: `contents: write` for release tagging and `VERCEL_TOKEN` for production aliasing.
 
