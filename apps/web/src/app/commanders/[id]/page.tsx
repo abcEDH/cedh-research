@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { normalizeDateKey } from "@/lib/format-utils";
+import { type CommanderStat } from "@/lib/types";
 import { normalizeDisplayString } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -47,22 +48,6 @@ function formatPValue(pValue: number) {
   return pValue.toFixed(3);
 }
 
-interface CommanderStat {
-  commander_id: string;
-  commander_name: string;
-  archetype: string | null;
-  color_identity: string[] | null;
-  total_entries: number;
-  tournaments_played: number;
-  total_wins: number;
-  total_losses: number;
-  total_draws: number;
-  avg_win_rate: string;
-  top_16_count: number;
-  conversion_rate_top_16: string;
-  top_cut_count: number;
-  conversion_rate_top_cut: string;
-}
 
 interface CommanderMeta {
   scryfall_ids: string[] | null;
