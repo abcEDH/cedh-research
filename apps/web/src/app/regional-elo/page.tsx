@@ -2,6 +2,7 @@ import { supabase } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
 import { buildProfiles, getCommanderUsageRows, selectCommanderForecastRows } from "@/lib/meta-prep";
+import { isKnownCommanderName } from "@/lib/commander-utils";
 import { RegionalLeaderboardTable } from "./regional-leaderboard-table";
 import { RegionSelector } from "./region-selector";
 import { inferCountryForRegion } from "@/lib/region-countries";
@@ -239,11 +240,6 @@ async function fetchTopdeckSortedActiveLeaderboardRows(
   }
 
   return null;
-}
-
-function isKnownCommander(commanderName: string | null | undefined) {
-  const normalized = (commanderName ?? "").trim().toLowerCase();
-  return normalized.length > 0 && normalized !== "unknown commander";
 }
 
 type LeaderboardPage = {
@@ -840,7 +836,7 @@ async function fetchLatestCommanders(rows: LeaderboardRow[]): Promise<Map<string
   const profiles = buildProfiles(topdeckIds, forecastRows, 1, referenceDate.toISOString());
   for (const profile of profiles.players) {
     const commander = profile.commanders[0]?.commander ?? null;
-    if (isKnownCommander(commander)) {
+    if (isKnownCommanderName(commander)) {
       profileActiveCommanderByTopdeckId.set(profile.topdeckId, commander);
       const existing = latestByPlayer.get(profile.topdeckId);
       if (existing) {
@@ -854,7 +850,7 @@ async function fetchLatestCommanders(rows: LeaderboardRow[]): Promise<Map<string
 
   for (const row of profileRows) {
     const activeCommander = row.active_commander;
-    if (row.topdeck_id && activeCommander && isKnownCommander(activeCommander)) {
+    if (row.topdeck_id && activeCommander && isKnownCommanderName(activeCommander)) {
       profileActiveCommanderByTopdeckId.set(row.topdeck_id, activeCommander);
     }
   }
