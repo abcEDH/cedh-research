@@ -2,6 +2,7 @@ import "server-only";
 import { supabase } from "@/lib/supabase";
 import { isKnownCommanderName } from "@/lib/commander-utils";
 import { chunkArray } from "@/lib/array-utils";
+import { buildTopdeckDecklistUrl } from "@/lib/topdeck-profile";
 
 const RECENCY_HALF_LIFE_DAYS = 15;
 const SUPABASE_PAGE_SIZE = 1000;
@@ -104,10 +105,6 @@ function commanderKey(value: string) {
 
 function decklistProfileKey(topdeckId: string, commanderName: string) {
   return `${topdeckId}:${commanderKey(commanderName)}`;
-}
-
-function buildTopdeckDecklistUrl(tournamentSlug: string | null | undefined, topdeckId: string | null | undefined) {
-  return tournamentSlug && topdeckId ? `https://topdeck.gg/deck/${tournamentSlug}/${topdeckId}` : null;
 }
 
 function calculateRecencyWeight(eventTimestamp: number, referenceTimestamp: number) {

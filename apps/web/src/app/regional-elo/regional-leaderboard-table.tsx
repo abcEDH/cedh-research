@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { formatDate } from "@/lib/format-utils";
+import { buildTopdeckTournamentUrl } from "@/lib/topdeck-profile";
 
 type LeaderboardRow = {
   region_type: string;
@@ -28,10 +29,6 @@ type LatestCommanderRow = {
   latest_tournament_date: string | null;
   latest_tournament_topdeck_tid: string | null;
 };
-
-function buildTopdeckTournamentUrl(tournamentSlug: string | null | undefined) {
-  return tournamentSlug ? `https://topdeck.gg/bracket/${tournamentSlug}` : null;
-}
 
 export function RegionalLeaderboardTable({
   latestByPlayer,
