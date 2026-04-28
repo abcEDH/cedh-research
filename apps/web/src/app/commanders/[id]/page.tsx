@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { normalizeDateKey } from "@/lib/format-utils";
 import { normalizeDisplayString } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -78,11 +79,6 @@ type TrendRow = {
   draws?: number | null;
   total_players?: number | null;
 };
-
-function normalizeDateKey(value: string | null | undefined) {
-  if (!value) return "";
-  return value.length >= 10 ? value.slice(0, 10) : value;
-}
 
 interface CardReport {
   commander: string;
