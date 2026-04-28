@@ -2,6 +2,7 @@ import Link from "next/link";
 import { unstable_cache } from "next/cache";
 import { supabase } from "@/lib/supabase";
 import { normalizeDateKey } from "@/lib/format-utils";
+import { BackLink } from "@/components/ui/back-link";
 import { type CommanderStat } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -313,12 +314,7 @@ export default async function CommandersPage() {
         <div className="relative mb-8 overflow-hidden rounded-2xl border border-border/70 bg-card/60 px-6 py-6">
           <div className="knd-watermark absolute inset-0" />
           <div className="relative">
-            <Link
-              href="/"
-              className="text-sm text-muted-foreground hover:text-foreground"
-            >
-              ← Back to Home
-            </Link>
+            <BackLink href="/" label="Back to Home" />
             <h1 className="mt-4 text-3xl font-semibold text-foreground md:text-4xl">
               Commander Rankings
             </h1>

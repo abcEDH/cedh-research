@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { normalizeDateKey } from "@/lib/format-utils";
+import { BackLink } from "@/components/ui/back-link";
 import { type CommanderStat } from "@/lib/types";
 import { normalizeDisplayString } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -444,12 +445,7 @@ export default async function CommanderDetailPage({
         <div className="relative mb-8 overflow-hidden rounded-2xl border border-border/70 bg-card/60 px-6 py-6">
           <div className="knd-watermark absolute inset-0" />
           <div className="relative">
-            <Link
-              href="/commanders"
-              className="text-sm text-muted-foreground hover:text-foreground"
-            >
-              ← Back to Commanders
-            </Link>
+            <BackLink href="/commanders" label="Back to Commanders" />
             <div className="mt-5 grid gap-6 lg:grid-cols-[auto_1fr] lg:items-center">
               {commanderMeta?.scryfall_ids && commanderMeta.scryfall_ids.length > 0 && (
                 <div className="flex items-center gap-3">
