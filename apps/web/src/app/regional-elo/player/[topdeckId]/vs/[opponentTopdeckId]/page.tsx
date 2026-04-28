@@ -1,0 +1,486 @@
+import Link from "next/link";
+import { unstable_cache } from "next/cache";
+
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  fetchCanonicalPlayerLogs,
+  fetchPlayer,
+  type PlayerRow,
+} from "../../player-log-data";
+import { buildPlayerVersusHref } from "../../player-routes";
+
+const PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS = 60 * 15;
+
+const fetchCachedCanonicalPlayerLogs = unstable_cache(
+  async (playerId: string) => fetchCanonicalPlayerLogs(playerId),
+  ["regional-player-canonical-logs-v1"],
+  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
+);
+
+function formatShortDate(value: string | null | undefined) {
+  if (!value) return "—";
+  return new Date(value).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function formatRecord(wins: number, losses: number, draws: number) {
+  return `${wins}-${losses}-${draws}`;
+}
+
+function participantTone(role: "subject" | "opponent" | "other") {
+  if (role === "subject") return "font-semibold text-foreground";
+  if (role === "opponent") return "font-semibold text-foreground";
+  return "text-foreground";
+}
+
+function participantRowClass(result: string) {
+  if (result === "win") {
+    return "border-t border-fuchsia-500/45 bg-fuchsia-500/12";
+  }
+  return "border-t border-border/60";
+}
+
+function gameSummaryClass(
+  gameResultLabel: string,
+  player: PlayerRow,
+  opponent: PlayerRow
+) {
+  if (gameResultLabel === `${player.name} won`) {
+    return "rounded-xl border border-emerald-500/40 bg-emerald-500/10";
+  }
+  if (gameResultLabel === `${opponent.name} won`) {
+    return "rounded-xl border border-sky-500/40 bg-sky-500/10";
+  }
+  if (gameResultLabel === "Draw") {
+    return "rounded-xl border border-slate-400/40 bg-slate-400/10";
+  }
+  return "rounded-xl border border-amber-500/40 bg-amber-500/10";
+}
+
+function describeGameResult(
+  player: PlayerRow,
+  podRows: Array<{
+    seat: number;
+    playerName: string;
+    topdeckId: string | null;
+    commanderName: string | null;
+    result: string;
+    role: "subject" | "opponent" | "other";
+  }>
+) {
+  const winners = podRows.filter((podPlayer) => podPlayer.result === "win");
+  if (winners.length === 0) return "Draw";
+  if (winners.length === 1) {
+    return `${winners[0].playerName} won`;
+  }
+  if (winners.some((podPlayer) => podPlayer.topdeckId === player.topdeck_id)) {
+    return `${player.name} won`;
+  }
+  return `${winners[0].playerName} won`;
+}
+
+function formatPlayerSeatCommanderLabel(
+  playerName: string,
+  seat: number | null | undefined,
+  commanderName: string | null | undefined
+) {
+  return `${playerName}: Seat ${seat ?? "?"}, ${commanderName ?? "Unknown Commander"}`;
+}
+
+function buildPodRows(player: PlayerRow, opponent: PlayerRow, log: Awaited<ReturnType<typeof fetchCanonicalPlayerLogs>>[number]) {
+  return [
+    {
+      seat: log.seat,
+      playerName: player.name,
+      topdeckId: player.topdeck_id,
+      commanderName: log.commanderName,
+      result: log.result,
+      role: "subject" as const,
+    },
+    ...log.opponents.map((podPlayer) => ({
+      seat: podPlayer.seat,
+      playerName: podPlayer.playerName,
+      topdeckId: podPlayer.topdeckId,
+      commanderName: podPlayer.commanderName,
+      result: podPlayer.result,
+      role: podPlayer.topdeckId === opponent.topdeck_id ? ("opponent" as const) : ("other" as const),
+    })),
+  ].sort((left, right) => left.seat - right.seat);
+}
+
+function countResults(results: Array<string | null | undefined>) {
+  return results.reduce(
+    (totals, result) => {
+      if (result === "win") {
+        totals.wins += 1;
+      } else if (result === "draw") {
+        totals.draws += 1;
+      } else if (result === "loss") {
+        totals.losses += 1;
+      }
+      return totals;
+    },
+    { wins: 0, losses: 0, draws: 0 }
+  );
+}
+
+function buildCommanderStats(
+  rows: Array<{ commanderName: string | null | undefined; result: string | null | undefined }>
+) {
+  const stats = new Map<
+    string,
+    { commanderName: string; games: number; wins: number; losses: number; draws: number }
+  >();
+
+  for (const row of rows) {
+    const commanderName = row.commanderName ?? "Unknown Commander";
+    const current = stats.get(commanderName) ?? {
+      commanderName,
+      games: 0,
+      wins: 0,
+      losses: 0,
+      draws: 0,
+    };
+    current.games += 1;
+    if (row.result === "win") {
+      current.wins += 1;
+    } else if (row.result === "loss") {
+      current.losses += 1;
+    } else if (row.result === "draw") {
+      current.draws += 1;
+    }
+    stats.set(commanderName, current);
+  }
+
+  return Array.from(stats.values()).sort((left, right) => {
+    if (right.games !== left.games) return right.games - left.games;
+    if (right.wins !== left.wins) return right.wins - left.wins;
+    return left.commanderName.localeCompare(right.commanderName);
+  });
+}
+
+export default async function RegionalPlayerVsPage({
+  params,
+}: {
+  params:
+    | Promise<{ topdeckId: string; opponentTopdeckId: string }>
+    | { topdeckId: string; opponentTopdeckId: string };
+}) {
+  const resolvedParams = await Promise.resolve(params);
+  const { topdeckId, opponentTopdeckId } = resolvedParams;
+
+  const [player, opponent] = await Promise.all([fetchPlayer(topdeckId), fetchPlayer(opponentTopdeckId)]);
+  if (!player || !opponent) {
+    return (
+      <main className="container mx-auto px-4 py-10">
+        <p className="text-sm text-muted-foreground">Player matchup not found.</p>
+      </main>
+    );
+  }
+
+  const playerLogs = await fetchCachedCanonicalPlayerLogs(player.id);
+  const sharedLogs = playerLogs.filter((log) =>
+    log.opponents.some((podPlayer) => podPlayer.topdeckId === opponentTopdeckId)
+  );
+
+  const playerRecord = countResults(sharedLogs.map((log) => log.result));
+  const opponentRecord = countResults(
+    sharedLogs.map(
+      (log) => log.opponents.find((podPlayer) => podPlayer.topdeckId === opponentTopdeckId)?.result
+    )
+  );
+  const playerCommanderStats = buildCommanderStats(
+    sharedLogs.map((log) => ({
+      commanderName: log.commanderName,
+      result: log.result,
+    }))
+  );
+  const opponentCommanderStats = buildCommanderStats(
+    sharedLogs.map((log) => {
+      const opponentRow = log.opponents.find((podPlayer) => podPlayer.topdeckId === opponentTopdeckId);
+      return {
+        commanderName: opponentRow?.commanderName,
+        result: opponentRow?.result,
+      };
+    })
+  );
+  const latestSharedDate = sharedLogs[0]?.startDate ?? null;
+  const earliestSharedDate = sharedLogs[sharedLogs.length - 1]?.startDate ?? null;
+
+  return (
+    <div className="min-h-screen">
+      <main className="container mx-auto px-4 pb-20 pt-10">
+        <div className="space-y-8">
+          <div className="space-y-3">
+            <Link href={`/regional-elo/player/${topdeckId}`} className="text-sm text-muted-foreground hover:text-foreground">
+              ← Back to player profile
+            </Link>
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div>
+                <h1 className="text-3xl font-semibold text-foreground md:text-4xl">
+                  {player.name} vs {opponent.name}
+                </h1>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Shared game history, mirrored head-to-head record, and full pod context.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2 text-sm">
+                <Link
+                  href={`/regional-elo/player/${topdeckId}`}
+                  className="rounded-md border border-border/70 px-3 py-2 text-foreground hover:border-primary/40 hover:text-primary"
+                >
+                  {player.name} profile
+                </Link>
+                <Link
+                  href={`/regional-elo/player/${opponentTopdeckId}`}
+                  className="rounded-md border border-border/70 px-3 py-2 text-foreground hover:border-primary/40 hover:text-primary"
+                >
+                  {opponent.name} profile
+                </Link>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+            <Card className="knd-panel xl:col-span-2">
+              <CardHeader>
+                <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                  {player.name} Record
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-1">
+                <div className="text-2xl font-semibold text-foreground">
+                  {formatRecord(playerRecord.wins, playerRecord.losses, playerRecord.draws)}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  Perspective:{" "}
+                  <Link href={buildPlayerVersusHref(topdeckId, opponentTopdeckId)} className="hover:text-primary">
+                    {player.name}
+                  </Link>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="knd-panel xl:col-span-2">
+              <CardHeader>
+                <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                  {opponent.name} Record
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-1">
+                <div className="text-2xl font-semibold text-foreground">
+                  {formatRecord(opponentRecord.wins, opponentRecord.losses, opponentRecord.draws)}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  Perspective:{" "}
+                  <Link href={buildPlayerVersusHref(opponentTopdeckId, topdeckId)} className="hover:text-primary">
+                    {opponent.name}
+                  </Link>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="knd-panel">
+              <CardHeader>
+                <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                  Shared Games
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-2xl font-semibold text-foreground">
+                {sharedLogs.length}
+              </CardContent>
+            </Card>
+            <Card className="knd-panel">
+              <CardHeader>
+                <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                  Latest Meeting
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm font-medium text-foreground">
+                {formatShortDate(latestSharedDate)}
+              </CardContent>
+            </Card>
+            <Card className="knd-panel">
+              <CardHeader>
+                <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                  First Meeting
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm font-medium text-foreground">
+                {formatShortDate(earliestSharedDate)}
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            <Card className="knd-panel">
+              <CardHeader>
+                <CardTitle className="text-sm uppercase tracking-[0.2em] text-muted-foreground">
+                  {player.name} Commander Stats
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-auto">
+                  <table className="w-full text-sm">
+                    <thead className="text-left text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                      <tr>
+                        <th className="px-2 py-3">Commander</th>
+                        <th className="px-2 py-3 text-right">Games</th>
+                        <th className="px-2 py-3 text-right">W-L-D</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {playerCommanderStats.map((row) => (
+                        <tr key={`${player.topdeck_id}:${row.commanderName}`} className="border-t border-border/60">
+                          <td className="px-2 py-3 font-medium text-foreground">{row.commanderName}</td>
+                          <td className="px-2 py-3 text-right font-mono text-muted-foreground">{row.games}</td>
+                          <td className="px-2 py-3 text-right font-mono text-muted-foreground">
+                            {row.wins}-{row.losses}-{row.draws}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="knd-panel">
+              <CardHeader>
+                <CardTitle className="text-sm uppercase tracking-[0.2em] text-muted-foreground">
+                  {opponent.name} Commander Stats
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-auto">
+                  <table className="w-full text-sm">
+                    <thead className="text-left text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                      <tr>
+                        <th className="px-2 py-3">Commander</th>
+                        <th className="px-2 py-3 text-right">Games</th>
+                        <th className="px-2 py-3 text-right">W-L-D</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {opponentCommanderStats.map((row) => (
+                        <tr key={`${opponent.topdeck_id}:${row.commanderName}`} className="border-t border-border/60">
+                          <td className="px-2 py-3 font-medium text-foreground">{row.commanderName}</td>
+                          <td className="px-2 py-3 text-right font-mono text-muted-foreground">{row.games}</td>
+                          <td className="px-2 py-3 text-right font-mono text-muted-foreground">
+                            {row.wins}-{row.losses}-{row.draws}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card className="knd-panel">
+            <CardHeader>
+              <CardTitle className="text-sm uppercase tracking-[0.2em] text-muted-foreground">
+                Chronological Game History
+              </CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Sorted newest first. Expand a game to see the full pod and winner highlight.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {sharedLogs.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No shared games found between {player.name} and {opponent.name}.
+                </p>
+              ) : (
+                sharedLogs.map((log) => {
+                  const podRows = buildPodRows(player, opponent, log);
+                  const gameResultLabel = describeGameResult(player, podRows);
+                  const opponentRow =
+                    podRows.find((podPlayer) => podPlayer.topdeckId === opponent.topdeck_id) ?? null;
+                  return (
+                    <details
+                      key={log.gameId}
+                      className={gameSummaryClass(gameResultLabel, player, opponent)}
+                    >
+                      <summary className="cursor-pointer list-none px-4 py-4">
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                              <div className="text-base font-semibold text-foreground">{log.tournamentName}</div>
+                              <div className="text-sm text-muted-foreground">
+                                {formatShortDate(log.startDate)} · {log.roundLabel} · {log.tableLabel}
+                                {log.state ? ` · ${log.state.toUpperCase()}` : ""}
+                              </div>
+                              <span>
+                                {formatPlayerSeatCommanderLabel(player.name, log.seat, log.commanderName)}
+                              </span>
+                              <span>
+                                {formatPlayerSeatCommanderLabel(
+                                  opponent.name,
+                                  opponentRow?.seat,
+                                  opponentRow?.commanderName
+                                )}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="rounded-md border border-border/60 px-3 py-2 text-sm">
+                            <span className="text-muted-foreground">Result: </span>
+                            <span className="font-medium text-foreground">{gameResultLabel}</span>
+                          </div>
+                        </div>
+                      </summary>
+                      <div className="border-t border-border/60 px-4 py-4">
+                        <div className="overflow-auto">
+                          <table className="w-full text-sm">
+                            <thead className="text-left text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                              <tr>
+                                <th className="px-2 py-3">Seat</th>
+                                <th className="px-2 py-3">Player</th>
+                                <th className="px-2 py-3">Commander</th>
+                                <th className="px-2 py-3 text-right">Result</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {podRows.map((podPlayer) => (
+                                <tr
+                                  key={`${log.gameId}:${podPlayer.seat}:${podPlayer.playerName}`}
+                                  className={participantRowClass(podPlayer.result)}
+                                >
+                                  <td className="px-2 py-3 font-mono text-muted-foreground">{podPlayer.seat}</td>
+                                  <td className="px-2 py-3">
+                                    {podPlayer.topdeckId ? (
+                                      <Link
+                                        href={`/regional-elo/player/${podPlayer.topdeckId}`}
+                                        className={`${participantTone(podPlayer.role)} hover:text-primary`}
+                                      >
+                                        {podPlayer.playerName}
+                                      </Link>
+                                    ) : (
+                                      <span className={participantTone(podPlayer.role)}>{podPlayer.playerName}</span>
+                                    )}
+                                  </td>
+                                  <td className="px-2 py-3 text-muted-foreground">
+                                    {podPlayer.commanderName ?? "Unknown Commander"}
+                                  </td>
+                                  <td className="px-2 py-3 text-right font-mono text-muted-foreground">
+                                    {podPlayer.result === "win" ? "WINNER" : podPlayer.result.toUpperCase()}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </details>
+                  );
+                })
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </main>
+    </div>
+  );
+}

@@ -13,6 +13,7 @@ The main fixes are:
 - prune stale `player_commander_profiles` rows that no longer have any qualifying known-commander history
 - normalize escaped apostrophes in commander names so rows like `Kraum, Ludevic\\'s Opus / Tymna the Weaver` merge into their canonical forms
 - add a sweep script that can merge duplicate partner-pair commander rows back into the canonical rows
+- fix Tournament Prep event-URL fallback start times by reading TopDeck event timing from the public Firestore event document instead of hardcoding an empty start date
 - invalidate the player-profile and Tournament Prep caches so repaired data appears in the UI
 - add a skip-existing ingestion mode so large backfills do not waste time reprocessing tournaments already in Supabase
 
@@ -20,6 +21,7 @@ Changed files in PR 110:
 
 - [page.tsx](/Users/alexanderlien/Documents/GitHub/cedh-research/apps/web/src/app/regional-elo/player/[topdeckId]/page.tsx)
 - [page.tsx](/Users/alexanderlien/Documents/GitHub/cedh-research/apps/web/src/app/tournament-likelihood/page.tsx)
+- [topdeck.ts](/Users/alexanderlien/Documents/GitHub/cedh-research/apps/web/src/lib/topdeck.ts)
 - [ingest.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/ingest.py)
 - [rebuild_player_commander_profiles.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/rebuild_player_commander_profiles.py)
 - [repair_unknown_commanders_from_decklists.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/repair_unknown_commanders_from_decklists.py)
@@ -124,6 +126,18 @@ GitHub source checked against the live PR diff:
 
 These cache-key changes force refreshed reads after repairing commander rows and rebuilding `player_commander_profiles`.
 
+## Tournament Prep Event Timing Fallback
+
+- Updates [topdeck.ts](/Users/alexanderlien/Documents/GitHub/cedh-research/apps/web/src/lib/topdeck.ts) so the no-`TOPDECK_API_KEY` fallback path no longer hardcodes `startDate: ""`.
+- Adds a Firestore-backed event timing fallback for TopDeck event URLs using TopDeck's public Firebase project:
+  - project: `eminence-1b40b`
+  - collection: `otherEvents/{slug}`
+- Reads `startDate` and `endDate` from the Firestore event document and uses that timestamp in the returned tournament payload.
+- This fixes Tournament Prep event pages that were showing `Unknown start time` even though the TopDeck event page displayed a start time.
+- Verified against `breach-the-bay-2`:
+  - TopDeck Firestore document returned `startDate = 1787410800`
+  - local build now has access to the real event start time instead of an empty value
+
 ## Data Repair Work Done With These Changes
 
 Using the scripts in this PR:
@@ -196,3 +210,4 @@ Operational checks completed:
 - the pruning rebuild deleted `336` stale profile rows before the upsert
 - partner-order duplicate check after the sweep returned `0` duplicate partner-pair commander keys
 - escaped-apostrophe commander cleanup completed with `5` direct updates and `17` merges
+- `npm run build --workspace apps/web` passed after the Tournament Prep event-timing fallback change

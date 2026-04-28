@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { startTransition, useState } from "react";
+import { buildPlayerVersusHref } from "./player-routes";
 import type { CommanderRecord, OpponentRecord } from "./player-stats";
 
 const PAGE_SIZE = 12;
@@ -14,10 +15,12 @@ function isOpponentRecord(record: RecordRow): record is OpponentRecord {
 
 export function OpponentRecordsTable({
   records,
+  playerTopdeckId,
   entityLabel = "Opponent",
   emptyLabel = "No opponent records found.",
 }: {
   records: RecordRow[];
+  playerTopdeckId?: string;
   entityLabel?: string;
   emptyLabel?: string;
 }) {
@@ -52,9 +55,9 @@ export function OpponentRecordsTable({
               >
                 <td className="px-2 py-3">
                   {isOpponentRecord(record) ? (
-                    record.opponentTopdeckId ? (
+                    record.opponentTopdeckId && playerTopdeckId ? (
                       <Link
-                        href={`/regional-elo/player/${record.opponentTopdeckId}`}
+                        href={buildPlayerVersusHref(playerTopdeckId, record.opponentTopdeckId)}
                         className="font-medium text-foreground hover:text-primary"
                       >
                         {record.opponentName}
