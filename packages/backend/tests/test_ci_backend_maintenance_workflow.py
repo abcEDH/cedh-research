@@ -18,5 +18,10 @@ class BackendMaintenanceWorkflowTests(unittest.TestCase):
         self.assertIn('/rest/v1/elo_maintenance_jobs?id=eq.${JOB_ID}&status=in.(pending,dispatched,running)', workflow)
 
 
+    def test_maintenance_workflow_does_not_run_ingestion(self) -> None:
+        workflow = WORKFLOW_PATH.read_text()
+        self.assertNotIn("ingest.py", workflow)
+
+
 if __name__ == "__main__":
     unittest.main()

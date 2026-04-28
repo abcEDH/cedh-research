@@ -1,4 +1,5 @@
 import unittest
+import os
 import sys
 import types
 from pathlib import Path
@@ -31,7 +32,15 @@ sys.modules.setdefault("dateutil.parser", dateutil_parser_module)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from ingest import extract_standing_rates, SupabaseClient  # noqa: E402
+from ingest import (  # noqa: E402
+    extract_standing_rates,
+    INGESTION_JOB_ALREADY_CLAIMED_EXIT_CODE,
+    SupabaseClient,
+    claim_ingestion_job,
+    complete_ingestion_job,
+    fail_ingestion_job,
+    main,
+)
 
 
 class ExtractStandingRatesTests(unittest.TestCase):
@@ -174,6 +183,117 @@ class SupabaseClientRpcTests(unittest.TestCase):
 
         call_kwargs = mock_post.call_args.kwargs
         self.assertEqual(call_kwargs["timeout"], 120)
+
+
+class IngestionJobLifecycleTests(unittest.TestCase):
+    def test_claim_ingestion_job_sends_update(self) -> None:
+        client = Mock()
+        client.update.return_value = [{"id": "job-1"}]
+        result = claim_ingestion_job(client, "job-1", github_run_id=99)
+        self.assertTrue(result)
+        client.update.assert_called_once()
+        call_args = client.update.call_args
+        self.assertEqual(call_args.args[0], "ingestion_jobs")
+        self.assertEqual(call_args.args[1]["status"], "running")
+        self.assertEqual(call_args.args[1]["github_run_id"], 99)
+
+    def test_claim_ingestion_job_returns_false_on_empty(self) -> None:
+        client = Mock()
+        client.update.return_value = []
+        result = claim_ingestion_job(client, "job-1", github_run_id=0)
+        self.assertFalse(result)
+
+    def test_claim_ingestion_job_raises_on_operational_error(self) -> None:
+        client = Mock()
+        client.update.side_effect = ConnectionError("Supabase unreachable")
+        with self.assertRaises(ConnectionError):
+            claim_ingestion_job(client, "job-1", github_run_id=0)
+
+    @patch.dict(
+        os.environ,
+        {
+            "TOPDECK_API_KEY": "topdeck-key",
+            "SUPABASE_SERVICE_KEY": "supabase-key",
+            "SUPABASE_URL": "https://test.supabase.co",
+        },
+        clear=False,
+    )
+    @patch("ingest._run_ingestion")
+    @patch("ingest.update_ingestion_heartbeat")
+    @patch("ingest.claim_ingestion_job")
+    @patch("ingest.DataIngester")
+    @patch("ingest.SupabaseClient")
+    @patch("ingest.TopDeckClient")
+    @patch("ingest.load_local_env")
+    def test_main_exits_with_distinct_code_when_job_already_claimed(
+        self,
+        mock_load_local_env: Mock,
+        mock_topdeck_client: Mock,
+        mock_supabase_client: Mock,
+        mock_data_ingester: Mock,
+        mock_claim_ingestion_job: Mock,
+        mock_update_ingestion_heartbeat: Mock,
+        mock_run_ingestion: Mock,
+    ) -> None:
+        mock_claim_ingestion_job.return_value = False
+
+        with patch.object(sys, "argv", ["ingest.py", "--job-id", "job-1"]):
+            with self.assertRaises(SystemExit) as exc:
+                main()
+
+        self.assertEqual(exc.exception.code, INGESTION_JOB_ALREADY_CLAIMED_EXIT_CODE)
+        mock_update_ingestion_heartbeat.assert_not_called()
+        mock_run_ingestion.assert_not_called()
+
+    @patch.dict(
+        os.environ,
+        {
+            "TOPDECK_API_KEY": "topdeck-key",
+            "SUPABASE_SERVICE_KEY": "supabase-key",
+            "SUPABASE_URL": "https://test.supabase.co",
+        },
+        clear=False,
+    )
+    @patch("ingest._run_ingestion")
+    @patch("ingest.update_ingestion_heartbeat")
+    @patch("ingest.claim_ingestion_job")
+    @patch("ingest.DataIngester")
+    @patch("ingest.SupabaseClient")
+    @patch("ingest.TopDeckClient")
+    @patch("ingest.load_local_env")
+    def test_main_exits_when_claim_ingestion_job_errors(
+        self,
+        mock_load_local_env: Mock,
+        mock_topdeck_client: Mock,
+        mock_supabase_client: Mock,
+        mock_data_ingester: Mock,
+        mock_claim_ingestion_job: Mock,
+        mock_update_ingestion_heartbeat: Mock,
+        mock_run_ingestion: Mock,
+    ) -> None:
+        mock_claim_ingestion_job.side_effect = ConnectionError("Supabase unreachable")
+
+        with patch.object(sys, "argv", ["ingest.py", "--job-id", "job-1"]):
+            with self.assertRaises(SystemExit) as exc:
+                main()
+
+        self.assertEqual(exc.exception.code, 1)
+        mock_claim_ingestion_job.assert_called_once()
+        mock_update_ingestion_heartbeat.assert_not_called()
+        mock_run_ingestion.assert_not_called()
+
+    def test_fail_ingestion_job_truncates_error(self) -> None:
+        client = Mock()
+        fail_ingestion_job(client, "job-1", "x" * 3000)
+        call_args = client.update.call_args
+        self.assertLessEqual(len(call_args.args[1]["error_text"]), 2000)
+
+    def test_complete_ingestion_job_sets_completed_status(self) -> None:
+        client = Mock()
+        complete_ingestion_job(client, "job-1", {"duration_seconds": 42.5})
+        call_args = client.update.call_args
+        self.assertEqual(call_args.args[1]["status"], "completed")
+        self.assertEqual(call_args.args[1]["duration_seconds"], 42.5)
 
 
 if __name__ == "__main__":
