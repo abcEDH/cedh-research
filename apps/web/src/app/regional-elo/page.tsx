@@ -432,7 +432,7 @@ async function fetchCountryLeaderboardRows(
 
     if (error) {
       console.error("Error fetching country leaderboard rows:", error);
-      return { rows: [], totalCount: 0 };
+      throw error;
     }
 
     const pageRows = (data as LeaderboardRow[]) ?? [];
@@ -491,7 +491,7 @@ async function fetchLegacyLeaderboardRows(
 
     if (error) {
       console.error("Error fetching legacy leaderboard rows:", error);
-      return { rows: [], totalCount: 0 };
+      throw error;
     }
 
     rows.push(...((data as LeaderboardRow[]) ?? []));
@@ -657,7 +657,7 @@ async function fetchRegionRows(): Promise<{ rows: RegionRow[]; supportsCountry: 
 
   if (fallbackError) {
     console.error("Error fetching region rows:", fallbackError);
-    return { rows: [], supportsCountry: false };
+    throw fallbackError;
   }
 
   const fallbackRows = ((fallbackData ?? []) as Omit<RegionRow, "country_key">[]).map((row) => ({

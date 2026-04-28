@@ -108,4 +108,17 @@ describe("regional-elo cache configuration", () => {
     // Verify plain objects don't have .entries() as a method
     expect(typeof (result as Record<string, unknown>).entries).toBe("undefined");
   });
+
+  it("source throws on region and leaderboard query errors instead of caching empty results", async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+    const source = fs.readFileSync(
+      path.resolve(__dirname, "../../src/app/regional-elo/page.tsx"),
+      "utf-8"
+    );
+
+    expect(source).toContain("throw error;");
+    expect(source).toContain("throw fallbackError;");
+    expect(source).not.toContain("return { rows: [], totalCount: 0 };");
+  });
 });
