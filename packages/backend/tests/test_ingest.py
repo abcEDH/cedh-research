@@ -31,7 +31,13 @@ sys.modules.setdefault("dateutil.parser", dateutil_parser_module)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from ingest import extract_standing_rates, SupabaseClient  # noqa: E402
+from ingest import (  # noqa: E402
+    extract_standing_rates,
+    SupabaseClient,
+    claim_ingestion_job,
+    complete_ingestion_job,
+    fail_ingestion_job,
+)
 
 
 class ExtractStandingRatesTests(unittest.TestCase):
@@ -174,6 +180,38 @@ class SupabaseClientRpcTests(unittest.TestCase):
 
         call_kwargs = mock_post.call_args.kwargs
         self.assertEqual(call_kwargs["timeout"], 120)
+
+
+class IngestionJobLifecycleTests(unittest.TestCase):
+    def test_claim_ingestion_job_sends_update(self) -> None:
+        client = Mock()
+        client.update.return_value = [{"id": "job-1"}]
+        result = claim_ingestion_job(client, "job-1", github_run_id=99)
+        self.assertTrue(result)
+        client.update.assert_called_once()
+        call_args = client.update.call_args
+        self.assertEqual(call_args.args[0], "ingestion_jobs")
+        self.assertEqual(call_args.args[1]["status"], "running")
+        self.assertEqual(call_args.args[1]["github_run_id"], 99)
+
+    def test_claim_ingestion_job_returns_false_on_empty(self) -> None:
+        client = Mock()
+        client.update.return_value = []
+        result = claim_ingestion_job(client, "job-1", github_run_id=0)
+        self.assertFalse(result)
+
+    def test_fail_ingestion_job_truncates_error(self) -> None:
+        client = Mock()
+        fail_ingestion_job(client, "job-1", "x" * 3000)
+        call_args = client.update.call_args
+        self.assertLessEqual(len(call_args.args[1]["error_text"]), 2000)
+
+    def test_complete_ingestion_job_sets_completed_status(self) -> None:
+        client = Mock()
+        complete_ingestion_job(client, "job-1", {"duration_seconds": 42.5})
+        call_args = client.update.call_args
+        self.assertEqual(call_args.args[1]["status"], "completed")
+        self.assertEqual(call_args.args[1]["duration_seconds"], 42.5)
 
 
 if __name__ == "__main__":
