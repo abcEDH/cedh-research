@@ -1148,6 +1148,21 @@ class SupabaseClient:
                     logger.error(f"Supabase update error: {response.text}")
                     response.raise_for_status()
                 return response.json()
+            except requests.exceptions.HTTPError as e:
+                status_code = getattr(getattr(e, "response", None), "status_code", None)
+                if status_code is None:
+                    status_code = getattr(response, "status_code", None)
+
+                if status_code is not None and status_code >= 500 and attempt < max_retries - 1:
+                    wait_time = 2**attempt
+                    logger.warning(
+                        f"Update HTTP {status_code}, retrying in {wait_time}s... ({attempt + 1}/{max_retries})"
+                    )
+                    time.sleep(wait_time)
+                    continue
+
+                logger.error(f"Update failed after HTTP error: {e}")
+                raise
             except (
                 requests.exceptions.ConnectionError,
                 requests.exceptions.Timeout,

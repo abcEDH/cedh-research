@@ -104,6 +104,30 @@ class SupabaseClientUpdateTests(unittest.TestCase):
         self.assertEqual(result, [{"id": "row-1"}])
 
     @patch("ingest.requests.patch")
+    def test_update_retries_on_transient_http_error(self, mock_patch: Mock) -> None:
+        first_response = Mock()
+        first_response.status_code = 503
+        first_response.text = "service unavailable"
+        http_error = requests_module.exceptions.HTTPError("503")
+        http_error.response = first_response
+        first_response.raise_for_status.side_effect = http_error
+
+        second_response = Mock()
+        second_response.status_code = 200
+        second_response.json.return_value = [{"id": "row-1"}]
+
+        mock_patch.side_effect = [first_response, second_response]
+
+        with patch("ingest.time.sleep"):
+            result = self.client.update(
+                "elo_maintenance_jobs",
+                {"status": "running"},
+            )
+
+        self.assertEqual(mock_patch.call_count, 2)
+        self.assertEqual(result, [{"id": "row-1"}])
+
+    @patch("ingest.requests.patch")
     def test_update_returns_empty_list_on_no_match(self, mock_patch: Mock) -> None:
         mock_response = Mock()
         mock_response.status_code = 200

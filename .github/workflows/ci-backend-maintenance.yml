@@ -73,34 +73,6 @@ jobs:
             uv run --project packages/backend python packages/backend/src/regional_elo.py --smoke-days "${{ inputs.smoke_days }}" --dry-run
           fi
 
-      - name: Mark queued job as failed when maintenance workflow fails
-        if: ${{ failure() && inputs.refresh_mode == 'full' && inputs.job_id != '' }}
-        env:
-          JOB_ID: ${{ inputs.job_id }}
-          JOB_ERROR: GitHub Actions workflow failed in run ${{ github.run_id }}. Inspect the CI Backend Maintenance logs for details.
-        run: |
-          payload="$(python3 - <<'PY'
-          import json
-          import os
-          from datetime import datetime, timezone
-
-          print(json.dumps({
-              "status": "failed",
-              "completed_at": datetime.now(timezone.utc).isoformat(),
-              "error_text": os.environ["JOB_ERROR"][:2000],
-          }))
-          PY
-          )"
-
-          curl --fail-with-body --silent --show-error \
-            -X PATCH \
-            "$SUPABASE_URL/rest/v1/elo_maintenance_jobs?id=eq.${JOB_ID}&status=in.(pending,dispatched,running)" \
-            -H "apikey: $SUPABASE_SERVICE_KEY" \
-            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
-            -H "Content-Type: application/json" \
-            -H "Prefer: return=minimal" \
-            --data "$payload"
-
       - name: Upload logs
         uses: actions/upload-artifact@v4
         if: always()
@@ -190,3 +162,50 @@ jobs:
         with:
           name: benchmark-results
           path: benchmark_results.json
+
+  mark-job-failed:
+    name: Mark queued job as failed when any maintenance job fails
+    runs-on: ubuntu-latest
+    needs:
+      - ingest
+      - validate-views
+      - validate-data-integrity
+      - validate-regional-elo-consistency
+      - benchmark-performance
+    if: >-
+      ${{
+        always() &&
+        inputs.refresh_mode == 'full' &&
+        inputs.job_id != '' &&
+        (
+          contains(join(needs.*.result, ','), 'failure') ||
+          contains(join(needs.*.result, ','), 'cancelled')
+        )
+      }}
+    steps:
+      - name: Mark queued job as failed in Supabase
+        env:
+          JOB_ID: ${{ inputs.job_id }}
+          JOB_ERROR: GitHub Actions workflow failed in run ${{ github.run_id }}. Inspect the CI Backend Maintenance logs for details.
+        run: |
+          payload="$(python3 - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+
+          print(json.dumps({
+              "status": "failed",
+              "completed_at": datetime.now(timezone.utc).isoformat(),
+              "error_text": os.environ["JOB_ERROR"][:2000],
+          }))
+          PY
+          )"
+
+          curl --fail-with-body --silent --show-error \
+            -X PATCH \
+            "$SUPABASE_URL/rest/v1/elo_maintenance_jobs?id=eq.${JOB_ID}&status=in.(pending,dispatched,running)" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=minimal" \
+            --data "$payload"
