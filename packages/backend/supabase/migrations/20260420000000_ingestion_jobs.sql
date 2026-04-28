@@ -66,13 +66,16 @@ DECLARE
   v_existing_id uuid;
   v_new_id uuid;
 BEGIN
+  -- Serialize concurrent callers so the check-then-insert is atomic.
+  -- Lock ID 8675310 is arbitrary but must differ from any Elo advisory lock.
+  PERFORM pg_advisory_xact_lock(8675310);
+
   -- Block if any job is already pending, dispatched, or running
   SELECT id INTO v_existing_id
   FROM ingestion_jobs
   WHERE status IN ('pending', 'dispatched', 'running')
   ORDER BY created_at DESC
-  LIMIT 1
-  FOR UPDATE SKIP LOCKED;
+  LIMIT 1;
 
   IF v_existing_id IS NOT NULL THEN
     RAISE NOTICE 'Ingestion refresh already in progress: %', v_existing_id;

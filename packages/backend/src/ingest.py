@@ -1963,23 +1963,24 @@ INGESTION_JOBS_TABLE = "ingestion_jobs"
 
 
 def claim_ingestion_job(client: SupabaseClient, job_id: str, github_run_id: int) -> bool:
-    """Atomically claim an ingestion job by transitioning it to 'running'."""
-    try:
-        now = datetime.now().astimezone().isoformat()
-        updated = client.update(
-            INGESTION_JOBS_TABLE,
-            {
-                "status": "running",
-                "github_run_id": github_run_id,
-                "started_at": now,
-                "heartbeat_at": now,
-            },
-            {"id": f"eq.{job_id}", "status": "in.(pending,dispatched)"},
-        )
-        return bool(updated)
-    except Exception as exc:
-        logger.error(f"Failed to claim ingestion job {job_id}: {exc}")
-        return False
+    """Atomically claim an ingestion job by transitioning it to 'running'.
+
+    Returns True if the job was claimed, False if it was already claimed by
+    another runner (empty update result).  Raises on operational errors so the
+    caller can distinguish conflicts from failures.
+    """
+    now = datetime.now().astimezone().isoformat()
+    updated = client.update(
+        INGESTION_JOBS_TABLE,
+        {
+            "status": "running",
+            "github_run_id": github_run_id,
+            "started_at": now,
+            "heartbeat_at": now,
+        },
+        {"id": f"eq.{job_id}", "status": "in.(pending,dispatched)"},
+    )
+    return bool(updated)
 
 
 def update_ingestion_heartbeat(client: SupabaseClient, job_id: str) -> None:
@@ -2115,7 +2116,12 @@ def main():
     start_time = time.time()
 
     if job_id:
-        if not claim_ingestion_job(supabase, job_id, github_run_id):
+        try:
+            claimed = claim_ingestion_job(supabase, job_id, github_run_id)
+        except Exception as exc:
+            logger.error(f"Operational error claiming ingestion job {job_id}: {exc}")
+            sys.exit(1)
+        if not claimed:
             logger.info(f"No active ingestion job found for ID {job_id} - may already be claimed")
             return
         update_ingestion_heartbeat(supabase, job_id)

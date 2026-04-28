@@ -1,4 +1,5 @@
 import unittest
+import os
 import sys
 import types
 from pathlib import Path
@@ -37,6 +38,7 @@ from ingest import (  # noqa: E402
     claim_ingestion_job,
     complete_ingestion_job,
     fail_ingestion_job,
+    main,
 )
 
 
@@ -199,6 +201,49 @@ class IngestionJobLifecycleTests(unittest.TestCase):
         client.update.return_value = []
         result = claim_ingestion_job(client, "job-1", github_run_id=0)
         self.assertFalse(result)
+
+    def test_claim_ingestion_job_raises_on_operational_error(self) -> None:
+        client = Mock()
+        client.update.side_effect = ConnectionError("Supabase unreachable")
+        with self.assertRaises(ConnectionError):
+            claim_ingestion_job(client, "job-1", github_run_id=0)
+
+    @patch.dict(
+        os.environ,
+        {
+            "TOPDECK_API_KEY": "topdeck-key",
+            "SUPABASE_SERVICE_KEY": "supabase-key",
+            "SUPABASE_URL": "https://test.supabase.co",
+        },
+        clear=False,
+    )
+    @patch("ingest._run_ingestion")
+    @patch("ingest.update_ingestion_heartbeat")
+    @patch("ingest.claim_ingestion_job")
+    @patch("ingest.DataIngester")
+    @patch("ingest.SupabaseClient")
+    @patch("ingest.TopDeckClient")
+    @patch("ingest.load_local_env")
+    def test_main_exits_when_claim_ingestion_job_errors(
+        self,
+        mock_load_local_env: Mock,
+        mock_topdeck_client: Mock,
+        mock_supabase_client: Mock,
+        mock_data_ingester: Mock,
+        mock_claim_ingestion_job: Mock,
+        mock_update_ingestion_heartbeat: Mock,
+        mock_run_ingestion: Mock,
+    ) -> None:
+        mock_claim_ingestion_job.side_effect = ConnectionError("Supabase unreachable")
+
+        with patch.object(sys, "argv", ["ingest.py", "--job-id", "job-1"]):
+            with self.assertRaises(SystemExit) as exc:
+                main()
+
+        self.assertEqual(exc.exception.code, 1)
+        mock_claim_ingestion_job.assert_called_once()
+        mock_update_ingestion_heartbeat.assert_not_called()
+        mock_run_ingestion.assert_not_called()
 
     def test_fail_ingestion_job_truncates_error(self) -> None:
         client = Mock()
