@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
 import { buildProfiles, getCommanderUsageRows, selectCommanderForecastRows } from "@/lib/meta-prep";
 import { isKnownCommanderName } from "@/lib/commander-utils";
+import { chunkArray } from "@/lib/array-utils";
 import { RegionalLeaderboardTable } from "./regional-leaderboard-table";
 import { RegionSelector } from "./region-selector";
 import { inferCountryForRegion } from "@/lib/region-countries";
@@ -694,14 +695,6 @@ async function fetchRegionRows(): Promise<{ rows: RegionRow[]; supportsCountry: 
     ],
     supportsCountry: false,
   };
-}
-
-function chunkArray<T>(values: T[], chunkSize: number) {
-  const chunks: T[][] = [];
-  for (let index = 0; index < values.length; index += chunkSize) {
-    chunks.push(values.slice(index, index + chunkSize));
-  }
-  return chunks;
 }
 
 async function fetchLatestCommanders(rows: LeaderboardRow[]): Promise<Map<string, LatestCommanderRow>> {

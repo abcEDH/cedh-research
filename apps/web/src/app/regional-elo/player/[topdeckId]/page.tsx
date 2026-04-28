@@ -7,6 +7,7 @@ import { fetchChampionshipLeaderboard, fetchTopDeckProfileStats } from "@/lib/to
 import { fetchTopdeckElo } from "@/lib/topdeck-elo";
 import { buildTopdeckProfileHref } from "@/lib/topdeck-profile";
 import { isKnownCommanderName } from "@/lib/commander-utils";
+import { chunkArray } from "@/lib/array-utils";
 import { inferCountryForRegion } from "@/lib/region-countries";
 import { OpponentRecordsTable } from "./opponent-records-table";
 import { summarizePlayerLogs, type PlayerGameLog } from "./player-stats";
@@ -216,14 +217,6 @@ type PlayerEventOpponentRow = {
   commander_name: string | null;
   game_result: string;
 };
-
-function chunkArray<T>(values: T[], chunkSize: number) {
-  const chunks: T[][] = [];
-  for (let index = 0; index < values.length; index += chunkSize) {
-    chunks.push(values.slice(index, index + chunkSize));
-  }
-  return chunks;
-}
 
 function activePlayerCutoffDate() {
   const cutoff = new Date();

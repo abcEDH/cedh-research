@@ -13,6 +13,7 @@ import {
 import type { MetaShareRow, PlayerCommanderProfile } from "@/lib/meta-prep";
 import { extractTournamentSlug, fetchTournamentBySlug } from "@/lib/topdeck";
 import { fetchTopdeckEloMap } from "@/lib/topdeck-elo";
+import { chunkArray } from "@/lib/array-utils";
 import Link from "next/link";
 import { unstable_cache } from "next/cache";
 import { FieldShareList } from "./field-share-list";
@@ -71,14 +72,6 @@ type PrecomputedCommanderProfileRow = {
   total_entries: number;
   commander_predictions: PrecomputedCommanderPrediction[] | null;
 };
-
-function chunkArray<T>(values: T[], chunkSize = 250) {
-  const chunks: T[][] = [];
-  for (let index = 0; index < values.length; index += chunkSize) {
-    chunks.push(values.slice(index, index + chunkSize));
-  }
-  return chunks;
-}
 
 function buildTopdeckTournamentUrl(slug: string) {
   return slug ? `https://topdeck.gg/bracket/${slug}` : null;
@@ -173,7 +166,7 @@ async function fetchBestEloRows(topdeckIds: string[]): Promise<EloRow[]> {
 async function fetchLatestPlayerNames(topdeckIds: string[]): Promise<Map<string, string>> {
   const names = new Map<string, string>();
   const uniqueTopdeckIds = Array.from(new Set(topdeckIds.filter(Boolean)));
-  for (const topdeckIdChunk of chunkArray(uniqueTopdeckIds)) {
+  for (const topdeckIdChunk of chunkArray(uniqueTopdeckIds, 250)) {
     const { data, error } = await supabase
       .from("players")
       .select("topdeck_id, name")
