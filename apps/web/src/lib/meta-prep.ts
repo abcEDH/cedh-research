@@ -1,6 +1,7 @@
 import "server-only";
 import { supabase } from "@/lib/supabase";
 import { isKnownCommanderName } from "@/lib/commander-utils";
+import { chunkArray } from "@/lib/array-utils";
 
 const RECENCY_HALF_LIFE_DAYS = 15;
 const SUPABASE_PAGE_SIZE = 1000;
@@ -109,14 +110,6 @@ function buildTopdeckDecklistUrl(tournamentSlug: string | null | undefined, topd
   return tournamentSlug && topdeckId ? `https://topdeck.gg/deck/${tournamentSlug}/${topdeckId}` : null;
 }
 
-function chunkArray<T>(values: T[], chunkSize = SUPABASE_IN_CHUNK_SIZE) {
-  const chunks: T[][] = [];
-  for (let index = 0; index < values.length; index += chunkSize) {
-    chunks.push(values.slice(index, index + chunkSize));
-  }
-  return chunks;
-}
-
 function calculateRecencyWeight(eventTimestamp: number, referenceTimestamp: number) {
   if (referenceTimestamp <= 0 || eventTimestamp <= 0) return 0.5;
 
@@ -127,7 +120,7 @@ function calculateRecencyWeight(eventTimestamp: number, referenceTimestamp: numb
 async function getPlayersByTopdeckIds(topdeckIds: string[]) {
   const playersById = new Map<string, PlayerLookupRow>();
 
-  for (const topdeckIdChunk of chunkArray(topdeckIds)) {
+  for (const topdeckIdChunk of chunkArray(topdeckIds, SUPABASE_IN_CHUNK_SIZE)) {
     const { data, error } = await supabase
       .from("players")
       .select("id, topdeck_id, name")
@@ -179,7 +172,7 @@ export async function getCommanderUsageRows(
   const playerIds = Array.from(playersById.keys());
   const rows: CommanderUsageRow[] = [];
 
-  for (const playerIdChunk of chunkArray(playerIds)) {
+  for (const playerIdChunk of chunkArray(playerIds, SUPABASE_IN_CHUNK_SIZE)) {
     for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
       let query = supabase
         .from("tournament_entries")
@@ -218,7 +211,7 @@ export async function getCommanderDecklistRows(
   const playerIds = Array.from(playersById.keys());
   const rows: CommanderDecklistRow[] = [];
 
-  for (const playerIdChunk of chunkArray(playerIds)) {
+  for (const playerIdChunk of chunkArray(playerIds, SUPABASE_IN_CHUNK_SIZE)) {
     for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
       let query = supabase
         .from("tournament_entries")
