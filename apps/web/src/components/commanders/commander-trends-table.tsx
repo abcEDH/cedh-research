@@ -12,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { type CommanderStat } from "@/lib/types";
 
 export type CommanderPeriodSnapshot = {
   weekStart: string | null;
@@ -26,12 +27,7 @@ export type CommanderPeriodSnapshot = {
   monthPlayers: number | null;
 };
 
-type CommanderStat = {
-  commander_id: string;
-  commander_name: string;
-  total_entries: number;
-  avg_win_rate: string;
-};
+type TrendCommanderStat = Pick<CommanderStat, "commander_id" | "commander_name" | "total_entries" | "avg_win_rate">;
 
 function formatPercent(value: number | null) {
   if (value === null || Number.isNaN(value)) return "—";
@@ -67,8 +63,8 @@ type SortKey =
 type SortDirection = "asc" | "desc";
 
 function compareValues(
-  a: CommanderStat,
-  b: CommanderStat,
+  a: TrendCommanderStat,
+  b: TrendCommanderStat,
   snapshots: Record<string, CommanderPeriodSnapshot>,
   key: SortKey
 ) {
@@ -134,7 +130,7 @@ export default function CommanderTrendsTable({
   limit = 30,
   title = "Commander Performance Trends",
 }: {
-  commanders: CommanderStat[];
+  commanders: TrendCommanderStat[];
   snapshotsByCommanderId: Record<string, CommanderPeriodSnapshot>;
   weeklyEntriesByCommanderId?: Record<string, number[]>;
   limit?: number;

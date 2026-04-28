@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { normalizeDateKey } from "@/lib/format-utils";
+import { type CommanderStat } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import CommandersTable from "@/components/commanders/commanders-table";
@@ -14,22 +15,6 @@ import TrendMetricCharts, {
 
 export const dynamic = "force-dynamic";
 
-interface CommanderStat {
-  commander_id: string;
-  commander_name: string;
-  archetype: string | null;
-  color_identity: string[] | null;
-  total_entries: number;
-  tournaments_played: number;
-  total_wins: number;
-  total_losses: number;
-  total_draws: number;
-  avg_win_rate: string;
-  top_16_count: number;
-  conversion_rate_top_16: string;
-  top_cut_count: number;
-  conversion_rate_top_cut: string;
-}
 
 type WeeklyTrendRow = {
   commander_id: string;
