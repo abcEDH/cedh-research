@@ -16,7 +16,7 @@ import { HomeSearchBar } from "@/components/home-search-bar";
 
 const HOME_CACHE_REVALIDATE_SECONDS = 60 * 60 * 6; // 6 hours
 
-export const revalidate = 21600;
+export const dynamic = "force-dynamic";
 
 interface TopCommander {
   commander_id: string;
