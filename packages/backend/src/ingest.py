@@ -1126,6 +1126,101 @@ class SupabaseClient:
         # This is a safety net; the loop above either returns or raises
         return []
 
+    def update(
+        self,
+        table: str,
+        data: dict[str, Any],
+        filters: dict[str, str] | None = None,
+        max_retries: int = 3,
+    ) -> list[dict[str, Any]]:
+        """Update rows in a table matching filters. Uses PATCH (PostgREST convention)."""
+        if max_retries <= 0:
+            return []
+        endpoint = f"{self.url}/rest/v1/{table}"
+        params = filters or {}
+
+        for attempt in range(max_retries):
+            try:
+                response = requests.patch(
+                    endpoint, json=data, headers=self.headers, params=params, timeout=30
+                )
+                if response.status_code >= 400:
+                    logger.error(f"Supabase update error: {response.text}")
+                    response.raise_for_status()
+                return response.json()
+            except requests.exceptions.HTTPError as e:
+                status_code = getattr(getattr(e, "response", None), "status_code", None)
+                if status_code is None:
+                    status_code = getattr(response, "status_code", None)
+
+                if status_code is not None and status_code >= 500 and attempt < max_retries - 1:
+                    wait_time = 2**attempt
+                    logger.warning(
+                        f"Update HTTP {status_code}, retrying in {wait_time}s... ({attempt + 1}/{max_retries})"
+                    )
+                    time.sleep(wait_time)
+                    continue
+
+                logger.error(f"Update failed after HTTP error: {e}")
+                raise
+            except (
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+                requests.exceptions.ReadTimeout,
+            ) as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2**attempt
+                    logger.warning(
+                        f"Update connection error, retrying in {wait_time}s... ({attempt + 1}/{max_retries})"
+                    )
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"Update failed after {max_retries} retries: {e}")
+                    raise
+        return []
+
+    def rpc(
+        self,
+        function_name: str,
+        payload: dict[str, Any] | None = None,
+        max_retries: int = 3,
+        timeout: int = 120,
+    ) -> Any:
+        """Call a Supabase stored procedure via POST /rest/v1/rpc/{function_name}."""
+        if max_retries <= 0:
+            return None
+        endpoint = f"{self.url}/rest/v1/rpc/{function_name}"
+
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(
+                    endpoint,
+                    json=payload or {},
+                    headers=self.headers,
+                    timeout=timeout,
+                )
+                if response.status_code >= 400:
+                    logger.error(f"Supabase RPC error ({function_name}): {response.text}")
+                    response.raise_for_status()
+                if response.status_code == 204:
+                    return None
+                return response.json()
+            except (
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+                requests.exceptions.ReadTimeout,
+            ) as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2**attempt
+                    logger.warning(
+                        f"RPC {function_name} failed, retrying in {wait_time}s... ({attempt + 1}/{max_retries})"
+                    )
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"RPC {function_name} failed after {max_retries} retries: {e}")
+                    raise
+        return None
+
 
 class DirectPostgresClient:
     """Client for direct Postgres connection using psycopg2 (faster for large batches)."""

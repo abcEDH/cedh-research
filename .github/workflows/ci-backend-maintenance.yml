@@ -29,6 +29,20 @@ env:
   SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
   SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
 
+# Required secrets:
+#   GitHub Actions:
+#     TOPDECK_API_KEY       — TopDeck.gg API v2 key
+#     SUPABASE_URL          — Supabase project URL (https://msjjihqbxtgjdtapywrj.supabase.co)
+#     SUPABASE_SERVICE_KEY  — Supabase service_role key
+#   Edge Function (trigger-elo-refresh):
+#     GITHUB_PAT            — GitHub fine-grained PAT with actions:write
+#     SUPABASE_URL          — same as above
+#     SUPABASE_SERVICE_ROLE_KEY — same key as SUPABASE_SERVICE_KEY
+#     SUPABASE_ANON_KEY     — Supabase anon/public key
+#   pg_cron Vault secrets:
+#     project_url           — Supabase project URL
+#     anon_key              — Supabase anon key
+
 jobs:
   ingest:
     name: Backend ingest and manual Elo recompute
@@ -148,3 +162,50 @@ jobs:
         with:
           name: benchmark-results
           path: benchmark_results.json
+
+  mark-job-failed:
+    name: Mark queued job as failed when any maintenance job fails
+    runs-on: ubuntu-latest
+    needs:
+      - ingest
+      - validate-views
+      - validate-data-integrity
+      - validate-regional-elo-consistency
+      - benchmark-performance
+    if: >-
+      ${{
+        always() &&
+        inputs.refresh_mode == 'full' &&
+        inputs.job_id != '' &&
+        (
+          contains(join(needs.*.result, ','), 'failure') ||
+          contains(join(needs.*.result, ','), 'cancelled')
+        )
+      }}
+    steps:
+      - name: Mark queued job as failed in Supabase
+        env:
+          JOB_ID: ${{ inputs.job_id }}
+          JOB_ERROR: GitHub Actions workflow failed in run ${{ github.run_id }}. Inspect the CI Backend Maintenance logs for details.
+        run: |
+          payload="$(python3 - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+
+          print(json.dumps({
+              "status": "failed",
+              "completed_at": datetime.now(timezone.utc).isoformat(),
+              "error_text": os.environ["JOB_ERROR"][:2000],
+          }))
+          PY
+          )"
+
+          curl --fail-with-body --silent --show-error \
+            -X PATCH \
+            "$SUPABASE_URL/rest/v1/elo_maintenance_jobs?id=eq.${JOB_ID}&status=in.(pending,dispatched,running)" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=minimal" \
+            --data "$payload"

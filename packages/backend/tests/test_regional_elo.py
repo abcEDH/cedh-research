@@ -75,6 +75,39 @@ class RegionalEloJobLifecycleTests(TestCase):
         )
 
 
+class RefreshMaterializedViewsTests(TestCase):
+    def test_refresh_materialized_views_calls_all_functions(self) -> None:
+        client = Mock()
+
+        result = regional_elo.refresh_materialized_views(client)
+
+        self.assertEqual(client.rpc.call_count, 3)
+        client.rpc.assert_any_call("refresh_commander_trends")
+        client.rpc.assert_any_call("refresh_card_frequencies")
+        client.rpc.assert_any_call("refresh_card_performance")
+        self.assertEqual(result, 3)
+
+    def test_refresh_materialized_views_continues_on_failure(self) -> None:
+        client = Mock()
+        client.rpc.side_effect = [
+            Exception("first function failed"),
+            None,
+            None,
+        ]
+
+        result = regional_elo.refresh_materialized_views(client)
+
+        self.assertEqual(client.rpc.call_count, 3)
+        self.assertEqual(result, 2)
+
+    def test_refresh_materialized_views_returns_success_count(self) -> None:
+        client = Mock()
+
+        result = regional_elo.refresh_materialized_views(client)
+
+        self.assertEqual(result, 3)
+
+
 class RegionalEloCliValidationTests(TestCase):
     def test_job_id_requires_apply(self) -> None:
         with patch.object(sys, "argv", ["regional_elo.py", "--job-id", "job-123", "--dry-run"]):
