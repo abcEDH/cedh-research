@@ -60,6 +60,28 @@ function gameSummaryClass(
   return "rounded-xl border border-amber-500/40 bg-amber-500/10";
 }
 
+function summaryPillClass() {
+  return "rounded-full border border-border/60 bg-background/40 px-2.5 py-1 text-[11px] uppercase tracking-[0.12em] text-muted-foreground";
+}
+
+function resultBadgeClass(
+  gameResultLabel: string,
+  player: PlayerRow,
+  opponent: PlayerRow
+) {
+  const base = "rounded-full px-3 py-1 text-[11px] font-medium uppercase tracking-[0.14em]";
+  if (gameResultLabel === `${player.name} won`) {
+    return `${base} border border-emerald-500/40 bg-emerald-500/15 text-emerald-100`;
+  }
+  if (gameResultLabel === `${opponent.name} won`) {
+    return `${base} border border-sky-500/40 bg-sky-500/15 text-sky-100`;
+  }
+  if (gameResultLabel === "Draw") {
+    return `${base} border border-slate-400/40 bg-slate-400/15 text-slate-100`;
+  }
+  return `${base} border border-amber-500/40 bg-amber-500/15 text-amber-100`;
+}
+
 function describeGameResult(
   player: PlayerRow,
   podRows: Array<{
@@ -220,23 +242,23 @@ export default async function RegionalPlayerVsPage({
             </Link>
             <div className="flex flex-wrap items-end justify-between gap-4">
               <div>
-                <h1 className="text-3xl font-semibold text-foreground md:text-4xl">
+                <h1 className="text-2xl font-semibold leading-tight text-foreground sm:text-3xl md:text-4xl">
                   {player.name} vs {opponent.name}
                 </h1>
-                <p className="mt-2 text-sm text-muted-foreground">
+                <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
                   Shared game history, mirrored head-to-head record, and full pod context.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2 text-sm">
                 <Link
                   href={`/regional-elo/player/${topdeckId}`}
-                  className="rounded-md border border-border/70 px-3 py-2 text-foreground hover:border-primary/40 hover:text-primary"
+                  className="w-full rounded-md border border-border/70 px-3 py-2 text-center text-foreground hover:border-primary/40 hover:text-primary sm:w-auto"
                 >
                   {player.name} profile
                 </Link>
                 <Link
                   href={`/regional-elo/player/${opponentTopdeckId}`}
-                  className="rounded-md border border-border/70 px-3 py-2 text-foreground hover:border-primary/40 hover:text-primary"
+                  className="w-full rounded-md border border-border/70 px-3 py-2 text-center text-foreground hover:border-primary/40 hover:text-primary sm:w-auto"
                 >
                   {opponent.name} profile
                 </Link>
@@ -321,7 +343,7 @@ export default async function RegionalPlayerVsPage({
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="overflow-auto">
+                <div className="max-h-80 overflow-auto">
                   <table className="w-full text-sm">
                     <thead className="text-left text-xs uppercase tracking-[0.2em] text-muted-foreground">
                       <tr>
@@ -353,7 +375,7 @@ export default async function RegionalPlayerVsPage({
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="overflow-auto">
+                <div className="max-h-80 overflow-auto">
                   <table className="w-full text-sm">
                     <thead className="text-left text-xs uppercase tracking-[0.2em] text-muted-foreground">
                       <tr>
@@ -400,23 +422,31 @@ export default async function RegionalPlayerVsPage({
                   const opponentRow =
                     podRows.find((podPlayer) => podPlayer.topdeckId === opponent.topdeck_id) ?? null;
                   return (
-                    <details
-                      key={log.gameId}
-                      className={gameSummaryClass(gameResultLabel, player, opponent)}
-                    >
+                    <details key={log.gameId} className={gameSummaryClass(gameResultLabel, player, opponent)}>
                       <summary className="cursor-pointer list-none px-4 py-4">
-                        <div className="flex flex-wrap items-start justify-between gap-4">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                              <div className="text-base font-semibold text-foreground">{log.tournamentName}</div>
-                              <div className="text-sm text-muted-foreground">
-                                {formatShortDate(log.startDate)} · {log.roundLabel} · {log.tableLabel}
-                                {log.state ? ` · ${log.state.toUpperCase()}` : ""}
+                        <div className="space-y-3">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-sm font-semibold text-foreground sm:text-base">
+                                {log.tournamentName}
                               </div>
-                              <span>
+                            </div>
+                            <div className={resultBadgeClass(gameResultLabel, player, opponent)}>
+                              {gameResultLabel}
+                            </div>
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className={summaryPillClass()}>{formatShortDate(log.startDate)}</span>
+                              <span className={summaryPillClass()}>{log.roundLabel}</span>
+                              <span className={summaryPillClass()}>{log.tableLabel}</span>
+                              {log.state ? (
+                                <span className={summaryPillClass()}>{log.state.toUpperCase()}</span>
+                              ) : null}
+                              <span className="rounded-full border border-border/60 bg-background/30 px-2.5 py-1 text-[11px] text-muted-foreground">
                                 {formatPlayerSeatCommanderLabel(player.name, log.seat, log.commanderName)}
                               </span>
-                              <span>
+                              <span className="rounded-full border border-border/60 bg-background/30 px-2.5 py-1 text-[11px] text-muted-foreground">
                                 {formatPlayerSeatCommanderLabel(
                                   opponent.name,
                                   opponentRow?.seat,
@@ -424,10 +454,6 @@ export default async function RegionalPlayerVsPage({
                                 )}
                               </span>
                             </div>
-                          </div>
-                          <div className="rounded-md border border-border/60 px-3 py-2 text-sm">
-                            <span className="text-muted-foreground">Result: </span>
-                            <span className="font-medium text-foreground">{gameResultLabel}</span>
                           </div>
                         </div>
                       </summary>
