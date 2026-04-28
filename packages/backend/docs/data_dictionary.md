@@ -1,6 +1,6 @@
 # Data Dictionary
 
-Last reviewed: 2026-04-16
+Last reviewed: 2026-04-28
 Update policy: This file must be updated whenever migrations in `packages/backend/supabase/migrations` change.
 
 This describes the primary tables and analytical views used in the cEDH Analytics database.
@@ -246,6 +246,25 @@ erDiagram
   - row level security is enabled
   - public read access is allowed through a SELECT policy
   - writes are restricted to the service role and `SECURITY DEFINER` database functions
+
+### `ingestion_jobs`
+- **Purpose**: queue and observability log for scheduled data ingestion runs, upstream of Elo maintenance.
+- **Key fields**:
+  - `id`, `status`, `trigger_source`, `github_run_id`
+  - `created_at`, `dispatched_at`, `started_at`, `completed_at`, `heartbeat_at`
+  - `tournaments_processed`, `entries_processed`, `games_processed`, `participants_processed`
+  - `duration_seconds`, `error_text`
+  - `chained_elo_job_id` — links to the downstream `elo_maintenance_jobs` row dispatched on ingestion success
+- **Status values**:
+  - `pending`, `dispatched`, `running`, `completed`, `failed`, `stale`
+- **Security**:
+  - row level security is enabled
+  - public read access is allowed through a SELECT policy
+  - writes are restricted to the service role and `SECURITY DEFINER` database functions
+- **Related functions**:
+  - `enqueue_ingestion_refresh(trigger_source)` — inserts a pending job if none is active
+  - `cleanup_stale_ingestion_jobs(stale_minutes)` — marks stuck jobs as stale (default 45 min)
+  - `trigger_ingestion_refresh_via_edge()` — pg_cron wrapper that enqueues and dispatches via Edge Function
 
 ### `ingestion_backfill_runs`
 - **Purpose**: operational log for historical backfill runs driven from stable TID manifests.
