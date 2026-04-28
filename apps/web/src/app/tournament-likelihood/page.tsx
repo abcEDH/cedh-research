@@ -13,6 +13,7 @@ import {
 import type { MetaShareRow, PlayerCommanderProfile } from "@/lib/meta-prep";
 import { extractTournamentSlug, fetchTournamentBySlug } from "@/lib/topdeck";
 import { fetchTopdeckEloMap } from "@/lib/topdeck-elo";
+import { buildTopdeckTournamentUrl } from "@/lib/topdeck-profile";
 import { chunkArray } from "@/lib/array-utils";
 import { formatPct } from "@/lib/format-utils";
 import Link from "next/link";
@@ -73,10 +74,6 @@ type PrecomputedCommanderProfileRow = {
   total_entries: number;
   commander_predictions: PrecomputedCommanderPrediction[] | null;
 };
-
-function buildTopdeckTournamentUrl(slug: string) {
-  return slug ? `https://topdeck.gg/bracket/${slug}` : null;
-}
 
 function readStringParam(
   params:
