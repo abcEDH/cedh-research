@@ -8,6 +8,7 @@ import { fetchTopdeckElo } from "@/lib/topdeck-elo";
 import { buildTopdeckProfileHref } from "@/lib/topdeck-profile";
 import { isKnownCommanderName } from "@/lib/commander-utils";
 import { chunkArray } from "@/lib/array-utils";
+import { formatDate } from "@/lib/format-utils";
 import { inferCountryForRegion } from "@/lib/region-countries";
 import { OpponentRecordsTable } from "./opponent-records-table";
 import { summarizePlayerLogs, type PlayerGameLog } from "./player-stats";
@@ -728,14 +729,6 @@ function buildTopdeckTournamentUrl(tournamentSlug: string | null | undefined) {
   return tournamentSlug ? `https://topdeck.gg/bracket/${tournamentSlug}` : null;
 }
 
-function formatShortDate(value: string | null | undefined) {
-  if (!value) return "—";
-  return new Date(value).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
 
 function formatPct(value: number) {
   return `${Math.round(value * 100)}%`;
@@ -1780,11 +1773,11 @@ export default async function RegionalPlayerPage({
                                   rel="noreferrer"
                                   className="hover:text-primary"
                                 >
-                                  {formatShortDate(latestTournament.date)} | {latestTournament.name}
+                                  {formatDate(latestTournament.date)} | {latestTournament.name}
                                 </a>
                               ) : (
                                 <span>
-                                  {formatShortDate(latestTournament.date)} | {latestTournament.name}
+                                  {formatDate(latestTournament.date)} | {latestTournament.name}
                                 </span>
                               )
                             ) : (
@@ -2116,7 +2109,7 @@ export default async function RegionalPlayerPage({
                           )}
                         </td>
                         <td className="px-2 py-3 text-muted-foreground">
-                          {formatShortDate(row.startDate)}
+                          {formatDate(row.startDate)}
                         </td>
                         <td className="px-2 py-3 text-muted-foreground">
                           {row.commanderName && row.decklistUrl ? (

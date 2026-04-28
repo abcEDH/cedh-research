@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { formatDate } from "@/lib/format-utils";
 
 type LeaderboardRow = {
   region_type: string;
@@ -30,15 +31,6 @@ type LatestCommanderRow = {
 
 function buildTopdeckTournamentUrl(tournamentSlug: string | null | undefined) {
   return tournamentSlug ? `https://topdeck.gg/bracket/${tournamentSlug}` : null;
-}
-
-function formatDate(value: string | null) {
-  if (!value) return "-";
-  return new Date(value).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
 }
 
 export function RegionalLeaderboardTable({
