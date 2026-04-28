@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
-import { ColorBadge } from "@/components/ui/color-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ColorBadge } from "@/components/ui/color-badge";
 import {
   Table,
   TableBody,
@@ -9,8 +9,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { CommanderRow, RisingCommanderRow } from "@/components/home/commander-row";
+import { FeatureCard } from "@/components/home/feature-card";
 import { supabase } from "@/lib/supabase";
 import { normalizeDisplayString } from "@/lib/utils";
+import { isKnownCommanderName } from "@/lib/commander-utils";
 import Link from "next/link";
 import { fetchChampionshipLeaderboard } from "@/lib/topdeck";
 import { buildTopdeckProfileHref } from "@/lib/topdeck-profile";
@@ -76,11 +79,6 @@ function addDaysIso(isoDate: string, days: number): string {
   const d = new Date(`${isoDate}T12:00:00.000Z`);
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
-}
-
-function isKnownCommanderName(value: string | null | undefined): value is string {
-  const normalized = (value ?? "").trim().toLowerCase();
-  return normalized.length > 0 && normalized !== "unknown commander";
 }
 
 /**
@@ -543,119 +541,5 @@ export default async function Home() {
         </section>
       </main>
     </div>
-  );
-}
-
-function RisingCommanderRow({
-  commander,
-  rank,
-}: {
-  commander: RisingCommander;
-  rank: number;
-}) {
-  const winRate = (commander.avg_win_rate * 100).toFixed(1);
-  const isAboveExpected = commander.avg_win_rate > 0.25;
-
-  return (
-    <Link
-      href={`/commanders/${commander.commander_id}`}
-      className="flex w-full min-w-0 items-start gap-3 rounded-lg border border-border/60 bg-muted/30 px-3 py-3 transition hover:border-primary/40 hover:bg-muted/50"
-    >
-      <span className="shrink-0 pt-0.5 font-mono text-xs text-muted-foreground">#{rank}</span>
-      <div className="flex shrink-0 flex-wrap gap-1 pt-0.5">
-        {commander.color_identity?.filter(Boolean).map((color: string) => (
-          <ColorBadge key={color} color={color} />
-        ))}
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="break-words text-sm font-medium text-foreground">
-          {normalizeDisplayString(commander.commander_name)}
-        </p>
-        <p className="break-words text-xs text-muted-foreground">
-          {commander.recent_entries} latest stretch · prior {commander.prior_entries} ·{" "}
-          <span className={isAboveExpected ? "text-primary" : undefined}>{winRate}%</span> win
-          {commander.meta_share_pct != null && (
-            <>
-              {" · "}
-              {commander.meta_share_pct.toFixed(1)}% meta
-            </>
-          )}
-        </p>
-      </div>
-      <div className="shrink-0 self-start text-right">
-        <p className="font-mono text-sm text-primary">+{(commander.meta_share_delta * 100).toFixed(2)}%</p>
-        <p className="text-xs text-muted-foreground">meta share</p>
-      </div>
-    </Link>
-  );
-}
-function CommanderRow({
-  commander,
-  rank,
-}: {
-  commander: TopCommander;
-  rank: number;
-}) {
-  const winRate = (commander.avg_win_rate * 100).toFixed(1);
-  const isAboveExpected = commander.avg_win_rate > 0.25;
-
-  return (
-    <Link
-      href={`/commanders/${commander.commander_id}`}
-      className="flex w-full min-w-0 items-start gap-3 rounded-lg border border-border/60 bg-muted/30 px-3 py-3 transition hover:border-primary/40 hover:bg-muted/50"
-    >
-      <span className="shrink-0 pt-0.5 font-mono text-xs text-muted-foreground">#{rank}</span>
-      <div className="flex shrink-0 flex-wrap gap-1 pt-0.5">
-        {commander.color_identity?.filter(Boolean).map((color: string) => (
-          <ColorBadge key={color} color={color} />
-        ))}
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="break-words text-sm font-medium text-foreground">
-          {normalizeDisplayString(commander.commander_name)}
-        </p>
-        <p className="break-words text-xs text-muted-foreground">
-          {commander.total_entries} entries
-          {commander.meta_share_pct != null && (
-            <>
-              {" · "}
-              {commander.meta_share_pct.toFixed(1)}% meta
-            </>
-          )}
-        </p>
-      </div>
-      <div className="shrink-0 self-start text-right">
-        <p className={`font-mono text-sm ${isAboveExpected ? "text-primary" : "text-muted-foreground"}`}>
-          {winRate}%
-        </p>
-        <p className="text-xs text-muted-foreground">win rate</p>
-      </div>
-    </Link>
-  );
-}
-
-function FeatureCard({
-  href,
-  title,
-  description,
-  color,
-}: {
-  href: string;
-  title: string;
-  description: string;
-  color: string;
-}) {
-  return (
-    <Link href={href}>
-      <Card className="h-full border-border/60 transition hover:border-primary/40">
-        <CardHeader>
-          <div className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
-          <CardTitle className="text-lg">{title}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">{description}</p>
-        </CardContent>
-      </Card>
-    </Link>
   );
 }
