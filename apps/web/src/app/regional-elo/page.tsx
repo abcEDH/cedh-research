@@ -4,6 +4,7 @@ import Link from "next/link";
 import { buildProfiles, getCommanderUsageRows, selectCommanderForecastRows } from "@/lib/meta-prep";
 import { isKnownCommanderName } from "@/lib/commander-utils";
 import { chunkArray } from "@/lib/array-utils";
+import { formatDate } from "@/lib/format-utils";
 import { RegionalLeaderboardTable } from "./regional-leaderboard-table";
 import { RegionSelector } from "./region-selector";
 import { inferCountryForRegion } from "@/lib/region-countries";
@@ -245,15 +246,6 @@ type LeaderboardPage = {
   rows: LeaderboardRow[];
   totalCount: number;
 };
-
-function formatDate(value: string | null) {
-  if (!value) return "—";
-  return new Date(value).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
 
 function activePlayerCutoffDate() {
   const cutoff = new Date();
