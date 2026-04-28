@@ -3,6 +3,7 @@ import { unstable_cache } from "next/cache";
 import { supabase } from "@/lib/supabase";
 import { normalizeDateKey } from "@/lib/format-utils";
 import { BackLink } from "@/components/ui/back-link";
+import { StatCard } from "@/components/ui/stat-card";
 import { type CommanderStat } from "@/lib/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -395,49 +396,3 @@ export default async function CommandersPage() {
   );
 }
 
-function StatCard({
-  label,
-  value,
-  tone,
-  tooltip,
-  testId,
-}: {
-  label: string;
-  value: string;
-  tone: "primary" | "amber" | "neutral";
-  tooltip?: string;
-  testId?: string;
-}) {
-  const toneMap: Record<typeof tone, string> = {
-    primary: "text-primary",
-    amber: "text-[hsl(var(--knd-amber))]",
-    neutral: "text-muted-foreground",
-  };
-
-  return (
-    <Card>
-      <CardContent className="pt-6">
-        <div className="flex items-center gap-2">
-          <p className="text-muted-foreground text-sm uppercase tracking-[0.2em]">{label}</p>
-          {tooltip && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  className="text-[10px] text-muted-foreground/80 hover:text-foreground"
-                  aria-label={`More info about ${label}`}
-                >
-                  i
-                </button>
-              </TooltipTrigger>
-              <TooltipContent className="max-w-xs text-xs leading-relaxed">
-                {tooltip}
-              </TooltipContent>
-            </Tooltip>
-          )}
-        </div>
-        <p data-testid={testId} className={`text-2xl font-semibold ${toneMap[tone]}`}>{value}</p>
-      </CardContent>
-    </Card>
-  );
-}
