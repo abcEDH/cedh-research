@@ -29,6 +29,20 @@ env:
   SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
   SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
 
+# Required secrets:
+#   GitHub Actions:
+#     TOPDECK_API_KEY       — TopDeck.gg API v2 key
+#     SUPABASE_URL          — Supabase project URL (https://msjjihqbxtgjdtapywrj.supabase.co)
+#     SUPABASE_SERVICE_KEY  — Supabase service_role key
+#   Edge Function (trigger-elo-refresh):
+#     GITHUB_PAT            — GitHub fine-grained PAT with actions:write
+#     SUPABASE_URL          — same as above
+#     SUPABASE_SERVICE_ROLE_KEY — same key as SUPABASE_SERVICE_KEY
+#     SUPABASE_ANON_KEY     — Supabase anon/public key
+#   pg_cron Vault secrets:
+#     project_url           — Supabase project URL
+#     anon_key              — Supabase anon key
+
 jobs:
   ingest:
     name: Backend ingest and manual Elo recompute
@@ -58,6 +72,29 @@ jobs:
           else
             uv run --project packages/backend python packages/backend/src/regional_elo.py --smoke-days "${{ inputs.smoke_days }}" --dry-run
           fi
+
+      - name: Mark queued job as failed when maintenance workflow fails
+        if: ${{ failure() && inputs.refresh_mode == 'full' && inputs.job_id != '' }}
+        env:
+          JOB_ID: ${{ inputs.job_id }}
+          JOB_ERROR: GitHub Actions workflow failed in run ${{ github.run_id }}. Inspect the CI Backend Maintenance logs for details.
+        run: |
+          uv run --project packages/backend python - <<'PY'
+          import os
+          import sys
+          from pathlib import Path
+
+          sys.path.insert(0, str(Path("packages/backend/src").resolve()))
+
+          from ingest import SupabaseClient
+          from regional_elo import fail_job
+
+          client = SupabaseClient(
+              os.environ["SUPABASE_URL"],
+              os.environ["SUPABASE_SERVICE_KEY"],
+          )
+          fail_job(client, os.environ["JOB_ID"], os.environ["JOB_ERROR"])
+          PY
 
       - name: Upload logs
         uses: actions/upload-artifact@v4

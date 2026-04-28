@@ -1,11 +1,23 @@
+import unittest
 import sys
 import types
 from pathlib import Path
-import unittest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 
 
-sys.modules.setdefault("requests", types.ModuleType("requests"))
+requests_module = types.ModuleType("requests")
+requests_module.get = Mock()
+requests_module.post = Mock()
+requests_module.patch = Mock()
+requests_module.exceptions = types.SimpleNamespace(
+    ConnectionError=ConnectionError,
+    Timeout=TimeoutError,
+    ReadTimeout=TimeoutError,
+    JSONDecodeError=ValueError,
+    HTTPError=RuntimeError,
+    RequestException=Exception,
+)
+sys.modules.setdefault("requests", requests_module)
 
 dateutil_module = types.ModuleType("dateutil")
 dateutil_parser_module = types.ModuleType("dateutil.parser")
@@ -71,13 +83,11 @@ class SupabaseClientUpdateTests(unittest.TestCase):
 
     @patch("ingest.requests.patch")
     def test_update_retries_on_connection_error(self, mock_patch: Mock) -> None:
-        import requests as real_requests
-
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = [{"id": "row-1"}]
         mock_patch.side_effect = [
-            real_requests.exceptions.ConnectionError("Connection refused"),
+            requests_module.exceptions.ConnectionError("Connection refused"),
             mock_response,
         ]
 
