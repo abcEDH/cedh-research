@@ -1,3 +1,7 @@
+export function formatPct(value: number): string {
+  return `${Math.round(value * 100)}%`;
+}
+
 export function normalizeDateKey(value: string | null | undefined): string {
   if (!value) return "";
   return value.length >= 10 ? value.slice(0, 10) : value;

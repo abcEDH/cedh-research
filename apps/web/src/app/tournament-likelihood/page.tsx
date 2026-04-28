@@ -14,6 +14,7 @@ import type { MetaShareRow, PlayerCommanderProfile } from "@/lib/meta-prep";
 import { extractTournamentSlug, fetchTournamentBySlug } from "@/lib/topdeck";
 import { fetchTopdeckEloMap } from "@/lib/topdeck-elo";
 import { chunkArray } from "@/lib/array-utils";
+import { formatPct } from "@/lib/format-utils";
 import Link from "next/link";
 import { unstable_cache } from "next/cache";
 import { FieldShareList } from "./field-share-list";
@@ -90,10 +91,6 @@ function readStringParam(
   }
   const value = (params as Record<string, string | string[] | undefined>)[key];
   return Array.isArray(value) ? value[0] ?? "" : value ?? "";
-}
-
-function formatPercent(value: number) {
-  return `${Math.round(value * 100)}%`;
 }
 
 function readStartTimestamp(startDate: string | number | null | undefined) {
@@ -567,7 +564,7 @@ export default async function TournamentLikelihoodPage({
                     {playersWithData}/{standings.length}
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    {standings.length ? formatPercent(playersWithData / standings.length) : "0%"} with recent deck data
+                    {standings.length ? formatPct(playersWithData / standings.length) : "0%"} with recent deck data
                   </p>
                 </div>
                 <div className="rounded-md border border-border/60 bg-muted/20 p-4">
@@ -575,10 +572,10 @@ export default async function TournamentLikelihoodPage({
                     {hasTournamentResults ? "Most Played Deck" : "Most Likely Deck"}
                   </p>
                   <p className="mt-2 text-lg font-semibold text-foreground">
-                    {topCommander ? `${topCommander.commander} (${formatPercent(topCommander.fieldShare)})` : "No consensus yet"}
+                    {topCommander ? `${topCommander.commander} (${formatPct(topCommander.fieldShare)})` : "No consensus yet"}
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Top 5 commanders represent {formatPercent(topFiveCombinedShare)} of{" "}
+                    Top 5 commanders represent {formatPct(topFiveCombinedShare)} of{" "}
                     {hasTournamentResults ? "submitted decklists" : "known field history"}
                   </p>
                 </div>
