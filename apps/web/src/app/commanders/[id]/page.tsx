@@ -8,10 +8,8 @@ import { ColorBadge } from "@/components/ui/color-badge";
 import { TierBadge } from "@/components/commanders/tier-badge";
 import { type CommanderStat } from "@/lib/types";
 import { normalizeDisplayString } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import TrendMetricCharts, {
   TrendMetricPoint,
   TrendMetricSeries,
