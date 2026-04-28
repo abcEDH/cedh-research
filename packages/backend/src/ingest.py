@@ -1126,6 +1126,44 @@ class SupabaseClient:
         # This is a safety net; the loop above either returns or raises
         return []
 
+    def update(
+        self,
+        table: str,
+        data: dict[str, Any],
+        filters: dict[str, str] | None = None,
+        max_retries: int = 3,
+    ) -> list[dict[str, Any]]:
+        """Update rows in a table matching filters. Uses PATCH (PostgREST convention)."""
+        if max_retries <= 0:
+            return []
+        endpoint = f"{self.url}/rest/v1/{table}"
+        params = filters or {}
+
+        for attempt in range(max_retries):
+            try:
+                response = requests.patch(
+                    endpoint, json=data, headers=self.headers, params=params, timeout=30
+                )
+                if response.status_code >= 400:
+                    logger.error(f"Supabase update error: {response.text}")
+                    response.raise_for_status()
+                return response.json()
+            except (
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+                requests.exceptions.ReadTimeout,
+            ) as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2**attempt
+                    logger.warning(
+                        f"Update connection error, retrying in {wait_time}s... ({attempt + 1}/{max_retries})"
+                    )
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"Update failed after {max_retries} retries: {e}")
+                    raise
+        return []
+
 
 class DirectPostgresClient:
     """Client for direct Postgres connection using psycopg2 (faster for large batches)."""

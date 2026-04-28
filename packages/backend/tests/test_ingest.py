@@ -2,6 +2,7 @@ import sys
 import types
 from pathlib import Path
 import unittest
+from unittest.mock import Mock, patch, MagicMock
 
 
 sys.modules.setdefault("requests", types.ModuleType("requests"))
@@ -15,7 +16,7 @@ sys.modules.setdefault("dateutil.parser", dateutil_parser_module)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from ingest import extract_standing_rates  # noqa: E402
+from ingest import extract_standing_rates, SupabaseClient  # noqa: E402
 
 
 class ExtractStandingRatesTests(unittest.TestCase):
@@ -40,6 +41,69 @@ class ExtractStandingRatesTests(unittest.TestCase):
 
         self.assertEqual(win_rate, 0.71)
         self.assertEqual(opponent_win_rate, 0.48)
+
+
+class SupabaseClientUpdateTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.client = SupabaseClient("https://test.supabase.co", "test-service-key")
+
+    @patch("ingest.requests.patch")
+    def test_update_sends_patch_request(self, mock_patch: Mock) -> None:
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [{"id": "row-1", "status": "running"}]
+        mock_patch.return_value = mock_response
+
+        result = self.client.update(
+            "elo_maintenance_jobs",
+            {"status": "running"},
+            {"id": "eq.job-123", "status": "eq.pending"},
+        )
+
+        mock_patch.assert_called_once_with(
+            "https://test.supabase.co/rest/v1/elo_maintenance_jobs",
+            json={"status": "running"},
+            headers=self.client.headers,
+            params={"id": "eq.job-123", "status": "eq.pending"},
+            timeout=30,
+        )
+        self.assertEqual(result, [{"id": "row-1", "status": "running"}])
+
+    @patch("ingest.requests.patch")
+    def test_update_retries_on_connection_error(self, mock_patch: Mock) -> None:
+        import requests as real_requests
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [{"id": "row-1"}]
+        mock_patch.side_effect = [
+            real_requests.exceptions.ConnectionError("Connection refused"),
+            mock_response,
+        ]
+
+        with patch("ingest.time.sleep"):
+            result = self.client.update(
+                "elo_maintenance_jobs",
+                {"status": "running"},
+            )
+
+        self.assertEqual(mock_patch.call_count, 2)
+        self.assertEqual(result, [{"id": "row-1"}])
+
+    @patch("ingest.requests.patch")
+    def test_update_returns_empty_list_on_no_match(self, mock_patch: Mock) -> None:
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = []
+        mock_patch.return_value = mock_response
+
+        result = self.client.update(
+            "elo_maintenance_jobs",
+            {"status": "running"},
+            {"id": "eq.nonexistent"},
+        )
+
+        self.assertEqual(result, [])
 
 
 if __name__ == "__main__":
