@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import { normalizeDateKey } from "@/lib/format-utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import CommandersTable from "@/components/commanders/commanders-table";
@@ -50,11 +51,6 @@ type MonthlyTrendRow = {
   draws?: number | null;
   total_players?: number | null;
 };
-
-function normalizeDateKey(value: string | null | undefined) {
-  if (!value) return "";
-  return value.length >= 10 ? value.slice(0, 10) : value;
-}
 
 async function getCommanders() {
   const { data, error } = await supabase

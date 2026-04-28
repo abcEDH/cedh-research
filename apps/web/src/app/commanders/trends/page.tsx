@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
+import { normalizeDateKey } from "@/lib/format-utils";
 import CommanderTrendsTable from "@/components/commanders/commander-trends-table";
 import CommanderTrendsChart, {
   CommanderTrendSeriesPoint,
@@ -51,11 +52,6 @@ type MonthlyTrendRow = {
   draws?: number | null;
   total_players?: number | null;
 };
-
-function normalizeDateKey(value: string | null | undefined) {
-  if (!value) return "";
-  return value.length >= 10 ? value.slice(0, 10) : value;
-}
 
 async function getCommanders(sizeFilter: SizeFilter) {
   const { stats } = getTrendViews(sizeFilter);
