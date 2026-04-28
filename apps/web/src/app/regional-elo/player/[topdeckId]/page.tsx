@@ -5,7 +5,7 @@ import { buildProfiles, selectCommanderForecastRows, type CommanderUsageRow } fr
 import { supabase } from "@/lib/supabase";
 import { fetchChampionshipLeaderboard, fetchTopDeckProfileStats } from "@/lib/topdeck";
 import { fetchTopdeckElo } from "@/lib/topdeck-elo";
-import { buildTopdeckProfileHref } from "@/lib/topdeck-profile";
+import { buildTopdeckProfileHref, buildTopdeckTournamentUrl, buildTopdeckDecklistUrl } from "@/lib/topdeck-profile";
 import { isKnownCommanderName } from "@/lib/commander-utils";
 import { chunkArray } from "@/lib/array-utils";
 import { formatDate, formatPct } from "@/lib/format-utils";
@@ -720,14 +720,6 @@ const fetchGlobalSnapshot = unstable_cache(async (topdeckId: string): Promise<Gl
     return null;
   }
 }, ["regional-player-global-snapshot-v1"], { revalidate: 60 * 30 });
-
-function buildTopdeckDecklistUrl(tournamentSlug: string | null | undefined, topdeckId: string) {
-  return tournamentSlug ? `https://topdeck.gg/deck/${tournamentSlug}/${topdeckId}` : null;
-}
-
-function buildTopdeckTournamentUrl(tournamentSlug: string | null | undefined) {
-  return tournamentSlug ? `https://topdeck.gg/bracket/${tournamentSlug}` : null;
-}
 
 
 
