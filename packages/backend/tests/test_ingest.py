@@ -5,19 +5,22 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 
-requests_module = types.ModuleType("requests")
-requests_module.get = Mock()
-requests_module.post = Mock()
-requests_module.patch = Mock()
-requests_module.exceptions = types.SimpleNamespace(
-    ConnectionError=ConnectionError,
-    Timeout=TimeoutError,
-    ReadTimeout=TimeoutError,
-    JSONDecodeError=ValueError,
-    HTTPError=RuntimeError,
-    RequestException=Exception,
-)
-sys.modules.setdefault("requests", requests_module)
+try:
+    import requests as requests_module
+except ModuleNotFoundError:
+    requests_module = types.ModuleType("requests")
+    requests_module.get = Mock()
+    requests_module.post = Mock()
+    requests_module.patch = Mock()
+    requests_module.exceptions = types.SimpleNamespace(
+        ConnectionError=ConnectionError,
+        Timeout=TimeoutError,
+        ReadTimeout=TimeoutError,
+        JSONDecodeError=ValueError,
+        HTTPError=RuntimeError,
+        RequestException=Exception,
+    )
+    sys.modules["requests"] = requests_module
 
 dateutil_module = types.ModuleType("dateutil")
 dateutil_parser_module = types.ModuleType("dateutil.parser")
