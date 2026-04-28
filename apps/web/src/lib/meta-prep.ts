@@ -1,5 +1,6 @@
 import "server-only";
 import { supabase } from "@/lib/supabase";
+import { isKnownCommanderName } from "@/lib/commander-utils";
 
 const RECENCY_HALF_LIFE_DAYS = 15;
 const SUPABASE_PAGE_SIZE = 1000;
@@ -81,11 +82,6 @@ export const COMMANDER_PRIMARY_LOOKBACK_MONTHS = 6;
 export const COMMANDER_FALLBACK_LOOKBACK_MONTHS = 12;
 export const MIN_PRIMARY_COMMANDER_ENTRIES = 2;
 
-function isKnownCommander(commanderName: string | null | undefined) {
-  const normalized = (commanderName ?? "").trim().toLowerCase();
-  return normalized.length > 0 && normalized !== "unknown commander";
-}
-
 function firstRelation<T>(value: Relation<T>) {
   return Array.isArray(value) ? value[0] ?? null : value;
 }
@@ -156,7 +152,7 @@ function mapCommanderUsageRow(
   const player = row.player_id ? playersById.get(row.player_id) ?? null : firstRelation(row.players ?? null);
   const commander = firstRelation(row.commanders);
   const tournament = firstRelation(row.tournaments);
-  const commanderName = isKnownCommander(commander?.name) ? commander?.name ?? null : null;
+  const commanderName = isKnownCommanderName(commander?.name) ? commander?.name ?? null : null;
 
   return {
     topdeck_id: player?.topdeck_id ?? null,
@@ -245,7 +241,7 @@ export async function getCommanderDecklistRows(
           const player = row.player_id ? playersById.get(row.player_id) ?? null : firstRelation(row.players ?? null);
           const commander = firstRelation(row.commanders);
           const tournament = firstRelation(row.tournaments);
-          const commanderName = isKnownCommander(commander?.name) ? commander?.name ?? null : null;
+          const commanderName = isKnownCommanderName(commander?.name) ? commander?.name ?? null : null;
 
           return {
             topdeck_id: player?.topdeck_id ?? null,
@@ -278,7 +274,7 @@ export function attachLatestDecklistUrls(
 
   for (const row of decklistRows) {
     const commanderName = row.commander_name;
-    if (!row.topdeck_id || !commanderName || !isKnownCommander(commanderName)) continue;
+    if (!row.topdeck_id || !commanderName || !isKnownCommanderName(commanderName)) continue;
     const url = row.decklist_url || row.topdeck_decklist_url;
     if (!url) continue;
     const key = decklistProfileKey(row.topdeck_id, commanderName);
@@ -346,7 +342,7 @@ export function buildProfiles(
     : fallbackTimestamp;
 
   usageRows.forEach((row) => {
-    if (!row.topdeck_id || !isKnownCommander(row.commander_name)) return;
+    if (!row.topdeck_id || !isKnownCommanderName(row.commander_name)) return;
     const commanderName = row.commander_name as string;
     const playerName = row.player_name ?? "Unknown";
     if (row.player_name) {

@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { fetchChampionshipLeaderboard, fetchTopDeckProfileStats } from "@/lib/topdeck";
 import { fetchTopdeckElo } from "@/lib/topdeck-elo";
 import { buildTopdeckProfileHref } from "@/lib/topdeck-profile";
+import { isKnownCommanderName } from "@/lib/commander-utils";
 import { inferCountryForRegion } from "@/lib/region-countries";
 import { OpponentRecordsTable } from "./opponent-records-table";
 import { summarizePlayerLogs, type PlayerGameLog } from "./player-stats";
@@ -254,11 +255,6 @@ function toEventRoundLabel(row: PlayerEventLogRow) {
   if (row.round_name) return row.round_name;
   if (row.round_number !== null) return `Round ${row.round_number}`;
   return "Bracket";
-}
-
-function isKnownCommanderName(value: string | null | undefined) {
-  const normalized = (value ?? "").trim().toLowerCase();
-  return normalized.length > 0 && normalized !== "unknown commander";
 }
 
 function firstRelation<T>(value: T | T[] | null) {
