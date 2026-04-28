@@ -79,22 +79,27 @@ jobs:
           JOB_ID: ${{ inputs.job_id }}
           JOB_ERROR: GitHub Actions workflow failed in run ${{ github.run_id }}. Inspect the CI Backend Maintenance logs for details.
         run: |
-          uv run --project packages/backend python - <<'PY'
+          payload="$(python3 - <<'PY'
+          import json
           import os
-          import sys
-          from pathlib import Path
+          from datetime import datetime, timezone
 
-          sys.path.insert(0, str(Path("packages/backend/src").resolve()))
-
-          from ingest import SupabaseClient
-          from regional_elo import fail_job
-
-          client = SupabaseClient(
-              os.environ["SUPABASE_URL"],
-              os.environ["SUPABASE_SERVICE_KEY"],
-          )
-          fail_job(client, os.environ["JOB_ID"], os.environ["JOB_ERROR"])
+          print(json.dumps({
+              "status": "failed",
+              "completed_at": datetime.now(timezone.utc).isoformat(),
+              "error_text": os.environ["JOB_ERROR"][:2000],
+          }))
           PY
+          )"
+
+          curl --fail-with-body --silent --show-error \
+            -X PATCH \
+            "$SUPABASE_URL/rest/v1/elo_maintenance_jobs?id=eq.${JOB_ID}&status=in.(pending,dispatched,running)" \
+            -H "apikey: $SUPABASE_SERVICE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_KEY" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=minimal" \
+            --data "$payload"
 
       - name: Upload logs
         uses: actions/upload-artifact@v4

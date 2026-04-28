@@ -11,7 +11,8 @@ class BackendMaintenanceWorkflowTests(unittest.TestCase):
 
         self.assertIn("Mark queued job as failed when maintenance workflow fails", workflow)
         self.assertIn("failure() && inputs.refresh_mode == 'full' && inputs.job_id != ''", workflow)
-        self.assertIn('fail_job(client, os.environ["JOB_ID"], os.environ["JOB_ERROR"])', workflow)
+        self.assertIn('curl --fail-with-body --silent --show-error', workflow)
+        self.assertIn('/rest/v1/elo_maintenance_jobs?id=eq.${JOB_ID}&status=in.(pending,dispatched,running)', workflow)
 
 
 if __name__ == "__main__":
