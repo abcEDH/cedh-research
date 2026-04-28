@@ -1960,6 +1960,7 @@ def extract_name_and_tid(tournament: dict[str, Any]) -> tuple[str | None, str | 
 
 
 INGESTION_JOBS_TABLE = "ingestion_jobs"
+INGESTION_JOB_ALREADY_CLAIMED_EXIT_CODE = 20
 
 
 def claim_ingestion_job(client: SupabaseClient, job_id: str, github_run_id: int) -> bool:
@@ -2123,7 +2124,7 @@ def main():
             sys.exit(1)
         if not claimed:
             logger.info(f"No active ingestion job found for ID {job_id} - may already be claimed")
-            return
+            sys.exit(INGESTION_JOB_ALREADY_CLAIMED_EXIT_CODE)
         update_ingestion_heartbeat(supabase, job_id)
 
     try:

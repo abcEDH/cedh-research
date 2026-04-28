@@ -157,8 +157,8 @@ Deno.serve(async (request) => {
       });
     }
 
-    await dispatchWorkflow(jobId);
     await markDispatched(jobId);
+    await dispatchWorkflow(jobId);
 
     return json(202, { ok: true, job_id: jobId, status: "dispatched" });
   } catch (error) {

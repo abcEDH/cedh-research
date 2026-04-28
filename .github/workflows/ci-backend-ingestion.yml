@@ -36,6 +36,8 @@ jobs:
   ingest:
     name: Ingest recent tournament data
     runs-on: ubuntu-latest
+    outputs:
+      claimed: ${{ steps.run-ingestion.outputs.claimed }}
     steps:
       - uses: actions/checkout@v4
 
@@ -48,12 +50,29 @@ jobs:
         run: uv sync --frozen --project packages/backend
 
       - name: Run data ingestion
+        id: run-ingestion
         run: |
           JOB_FLAGS=""
           if [ -n "${{ inputs.job_id }}" ]; then
             JOB_FLAGS="--job-id ${{ inputs.job_id }}"
           fi
+          set +e
           uv run --project packages/backend python packages/backend/src/ingest.py --days 7 --min-players 32 $JOB_FLAGS
+          status=$?
+          set -e
+
+          if [ "$status" -eq 0 ]; then
+            echo "claimed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$status" -eq 20 ]; then
+            echo "claimed=false" >> "$GITHUB_OUTPUT"
+            echo "Ingestion job was already claimed by another runner; skipping Elo chain."
+            exit 0
+          fi
+
+          exit "$status"
 
       - name: Upload logs
         uses: actions/upload-artifact@v4
@@ -67,7 +86,7 @@ jobs:
     name: Chain Elo maintenance after successful ingestion
     runs-on: ubuntu-latest
     needs: ingest
-    if: ${{ inputs.job_id != '' }}
+    if: ${{ inputs.job_id != '' && needs.ingest.outputs.claimed == 'true' }}
     steps:
       - name: Enqueue Elo refresh and dispatch maintenance workflow
         env:
@@ -123,6 +142,7 @@ jobs:
       ${{
         always() &&
         inputs.job_id != '' &&
+        needs.ingest.outputs.claimed != 'false' &&
         (
           contains(join(needs.*.result, ','), 'failure') ||
           contains(join(needs.*.result, ','), 'cancelled')
