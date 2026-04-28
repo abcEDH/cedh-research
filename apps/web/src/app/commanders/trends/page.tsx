@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { normalizeDateKey } from "@/lib/format-utils";
+import { type CommanderStat } from "@/lib/types";
 import CommanderTrendsTable from "@/components/commanders/commander-trends-table";
 import CommanderTrendsChart, {
   CommanderTrendSeriesPoint,
@@ -24,12 +25,7 @@ function getTrendViews(sizeFilter: SizeFilter) {
   };
 }
 
-interface CommanderStat {
-  commander_id: string;
-  commander_name: string;
-  total_entries: number;
-  avg_win_rate: string;
-}
+type TrendCommanderStat = Pick<CommanderStat, "commander_id" | "commander_name" | "total_entries" | "avg_win_rate">;
 
 type WeeklyTrendRow = {
   commander_id: string;
@@ -65,7 +61,7 @@ async function getCommanders(sizeFilter: SizeFilter) {
     console.error("Error fetching commanders:", error);
     return [];
   }
-  return data as CommanderStat[];
+  return data as TrendCommanderStat[];
 }
 
 async function getCommanderPeriodSnapshots(commanderIds: string[], sizeFilter: SizeFilter) {
@@ -193,7 +189,7 @@ async function getWeeklyEntries(commanderIds: string[], sizeFilter: SizeFilter, 
   return result;
 }
 
-async function getWeeklyWinRateSeries(commanders: CommanderStat[], sizeFilter: SizeFilter, weeks = 13) {
+async function getWeeklyWinRateSeries(commanders: TrendCommanderStat[], sizeFilter: SizeFilter, weeks = 13) {
   if (commanders.length === 0) {
     return { data: [] as CommanderTrendSeriesPoint[], series: [] as CommanderTrendSeriesMeta[] };
   }
