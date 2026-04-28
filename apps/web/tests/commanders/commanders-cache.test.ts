@@ -211,4 +211,33 @@ describe("Commanders page caching", () => {
     expect(pageBody).not.toMatch(/\bawait getWeeklyEntries\(/);
     expect(pageBody).not.toMatch(/\bawait getGlobalTrendSeries\(\)/);
   });
+
+  it("source throws on fetch errors instead of caching fallback empties", async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+    const source = fs.readFileSync(
+      path.resolve(__dirname, "../../src/app/commanders/page.tsx"),
+      "utf-8"
+    );
+
+    expect(source).toContain("throw error;");
+    expect(source).toContain("throw weeklyFallback.error;");
+    expect(source).toContain("throw monthlyFallback.error;");
+    expect(source).not.toContain('console.error("Error fetching commanders:", error);\n    return [];');
+    expect(source).not.toContain('console.error("Error fetching weekly trends:", error);\n    return {};');
+  });
+
+  it("canonicalizes top commander IDs before cached snapshot lookups", async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+    const source = fs.readFileSync(
+      path.resolve(__dirname, "../../src/app/commanders/page.tsx"),
+      "utf-8"
+    );
+
+    expect(source).toContain("const topCommanderIds = topCommanders");
+    expect(source).toContain(".sort((a, b) => a.localeCompare(b))");
+    expect(source).toContain("getCachedCommanderPeriodSnapshots(\n    topCommanderIds");
+    expect(source).toContain("getCachedWeeklyEntries(\n    topCommanderIds,");
+  });
 });

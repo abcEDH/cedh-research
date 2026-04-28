@@ -68,7 +68,7 @@ async function getCommanders() {
 
   if (error) {
     console.error("Error fetching commanders:", error);
-    return [];
+    throw error;
   }
   return data as CommanderStat[];
 }
@@ -97,6 +97,10 @@ async function getCommanderPeriodSnapshots(commanderIds: string[]) {
       .select("commander_id, week_start_date, entries, wins, losses, draws")
       .in("commander_id", commanderIds)
       .order("week_start_date", { ascending: true });
+    if (weeklyFallback.error) {
+      console.error("Error fetching weekly trends fallback:", weeklyFallback.error);
+      throw weeklyFallback.error;
+    }
     weeklyData = weeklyFallback.data ?? [];
   }
 
@@ -107,14 +111,11 @@ async function getCommanderPeriodSnapshots(commanderIds: string[]) {
       .select("commander_id, month_key, entries, wins, losses, draws")
       .in("commander_id", commanderIds)
       .order("month_key", { ascending: true });
+    if (monthlyFallback.error) {
+      console.error("Error fetching monthly trends fallback:", monthlyFallback.error);
+      throw monthlyFallback.error;
+    }
     monthlyData = monthlyFallback.data ?? [];
-  }
-
-  if (weeklyPrimary.error) {
-    console.error("Error fetching weekly trends:", weeklyPrimary.error);
-  }
-  if (monthlyPrimary.error) {
-    console.error("Error fetching monthly trends:", monthlyPrimary.error);
   }
 
   const weeklyRows = weeklyData;
@@ -171,7 +172,7 @@ async function getWeeklyEntries(commanderIds: string[], weeks = 12) {
 
   if (error) {
     console.error("Error fetching weekly trends:", error);
-    return {};
+    throw error;
   }
 
   const rows = (data || []) as WeeklyTrendRow[];
@@ -210,9 +211,11 @@ async function getGlobalTrendSeries() {
 
   if (weeklyResult.error) {
     console.error("Error fetching global weekly trends:", weeklyResult.error);
+    throw weeklyResult.error;
   }
   if (monthlyResult.error) {
     console.error("Error fetching global monthly trends:", monthlyResult.error);
+    throw monthlyResult.error;
   }
 
   const weeklyRows = (weeklyResult.data || []) as {
@@ -303,11 +306,14 @@ const getCachedGlobalTrendSeries = unstable_cache(
 export default async function CommandersPage() {
   const commanders = await getCachedCommanders();
   const topCommanders = [...commanders].sort((a, b) => b.total_entries - a.total_entries).slice(0, 30);
+  const topCommanderIds = topCommanders
+    .map((commander) => commander.commander_id)
+    .sort((a, b) => a.localeCompare(b));
   const snapshotsByCommanderId = await getCachedCommanderPeriodSnapshots(
-    topCommanders.map((commander) => commander.commander_id)
+    topCommanderIds
   );
   const weeklyEntriesByCommanderId = await getCachedWeeklyEntries(
-    topCommanders.map((commander) => commander.commander_id),
+    topCommanderIds,
     12
   );
   const globalSeries = await getCachedGlobalTrendSeries();
