@@ -12,7 +12,6 @@ import csv
 import json
 import os
 from pathlib import Path
-from typing import Any
 from urllib.parse import quote_plus
 
 import requests
