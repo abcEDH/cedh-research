@@ -1,3 +1,10 @@
+## [1.7.6](https://github.com/abcEDH/cedh-research/compare/v1.7.5...v1.7.6) (2026-04-29)
+
+
+### Bug Fixes
+
+* load app fonts via next/font ([#123](https://github.com/abcEDH/cedh-research/issues/123)) ([1882cc2](https://github.com/abcEDH/cedh-research/commit/1882cc21b9eb5c0df05ddbfef8e42427c4fb4b06))
+
 ## [1.7.5](https://github.com/abcEDH/cedh-research/compare/v1.7.4...v1.7.5) (2026-04-17)
 
 
