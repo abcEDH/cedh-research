@@ -4,7 +4,6 @@ import { normalizeDateKey } from "@/lib/format-utils";
 import { BackLink } from "@/components/ui/back-link";
 import { StatCard } from "@/components/ui/stat-card";
 import { type CommanderStat } from "@/lib/types";
-import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import CommandersTable from "@/components/commanders/commanders-table";
 import CommanderTrendsTable, {
   CommanderPeriodSnapshot,
