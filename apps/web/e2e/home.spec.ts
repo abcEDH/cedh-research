@@ -44,7 +44,8 @@ test.describe("Home Page", () => {
   });
 
   test("feature cards link to supported tool pages", async ({ page }) => {
-    const tournamentPrepCard = page.getByRole("link", { name: /Tournament Prep/i }).first();
+    const featureCards = page.getByTestId("home-feature-cards");
+    const tournamentPrepCard = featureCards.getByRole("link", { name: /Tournament Prep/i });
     await expect(tournamentPrepCard).toBeVisible();
     await tournamentPrepCard.click();
     await expect(page).toHaveURL(/\/tournament-likelihood/);

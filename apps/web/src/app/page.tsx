@@ -56,126 +56,121 @@ function isKnownCommanderName(value: string | null | undefined): value is string
  * (32+ player events; same filter as the materialized view).
  */
 async function getTopRisingCommandersByTwoWeekTrend(): Promise<RisingCommander[]> {
-  try {
-    const { data: maxRows, error: maxErr } = await supabase
-      .from("commander_weekly_trends")
-      .select("week_start_date")
-      .not("commander_name", "ilike", "unknown commander")
-      .not("commander_name", "is", null)
-      .neq("commander_name", "")
-      .order("week_start_date", { ascending: false })
-      .limit(1);
+  const { data: maxRows, error: maxErr } = await supabase
+    .from("commander_weekly_trends")
+    .select("week_start_date")
+    .not("commander_name", "ilike", "unknown commander")
+    .not("commander_name", "is", null)
+    .neq("commander_name", "")
+    .order("week_start_date", { ascending: false })
+    .limit(1);
 
-    if (maxErr || !maxRows?.[0]?.week_start_date) {
-      if (maxErr) console.error("Rising commanders: max week query error:", maxErr);
-      return [];
+  if (maxErr) {
+    throw new Error(`Rising commanders max week query failed: ${maxErr.message}`);
+  }
+  if (!maxRows?.[0]?.week_start_date) return [];
+
+  const latestWeek = maxRows[0].week_start_date as string;
+  const windowStart = addDaysIso(latestWeek, -35);
+
+  const { data: trendRows, error: trendErr } = await supabase
+    .from("commander_weekly_trends")
+    .select("commander_id, commander_name, week_start_date, entries")
+    .not("commander_name", "ilike", "unknown commander")
+    .not("commander_name", "is", null)
+    .neq("commander_name", "")
+    .gte("week_start_date", windowStart)
+    .lte("week_start_date", latestWeek);
+
+  if (trendErr) {
+    throw new Error(`Rising commanders trends window query failed: ${trendErr.message}`);
+  }
+  if (!trendRows?.length) return [];
+
+  const weekSet = [...new Set(trendRows.map((r) => r.week_start_date as string))].sort((a, b) =>
+    b.localeCompare(a)
+  );
+
+  if (weekSet.length < 2) return [];
+
+  const recentWeekDates = weekSet.slice(0, 2);
+  let priorWeekDates: string[];
+  if (weekSet.length >= 4) {
+    priorWeekDates = weekSet.slice(2, 4);
+  } else if (weekSet.length === 3) {
+    priorWeekDates = weekSet.slice(2, 3);
+  } else {
+    priorWeekDates = [];
+  }
+
+  const recentKey = new Set(recentWeekDates);
+  const priorKey = new Set(priorWeekDates);
+
+  let recentTotal = 0;
+  let priorTotal = 0;
+  const totals = new Map<string, { name: string; recent: number; prior: number }>();
+  for (const row of trendRows) {
+    const id = row.commander_id as string;
+    const wk = row.week_start_date as string;
+    const n = row.entries ?? 0;
+    const cur = totals.get(id) ?? { name: row.commander_name as string, recent: 0, prior: 0 };
+    if (recentKey.has(wk)) {
+      cur.recent += n;
+      recentTotal += n;
     }
-
-    const latestWeek = maxRows[0].week_start_date as string;
-    const windowStart = addDaysIso(latestWeek, -35);
-
-    const { data: trendRows, error: trendErr } = await supabase
-      .from("commander_weekly_trends")
-      .select("commander_id, commander_name, week_start_date, entries")
-      .not("commander_name", "ilike", "unknown commander")
-      .not("commander_name", "is", null)
-      .neq("commander_name", "")
-      .gte("week_start_date", windowStart)
-      .lte("week_start_date", latestWeek);
-
-    if (trendErr || !trendRows?.length) {
-      if (trendErr) console.error("Rising commanders: trends window query error:", trendErr);
-      return [];
+    if (priorKey.has(wk)) {
+      cur.prior += n;
+      priorTotal += n;
     }
+    totals.set(id, cur);
+  }
 
-    const weekSet = [...new Set(trendRows.map((r) => r.week_start_date as string))].sort((a, b) =>
-      b.localeCompare(a)
+  const scored = [...totals.entries()]
+    .map(([commander_id, v]) => ({
+      commander_id,
+      commander_name: v.name,
+      entries_delta: v.recent - v.prior,
+      meta_share_delta: (v.recent / recentTotal) - (v.prior / priorTotal),
+      recent_entries: v.recent,
+      prior_entries: v.prior,
+    }))
+    .filter((x) => x.meta_share_delta > 0)
+    .sort((a, b) => b.meta_share_delta - a.meta_share_delta)
+    .slice(0, 3);
+
+  if (scored.length === 0) return [];
+
+  const { data: metaRows, error: metaErr } = await supabase
+    .from("commander_stats")
+    .select("commander_id, color_identity, avg_win_rate, total_entries")
+    .in(
+      "commander_id",
+      scored.map((s) => s.commander_id)
     );
 
-    if (weekSet.length < 2) return [];
-
-    const recentWeekDates = weekSet.slice(0, 2);
-    let priorWeekDates: string[];
-    if (weekSet.length >= 4) {
-      priorWeekDates = weekSet.slice(2, 4);
-    } else if (weekSet.length === 3) {
-      priorWeekDates = weekSet.slice(2, 3);
-    } else {
-      priorWeekDates = [];
-    }
-
-    const recentKey = new Set(recentWeekDates);
-    const priorKey = new Set(priorWeekDates);
-
-    let recentTotal = 0;
-    let priorTotal = 0;
-    const totals = new Map<string, { name: string; recent: number; prior: number }>();
-    for (const row of trendRows) {
-      const id = row.commander_id as string;
-      const wk = row.week_start_date as string;
-      const n = row.entries ?? 0;
-      const cur = totals.get(id) ?? { name: row.commander_name as string, recent: 0, prior: 0 };
-      if (recentKey.has(wk)) {
-        cur.recent += n;
-        recentTotal += n;
-      }
-      if (priorKey.has(wk)) {
-        cur.prior += n;
-        priorTotal += n;
-      }
-      totals.set(id, cur);
-    }
-
-    const scored = [...totals.entries()]
-      .map(([commander_id, v]) => ({
-        commander_id,
-        commander_name: v.name,
-        entries_delta: v.recent - v.prior,
-        meta_share_delta: (v.recent / recentTotal) - (v.prior / priorTotal),
-        recent_entries: v.recent,
-        prior_entries: v.prior,
-      }))
-      .filter((x) => x.meta_share_delta > 0)
-      .sort((a, b) => b.meta_share_delta - a.meta_share_delta)
-      .slice(0, 3);
-
-    if (scored.length === 0) return [];
-
-    const { data: metaRows, error: metaErr } = await supabase
-      .from("commander_stats")
-      .select("commander_id, color_identity, avg_win_rate, total_entries")
-      .in(
-        "commander_id",
-        scored.map((s) => s.commander_id)
-      );
-
-    if (metaErr) {
-      console.error("Rising commanders: commander_stats enrich error:", metaErr);
-    }
-
-    const metaById = new Map((metaRows ?? []).map((m) => [m.commander_id as string, m]));
-
-    return scored.map((s) => {
-      const meta = metaById.get(s.commander_id);
-      const wr = meta?.avg_win_rate;
-      const avg_win_rate = typeof wr === "number" ? wr : Number(wr ?? 0);
-      const te = meta?.total_entries;
-      const total_entries = typeof te === "number" ? te : Number(te ?? 0);
-      return {
-        ...s,
-        total_entries: Number.isFinite(total_entries) ? total_entries : 0,
-        color_identity: (meta?.color_identity as string[] | null) ?? null,
-        avg_win_rate: Number.isFinite(avg_win_rate) ? avg_win_rate : 0,
-      };
-    });
-  } catch (e) {
-    console.error("Rising commanders: unexpected error:", e);
-    return [];
+  if (metaErr) {
+    throw new Error(`Rising commanders enrich query failed: ${metaErr.message}`);
   }
+
+  const metaById = new Map((metaRows ?? []).map((m) => [m.commander_id as string, m]));
+
+  return scored.map((s) => {
+    const meta = metaById.get(s.commander_id);
+    const wr = meta?.avg_win_rate;
+    const avg_win_rate = typeof wr === "number" ? wr : Number(wr ?? 0);
+    const te = meta?.total_entries;
+    const total_entries = typeof te === "number" ? te : Number(te ?? 0);
+    return {
+      ...s,
+      total_entries: Number.isFinite(total_entries) ? total_entries : 0,
+      color_identity: (meta?.color_identity as string[] | null) ?? null,
+      avg_win_rate: Number.isFinite(avg_win_rate) ? avg_win_rate : 0,
+    };
+  });
 }
 
-async function getStats() {
-  const [topCommandersResult, topWinRateResult, topRisingCommanders] = await Promise.all([
+async function getCoreStats() {
+  const [topCommandersResult, topWinRateResult] = await Promise.all([
     supabase
       .from("commander_stats")
       .select("commander_id, commander_name, total_entries, avg_win_rate, conversion_rate_top_16, color_identity")
@@ -194,7 +189,6 @@ async function getStats() {
       .neq("commander_name", "")
       .order("avg_win_rate", { ascending: false })
       .limit(10),
-    getTopRisingCommandersByTwoWeekTrend(),
   ]);
 
   if (topCommandersResult.error) {
@@ -211,18 +205,29 @@ async function getStats() {
     topWinRate: ((topWinRateResult.data ?? []) as TopCommander[]).filter((row) =>
       isKnownCommanderName(row.commander_name)
     ),
-    topRisingCommanders,
   };
 }
 
-const getCachedHomeStats = unstable_cache(
-  getStats,
-  ["home-stats-v2"],
+const getCachedHomeCoreStats = unstable_cache(
+  getCoreStats,
+  ["home-core-stats-v3"],
+  { revalidate: HOME_CACHE_REVALIDATE_SECONDS }
+);
+
+const getCachedHomeRisingCommanders = unstable_cache(
+  getTopRisingCommandersByTwoWeekTrend,
+  ["home-rising-commanders-v1"],
   { revalidate: HOME_CACHE_REVALIDATE_SECONDS }
 );
 
 export default async function Home() {
-  const { topCommanders, topWinRate, topRisingCommanders } = await getCachedHomeStats();
+  const [{ topCommanders, topWinRate }, topRisingCommanders] = await Promise.all([
+    getCachedHomeCoreStats(),
+    getCachedHomeRisingCommanders().catch((error) => {
+      console.error("Home rising commanders cache refresh failed:", error);
+      return [];
+    }),
+  ]);
   const topThreePopular: TopCommander[] = topCommanders.slice(0, 3);
   const showTrendCards = topThreePopular.length > 0 || topRisingCommanders.length > 0;
 
@@ -405,7 +410,7 @@ export default async function Home() {
           </Card>
         </section>
 
-        <section className="mt-12 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+        <section data-testid="home-feature-cards" className="mt-12 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
           <FeatureCard
             href="/commanders"
             title="Commander Rankings"
