@@ -116,35 +116,7 @@ type GlobalSnapshotRow = {
   losses: number | null;
 };
 
-type PlayerCommanderUsageQueryRow = {
-  wins: number | null;
-  draws: number | null;
-  losses: number | null;
-  commanders:
-    | {
-        name: string | null;
-      }
-    | Array<{
-        name: string | null;
-      }>
-    | null;
-  tournaments:
-    | {
-        start_date: string | null;
-        name: string | null;
-        player_count: number | null;
-        topdeck_tid: string | null;
-      }
-    | Array<{
-        start_date: string | null;
-        name: string | null;
-        player_count: number | null;
-        topdeck_tid: string | null;
-      }>
-    | null;
-};
-
-type PlayerAchievementQueryRow = {
+type PlayerTournamentEntryRow = {
   final_standing: number | null;
   wins: number | null;
   draws: number | null;
@@ -761,20 +733,39 @@ function achievementTournamentKey(tournamentName: string | null | undefined, sta
   return `${tournamentName ?? "Unknown tournament"}:${(startDate ?? "").slice(0, 10)}`;
 }
 
-async function fetchPlayerAchievements(playerId: string, topdeckId: string): Promise<PlayerAchievementRow[]> {
-  const rows: PlayerAchievementQueryRow[] = [];
+function logPlayerReadSummary(event: string, details: Record<string, unknown>) {
+  console.info(`[regional-player] ${event}`, details);
+}
+
+async function fetchPlayerTournamentEntries(playerId: string): Promise<PlayerTournamentEntryRow[]> {
+  const rows: PlayerTournamentEntryRow[] = [];
   for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
     const { data, error } = await supabase
       .from("tournament_entries")
-      .select("final_standing, wins, draws, losses, decklist_url, commanders(name), tournaments(name, start_date, player_count, topdeck_tid)")
+      .select(
+        "final_standing, wins, draws, losses, decklist_url, commanders(name), tournaments(name, start_date, player_count, topdeck_tid)"
+      )
       .eq("player_id", playerId)
       .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
 
-    if (error) throw new Error(`Error fetching player achievements: ${error.message}`);
-    rows.push(...((data as PlayerAchievementQueryRow[]) ?? []));
+    if (error) throw new Error(`Error fetching player tournament entries: ${error.message}`);
+    rows.push(...((data as PlayerTournamentEntryRow[]) ?? []));
     if (!data || data.length < SUPABASE_PAGE_SIZE) break;
   }
 
+  logPlayerReadSummary("tournament-entries-cache-miss", {
+    playerId,
+    rowsReturned: rows.length,
+    supabaseQueries: Math.max(1, Math.ceil(rows.length / SUPABASE_PAGE_SIZE)),
+  });
+
+  return rows;
+}
+
+function buildPlayerAchievements(
+  rows: PlayerTournamentEntryRow[],
+  topdeckId: string
+): PlayerAchievementRow[] {
   return rows
     .map((row) => {
       const tournament = firstRelation(row.tournaments);
@@ -812,30 +803,20 @@ async function fetchPlayerAchievements(playerId: string, topdeckId: string): Pro
     });
 }
 
-async function fetchPlayerCommanderUsageRows(
-  playerId: string,
+async function fetchPlayerAchievements(playerId: string, topdeckId: string): Promise<PlayerAchievementRow[]> {
+  const rows = await fetchPlayerTournamentEntries(playerId);
+  return buildPlayerAchievements(rows, topdeckId);
+}
+
+function buildPlayerCommanderUsageRows(
+  rows: PlayerTournamentEntryRow[],
   topdeckId: string,
   playerName: string
-): Promise<PlayerCommanderUsageRow[]> {
-  const rows: PlayerCommanderUsageQueryRow[] = [];
-  for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
-    const { data, error } = await supabase
-      .from("tournament_entries")
-      .select("wins, draws, losses, commanders(name), tournaments(start_date, name, player_count, topdeck_tid)")
-      .eq("player_id", playerId)
-      .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
-
-    if (error) {
-      throw new Error(`Error fetching player commander usage: ${error.message}`);
-    }
-    rows.push(...((data as PlayerCommanderUsageQueryRow[]) ?? []));
-    if (!data || data.length < SUPABASE_PAGE_SIZE) break;
-  }
-
+): PlayerCommanderUsageRow[] {
   return rows
     .map((row) => {
-      const commander = firstRelation(row.commanders);
       const tournament = firstRelation(row.tournaments);
+      const commander = firstRelation(row.commanders);
       const commanderName = isKnownCommanderName(commander?.name) ? commander?.name ?? null : null;
 
       return {
@@ -854,6 +835,15 @@ async function fetchPlayerCommanderUsageRows(
       };
     })
     .filter((row) => row.commander_name && row.start_date);
+}
+
+async function fetchPlayerCommanderUsageRows(
+  playerId: string,
+  topdeckId: string,
+  playerName: string
+): Promise<PlayerCommanderUsageRow[]> {
+  const rows = await fetchPlayerTournamentEntries(playerId);
+  return buildPlayerCommanderUsageRows(rows, topdeckId, playerName);
 }
 
 async function fetchActiveCommander(

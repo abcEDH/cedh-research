@@ -1,11 +1,10 @@
 import { supabase } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
-import { buildProfiles, getCommanderUsageRows, selectCommanderForecastRows } from "@/lib/meta-prep";
 import { RegionalLeaderboardTable } from "./regional-leaderboard-table";
 import { RegionSelector } from "./region-selector";
 import { inferCountryForRegion } from "@/lib/region-countries";
-import { fetchAllTopdeckEloMap, fetchTopdeckEloMap } from "@/lib/topdeck-elo";
+import { fetchTopdeckEloMap } from "@/lib/topdeck-elo";
 import { unstable_cache } from "next/cache";
 
 export const dynamic = "force-dynamic";
@@ -135,112 +134,6 @@ type LatestCommanderRow = {
   latest_tournament_topdeck_tid: string | null;
 };
 
-type TopdeckEloSortRow = {
-  uid: string | null;
-  elo: number | null;
-};
-
-function sortLeaderboardRowsByTopdeckElo(rows: LeaderboardRow[]) {
-  return [...rows].sort((a, b) => {
-    const aElo = a.topdeck_elo;
-    const bElo = b.topdeck_elo;
-    if (aElo != null && bElo != null && bElo !== aElo) return bElo - aElo;
-    if (aElo != null && bElo == null) return -1;
-    if (aElo == null && bElo != null) return 1;
-    if (b.games_played !== a.games_played) return b.games_played - a.games_played;
-    return a.player_name.localeCompare(b.player_name);
-  });
-}
-
-async function fetchTopdeckSortedActiveLeaderboardRows(
-  regionType: "global" | "state",
-  regionKey: string,
-  page: number,
-  pageSize: number,
-  searchQuery: string
-): Promise<LeaderboardPage | null> {
-  const pageStart = (page - 1) * pageSize;
-  const targetRows = pageStart + pageSize;
-  let countQuery = supabase
-    .from("global_elo_active_leaderboard")
-    .select("player_id", { count: "exact", head: true })
-    .eq("region_type", regionType)
-    .eq("region_key", regionType === "global" ? GLOBAL_REGION_KEY : regionKey);
-
-  if (searchQuery) {
-    countQuery = countQuery.ilike("player_name", `%${searchQuery}%`);
-  }
-
-  const { error: countError, count } = await countQuery;
-  if (countError) return null;
-
-  const collectedRows: LeaderboardRow[] = [];
-  for (let offset = 0; ; offset += 1000) {
-    const { data: eloData, error: eloError } = await supabase
-      .from("topdeck_player_elos")
-      .select("uid, elo")
-      .order("elo", { ascending: false })
-      .range(offset, offset + 999);
-
-    if (eloError) return null;
-    const eloRows = (eloData as TopdeckEloSortRow[]) ?? [];
-    if (eloRows.length === 0) break;
-
-    const eloById = new Map(
-      eloRows
-        .filter((row): row is { uid: string; elo: number } => Boolean(row.uid) && typeof row.elo === "number")
-        .map((row) => [row.uid, row.elo])
-    );
-
-    const rowsByTopdeckId = new Map<string, LeaderboardRow>();
-    for (const topdeckIdChunk of chunkArray(Array.from(eloById.keys()), 250)) {
-      let rowQuery = supabase
-        .from("global_elo_active_leaderboard")
-        .select(
-          "region_type, region_key, country_key, primary_country_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank"
-        )
-        .eq("region_type", regionType)
-        .eq("region_key", regionType === "global" ? GLOBAL_REGION_KEY : regionKey)
-        .in("topdeck_id", topdeckIdChunk);
-
-      if (searchQuery) {
-        rowQuery = rowQuery.ilike("player_name", `%${searchQuery}%`);
-      }
-
-      const { data: rowData, error: rowError } = await rowQuery;
-      if (rowError) return null;
-      for (const row of (rowData as LeaderboardRow[]) ?? []) {
-        if (!row.topdeck_id) continue;
-        const topdeckElo = eloById.get(row.topdeck_id);
-        if (topdeckElo == null) continue;
-        rowsByTopdeckId.set(row.topdeck_id, {
-          ...row,
-          hidden_rating: row.rating,
-          topdeck_elo: topdeckElo,
-          rating: topdeckElo,
-        });
-      }
-    }
-
-    for (const eloRow of eloRows) {
-      if (!eloRow.uid) continue;
-      const row = rowsByTopdeckId.get(eloRow.uid);
-      if (row) collectedRows.push(row);
-    }
-
-    if (collectedRows.length >= targetRows) {
-      return {
-        rows: collectedRows.slice(pageStart, targetRows),
-        totalCount: count ?? collectedRows.length,
-      };
-    }
-
-    if (eloRows.length < 1000) break;
-  }
-
-  return null;
-}
-
 function isKnownCommander(commanderName: string | null | undefined) {
   const normalized = (commanderName ?? "").trim().toLowerCase();
   return normalized.length > 0 && normalized !== "unknown commander";
@@ -266,286 +159,8 @@ function activePlayerCutoffDate() {
   return cutoff.toISOString().slice(0, 10);
 }
 
-async function fetchLeaderboardRows(
-  regionType: "global" | "country" | "state",
-  regionKey: string,
-  page: number,
-  pageSize: number,
-  searchQuery = ""
-): Promise<LeaderboardPage> {
-  if (regionType === "country") {
-    return fetchCountryLeaderboardRows(regionKey, page, pageSize, searchQuery);
-  }
-
-  const cutoffDate = activePlayerCutoffDate();
-  const normalizedSearch = searchQuery.trim();
-  if (regionType === "global" || regionType === "state") {
-    const topdeckSortedPage = await fetchTopdeckSortedActiveLeaderboardRows(
-      regionType,
-      regionKey,
-      page,
-      pageSize,
-      normalizedSearch
-    );
-    if (topdeckSortedPage) return topdeckSortedPage;
-  }
-
-  const rows: LeaderboardRow[] = [];
-  let totalCount = 0;
-  let activeTableHadError = false;
-  for (let offset = 0; ; offset += 1000) {
-    let query = supabase
-      .from("global_elo_active_leaderboard")
-      .select(
-        "region_type, region_key, country_key, primary_country_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank",
-        { count: offset === 0 ? "exact" : undefined }
-      )
-      .eq("region_type", regionType)
-      .order("player_id", { ascending: true })
-      .range(offset, offset + 999);
-
-    if (normalizedSearch) {
-      query = query.ilike("player_name", `%${normalizedSearch}%`);
-    }
-
-    if (regionType === "global") {
-      query = query.eq("region_key", GLOBAL_REGION_KEY);
-    } else {
-      query = query.eq("region_key", regionKey);
-    }
-
-    const { data, error, count } = await query;
-
-    if (error) {
-      activeTableHadError = true;
-      break;
-    }
-
-    rows.push(...((data as LeaderboardRow[]) ?? []));
-    if (offset === 0) totalCount = count ?? 0;
-    if (!data || data.length < 1000) break;
-  }
-
-  if (activeTableHadError) {
-    return fetchLeaderboardRowsFromView(regionType, regionKey, page, pageSize, cutoffDate, normalizedSearch);
-  }
-
-  const sortedRows = sortLeaderboardRowsByTopdeckElo(await applyTopdeckElo(rows));
-  const pageStart = (page - 1) * pageSize;
-  return {
-    rows: sortedRows.slice(pageStart, pageStart + pageSize),
-    totalCount,
-  };
-}
-
-async function fetchLeaderboardRowsFromView(
-  regionType: "global" | "country" | "state",
-  regionKey: string,
-  page: number,
-  pageSize: number,
-  cutoffDate: string,
-  searchQuery = ""
-): Promise<LeaderboardPage> {
-  if (regionType === "country") {
-    return fetchCountryLeaderboardRows(regionKey, page, pageSize, searchQuery);
-  }
-
-  const rows: LeaderboardRow[] = [];
-  let totalCount = 0;
-  let viewHadError = false;
-  for (let offset = 0; ; offset += 1000) {
-    let query = supabase
-      .from("global_elo_leaderboard")
-      .select(
-        "region_type, region_key, country_key, primary_country_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank",
-        { count: offset === 0 ? "exact" : undefined }
-      )
-      .eq("region_type", regionType)
-      .eq("region_key", regionKey)
-      .gte("last_game_date", cutoffDate)
-      .order("player_id", { ascending: true })
-      .range(offset, offset + 999);
-
-    if (searchQuery) {
-      query = query.ilike("player_name", `%${searchQuery}%`);
-    }
-
-    const { data, error, count } = await query;
-
-    if (error) {
-      viewHadError = true;
-      break;
-    }
-
-    rows.push(...((data as LeaderboardRow[]) ?? []));
-    if (offset === 0) totalCount = count ?? 0;
-    if (!data || data.length < 1000) break;
-  }
-
-  if (viewHadError) {
-    return fetchLegacyLeaderboardRows(
-      regionType,
-      regionType === "global" ? GLOBAL_REGION_KEY : regionKey,
-      page,
-      pageSize,
-      searchQuery
-    );
-  }
-
-  const rowsWithTotals = await applyGlobalLeaderboardTotals(regionType, rows);
-  const sortedRows = sortLeaderboardRowsByTopdeckElo(await applyTopdeckElo(rowsWithTotals));
-  const pageStart = (page - 1) * pageSize;
-  return {
-    rows: sortedRows.slice(pageStart, pageStart + pageSize),
-    totalCount,
-  };
-}
-
-async function fetchCountryLeaderboardRows(
-  countryKey: string,
-  page: number,
-  pageSize: number,
-  searchQuery = ""
-): Promise<LeaderboardPage> {
-  const cutoffDate = activePlayerCutoffDate();
-  const pageStart = (page - 1) * pageSize;
-  const batchSize = 1000;
-  const filteredRows: LeaderboardRow[] = [];
-  let totalCount = 0;
-  for (let offset = 0; ; offset += batchSize) {
-    let query = supabase
-      .from("regional_elo_leaderboard")
-      .select(
-        "region_type, region_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank"
-      )
-      .eq("region_type", "global")
-      .eq("region_key", GLOBAL_REGION_KEY)
-      .gte("last_game_date", cutoffDate)
-      .order("player_id", { ascending: true })
-      .range(offset, offset + batchSize - 1);
-
-    if (searchQuery) {
-      query = query.ilike("player_name", `%${searchQuery}%`);
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      console.error("Error fetching country leaderboard rows:", error);
-      throw error;
-    }
-
-    const pageRows = (data as LeaderboardRow[]) ?? [];
-    if (pageRows.length === 0) break;
-
-    for (const row of pageRows) {
-      const homeCountry = row.primary_region_key ? inferCountryForRegion(row.primary_region_key) : null;
-      if (homeCountry !== countryKey) continue;
-      filteredRows.push(row);
-      totalCount += 1;
-    }
-
-    if (pageRows.length < batchSize) break;
-  }
-
-  const rowsWithTotals = await applyGlobalLeaderboardTotals("country", filteredRows);
-  const sortedRows = sortLeaderboardRowsByTopdeckElo(await applyTopdeckElo(rowsWithTotals));
-  return {
-    rows: sortedRows.slice(pageStart, pageStart + pageSize),
-    totalCount,
-  };
-}
-
-async function fetchLegacyLeaderboardRows(
-  regionType: "global" | "country" | "state",
-  regionKey: string,
-  page: number,
-  pageSize: number,
-  searchQuery = ""
-): Promise<LeaderboardPage> {
-  if (regionType === "country") {
-    return fetchCountryLeaderboardRows(regionKey, page, pageSize, searchQuery);
-  }
-
-  const cutoffDate = activePlayerCutoffDate();
-  const rows: LeaderboardRow[] = [];
-  let totalCount = 0;
-  for (let offset = 0; ; offset += 1000) {
-    let query = supabase
-      .from("regional_elo_leaderboard")
-      .select(
-        "region_type, region_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank",
-        { count: offset === 0 ? "exact" : undefined }
-      )
-      .eq("region_type", regionType)
-      .eq("region_key", regionKey)
-      .gte("last_game_date", cutoffDate)
-      .order("player_id", { ascending: true })
-      .range(offset, offset + 999);
-
-    if (searchQuery) {
-      query = query.ilike("player_name", `%${searchQuery}%`);
-    }
-
-    const { data, error, count } = await query;
-
-    if (error) {
-      console.error("Error fetching legacy leaderboard rows:", error);
-      throw error;
-    }
-
-    rows.push(...((data as LeaderboardRow[]) ?? []));
-    if (offset === 0) totalCount = count ?? 0;
-    if (!data || data.length < 1000) break;
-  }
-
-  const rowsWithTotals = await applyGlobalLeaderboardTotals(regionType, rows);
-  const sortedRows = sortLeaderboardRowsByTopdeckElo(await applyTopdeckElo(rowsWithTotals));
-  const pageStart = (page - 1) * pageSize;
-  return {
-    rows: sortedRows.slice(pageStart, pageStart + pageSize),
-    totalCount,
-  };
-}
-
-async function applyGlobalLeaderboardTotals(
-  regionType: "global" | "country" | "state",
-  rows: LeaderboardRow[]
-): Promise<LeaderboardRow[]> {
-  if (regionType === "global" || rows.length === 0) return rows;
-
-  const playerIds = rows.map((row) => row.player_id).filter(Boolean);
-  const eventLogTotals = await fetchEventLogTotals(playerIds);
-  for (const table of ["global_elo_active_leaderboard", "global_elo_leaderboard", "regional_elo_leaderboard"]) {
-    const { data, error } = await supabase
-      .from(table)
-      .select("player_id, games_played, wins, draws, losses, last_game_date")
-      .eq("region_type", "global")
-      .eq("region_key", GLOBAL_REGION_KEY)
-      .in("player_id", playerIds);
-
-    if (error) continue;
-    const totalsByPlayer = new Map(
-      ((data as Array<Pick<LeaderboardRow, "player_id" | "games_played" | "wins" | "draws" | "losses" | "last_game_date">>) ?? [])
-        .map((row) => [row.player_id, row])
-    );
-    if (totalsByPlayer.size === 0) continue;
-    return rows.map((row) => {
-      const totals = eventLogTotals.get(row.player_id) ?? totalsByPlayer.get(row.player_id);
-      return totals
-        ? {
-            ...row,
-            games_played: totals.games_played,
-            wins: totals.wins,
-            draws: totals.draws,
-            losses: totals.losses,
-            last_game_date: totals.last_game_date,
-          }
-        : row;
-    });
-  }
-
-  return rows;
+function logReadSummary(event: string, details: Record<string, unknown>) {
+  console.info(`[regional-elo] ${event}`, details);
 }
 
 async function applyTopdeckElo(rows: LeaderboardRow[]): Promise<LeaderboardRow[]> {
@@ -554,10 +169,7 @@ async function applyTopdeckElo(rows: LeaderboardRow[]): Promise<LeaderboardRow[]
     .filter((value): value is string => Boolean(value));
   if (topdeckIds.length === 0) return rows;
 
-  const topdeckEloById =
-    topdeckIds.length > 1000
-      ? await fetchAllTopdeckEloMap()
-      : await fetchTopdeckEloMap(topdeckIds);
+  const topdeckEloById = await fetchTopdeckEloMap(topdeckIds);
   if (topdeckEloById.size === 0) {
     return rows.map((row) => ({
       ...row,
@@ -577,65 +189,161 @@ async function applyTopdeckElo(rows: LeaderboardRow[]): Promise<LeaderboardRow[]
   });
 }
 
-async function fetchEventLogTotals(playerIds: string[]) {
-  const totalsByPlayer = new Map<
-    string,
-    Pick<LeaderboardRow, "player_id" | "games_played" | "wins" | "draws" | "losses" | "last_game_date">
-  >();
-  if (playerIds.length === 0) return totalsByPlayer;
+async function fetchLeaderboardRows(
+  regionType: "global" | "country" | "state",
+  regionKey: string,
+  page: number,
+  pageSize: number,
+  searchQuery = ""
+): Promise<LeaderboardPage> {
+  const pageStart = (page - 1) * pageSize;
+  const normalizedSearch = searchQuery.trim();
+  let query = supabase
+    .from("global_elo_active_leaderboard")
+    .select(
+      "region_type, region_key, country_key, primary_country_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank",
+      { count: "exact" }
+    )
+    .eq("region_type", regionType)
+    .eq("region_key", regionKey)
+    .order("rank", { ascending: true })
+    .range(pageStart, pageStart + pageSize - 1);
 
-  for (const table of ["global_elo_game_event_log", "regional_elo_game_event_log"]) {
-    let tableHadRows = false;
-    let tableMissing = false;
-    for (const playerIdChunk of chunkArray(playerIds, 10)) {
-      for (let offset = 0; ; offset += 1000) {
-        const { data, error } = await supabase
-          .from(table)
-          .select("player_id, game_result, game_date")
-          .in("player_id", playerIdChunk)
-          .order("player_id", { ascending: true })
-          .order("game_date", { ascending: true })
-          .range(offset, offset + 999);
-
-        if (error) {
-          tableMissing = true;
-          break;
-        }
-        const page = (data as Array<{ player_id: string; game_result: string | null; game_date: string | null }>) ?? [];
-        tableHadRows = tableHadRows || page.length > 0;
-        for (const row of page) {
-          const current = totalsByPlayer.get(row.player_id) ?? {
-            player_id: row.player_id,
-            games_played: 0,
-            wins: 0,
-            draws: 0,
-            losses: 0,
-            last_game_date: null,
-          };
-          current.games_played += 1;
-          if (row.game_result === "win") {
-            current.wins += 1;
-          } else if (row.game_result === "draw") {
-            current.draws += 1;
-          } else if (row.game_result === "loss") {
-            current.losses += 1;
-          }
-          if (row.game_date && (!current.last_game_date || row.game_date > current.last_game_date)) {
-            current.last_game_date = row.game_date;
-          }
-          totalsByPlayer.set(row.player_id, current);
-        }
-        if (page.length < 1000) break;
-      }
-      if (tableMissing) {
-        totalsByPlayer.clear();
-        break;
-      }
-    }
-    if (tableHadRows && !tableMissing) break;
+  if (normalizedSearch) {
+    query = query.ilike("player_name", `%${normalizedSearch}%`);
   }
 
-  return totalsByPlayer;
+  const { data, error, count } = await query;
+  if (error) {
+    return fetchLeaderboardRowsFromView(
+      regionType,
+      regionKey,
+      page,
+      pageSize,
+      activePlayerCutoffDate(),
+      normalizedSearch
+    );
+  }
+
+  const rows = await applyTopdeckElo((data as LeaderboardRow[]) ?? []);
+  logReadSummary("leaderboard-cache-miss", {
+    source: "global_elo_active_leaderboard",
+    regionType,
+    regionKey,
+    page,
+    pageSize,
+    search: normalizedSearch || null,
+    rowsReturned: rows.length,
+    totalCount: count ?? 0,
+    supabaseQueries: rows.length > 0 ? 2 : 1,
+  });
+  return {
+    rows,
+    totalCount: count ?? 0,
+  };
+}
+
+async function fetchLeaderboardRowsFromView(
+  regionType: "global" | "country" | "state",
+  regionKey: string,
+  page: number,
+  pageSize: number,
+  cutoffDate: string,
+  searchQuery = ""
+): Promise<LeaderboardPage> {
+  const pageStart = (page - 1) * pageSize;
+  let query = supabase
+    .from("global_elo_leaderboard")
+    .select(
+      "region_type, region_key, country_key, primary_country_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank",
+      { count: "exact" }
+    )
+    .eq("region_type", regionType)
+    .eq("region_key", regionKey)
+    .gte("last_game_date", cutoffDate)
+    .order("rank", { ascending: true })
+    .range(pageStart, pageStart + pageSize - 1);
+
+  if (searchQuery) {
+    query = query.ilike("player_name", `%${searchQuery}%`);
+  }
+
+  const { data, error, count } = await query;
+  if (error) {
+    return fetchLegacyLeaderboardRows(
+      regionType,
+      regionType === "global" ? GLOBAL_REGION_KEY : regionKey,
+      page,
+      pageSize,
+      searchQuery
+    );
+  }
+
+  const rows = await applyTopdeckElo((data as LeaderboardRow[]) ?? []);
+  logReadSummary("leaderboard-view-cache-miss", {
+    source: "global_elo_leaderboard",
+    regionType,
+    regionKey,
+    page,
+    pageSize,
+    search: searchQuery || null,
+    rowsReturned: rows.length,
+    totalCount: count ?? 0,
+    supabaseQueries: rows.length > 0 ? 2 : 1,
+  });
+  return {
+    rows,
+    totalCount: count ?? 0,
+  };
+}
+
+async function fetchLegacyLeaderboardRows(
+  regionType: "global" | "country" | "state",
+  regionKey: string,
+  page: number,
+  pageSize: number,
+  searchQuery = ""
+): Promise<LeaderboardPage> {
+  const cutoffDate = activePlayerCutoffDate();
+  const pageStart = (page - 1) * pageSize;
+  let query = supabase
+    .from("regional_elo_leaderboard")
+    .select(
+      "region_type, region_key, country_key, primary_country_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank",
+      { count: "exact" }
+    )
+    .eq("region_type", regionType)
+    .eq("region_key", regionKey)
+    .gte("last_game_date", cutoffDate)
+    .order("rank", { ascending: true })
+    .range(pageStart, pageStart + pageSize - 1);
+
+  if (searchQuery) {
+    query = query.ilike("player_name", `%${searchQuery}%`);
+  }
+
+  const { data, error, count } = await query;
+  if (error) {
+    console.error("Error fetching legacy leaderboard rows:", error);
+    throw error;
+  }
+
+  const rows = await applyTopdeckElo((data as LeaderboardRow[]) ?? []);
+  logReadSummary("leaderboard-legacy-cache-miss", {
+    source: "regional_elo_leaderboard",
+    regionType,
+    regionKey,
+    page,
+    pageSize,
+    search: searchQuery || null,
+    rowsReturned: rows.length,
+    totalCount: count ?? 0,
+    supabaseQueries: rows.length > 0 ? 2 : 1,
+  });
+  return {
+    rows,
+    totalCount: count ?? 0,
+  };
 }
 
 async function fetchRegionRows(): Promise<{ rows: RegionRow[]; supportsCountry: boolean }> {
@@ -715,23 +423,31 @@ async function fetchLatestCommanders(rows: LeaderboardRow[]): Promise<Map<string
   if (topdeckIds.length === 0) return new Map();
   const playerIdByTopdeckId = new Map<string, string>();
   const topdeckIdByPlayerId = new Map<string, string>();
-  const lastGameDateByTopdeckId = new Map<string, string | null>();
   for (const row of rows) {
     if (!row.topdeck_id) continue;
     playerIdByTopdeckId.set(row.topdeck_id, row.player_id);
     topdeckIdByPlayerId.set(row.player_id, row.topdeck_id);
-    lastGameDateByTopdeckId.set(row.topdeck_id, row.last_game_date);
   }
 
-  const profileRows: Array<{ topdeck_id: string | null; active_commander: string | null }> = [];
+  const profileRows: Array<{
+    topdeck_id: string | null;
+    active_commander: string | null;
+    latest_decklist_url: string | null;
+  }> = [];
   for (const topdeckIdChunk of chunkArray(topdeckIds, 250)) {
     const { data, error } = await supabase
       .from("player_commander_profiles")
-      .select("topdeck_id, active_commander")
+      .select("topdeck_id, active_commander, latest_decklist_url")
       .in("topdeck_id", topdeckIdChunk);
 
     if (error || !data?.length) continue;
-    profileRows.push(...(data as Array<{ topdeck_id: string | null; active_commander: string | null }>));
+    profileRows.push(
+      ...(data as Array<{
+        topdeck_id: string | null;
+        active_commander: string | null;
+        latest_decklist_url: string | null;
+      }>)
+    );
   }
 
   const latestByPlayer = new Map<string, LatestCommanderRow>();
@@ -750,6 +466,7 @@ async function fetchLatestCommanders(rows: LeaderboardRow[]): Promise<Map<string
   for (const table of ["global_elo_game_event_log", "regional_elo_game_event_log"]) {
     let tableWorked = false;
     for (const playerIdChunk of chunkArray(playerIds, 100)) {
+      const remainingPlayerIds = new Set(playerIdChunk);
       for (let offset = 0; ; offset += pageSize) {
         const { data, error } = await supabase
           .from(table)
@@ -781,8 +498,10 @@ async function fetchLatestCommanders(rows: LeaderboardRow[]): Promise<Map<string
               game_date: row.game_date ?? null,
             });
           }
+          remainingPlayerIds.delete(row.player_id);
         }
 
+        if (remainingPlayerIds.size === 0) break;
         if (page.length < pageSize) break;
       }
       if (!tableWorked && latestPlayedEventByPlayerId.size === 0) continue;
@@ -820,6 +539,17 @@ async function fetchLatestCommanders(rows: LeaderboardRow[]): Promise<Map<string
     });
   }
 
+  for (const row of profileRows) {
+    const activeCommander = row.active_commander;
+    if (row.topdeck_id && activeCommander && isKnownCommander(activeCommander)) {
+      profileActiveCommanderByTopdeckId.set(row.topdeck_id, activeCommander);
+      const existing = latestByPlayer.get(row.topdeck_id);
+      if (existing) {
+        existing.active_commander_decklist_url = row.latest_decklist_url ?? null;
+      }
+    }
+  }
+
   for (const [playerId, latestPlayed] of latestPlayedEventByPlayerId.entries()) {
     const topdeckId = topdeckIdByPlayerId.get(playerId);
     if (!topdeckId) continue;
@@ -834,36 +564,18 @@ async function fetchLatestCommanders(rows: LeaderboardRow[]): Promise<Map<string
     existing.latest_tournament_topdeck_tid = matchedTournament?.topdeck_tid ?? null;
   }
 
-  const referenceDate = new Date();
-  const usageRows = await getCommanderUsageRows(topdeckIds, "1900-01-01");
-  const forecastRows = selectCommanderForecastRows(topdeckIds, usageRows, referenceDate);
-  const profiles = buildProfiles(topdeckIds, forecastRows, 1, referenceDate.toISOString());
-  for (const profile of profiles.players) {
-    const commander = profile.commanders[0]?.commander ?? null;
-    if (isKnownCommander(commander)) {
-      profileActiveCommanderByTopdeckId.set(profile.topdeckId, commander);
-      const existing = latestByPlayer.get(profile.topdeckId);
-      if (existing) {
-        existing.active_commander_decklist_url =
-          profile.commanders[0]?.latestTopdeckDecklistUrl ||
-          profile.commanders[0]?.latestDecklistUrl ||
-          null;
-      }
-    }
-  }
-
-  for (const row of profileRows) {
-    const activeCommander = row.active_commander;
-    if (row.topdeck_id && activeCommander && isKnownCommander(activeCommander)) {
-      profileActiveCommanderByTopdeckId.set(row.topdeck_id, activeCommander);
-    }
-  }
-
   for (const [topdeckId, activeCommander] of profileActiveCommanderByTopdeckId.entries()) {
     const existing = latestByPlayer.get(topdeckId);
     if (!existing) continue;
     existing.active_commander = activeCommander;
   }
+
+  logReadSummary("latest-commanders-cache-miss", {
+    players: rows.length,
+    playerProfileQueries: Math.ceil(topdeckIds.length / 250),
+    eventLogQueries: Math.ceil(playerIds.length / 100),
+    tournamentQueries: Math.ceil(latestTournamentIds.length / 100),
+  });
 
   return latestByPlayer;
 }
