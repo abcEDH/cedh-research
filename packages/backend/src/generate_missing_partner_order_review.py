@@ -14,8 +14,6 @@ import os
 from pathlib import Path
 from urllib.parse import quote_plus
 
-import requests
-
 from ingest import SupabaseClient
 
 
