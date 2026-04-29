@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { unstable_cache } from "next/cache";
 import {
   Table,
   TableBody,
@@ -11,11 +12,10 @@ import {
 import { supabase } from "@/lib/supabase";
 import { normalizeDisplayString } from "@/lib/utils";
 import Link from "next/link";
-import { fetchChampionshipLeaderboard } from "@/lib/topdeck";
-import { buildTopdeckProfileHref } from "@/lib/topdeck-profile";
 import { HomeSearchBar } from "@/components/home-search-bar";
 
-// Force dynamic rendering - fetch fresh data on each request
+const HOME_CACHE_REVALIDATE_SECONDS = 60 * 60 * 6; // 6 hours
+
 export const dynamic = "force-dynamic";
 
 interface TopCommander {
@@ -25,8 +25,6 @@ interface TopCommander {
   avg_win_rate: number;
   conversion_rate_top_16: number;
   color_identity: string[] | null;
-  /** Share of all `commander_stats` entries (32+ player events); set on home widgets only. */
-  meta_share_pct?: number;
 }
 
 interface RisingCommander {
@@ -39,36 +37,6 @@ interface RisingCommander {
   total_entries: number;
   avg_win_rate: number;
   color_identity: string[] | null;
-  /** Share of all `commander_stats` entries (32+ player events). */
-  meta_share_pct?: number;
-}
-
-/** Sum of `total_entries` across `commander_stats` (equals all large-event tournament entries). */
-async function sumMetaEntriesFromCommanderStats(): Promise<number> {
-  try {
-    const pageSize = 1000;
-    let sum = 0;
-    for (let offset = 0; ; offset += pageSize) {
-      const { data, error } = await supabase
-        .from("commander_stats")
-        .select("total_entries")
-        .range(offset, offset + pageSize - 1);
-      if (error) {
-        console.error("Meta entry total sum error:", error);
-        return 0;
-      }
-      const rows = data ?? [];
-      if (rows.length === 0) break;
-      for (const row of rows) {
-        sum += Number(row.total_entries) || 0;
-      }
-      if (rows.length < pageSize) break;
-    }
-    return sum;
-  } catch (e) {
-    console.error("Meta entry total sum unexpected error:", e);
-    return 0;
-  }
 }
 
 function addDaysIso(isoDate: string, days: number): string {
@@ -88,217 +56,180 @@ function isKnownCommanderName(value: string | null | undefined): value is string
  * (32+ player events; same filter as the materialized view).
  */
 async function getTopRisingCommandersByTwoWeekTrend(): Promise<RisingCommander[]> {
-  try {
-    const { data: maxRows, error: maxErr } = await supabase
-      .from("commander_weekly_trends")
-      .select("week_start_date")
-      .not("commander_name", "ilike", "unknown commander")
-      .not("commander_name", "is", null)
-      .neq("commander_name", "")
-      .order("week_start_date", { ascending: false })
-      .limit(1);
+  const { data: maxRows, error: maxErr } = await supabase
+    .from("commander_weekly_trends")
+    .select("week_start_date")
+    .not("commander_name", "ilike", "unknown commander")
+    .not("commander_name", "is", null)
+    .neq("commander_name", "")
+    .order("week_start_date", { ascending: false })
+    .limit(1);
 
-    if (maxErr || !maxRows?.[0]?.week_start_date) {
-      if (maxErr) console.error("Rising commanders: max week query error:", maxErr);
-      return [];
+  if (maxErr) {
+    throw new Error(`Rising commanders max week query failed: ${maxErr.message}`);
+  }
+  if (!maxRows?.[0]?.week_start_date) return [];
+
+  const latestWeek = maxRows[0].week_start_date as string;
+  const windowStart = addDaysIso(latestWeek, -35);
+
+  const { data: trendRows, error: trendErr } = await supabase
+    .from("commander_weekly_trends")
+    .select("commander_id, commander_name, week_start_date, entries")
+    .not("commander_name", "ilike", "unknown commander")
+    .not("commander_name", "is", null)
+    .neq("commander_name", "")
+    .gte("week_start_date", windowStart)
+    .lte("week_start_date", latestWeek);
+
+  if (trendErr) {
+    throw new Error(`Rising commanders trends window query failed: ${trendErr.message}`);
+  }
+  if (!trendRows?.length) return [];
+
+  const weekSet = [...new Set(trendRows.map((r) => r.week_start_date as string))].sort((a, b) =>
+    b.localeCompare(a)
+  );
+
+  if (weekSet.length < 2) return [];
+
+  const recentWeekDates = weekSet.slice(0, 2);
+  let priorWeekDates: string[];
+  if (weekSet.length >= 4) {
+    priorWeekDates = weekSet.slice(2, 4);
+  } else if (weekSet.length === 3) {
+    priorWeekDates = weekSet.slice(2, 3);
+  } else {
+    priorWeekDates = [];
+  }
+
+  const recentKey = new Set(recentWeekDates);
+  const priorKey = new Set(priorWeekDates);
+
+  let recentTotal = 0;
+  let priorTotal = 0;
+  const totals = new Map<string, { name: string; recent: number; prior: number }>();
+  for (const row of trendRows) {
+    const id = row.commander_id as string;
+    const wk = row.week_start_date as string;
+    const n = row.entries ?? 0;
+    const cur = totals.get(id) ?? { name: row.commander_name as string, recent: 0, prior: 0 };
+    if (recentKey.has(wk)) {
+      cur.recent += n;
+      recentTotal += n;
     }
-
-    const latestWeek = maxRows[0].week_start_date as string;
-    const windowStart = addDaysIso(latestWeek, -35);
-
-    const { data: trendRows, error: trendErr } = await supabase
-      .from("commander_weekly_trends")
-      .select("commander_id, commander_name, week_start_date, entries")
-      .not("commander_name", "ilike", "unknown commander")
-      .not("commander_name", "is", null)
-      .neq("commander_name", "")
-      .gte("week_start_date", windowStart)
-      .lte("week_start_date", latestWeek);
-
-    if (trendErr || !trendRows?.length) {
-      if (trendErr) console.error("Rising commanders: trends window query error:", trendErr);
-      return [];
+    if (priorKey.has(wk)) {
+      cur.prior += n;
+      priorTotal += n;
     }
+    totals.set(id, cur);
+  }
 
-    const weekSet = [...new Set(trendRows.map((r) => r.week_start_date as string))].sort((a, b) =>
-      b.localeCompare(a)
+  const scored = [...totals.entries()]
+    .map(([commander_id, v]) => ({
+      commander_id,
+      commander_name: v.name,
+      entries_delta: v.recent - v.prior,
+      meta_share_delta: (v.recent / recentTotal) - (v.prior / priorTotal),
+      recent_entries: v.recent,
+      prior_entries: v.prior,
+    }))
+    .filter((x) => x.meta_share_delta > 0)
+    .sort((a, b) => b.meta_share_delta - a.meta_share_delta)
+    .slice(0, 3);
+
+  if (scored.length === 0) return [];
+
+  const { data: metaRows, error: metaErr } = await supabase
+    .from("commander_stats")
+    .select("commander_id, color_identity, avg_win_rate, total_entries")
+    .in(
+      "commander_id",
+      scored.map((s) => s.commander_id)
     );
 
-    if (weekSet.length < 2) return [];
+  if (metaErr) {
+    throw new Error(`Rising commanders enrich query failed: ${metaErr.message}`);
+  }
 
-    const recentWeekDates = weekSet.slice(0, 2);
-    let priorWeekDates: string[];
-    if (weekSet.length >= 4) {
-      priorWeekDates = weekSet.slice(2, 4);
-    } else if (weekSet.length === 3) {
-      priorWeekDates = weekSet.slice(2, 3);
-    } else {
-      priorWeekDates = [];
-    }
+  const metaById = new Map((metaRows ?? []).map((m) => [m.commander_id as string, m]));
 
-    const recentKey = new Set(recentWeekDates);
-    const priorKey = new Set(priorWeekDates);
+  return scored.map((s) => {
+    const meta = metaById.get(s.commander_id);
+    const wr = meta?.avg_win_rate;
+    const avg_win_rate = typeof wr === "number" ? wr : Number(wr ?? 0);
+    const te = meta?.total_entries;
+    const total_entries = typeof te === "number" ? te : Number(te ?? 0);
+    return {
+      ...s,
+      total_entries: Number.isFinite(total_entries) ? total_entries : 0,
+      color_identity: (meta?.color_identity as string[] | null) ?? null,
+      avg_win_rate: Number.isFinite(avg_win_rate) ? avg_win_rate : 0,
+    };
+  });
+}
 
-    let recentTotal = 0;
-    let priorTotal = 0;
-    const totals = new Map<string, { name: string; recent: number; prior: number }>();
-    for (const row of trendRows) {
-      const id = row.commander_id as string;
-      const wk = row.week_start_date as string;
-      const n = row.entries ?? 0;
-      const cur = totals.get(id) ?? { name: row.commander_name as string, recent: 0, prior: 0 };
-      if (recentKey.has(wk)) {
-        cur.recent += n;
-        recentTotal += n;
-      }
-      if (priorKey.has(wk)) {
-        cur.prior += n;
-        priorTotal += n;
-      }
-      totals.set(id, cur);
-    }
-
-    const scored = [...totals.entries()]
-      .map(([commander_id, v]) => ({
-        commander_id,
-        commander_name: v.name,
-        entries_delta: v.recent - v.prior,
-        meta_share_delta: (v.recent / recentTotal) - (v.prior / priorTotal),
-        recent_entries: v.recent,
-        prior_entries: v.prior,
-      }))
-      .filter((x) => x.meta_share_delta > 0)
-      .sort((a, b) => b.meta_share_delta - a.meta_share_delta)
-      .slice(0, 3);
-
-    if (scored.length === 0) return [];
-
-    const { data: metaRows, error: metaErr } = await supabase
+async function getCoreStats() {
+  const [topCommandersResult, topWinRateResult] = await Promise.all([
+    supabase
       .from("commander_stats")
-      .select("commander_id, color_identity, avg_win_rate, total_entries")
-      .in(
-        "commander_id",
-        scored.map((s) => s.commander_id)
-      );
+      .select("commander_id, commander_name, total_entries, avg_win_rate, conversion_rate_top_16, color_identity")
+      .gt("total_entries", 20)
+      .not("commander_name", "ilike", "unknown commander")
+      .not("commander_name", "is", null)
+      .neq("commander_name", "")
+      .order("total_entries", { ascending: false })
+      .limit(21),
+    supabase
+      .from("commander_stats")
+      .select("commander_id, commander_name, total_entries, avg_win_rate, conversion_rate_top_16, color_identity")
+      .gt("total_entries", 30)
+      .not("commander_name", "ilike", "unknown commander")
+      .not("commander_name", "is", null)
+      .neq("commander_name", "")
+      .order("avg_win_rate", { ascending: false })
+      .limit(10),
+  ]);
 
-    if (metaErr) {
-      console.error("Rising commanders: commander_stats enrich error:", metaErr);
-    }
-
-    const metaById = new Map((metaRows ?? []).map((m) => [m.commander_id as string, m]));
-
-    return scored.map((s) => {
-      const meta = metaById.get(s.commander_id);
-      const wr = meta?.avg_win_rate;
-      const avg_win_rate = typeof wr === "number" ? wr : Number(wr ?? 0);
-      const te = meta?.total_entries;
-      const total_entries = typeof te === "number" ? te : Number(te ?? 0);
-      return {
-        ...s,
-        total_entries: Number.isFinite(total_entries) ? total_entries : 0,
-        color_identity: (meta?.color_identity as string[] | null) ?? null,
-        avg_win_rate: Number.isFinite(avg_win_rate) ? avg_win_rate : 0,
-      };
-    });
-  } catch (e) {
-    console.error("Rising commanders: unexpected error:", e);
-    return [];
+  if (topCommandersResult.error) {
+    throw new Error(`Top commanders query failed: ${topCommandersResult.error.message}`);
   }
-}
-
-async function getStats() {
-  try {
-    const [
-      tournamentResult,
-      commanderResult,
-      topCommandersResult,
-      topWinRateResult,
-      topRisingCommanders,
-      metaEntryTotal,
-    ] = await Promise.all([
-      supabase.from("tournaments").select("*", { count: "exact", head: true }),
-      supabase.from("commanders").select("*", { count: "exact", head: true }),
-      supabase
-        .from("commander_stats")
-        .select("commander_id, commander_name, total_entries, avg_win_rate, conversion_rate_top_16, color_identity")
-        .gt("total_entries", 20)
-        .not("commander_name", "ilike", "unknown commander")
-        .not("commander_name", "is", null)
-        .neq("commander_name", "")
-        .order("total_entries", { ascending: false })
-        .limit(21),
-      supabase
-        .from("commander_stats")
-        .select("commander_id, commander_name, total_entries, avg_win_rate, conversion_rate_top_16, color_identity")
-        .gt("total_entries", 30)
-        .not("commander_name", "ilike", "unknown commander")
-        .not("commander_name", "is", null)
-        .neq("commander_name", "")
-        .order("avg_win_rate", { ascending: false })
-        .limit(10),
-      getTopRisingCommandersByTwoWeekTrend(),
-      sumMetaEntriesFromCommanderStats(),
-    ]);
-
-    if (tournamentResult.error) {
-      console.error("Tournament query error:", tournamentResult.error);
-    }
-    if (commanderResult.error) {
-      console.error("Commander query error:", commanderResult.error);
-    }
-    if (topCommandersResult.error) {
-      console.error("Top commanders query error:", topCommandersResult.error);
-    }
-
-    let topPlayers: Awaited<ReturnType<typeof fetchChampionshipLeaderboard>> = [];
-    try {
-      topPlayers = (await fetchChampionshipLeaderboard()).sort((a, b) => a.rank - b.rank).slice(0, 12);
-    } catch (error) {
-      console.error("Top players query error:", error);
-    }
-
-    return {
-      tournamentCount: tournamentResult.count ?? 0,
-      commanderCount: commanderResult.count ?? 0,
-      topCommanders: ((topCommandersResult.data ?? []) as TopCommander[]).filter((row) =>
-        isKnownCommanderName(row.commander_name)
-      ),
-      topWinRate: ((topWinRateResult.data ?? []) as TopCommander[]).filter((row) =>
-        isKnownCommanderName(row.commander_name)
-      ),
-      topRisingCommanders,
-      metaEntryTotal,
-      topPlayers,
-    };
-  } catch (error) {
-    console.error("Failed to fetch stats:", error);
-    return {
-      tournamentCount: 0,
-      commanderCount: 0,
-      topCommanders: [],
-      topWinRate: [],
-      topRisingCommanders: [],
-      metaEntryTotal: 0,
-      topPlayers: [],
-    };
+  if (topWinRateResult.error) {
+    throw new Error(`Top win rate query failed: ${topWinRateResult.error.message}`);
   }
+
+  return {
+    topCommanders: ((topCommandersResult.data ?? []) as TopCommander[]).filter((row) =>
+      isKnownCommanderName(row.commander_name)
+    ),
+    topWinRate: ((topWinRateResult.data ?? []) as TopCommander[]).filter((row) =>
+      isKnownCommanderName(row.commander_name)
+    ),
+  };
 }
 
-function metaSharePercent(totalEntries: number, metaEntryTotal: number): number | undefined {
-  if (metaEntryTotal <= 0 || !Number.isFinite(totalEntries)) return undefined;
-  return (100 * totalEntries) / metaEntryTotal;
-}
+const getCachedHomeCoreStats = unstable_cache(
+  getCoreStats,
+  ["home-core-stats-v3"],
+  { revalidate: HOME_CACHE_REVALIDATE_SECONDS }
+);
+
+const getCachedHomeRisingCommanders = unstable_cache(
+  getTopRisingCommandersByTwoWeekTrend,
+  ["home-rising-commanders-v1"],
+  { revalidate: HOME_CACHE_REVALIDATE_SECONDS }
+);
 
 export default async function Home() {
-  const { topCommanders, topWinRate, topRisingCommanders, metaEntryTotal, topPlayers } = await getStats();
-  const topThreePopular: TopCommander[] = topCommanders.slice(0, 3).map((c) => ({
-    ...c,
-    meta_share_pct: metaSharePercent(c.total_entries, metaEntryTotal),
-  }));
-  const topRisingWithMeta: RisingCommander[] = topRisingCommanders.map((c) => ({
-    ...c,
-    meta_share_pct: metaSharePercent(c.total_entries, metaEntryTotal),
-  }));
+  const [{ topCommanders, topWinRate }, topRisingCommanders] = await Promise.all([
+    getCachedHomeCoreStats(),
+    getCachedHomeRisingCommanders().catch((error) => {
+      console.error("Home rising commanders cache refresh failed:", error);
+      return [];
+    }),
+  ]);
+  const topThreePopular: TopCommander[] = topCommanders.slice(0, 3);
+  const showTrendCards = topThreePopular.length > 0 || topRisingCommanders.length > 0;
 
   return (
     <div className="min-h-screen">
@@ -356,15 +287,14 @@ export default async function Home() {
           </div>
         </section>
 
-        {topThreePopular.length > 0 || topRisingWithMeta.length > 0 ? (
+        {showTrendCards ? (
           <section className="mt-12 grid gap-6 lg:grid-cols-2">
             {topThreePopular.length > 0 ? (
               <Card data-testid="top-popular-commanders" className="min-w-0">
                 <CardHeader className="knd-panel-header">
                   <CardTitle className="text-lg">Top 3 most popular commanders</CardTitle>
                   <p className="text-sm text-muted-foreground">
-                    Ranked by total entries in large events—same metric as the performance table below. Meta share is
-                    each commander&apos;s percent of all entries in 32+ player events.
+                    Ranked by total entries in large events.
                   </p>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-3">
@@ -378,17 +308,16 @@ export default async function Home() {
                 </CardContent>
               </Card>
             ) : null}
-            {topRisingWithMeta.length > 0 ? (
+            {topRisingCommanders.length > 0 ? (
               <Card data-testid="top-rising-commanders" className="min-w-0">
                 <CardHeader className="knd-panel-header">
                   <CardTitle className="text-lg">Biggest popularity gain (2 weeks)</CardTitle>
                   <p className="text-sm text-muted-foreground">
-                    Extra tournament entries in the latest two ISO weeks vs the stretch before that (32+ player events).
-                    Raw meta share is overall large-event share, not the 2-week slice.
+                    Extra tournament entries in the latest two ISO weeks vs the stretch before that.
                   </p>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-3">
-                  {topRisingWithMeta.map((commander, index) => (
+                  {topRisingCommanders.map((commander, index) => (
                     <RisingCommanderRow
                       key={commander.commander_id}
                       commander={commander}
@@ -419,35 +348,43 @@ export default async function Home() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {topCommanders.map((commander, index) => (
-                    <TableRow key={commander.commander_id} className="border-border/60">
-                      <TableCell className="font-mono text-xs text-muted-foreground">#{index + 1}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <div className="flex gap-1">
-                            {commander.color_identity?.filter(Boolean).map((color: string) => (
-                              <ColorBadge key={color} color={color} />
-                            ))}
+                  {topCommanders.length > 0 ? (
+                    topCommanders.map((commander, index) => (
+                      <TableRow key={commander.commander_id} className="border-border/60">
+                        <TableCell className="font-mono text-xs text-muted-foreground">#{index + 1}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <div className="flex gap-1">
+                              {commander.color_identity?.filter(Boolean).map((color: string) => (
+                                <ColorBadge key={color} color={color} />
+                              ))}
+                            </div>
+                            <Link
+                              className="max-w-[220px] truncate text-sm font-medium text-foreground hover:text-primary"
+                              href={`/commanders/${commander.commander_id}`}
+                            >
+                              {normalizeDisplayString(commander.commander_name)}
+                            </Link>
                           </div>
-                          <Link
-                            className="max-w-[220px] truncate text-sm font-medium text-foreground hover:text-primary"
-                            href={`/commanders/${commander.commander_id}`}
-                          >
-                            {normalizeDisplayString(commander.commander_name)}
-                          </Link>
-                        </div>
-                      </TableCell>
-                      <TableCell className="font-mono text-sm text-primary">
-                        {commander.total_entries}
-                      </TableCell>
-                      <TableCell className="font-mono text-sm">
-                        {(commander.avg_win_rate * 100).toFixed(1)}%
-                      </TableCell>
-                      <TableCell className="font-mono text-sm text-muted-foreground">
-                        {(commander.conversion_rate_top_16 * 100).toFixed(1)}%
+                        </TableCell>
+                        <TableCell className="font-mono text-sm text-primary">
+                          {commander.total_entries}
+                        </TableCell>
+                        <TableCell className="font-mono text-sm">
+                          {(commander.avg_win_rate * 100).toFixed(1)}%
+                        </TableCell>
+                        <TableCell className="font-mono text-sm text-muted-foreground">
+                          {(commander.conversion_rate_top_16 * 100).toFixed(1)}%
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow className="border-border/60">
+                      <TableCell className="py-6 text-sm text-muted-foreground" colSpan={5}>
+                        No commander data available right now.
                       </TableCell>
                     </TableRow>
-                  ))}
+                  )}
                 </TableBody>
               </Table>
             </CardContent>
@@ -459,9 +396,13 @@ export default async function Home() {
               <p className="text-sm text-muted-foreground">30+ entries minimum</p>
             </CardHeader>
             <CardContent className="space-y-3">
-              {topWinRate.map((commander, index) => (
-                <CommanderRow key={commander.commander_id} commander={commander} rank={index + 1} />
-              ))}
+              {topWinRate.length > 0 ? (
+                topWinRate.map((commander, index) => (
+                  <CommanderRow key={commander.commander_id} commander={commander} rank={index + 1} />
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">No win-rate data available right now.</p>
+              )}
               <Button asChild variant="ghost" className="w-full border border-border/70">
                 <Link href="/commanders">View all commanders</Link>
               </Button>
@@ -469,57 +410,12 @@ export default async function Home() {
           </Card>
         </section>
 
-        <section className="mt-12">
-          <Card>
-            <CardHeader className="knd-panel-header">
-              <CardTitle className="text-lg">TopDeck Championship Snapshot</CardTitle>
-              <p className="text-sm text-muted-foreground">Current TopDeck Championship Series top 100 leaders</p>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-3 md:grid-cols-2">
-                {topPlayers.map((player) => {
-                  const href = buildTopdeckProfileHref(player.username || player.uid);
-                  return (
-                    <div
-                      key={player.uid}
-                      className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/30 px-3 py-3"
-                    >
-                      <div className="min-w-0">
-                        <div className="text-xs text-muted-foreground">#{player.rank}</div>
-                        {href ? (
-                          <a
-                            className="truncate text-sm font-medium text-foreground hover:text-primary"
-                            href={href}
-                            rel="noreferrer"
-                            target="_blank"
-                          >
-                            {player.name}
-                          </a>
-                        ) : (
-                          <div className="truncate text-sm font-medium text-foreground">{player.name}</div>
-                        )}
-                      </div>
-                      <div className="font-mono text-sm text-primary">{player.points}</div>
-                    </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        </section>
-
-        <section className="mt-12 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+        <section data-testid="home-feature-cards" className="mt-12 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
           <FeatureCard
             href="/commanders"
             title="Commander Rankings"
             description="Sortable performance data for all commanders"
             color="hsl(var(--knd-cyan))"
-          />
-          <FeatureCard
-            href="/trap-spice"
-            title="Trap & Spice Cards"
-            description="Find overrated and underrated cards"
-            color="hsl(var(--knd-amber))"
           />
           <FeatureCard
             href="/tournament-likelihood"
@@ -573,12 +469,6 @@ function RisingCommanderRow({
         <p className="break-words text-xs text-muted-foreground">
           {commander.recent_entries} latest stretch · prior {commander.prior_entries} ·{" "}
           <span className={isAboveExpected ? "text-primary" : undefined}>{winRate}%</span> win
-          {commander.meta_share_pct != null && (
-            <>
-              {" · "}
-              {commander.meta_share_pct.toFixed(1)}% meta
-            </>
-          )}
         </p>
       </div>
       <div className="shrink-0 self-start text-right">
@@ -613,15 +503,7 @@ function CommanderRow({
         <p className="break-words text-sm font-medium text-foreground">
           {normalizeDisplayString(commander.commander_name)}
         </p>
-        <p className="break-words text-xs text-muted-foreground">
-          {commander.total_entries} entries
-          {commander.meta_share_pct != null && (
-            <>
-              {" · "}
-              {commander.meta_share_pct.toFixed(1)}% meta
-            </>
-          )}
-        </p>
+        <p className="break-words text-xs text-muted-foreground">{commander.total_entries} entries</p>
       </div>
       <div className="shrink-0 self-start text-right">
         <p className={`font-mono text-sm ${isAboveExpected ? "text-primary" : "text-muted-foreground"}`}>
