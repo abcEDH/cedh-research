@@ -1,7 +1,7 @@
 import "server-only";
 import { supabase } from "@/lib/supabase";
 
-const RECENCY_HALF_LIFE_DAYS = 15;
+const RECENCY_HALF_LIFE_DAYS = 28;
 const SUPABASE_PAGE_SIZE = 1000;
 const SUPABASE_IN_CHUNK_SIZE = 100;
 

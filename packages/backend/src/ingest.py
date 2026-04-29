@@ -8,11 +8,13 @@ Fetches tournament data from TopDeck.gg API and loads into Supabase.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import re
 import sys
 import time
+from functools import lru_cache
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -145,11 +147,60 @@ def extract_standing_rates(standing: dict[str, Any]) -> tuple[float | None, floa
 
 
 def clean_commander_card_name(name: str) -> str:
-    """Strip set indicator suffix and normalize commander card names."""
+    """Normalize an individual commander card name.
+
+    This removes escaped quotes, strips DFC/MDFC back faces, and drops any
+    trailing set-indicator suffix.
+    """
     if not name:
         return ""
     cleaned = name.replace("\\'", "'").replace('\\"', '"')
-    return cleaned.split("[")[0].strip()
+    front_face = cleaned.split(" // ", 1)[0]
+    normalized = front_face.split("[", 1)[0].strip()
+    return COMMANDER_NAME_ALIASES.get(normalized, normalized)
+
+
+COMMANDER_NAME_ALIASES: dict[str, str] = {
+    "Chief Jim Hopper": "Sophina, Spearsage Deserter",
+    "Dustin, Gadget Genius": "Hargilde, Kindly Runechanter",
+    "Eleven, the Mage": "Cecily, Haunted Mage",
+    "Lucas, the Sharpshooter": "Bjorna, Nightfall Alchemist",
+    "Max, the Daredevil": "Elmar, Ulvenwald Informant",
+    "Mike, the Dungeon Master": "Othelm, Sigardian Outcast",
+    "Mind Flayer, the Shadow": "Arvinox, the Mind Flail",
+    "Will the Wise": "Wernog, Rider's Chaplain",
+}
+
+
+@lru_cache(maxsize=1)
+def load_legal_commander_pair_names() -> set[str]:
+    """Load canonical legal two-card commander pair names."""
+    data_path = Path(__file__).resolve().parents[1] / "data" / "legal_commander_pairings.json"
+    payload = json.loads(data_path.read_text())
+    names = payload.get("legal_pair_names") or []
+    return {str(name) for name in names}
+
+
+@lru_cache(maxsize=1)
+def load_legal_commander_pair_order_map() -> dict[tuple[str, str], tuple[str, str]]:
+    """Load canonical ordering for all legal two-card commander pairings."""
+    data_path = Path(__file__).resolve().parents[1] / "data" / "legal_commander_pairings.json"
+    payload = json.loads(data_path.read_text())
+    pairs = payload.get("legal_pairs") or []
+    order_map: dict[tuple[str, str], tuple[str, str]] = {}
+    for pair in pairs:
+        canonical_name = str(pair.get("project_name") or "").strip()
+        canonical_parts = [clean_commander_card_name(part) for part in canonical_name.split(" / ") if part.strip()]
+        if len(canonical_parts) != 2:
+            continue
+        names = pair.get("commander_names") or []
+        if not isinstance(names, list) or len(names) != 2:
+            continue
+        cleaned = [clean_commander_card_name(str(name)) for name in names]
+        if len(cleaned) != 2 or not all(cleaned):
+            continue
+        order_map[tuple(sorted(cleaned))] = (canonical_parts[0], canonical_parts[1])
+    return order_map
 
 
 PARTNER_ORDER_OVERRIDES: dict[tuple[str, str], tuple[str, str]] = {
@@ -256,6 +307,9 @@ def normalize_partner_order(names: list[str]) -> list[str]:
     if len(clean_names) != 2:
         return clean_names
     pair_key = tuple(sorted(clean_names))
+    legal_pair_order = load_legal_commander_pair_order_map().get(pair_key)
+    if legal_pair_order:
+        return list(legal_pair_order)
     return list(PARTNER_ORDER_OVERRIDES.get(pair_key, pair_key))
 
 
@@ -1284,6 +1338,28 @@ def normalize_commander_name(commanders: list[str]) -> str:
     return " / ".join(clean_names)
 
 
+def sanitize_commander_payload(
+    name: str | None,
+    commander_names: list[str] | None,
+) -> tuple[str, list[str]]:
+    """Build a canonical commander row payload before persistence."""
+    raw_names = commander_names or []
+    clean_names: list[str] = []
+    for value in raw_names:
+        cleaned = clean_commander_card_name(value)
+        if cleaned:
+            clean_names.append(cleaned)
+    if not clean_names and name:
+        clean_names = [part.strip() for part in normalize_commander_name(name.split(" / ")).split(" / ") if part.strip()]
+
+    canonical_name = normalize_commander_name(clean_names)
+    if len(clean_names) == 2 and canonical_name not in load_legal_commander_pair_names():
+        return "Unknown Commander", ["Unknown Commander"]
+    if canonical_name == "Unknown Commander":
+        return canonical_name, ["Unknown Commander"]
+    return canonical_name, [part.strip() for part in canonical_name.split(" / ") if part.strip()]
+
+
 class DataIngester:
     """Main ingestion orchestrator."""
 
@@ -1301,6 +1377,8 @@ class DataIngester:
         self, name: str, commander_names: list[str]
     ) -> str | None:
         """Get or create a commander entry, return UUID. (Legacy - use batch method)"""
+        canonical_name, canonical_names = sanitize_commander_payload(name, commander_names)
+        name = canonical_name
         if name in self.commander_cache:
             return self.commander_cache[name]
 
@@ -1313,9 +1391,7 @@ class DataIngester:
         # Create new
         data = {
             "name": name,
-            "commander_names": [
-                clean_commander_card_name(value) for value in (commander_names or [name])
-            ],
+            "commander_names": canonical_names,
         }
         result = self.supabase.upsert("commanders", data, on_conflict="name")
         if result:
@@ -1352,10 +1428,10 @@ class DataIngester:
         if not commander_data:
             return {}
 
-        data = [
-            {"name": name, "commander_names": names or [name]}
-            for name, names in commander_data.items()
-        ]
+        data = []
+        for name, names in commander_data.items():
+            canonical_name, canonical_names = sanitize_commander_payload(name, names)
+            data.append({"name": canonical_name, "commander_names": canonical_names})
 
         result = self.supabase.upsert("commanders", data, on_conflict="name")
         if not result:
