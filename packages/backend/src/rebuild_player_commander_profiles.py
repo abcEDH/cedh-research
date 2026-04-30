@@ -7,7 +7,7 @@ import argparse
 import logging
 import os
 from collections import defaultdict
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from typing import Any
 
 import requests
@@ -93,9 +93,7 @@ def fetch_existing_profile_player_ids(client: SupabaseClient) -> list[str]:
         if not page:
             break
         player_ids.extend(
-            row["player_id"]
-            for row in page
-            if isinstance(row.get("player_id"), str) and row["player_id"]
+            row["player_id"] for row in page if isinstance(row.get("player_id"), str) and row["player_id"]
         )
         last_player_id = page[-1].get("player_id")
         if len(page) < PAGE_SIZE:
@@ -125,7 +123,12 @@ def fetch_usage_rows_via_rest(client: SupabaseClient) -> list[dict[str, Any]]:
     last_id: str | None = None
     while True:
         filters = {
-            "select": "id,player_id,decklist_url,players!inner(topdeck_id,name),commanders!inner(name),tournaments!inner(start_date,topdeck_tid)",
+            "select": (
+                "id,player_id,decklist_url,"
+                "players!inner(topdeck_id,name),"
+                "commanders!inner(name),"
+                "tournaments!inner(id,name,start_date,topdeck_tid)"
+            ),
             "order": "id.asc",
             "limit": str(PAGE_SIZE),
         }
@@ -157,6 +160,8 @@ def fetch_usage_rows_via_db(db_url: str) -> list[dict[str, Any]]:
             p.topdeck_id,
             p.name AS player_name,
             c.name AS commander_name,
+            t.id AS tournament_id,
+            t.name AS tournament_name,
             t.start_date,
             t.topdeck_tid
         FROM tournament_entries te
@@ -185,6 +190,8 @@ def normalize_usage_rows(raw_rows: list[dict[str, Any]]) -> list[dict[str, Any]]
         player_name = row.get("player_name") or (player.get("name") if player else None)
         start_date = row.get("start_date") or (tournament.get("start_date") if tournament else None)
         topdeck_tid = row.get("topdeck_tid") or (tournament.get("topdeck_tid") if tournament else None)
+        tournament_id = row.get("tournament_id") or (tournament.get("id") if tournament else None)
+        tournament_name = row.get("tournament_name") or (tournament.get("name") if tournament else None)
         if not topdeck_id or not is_known_commander(commander_name):
             continue
         normalized.append(
@@ -199,6 +206,9 @@ def normalize_usage_rows(raw_rows: list[dict[str, Any]]) -> list[dict[str, Any]]
                     topdeck_tid,
                     topdeck_id,
                 ),
+                "tournament_id": tournament_id,
+                "tournament_name": tournament_name,
+                "tournament_topdeck_tid": topdeck_tid,
             }
         )
     return normalized
@@ -218,19 +228,14 @@ def select_commander_forecast_rows(
 
     for topdeck_id, player_rows in rows_by_topdeck_id.items():
         player_rows = [row for row in player_rows if row.get("commander_name") and row.get("start_date")]
-        primary_rows = [
-            row
-            for row in player_rows
-            if row["start_date"] and row["start_date"] >= primary_lookback_start
-        ]
+        primary_rows = [row for row in player_rows if row["start_date"] and row["start_date"] >= primary_lookback_start]
         chosen_rows = list(primary_rows)
 
         if len(primary_rows) < MIN_PRIMARY_COMMANDER_ENTRIES:
             fallback_rows = [
                 row
                 for row in player_rows
-                if row["start_date"]
-                and fallback_lookback_start <= row["start_date"] < primary_lookback_start
+                if row["start_date"] and fallback_lookback_start <= row["start_date"] < primary_lookback_start
             ]
             chosen_rows.extend(fallback_rows)
 
@@ -261,9 +266,7 @@ def build_profile_rows(usage_rows: list[dict[str, Any]], reference_date: date) -
             player_names_by_topdeck_id[topdeck_id] = row["player_name"]
 
     selected_by_topdeck_id = select_commander_forecast_rows(rows_by_topdeck_id, reference_date)
-    reference_timestamp_ms = int(
-        datetime.combine(reference_date, datetime.min.time(), tzinfo=timezone.utc).timestamp() * 1000
-    )
+    reference_timestamp_ms = int(datetime.combine(reference_date, datetime.min.time(), tzinfo=UTC).timestamp() * 1000)
 
     profile_rows: list[dict[str, Any]] = []
     for topdeck_id, selected_rows in selected_by_topdeck_id.items():
@@ -292,9 +295,7 @@ def build_profile_rows(usage_rows: list[dict[str, Any]], reference_date: date) -
                 parsed = datetime.fromisoformat(start_date.replace("Z", "+00:00"))
                 event_timestamp_ms = int(parsed.timestamp() * 1000)
             current["entries"] += 1
-            current["prediction_score"] += calculate_recency_weight(
-                event_timestamp_ms, reference_timestamp_ms
-            )
+            current["prediction_score"] += calculate_recency_weight(event_timestamp_ms, reference_timestamp_ms)
             if not current["latest_date"] or (start_date and start_date > current["latest_date"]):
                 current["latest_date"] = start_date
                 current["latest_decklist_url"] = row.get("decklist_url") or row.get("topdeck_decklist_url")
@@ -307,7 +308,11 @@ def build_profile_rows(usage_rows: list[dict[str, Any]], reference_date: date) -
             key=lambda value: (
                 -value["prediction_score"],
                 -value["entries"],
-                -(int(datetime.fromisoformat(value["latest_date"].replace("Z", "+00:00")).timestamp()) if value["latest_date"] else 0),
+                -(
+                    int(datetime.fromisoformat(value["latest_date"].replace("Z", "+00:00")).timestamp())
+                    if value["latest_date"]
+                    else 0
+                ),
                 value["commander"],
             ),
         )
@@ -316,9 +321,7 @@ def build_profile_rows(usage_rows: list[dict[str, Any]], reference_date: date) -
         commander_predictions = []
         for value in sorted_commanders[:3]:
             share = (value["entries"] / total_entries) if total_entries else 0
-            prediction_share = (
-                value["prediction_score"] / total_prediction if total_prediction else share
-            )
+            prediction_share = value["prediction_score"] / total_prediction if total_prediction else share
             commander_predictions.append(
                 {
                     "commander": value["commander"],
@@ -333,6 +336,11 @@ def build_profile_rows(usage_rows: list[dict[str, Any]], reference_date: date) -
             )
 
         active = commander_predictions[0] if commander_predictions else None
+        # latest_decklist_url tracks the *active commander's* most recent decklist so
+        # profile UIs can deep-link to the deck the player is currently piloting,
+        # rather than whichever entry happened to be most recent overall.
+        active_commander_latest_decklist_url = active.get("latest_decklist_url") if active else None
+        latest_start_date = (latest_row.get("start_date") or "") if latest_row else ""
         profile_rows.append(
             {
                 "player_id": player_ids_by_topdeck_id[topdeck_id],
@@ -344,13 +352,13 @@ def build_profile_rows(usage_rows: list[dict[str, Any]], reference_date: date) -
                 "total_entries": total_entries,
                 "commander_predictions": commander_predictions,
                 "latest_commander": latest_row.get("commander_name") if latest_row else None,
-                "latest_commander_date": (latest_row.get("start_date") or "")[:10] or None,
-                "latest_decklist_url": (
-                    latest_row.get("decklist_url") or latest_row.get("topdeck_decklist_url")
-                    if latest_row
-                    else None
-                ),
-                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "latest_commander_date": latest_start_date[:10] or None,
+                "latest_decklist_url": active_commander_latest_decklist_url,
+                "latest_tournament_id": latest_row.get("tournament_id") if latest_row else None,
+                "latest_tournament_name": latest_row.get("tournament_name") if latest_row else None,
+                "latest_tournament_date": latest_start_date[:10] or None,
+                "latest_tournament_topdeck_tid": (latest_row.get("tournament_topdeck_tid") if latest_row else None),
+                "updated_at": datetime.now(UTC).isoformat(),
             }
         )
 
@@ -372,11 +380,7 @@ def main() -> None:
     if not supabase_key:
         raise SystemExit("SUPABASE_SERVICE_KEY is required")
 
-    reference_date = (
-        date_parser.parse(args.reference_date).date()
-        if args.reference_date
-        else datetime.now(timezone.utc).date()
-    )
+    reference_date = date_parser.parse(args.reference_date).date() if args.reference_date else datetime.now(UTC).date()
     client = SupabaseClient(supabase_url, supabase_key)
     db_url = os.environ.get("SUPABASE_DB_URL")
 
@@ -398,9 +402,7 @@ def main() -> None:
 
     existing_player_ids = set(fetch_existing_profile_player_ids(client))
     rebuilt_player_ids = {
-        row["player_id"]
-        for row in profile_rows
-        if isinstance(row.get("player_id"), str) and row["player_id"]
+        row["player_id"] for row in profile_rows if isinstance(row.get("player_id"), str) and row["player_id"]
     }
     stale_player_ids = sorted(existing_player_ids - rebuilt_player_ids)
     if stale_player_ids:

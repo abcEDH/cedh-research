@@ -720,6 +720,7 @@ def benchmark_specs() -> list[BenchmarkSpec]:
                 "recent_entries",
                 "recent_win_rate",
             ),
+            smoke=False,
         ),
     ]
 
