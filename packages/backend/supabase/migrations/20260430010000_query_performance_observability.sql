@@ -55,8 +55,16 @@ AS $$
     stats.shared_blks_written,
     stats.temp_blks_read,
     stats.temp_blks_written,
-    stats.blk_read_time AS blk_read_time_ms,
-    stats.blk_write_time AS blk_write_time_ms
+    (
+      stats.shared_blk_read_time
+      + stats.local_blk_read_time
+      + stats.temp_blk_read_time
+    ) AS blk_read_time_ms,
+    (
+      stats.shared_blk_write_time
+      + stats.local_blk_write_time
+      + stats.temp_blk_write_time
+    ) AS blk_write_time_ms
   FROM extensions.pg_stat_statements AS stats
   WHERE EXISTS (
     SELECT 1
