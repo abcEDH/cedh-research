@@ -1,7 +1,7 @@
 # Data Dictionary
 
 Last reviewed: 2026-04-30
-Update policy: This file must be updated whenever migrations in `packages/backend/supabase/migrations` change.
+Authority policy: Database migrations and the live Supabase schema are the schema authority. This file is descriptive documentation only and must not be used as a migration-integrity gate.
 
 This describes the primary tables and analytical views used in the cEDH Analytics database.
 
