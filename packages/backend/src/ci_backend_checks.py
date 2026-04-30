@@ -29,18 +29,13 @@ VIEW_SPECS: list[tuple[str, int]] = [
     ("card_frequencies_by_commander", 100),
     ("trap_cards_report", 1),
     ("spice_cards_report", 1),
-    ("seat_survival_by_commander", 10),
-    ("seat_survival_by_round", 4),
-    ("commander_survival_curve", 10),
-    ("commander_tournament_depth", 10),
-    ("player_survival_stats", 10),
     ("commander_meta_monthly", 5),
     ("commander_momentum", 1),
     ("commander_first_appearances", 10),
-    ("survival_summary", 10),
     ("regional_elo_player_stats", 10),
     ("regional_elo_regions", 2),
-    ("regional_elo_game_event_log", 100),
+    # Retired/private heavy views are intentionally excluded from PR validation.
+    # They are covered by targeted operational checks when needed.
 ]
 
 RPC_SPECS: list[tuple[str, dict[str, Any], bool, tuple[str, ...]]] = [
@@ -1064,11 +1059,14 @@ def validate_views() -> None:
 
 
 def get_table_count(supabase_url: str, headers: dict[str, str], table_name: str) -> tuple[int, str]:
+    # CI only needs minimum-row smoke validation; exact counts can force large
+    # table scans and repeatedly hit statement timeouts on the small Supabase
+    # compute instance.
     methods = [
-        ("HEAD", "count=exact", f"{supabase_url}/rest/v1/{table_name}?select=count", None),
-        ("GET", "count=exact", f"{supabase_url}/rest/v1/{table_name}?select=id", {"limit": 1}),
         ("GET", "count=planned", f"{supabase_url}/rest/v1/{table_name}?select=id", {"limit": 1}),
         ("GET", "count=estimated", f"{supabase_url}/rest/v1/{table_name}?select=id", {"limit": 1}),
+        ("HEAD", "count=exact", f"{supabase_url}/rest/v1/{table_name}?select=count", None),
+        ("GET", "count=exact", f"{supabase_url}/rest/v1/{table_name}?select=id", {"limit": 1}),
     ]
 
     errors: list[str] = []

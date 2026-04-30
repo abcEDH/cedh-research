@@ -121,4 +121,25 @@ describe("regional-elo cache configuration", () => {
     expect(source).toContain("throw fallbackError;");
     expect(source).not.toContain("return { rows: [], totalCount: 0 };");
   });
+
+  it("uses direct rank pagination and avoids request-time full scans for leaderboard rows", async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+    const source = fs.readFileSync(
+      path.resolve(__dirname, "../../src/app/regional-elo/page.tsx"),
+      "utf-8"
+    );
+
+    expect(source).toContain('.order("rank", { ascending: true })');
+    expect(source).toContain('console.info(`[regional-elo] ${event}`, details);');
+    expect(source).toContain('logReadSummary("leaderboard-cache-miss"');
+    expect(source).toContain('logReadSummary("latest-commanders-cache-miss"');
+
+    expect(source).not.toContain("fetchAllTopdeckEloMap");
+    expect(source).not.toContain('.from("topdeck_player_elos")');
+    expect(source).not.toContain("sortLeaderboardRowsByTopdeckElo");
+    expect(source).not.toContain("fetchCountryLeaderboardRows");
+    expect(source).not.toContain("applyGlobalLeaderboardTotals");
+    expect(source).not.toContain("fetchEventLogTotals");
+  });
 });

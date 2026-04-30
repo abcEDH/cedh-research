@@ -1,6 +1,6 @@
 # Data Dictionary
 
-Last reviewed: 2026-04-28
+Last reviewed: 2026-04-30
 Update policy: This file must be updated whenever migrations in `packages/backend/supabase/migrations` change.
 
 This describes the primary tables and analytical views used in the cEDH Analytics database.
@@ -358,6 +358,15 @@ erDiagram
   - Links imported rows to local `players.id` when a matching TopDeck ID is known.
   - Adds indexes for local-player lookup, ranking order, and Elo order.
   - Enables RLS and grants public read access through an explicit SELECT policy.
+
+## Migration 20260430010000_query_performance_observability
+- **Purpose**: enable database-side query timing evidence for Regional Elo performance work.
+- **Key actions**:
+  - Enables the `pg_stat_statements` extension in the `extensions` schema.
+  - Adds service-role-only RPC `get_regional_elo_query_stats(limit, search_terms)` for filtered query timing, call-count, row-count, block I/O, and temp-block statistics.
+  - Restricts execution from `anon` and `authenticated` roles so raw statement text remains admin-only.
+- **Primary use**:
+  - Backend operators can run `python packages/backend/src/query_performance_stats.py` with `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` to capture DB-native timing evidence for `global_elo_active_leaderboard`, `topdeck_player_elos`, `tournament_entries`, and related Regional Elo read paths.
 
 ### Card Analytics (materialized views)
 - **`card_frequencies_by_commander`**: per-commander card inclusion frequencies.
