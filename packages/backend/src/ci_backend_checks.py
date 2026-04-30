@@ -1059,11 +1059,14 @@ def validate_views() -> None:
 
 
 def get_table_count(supabase_url: str, headers: dict[str, str], table_name: str) -> tuple[int, str]:
+    # CI only needs minimum-row smoke validation; exact counts can force large
+    # table scans and repeatedly hit statement timeouts on the small Supabase
+    # compute instance.
     methods = [
-        ("HEAD", "count=exact", f"{supabase_url}/rest/v1/{table_name}?select=count", None),
-        ("GET", "count=exact", f"{supabase_url}/rest/v1/{table_name}?select=id", {"limit": 1}),
         ("GET", "count=planned", f"{supabase_url}/rest/v1/{table_name}?select=id", {"limit": 1}),
         ("GET", "count=estimated", f"{supabase_url}/rest/v1/{table_name}?select=id", {"limit": 1}),
+        ("HEAD", "count=exact", f"{supabase_url}/rest/v1/{table_name}?select=count", None),
+        ("GET", "count=exact", f"{supabase_url}/rest/v1/{table_name}?select=id", {"limit": 1}),
     ]
 
     errors: list[str] = []
