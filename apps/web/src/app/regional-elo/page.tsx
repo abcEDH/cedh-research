@@ -602,7 +602,7 @@ const getCachedLeaderboardRows = unstable_cache(
     pageSize: number,
     searchQuery: string
   ) => fetchLeaderboardRows(regionType, regionKey, page, pageSize, searchQuery),
-  ["regional-elo-leaderboard-v1"],
+  ["regional-elo-leaderboard-v2"],
   { revalidate: REGIONAL_ELO_CACHE_REVALIDATE_SECONDS }
 );
 

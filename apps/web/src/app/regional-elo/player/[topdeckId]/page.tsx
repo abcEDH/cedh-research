@@ -1073,19 +1073,19 @@ async function fetchPlayerEventLogs(playerId: string, regionFilter: string): Pro
 
 const fetchCachedGlobalEloRank = unstable_cache(
   async (playerId: string) => fetchGlobalEloRank(playerId),
-  ["regional-player-global-rank-v2"],
+  ["regional-player-global-rank-v3"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
 const fetchCachedRegionalRank = unstable_cache(
   async (playerId: string, regionKey: string) => fetchRegionalRank(playerId, regionKey),
-  ["regional-player-local-rank-v2"],
+  ["regional-player-local-rank-v3"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
 const fetchCachedCountryRank = unstable_cache(
   async (playerId: string, countryKey: string) => fetchCountryRank(playerId, countryKey),
-  ["regional-player-country-rank-v2"],
+  ["regional-player-country-rank-v3"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
