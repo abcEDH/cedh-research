@@ -10,7 +10,8 @@ describe("regional player read path", () => {
     );
 
     expect(source).toContain("async function fetchPlayerTournamentEntries");
-    expect(source).toContain('[regional-player] tournament-entries-cache-miss');
+    expect(source).toContain('console.info(`[regional-player] ${event}`, details);');
+    expect(source).toContain('logPlayerReadSummary("tournament-entries-cache-miss"');
     expect(source).toContain("return buildPlayerAchievements(rows, topdeckId);");
     expect(source).toContain("return buildPlayerCommanderUsageRows(rows, topdeckId, playerName);");
   });
