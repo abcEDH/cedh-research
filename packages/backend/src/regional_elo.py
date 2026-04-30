@@ -585,6 +585,246 @@ MATERIALIZED_VIEW_REFRESH_FUNCTIONS = [
     "refresh_card_performance",
 ]
 
+ACTIVE_LEADERBOARD_TABLE = "global_elo_active_leaderboard"
+ACTIVE_LEADERBOARD_BATCH_SIZE = 1000
+
+
+def assign_topdeck_elo_ranks(
+    rows: List[Dict[str, Any]],
+) -> None:
+    """Assign topdeck_elo_rank within each (region_type, region_key) partition.
+
+    Rows are sorted by topdeck_elo DESC with NULLs last; rows whose
+    topdeck_elo is None receive rank = None. Ties are broken stably by
+    rating DESC, then player_name ASC for deterministic ordering. Mutates
+    rows in place by setting the ``topdeck_elo_rank`` field.
+    """
+    partitions: Dict[Tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        partitions[(row.get("region_type", ""), row.get("region_key", ""))].append(row)
+
+    for partition_rows in partitions.values():
+        ranked = [r for r in partition_rows if r.get("topdeck_elo") is not None]
+        unranked = [r for r in partition_rows if r.get("topdeck_elo") is None]
+        ranked.sort(
+            key=lambda r: (
+                -float(r.get("topdeck_elo") or 0),
+                -float(r.get("rating") or 0),
+                str(r.get("player_name") or ""),
+            )
+        )
+        for index, row in enumerate(ranked, start=1):
+            row["topdeck_elo_rank"] = index
+        for row in unranked:
+            row["topdeck_elo_rank"] = None
+
+
+def _coerce_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def build_active_leaderboard_rows(
+    ratings_rows: Iterable[Mapping[str, Any]],
+    player_index: Mapping[str, Mapping[str, Any]],
+    topdeck_elo_by_player: Mapping[str, float],
+    state_stats_by_player: Mapping[str, Mapping[str, Any]],
+    updated_at: str,
+) -> List[Dict[str, Any]]:
+    """Materialise active leaderboard rows for global, country, and state slices.
+
+    Mirrors the shape produced by the regional_elo_leaderboard view but is
+    persisted to the leaderboard table so PostgREST can serve the data
+    without joining to topdeck_player_elos at request time.
+    """
+    leaderboard_rows: List[Dict[str, Any]] = []
+    for rating_row in ratings_rows:
+        if rating_row.get("region_type") != GLOBAL_REGION_TYPE:
+            continue
+        if rating_row.get("region_key") != GLOBAL_REGION_KEY:
+            continue
+
+        player_id = rating_row.get("player_id")
+        if not player_id:
+            continue
+        player = player_index.get(player_id)
+        if not player:
+            continue
+
+        rating = _coerce_float(rating_row.get("rating")) or DEFAULT_RATING
+        games_played = int(rating_row.get("games_played") or 0)
+        wins = int(rating_row.get("wins") or 0)
+        draws = int(rating_row.get("draws") or 0)
+        losses = int(rating_row.get("losses") or 0)
+        topdeck_elo = topdeck_elo_by_player.get(player_id)
+
+        state_stats = state_stats_by_player.get(player_id) or {}
+        primary_country_key = state_stats.get("country_key") or ""
+        primary_region_key = state_stats.get("region_key") or ""
+        activity_score = _coerce_float(state_stats.get("activity_score"))
+        last_game_date = state_stats.get("last_game_date")
+
+        base_row: Dict[str, Any] = {
+            "player_id": player_id,
+            "player_name": player.get("name") or "",
+            "topdeck_id": player.get("topdeck_id"),
+            "rating": rating,
+            "games_played": games_played,
+            "wins": wins,
+            "draws": draws,
+            "losses": losses,
+            "last_game_date": last_game_date,
+            "primary_country_key": primary_country_key or None,
+            "primary_region_key": primary_region_key or None,
+            "activity_score": activity_score,
+            "topdeck_elo": topdeck_elo,
+            "updated_at": updated_at,
+        }
+
+        # Global slice - one row per player.
+        leaderboard_rows.append(
+            {
+                **base_row,
+                "region_type": GLOBAL_REGION_TYPE,
+                "region_key": GLOBAL_REGION_KEY,
+                "country_key": None,
+            }
+        )
+
+        # Country slice - first-class row per country, no longer inferred at read time.
+        if primary_country_key:
+            leaderboard_rows.append(
+                {
+                    **base_row,
+                    "region_type": "country",
+                    "region_key": primary_country_key,
+                    "country_key": primary_country_key,
+                }
+            )
+
+        # State slice - keyed on the state region key under its country.
+        if primary_region_key:
+            leaderboard_rows.append(
+                {
+                    **base_row,
+                    "region_type": STATE_REGION_TYPE,
+                    "region_key": primary_region_key,
+                    "country_key": primary_country_key or None,
+                }
+            )
+
+    # Assign rating rank within each partition.
+    partitions: Dict[Tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
+    for row in leaderboard_rows:
+        partitions[(row["region_type"], row["region_key"])].append(row)
+
+    for partition_rows in partitions.values():
+        partition_rows.sort(
+            key=lambda r: (
+                -float(r.get("rating") or 0),
+                -int(r.get("games_played") or 0),
+                str(r.get("player_name") or ""),
+            )
+        )
+        for index, row in enumerate(partition_rows, start=1):
+            row["rank"] = index
+
+    assign_topdeck_elo_ranks(leaderboard_rows)
+    return leaderboard_rows
+
+
+def fetch_player_index(client: SupabaseClient) -> Dict[str, Dict[str, Any]]:
+    """Fetch the player directory keyed by id for leaderboard enrichment."""
+    rows = fetch_all(
+        client,
+        "players",
+        {"select": "id,name,topdeck_id"},
+    )
+    return {row["id"]: row for row in rows if row.get("id")}
+
+
+def fetch_topdeck_elo_by_player(client: SupabaseClient) -> Dict[str, float]:
+    """Load the TopDeck Elo snapshot keyed by player_id (table is small)."""
+    rows = fetch_all(
+        client,
+        "topdeck_player_elos",
+        {"select": "player_id,elo"},
+    )
+    elo_by_player: Dict[str, float] = {}
+    for row in rows:
+        player_id = row.get("player_id")
+        elo = _coerce_float(row.get("elo"))
+        if player_id and elo is not None:
+            elo_by_player[player_id] = elo
+    return elo_by_player
+
+
+def fetch_primary_state_stats(client: SupabaseClient) -> Dict[str, Dict[str, Any]]:
+    """Load primary-state activity per player for country/state slice enrichment."""
+    rows = fetch_all(
+        client,
+        "regional_elo_primary_state_assignments",
+        {
+            "select": (
+                "player_id,region_type,region_key,country_key,activity_score,last_game_date"
+            ),
+        },
+    )
+    by_player: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
+        player_id = row.get("player_id")
+        if not player_id:
+            continue
+        # Backfill country_key from the state lookup when the source view does
+        # not expose it directly (older view definitions only carry region_key).
+        if not row.get("country_key"):
+            inferred_country = get_country_for_state(row.get("region_key") or "")
+            if inferred_country:
+                row["country_key"] = inferred_country
+        by_player[player_id] = row
+    return by_player
+
+
+def delete_stale_active_leaderboard_rows(
+    client: SupabaseClient, run_marker: str
+) -> None:
+    """Delete leaderboard rows that the current run did not refresh."""
+    try:
+        import requests  # local import to avoid cycles in tests
+
+        endpoint = f"{client.url}/rest/v1/{ACTIVE_LEADERBOARD_TABLE}"
+        params = {"updated_at": f"lt.{run_marker}"}
+        response = requests.delete(endpoint, headers=client.headers, params=params, timeout=60)
+        if response.status_code >= 400:
+            print(
+                "Stale leaderboard cleanup failed (non-fatal): "
+                f"{response.status_code} {response.text[:200]}",
+                flush=True,
+            )
+    except Exception as exc:  # pragma: no cover - best-effort cleanup
+        print(f"Stale leaderboard cleanup raised (non-fatal): {exc}", flush=True)
+
+
+def upsert_active_leaderboard_rows(
+    client: SupabaseClient,
+    rows: List[Dict[str, Any]],
+    batch_size: int = ACTIVE_LEADERBOARD_BATCH_SIZE,
+) -> None:
+    """Upsert leaderboard rows in batches keyed on (region_type, region_key, player_id)."""
+    if not rows:
+        return
+    for start_index in range(0, len(rows), batch_size):
+        batch = rows[start_index : start_index + batch_size]
+        client.upsert(
+            ACTIVE_LEADERBOARD_TABLE,
+            batch,
+            on_conflict="region_type,region_key,player_id",
+        )
+
 
 def refresh_materialized_views(client: SupabaseClient) -> int:
     """Refresh downstream materialized views. Returns count of successful refreshes."""
@@ -711,34 +951,38 @@ def main() -> None:
 
     update_job_heartbeat(client, job_id)
 
-    # Compute leaderboard
+    # Compute leaderboard - persist global, country, and state slices so
+    # /regional-elo can serve sorted reads (including TopDeck Elo) without a
+    # second query against topdeck_player_elos.
     print("Computing leaderboard...")
-    leaderboard = compute_leaderboard(ratings_to_upsert)
-    all_leaderboard_rows: List[Dict[str, Any]] = []
-    for (region_type, region_key), rows in leaderboard.items():
-        for rank, row in enumerate(rows, start=1):
-            all_leaderboard_rows.append(
-                {
-                    "player_id": row["player_id"],
-                    "region_type": region_type,
-                    "region_key": region_key,
-                    "rank": rank,
-                    "rating": row["rating"],
-                    "games_played": row["games_played"],
-                    "wins": row["wins"],
-                    "draws": row["draws"],
-                    "losses": row["losses"],
-                    "win_streak": row["win_streak"],
-                    "loss_streak": row["loss_streak"],
-                }
-            )
+    print("Loading player directory...")
+    player_index = fetch_player_index(client)
+    print(f"Loaded {len(player_index)} player rows")
+
+    print("Loading TopDeck Elo snapshot...")
+    topdeck_elo_by_player = fetch_topdeck_elo_by_player(client)
+    print(f"Loaded {len(topdeck_elo_by_player)} TopDeck Elo entries")
+
+    print("Loading primary-state activity stats...")
+    state_stats_by_player = fetch_primary_state_stats(client)
+    print(f"Loaded {len(state_stats_by_player)} primary-state stat rows")
+
+    leaderboard_run_marker = utc_now().isoformat()
+    all_leaderboard_rows = build_active_leaderboard_rows(
+        ratings_to_upsert,
+        player_index,
+        topdeck_elo_by_player,
+        state_stats_by_player,
+        leaderboard_run_marker,
+    )
 
     if all_leaderboard_rows:
-        client.upsert(
-            "global_elo_active_leaderboard",
-            all_leaderboard_rows,
-            on_conflict="player_id,region_type,region_key",
+        print(
+            f"Upserting {len(all_leaderboard_rows)} active leaderboard rows "
+            "(global + country + state)..."
         )
+        upsert_active_leaderboard_rows(client, all_leaderboard_rows)
+        delete_stale_active_leaderboard_rows(client, leaderboard_run_marker)
 
     update_job_heartbeat(client, job_id)
 
