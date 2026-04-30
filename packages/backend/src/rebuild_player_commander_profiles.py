@@ -125,7 +125,7 @@ def fetch_usage_rows_via_rest(client: SupabaseClient) -> list[dict[str, Any]]:
     last_id: str | None = None
     while True:
         filters = {
-            "select": "id,player_id,decklist_url,players!inner(topdeck_id,name),commanders!inner(name),tournaments!inner(start_date,topdeck_tid)",
+            "select": "id,player_id,decklist_url,players!inner(topdeck_id,name),commanders!inner(name),tournaments!inner(id,name,start_date,topdeck_tid)",
             "order": "id.asc",
             "limit": str(PAGE_SIZE),
         }
@@ -157,6 +157,8 @@ def fetch_usage_rows_via_db(db_url: str) -> list[dict[str, Any]]:
             p.topdeck_id,
             p.name AS player_name,
             c.name AS commander_name,
+            t.id AS tournament_id,
+            t.name AS tournament_name,
             t.start_date,
             t.topdeck_tid
         FROM tournament_entries te
@@ -185,6 +187,8 @@ def normalize_usage_rows(raw_rows: list[dict[str, Any]]) -> list[dict[str, Any]]
         player_name = row.get("player_name") or (player.get("name") if player else None)
         start_date = row.get("start_date") or (tournament.get("start_date") if tournament else None)
         topdeck_tid = row.get("topdeck_tid") or (tournament.get("topdeck_tid") if tournament else None)
+        tournament_id = row.get("tournament_id") or (tournament.get("id") if tournament else None)
+        tournament_name = row.get("tournament_name") or (tournament.get("name") if tournament else None)
         if not topdeck_id or not is_known_commander(commander_name):
             continue
         normalized.append(
@@ -199,6 +203,9 @@ def normalize_usage_rows(raw_rows: list[dict[str, Any]]) -> list[dict[str, Any]]
                     topdeck_tid,
                     topdeck_id,
                 ),
+                "tournament_id": tournament_id,
+                "tournament_name": tournament_name,
+                "tournament_topdeck_tid": topdeck_tid,
             }
         )
     return normalized
@@ -333,6 +340,13 @@ def build_profile_rows(usage_rows: list[dict[str, Any]], reference_date: date) -
             )
 
         active = commander_predictions[0] if commander_predictions else None
+        # latest_decklist_url tracks the *active commander's* most recent decklist so
+        # profile UIs can deep-link to the deck the player is currently piloting,
+        # rather than whichever entry happened to be most recent overall.
+        active_commander_latest_decklist_url = (
+            active.get("latest_decklist_url") if active else None
+        )
+        latest_start_date = (latest_row.get("start_date") or "") if latest_row else ""
         profile_rows.append(
             {
                 "player_id": player_ids_by_topdeck_id[topdeck_id],
@@ -344,11 +358,13 @@ def build_profile_rows(usage_rows: list[dict[str, Any]], reference_date: date) -
                 "total_entries": total_entries,
                 "commander_predictions": commander_predictions,
                 "latest_commander": latest_row.get("commander_name") if latest_row else None,
-                "latest_commander_date": (latest_row.get("start_date") or "")[:10] or None,
-                "latest_decklist_url": (
-                    latest_row.get("decklist_url") or latest_row.get("topdeck_decklist_url")
-                    if latest_row
-                    else None
+                "latest_commander_date": latest_start_date[:10] or None,
+                "latest_decklist_url": active_commander_latest_decklist_url,
+                "latest_tournament_id": latest_row.get("tournament_id") if latest_row else None,
+                "latest_tournament_name": latest_row.get("tournament_name") if latest_row else None,
+                "latest_tournament_date": latest_start_date[:10] or None,
+                "latest_tournament_topdeck_tid": (
+                    latest_row.get("tournament_topdeck_tid") if latest_row else None
                 ),
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }
