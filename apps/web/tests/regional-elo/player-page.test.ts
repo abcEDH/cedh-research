@@ -13,6 +13,59 @@ const tableData: TableData = {
     { id: "player-5", name: "Unknown Region Player", topdeck_id: "unknown-region-player" },
     { id: "player-6", name: "Inactive Player", topdeck_id: "inactive-player" },
   ],
+  global_elo_active_leaderboard: [
+    {
+      region_type: "global",
+      region_key: "ALL",
+      player_id: "player-1",
+      topdeck_id: "CCIQroaCHHQi7EELyNXlHiHQiQy1",
+      primary_country_key: "UNITED STATES",
+      primary_region_key: "CALIFORNIA",
+      rank: 6,
+      topdeck_elo_rank: 4,
+      rating: 1734.864,
+      topdeck_elo: 1900.066,
+      games_played: 3,
+      wins: 1,
+      draws: 1,
+      losses: 1,
+      last_game_date: "2026-04-03",
+    },
+    {
+      region_type: "country",
+      region_key: "UNITED STATES",
+      player_id: "player-1",
+      topdeck_id: "CCIQroaCHHQi7EELyNXlHiHQiQy1",
+      primary_country_key: "UNITED STATES",
+      primary_region_key: "CALIFORNIA",
+      rank: 4,
+      topdeck_elo_rank: 2,
+      rating: 1734.864,
+      topdeck_elo: 1900.066,
+      games_played: 3,
+      wins: 1,
+      draws: 1,
+      losses: 1,
+      last_game_date: "2026-04-03",
+    },
+    {
+      region_type: "global",
+      region_key: "ALL",
+      player_id: "player-6",
+      topdeck_id: "inactive-player",
+      primary_country_key: "UNITED STATES",
+      primary_region_key: "CALIFORNIA",
+      rank: 99,
+      topdeck_elo_rank: 88,
+      rating: 1600,
+      topdeck_elo: 1501.5,
+      games_played: 1,
+      wins: 1,
+      draws: 0,
+      losses: 0,
+      last_game_date: "2025-01-01",
+    },
+  ],
   global_elo_leaderboard: [
     {
       region_type: "global",
@@ -352,6 +405,9 @@ describe("RegionalPlayerPage", () => {
     expect(html).toContain("State Rank");
     expect(html).toContain("Country Rank");
     expect(html).toContain("Home region");
+    expect(html).toMatch(/TopDeck Elo[\s\S]*?>1900</);
+    expect(html).toMatch(/Global Rank[\s\S]*?>#4</);
+    expect(html).toMatch(/Country Rank[\s\S]*?>#2</);
     expect(html).toMatch(/Games Played[\s\S]*?>3</);
     expect(html).toMatch(/Record[\s\S]*?>1-1-1</);
     expect(html).toMatch(/CALIFORNIA[\s\S]*?Home region[\s\S]*?>3<[\s\S]*?>1-1-1</);

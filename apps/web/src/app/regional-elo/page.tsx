@@ -123,6 +123,7 @@ type LeaderboardRow = {
   rank: number;
   hidden_rating?: number;
   topdeck_elo?: number | null;
+  topdeck_elo_rank?: number | null;
 };
 
 type LatestCommanderRow = {
@@ -165,16 +166,23 @@ function logReadSummary(event: string, details: Record<string, unknown>) {
 
 async function applyTopdeckElo(rows: LeaderboardRow[]): Promise<LeaderboardRow[]> {
   const topdeckIds = rows
+    .filter((row) => row.topdeck_elo == null)
     .map((row) => row.topdeck_id)
     .filter((value): value is string => Boolean(value));
-  if (topdeckIds.length === 0) return rows;
+  if (topdeckIds.length === 0) {
+    return rows.map((row) => ({
+      ...row,
+      hidden_rating: row.rating,
+      topdeck_elo: row.topdeck_elo ?? null,
+    }));
+  }
 
   const topdeckEloById = await fetchTopdeckEloMap(topdeckIds);
   if (topdeckEloById.size === 0) {
     return rows.map((row) => ({
       ...row,
       hidden_rating: row.rating,
-      topdeck_elo: null,
+      topdeck_elo: row.topdeck_elo ?? null,
     }));
   }
 
@@ -183,8 +191,7 @@ async function applyTopdeckElo(rows: LeaderboardRow[]): Promise<LeaderboardRow[]
     return {
       ...row,
       hidden_rating: row.rating,
-      topdeck_elo: topdeckElo ?? null,
-      rating: topdeckElo ?? row.rating,
+      topdeck_elo: row.topdeck_elo ?? topdeckElo ?? null,
     };
   });
 }
@@ -201,11 +208,12 @@ async function fetchLeaderboardRows(
   let query = supabase
     .from("global_elo_active_leaderboard")
     .select(
-      "region_type, region_key, country_key, primary_country_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank",
+      "region_type, region_key, country_key, primary_country_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank, topdeck_elo, topdeck_elo_rank",
       { count: "exact" }
     )
     .eq("region_type", regionType)
     .eq("region_key", regionKey)
+    .order("topdeck_elo_rank", { ascending: true, nullsFirst: false })
     .order("rank", { ascending: true })
     .range(pageStart, pageStart + pageSize - 1);
 
@@ -235,7 +243,7 @@ async function fetchLeaderboardRows(
     search: normalizedSearch || null,
     rowsReturned: rows.length,
     totalCount: count ?? 0,
-    supabaseQueries: rows.length > 0 ? 2 : 1,
+    supabaseQueries: 1,
   });
   return {
     rows,
