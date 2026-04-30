@@ -37,10 +37,10 @@ VIEW_SPECS: list[tuple[str, int]] = [
     ("commander_meta_monthly", 5),
     ("commander_momentum", 1),
     ("commander_first_appearances", 10),
-    ("survival_summary", 10),
     ("regional_elo_player_stats", 10),
     ("regional_elo_regions", 2),
-    ("regional_elo_game_event_log", 100),
+    # Retired/private heavy views are intentionally excluded from PR validation.
+    # They are covered by targeted operational checks when needed.
 ]
 
 RPC_SPECS: list[tuple[str, dict[str, Any], bool, tuple[str, ...]]] = [
