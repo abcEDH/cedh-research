@@ -131,8 +131,9 @@ describe("regional-elo cache configuration", () => {
     );
 
     expect(source).toContain('.order("rank", { ascending: true })');
-    expect(source).toContain('[regional-elo] leaderboard-cache-miss');
-    expect(source).toContain('[regional-elo] latest-commanders-cache-miss');
+    expect(source).toContain('console.info(`[regional-elo] ${event}`, details);');
+    expect(source).toContain('logReadSummary("leaderboard-cache-miss"');
+    expect(source).toContain('logReadSummary("latest-commanders-cache-miss"');
 
     expect(source).not.toContain("fetchAllTopdeckEloMap");
     expect(source).not.toContain('.from("topdeck_player_elos")');
