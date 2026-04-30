@@ -7,13 +7,15 @@ Usage:
 
 from __future__ import annotations
 
-import os
-import time
 import argparse
+import os
+import sys
+import time
 from collections import defaultdict
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
+from typing import Any
 
 from ingest import SupabaseClient
 
@@ -205,7 +207,7 @@ def elo_probability(rating_a: float, rating_b: float) -> float:
     return 1 / (1 + pow(ELO_BASE, (rating_b - rating_a) / ELO_DIVISOR))
 
 
-def update_elo(winner_rating: float, loser_rating: float) -> Tuple[float, float]:
+def update_elo(winner_rating: float, loser_rating: float) -> tuple[float, float]:
     """Calculate new Elo ratings after a game."""
     expected_winner = elo_probability(winner_rating, loser_rating)
     expected_loser = elo_probability(loser_rating, winner_rating)
@@ -239,7 +241,7 @@ def get_country_for_state(state: str) -> str:
 
 def create_empty_ratings_row(
     player_id: str, region_type: str, region_key: str, rating: float = DEFAULT_RATING
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Create a new ratings row with default values."""
     return {
         "player_id": player_id,
@@ -256,16 +258,15 @@ def create_empty_ratings_row(
 
 
 def process_results(
-    participant_records: Iterable[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
+    participant_records: Iterable[dict[str, Any]],
+) -> list[dict[str, Any]]:
     """Process participant records into ratings updates."""
-    player_ratings: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
-    game_events: List[Dict[str, Any]] = []
+    game_events: list[dict[str, Any]] = []
 
-    standings: List[Tuple[float, int, Dict[str, Any]]] = []
+    standings: list[tuple[float, int, dict[str, Any]]] = []
     for p in participant_records:
         entry_id = p.get("entry_id") or ""
-        standing: Dict[str, Any] = {
+        standing: dict[str, Any] = {
             "id": entry_id,
             "wins": p.get("wins", 0) or 0,
             "draws": p.get("draws", 0) or 0,
@@ -316,8 +317,8 @@ def process_results(
 
 
 def update_ratings_with_games(
-    player_ratings: Dict[Tuple[str, str, str], Dict[str, Any]],
-    game_events: Iterable[Dict[str, Any]],
+    player_ratings: dict[tuple[str, str, str], dict[str, Any]],
+    game_events: Iterable[dict[str, Any]],
 ) -> None:
     """Update ratings based on game results."""
     for event in game_events:
@@ -345,9 +346,7 @@ def update_ratings_with_games(
         opp_row = player_ratings[opp_key]
 
         if outcome == "win":
-            new_player, new_opp = update_elo(
-                player_row["rating"], opp_row["rating"]
-            )
+            new_player, new_opp = update_elo(player_row["rating"], opp_row["rating"])
             player_row["wins"] += 1
             player_row["win_streak"] += 1
             player_row["loss_streak"] = 0
@@ -355,9 +354,7 @@ def update_ratings_with_games(
             opp_row["win_streak"] = 0
             opp_row["loss_streak"] += 1
         elif outcome == "loss":
-            new_opp, new_player = update_elo(
-                opp_row["rating"], player_row["rating"]
-            )
+            new_opp, new_player = update_elo(opp_row["rating"], player_row["rating"])
             player_row["losses"] += 1
             player_row["loss_streak"] += 1
             player_row["win_streak"] = 0
@@ -433,7 +430,7 @@ def fail_job(client: SupabaseClient, job_id: str, error: str) -> None:
         print(f"Failed to record job failure for {job_id}: {exc}", flush=True)
 
 
-QueryParams = Mapping[str, Any] | Sequence[Tuple[str, Any]]
+QueryParams = Mapping[str, Any] | Sequence[tuple[str, Any]]
 
 
 def with_paging_params(params: QueryParams, limit: int, offset: int) -> QueryParams:
@@ -443,9 +440,9 @@ def with_paging_params(params: QueryParams, limit: int, offset: int) -> QueryPar
     return [*params, *page_params.items()]
 
 
-def fetch_all(client: SupabaseClient, table: str, params: QueryParams, limit: int = 1000) -> List[Dict[str, Any]]:
+def fetch_all(client: SupabaseClient, table: str, params: QueryParams, limit: int = 1000) -> list[dict[str, Any]]:
     offset = 0
-    rows: List[Dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     while True:
         page = client.select(table, with_paging_params(params, limit, offset))
         if not page:
@@ -459,7 +456,7 @@ def fetch_all(client: SupabaseClient, table: str, params: QueryParams, limit: in
 
 def fetch_participants_for_leaderboard(
     client: SupabaseClient, lookback_months: int = ACTIVE_PLAYER_LOOKBACK_MONTHS
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     cutoff = get_past_months_cutoff(lookback_months)
     return fetch_all(
         client,
@@ -475,7 +472,7 @@ def fetch_participants_for_leaderboard(
 
 def fetch_commander_participants(
     client: SupabaseClient, lookback_months: int = COMMANDER_PRIMARY_LOOKBACK_MONTHS
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     cutoff = get_past_months_cutoff(lookback_months)
     return fetch_all(
         client,
@@ -489,9 +486,7 @@ def fetch_commander_participants(
     )
 
 
-def fetch_distinct_entry_ids(
-    client: SupabaseClient, lookback_months: int = ACTIVE_PLAYER_LOOKBACK_MONTHS
-) -> set[str]:
+def fetch_distinct_entry_ids(client: SupabaseClient, lookback_months: int = ACTIVE_PLAYER_LOOKBACK_MONTHS) -> set[str]:
     cutoff = get_past_months_cutoff(lookback_months)
     rows = fetch_all(
         client,
@@ -521,11 +516,9 @@ def fetch_distinct_commander_ids(
     return {r["commander_id"] for r in rows if r.get("commander_id")}
 
 
-def compute_leaderboard(
-    player_rows: List[Dict[str, Any]]
-) -> Dict[Tuple[str, str, str], List[Dict[str, Any]]]:
+def compute_leaderboard(player_rows: list[dict[str, Any]]) -> dict[tuple[str, str, str], list[dict[str, Any]]]:
     """Build leaderboard grouped by region."""
-    by_region: Dict[Tuple[str, str, str], List[Dict[str, Any]]] = defaultdict(list)
+    by_region: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in player_rows:
         region_type = row.get("region_type", GLOBAL_REGION_TYPE)
         region_key = row.get("region_key", GLOBAL_REGION_KEY)
@@ -536,17 +529,18 @@ def compute_leaderboard(
 
 
 def build_player_profiles(
-    player_rows: List[Dict[str, Any]],
+    player_rows: list[dict[str, Any]],
     lookback_days: int = 30,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Build profile summary with recent activity indicators."""
+    cutoff = get_past_days_cutoff(lookback_days)
     recent_set = {r["player_id"] for r in player_rows if r.get("last_activity") and r["last_activity"] >= cutoff}
     return [r for r in player_rows if r.get("player_id") in recent_set]
 
 
 def detect_active_players(
     client: SupabaseClient, lookback_months: int = ACTIVE_PLAYER_LOOKBACK_MONTHS
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Identify players with recent activity."""
     cutoff = get_past_months_cutoff(lookback_months)
     rows = fetch_all(
@@ -560,7 +554,7 @@ def detect_active_players(
         },
     )
     seen: set[str] = set()
-    active: List[Dict[str, Any]] = []
+    active: list[dict[str, Any]] = []
     for r in rows:
         pid = r["player_id"]
         if pid and pid not in seen:
@@ -590,7 +584,7 @@ ACTIVE_LEADERBOARD_BATCH_SIZE = 1000
 
 
 def assign_topdeck_elo_ranks(
-    rows: List[Dict[str, Any]],
+    rows: list[dict[str, Any]],
 ) -> None:
     """Assign topdeck_elo_rank within each (region_type, region_key) partition.
 
@@ -599,7 +593,7 @@ def assign_topdeck_elo_ranks(
     rating DESC, then player_name ASC for deterministic ordering. Mutates
     rows in place by setting the ``topdeck_elo_rank`` field.
     """
-    partitions: Dict[Tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
+    partitions: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
         partitions[(row.get("region_type", ""), row.get("region_key", ""))].append(row)
 
@@ -634,14 +628,14 @@ def build_active_leaderboard_rows(
     topdeck_elo_by_player: Mapping[str, float],
     state_stats_by_player: Mapping[str, Mapping[str, Any]],
     updated_at: str,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Materialise active leaderboard rows for global, country, and state slices.
 
     Mirrors the shape produced by the regional_elo_leaderboard view but is
     persisted to the leaderboard table so PostgREST can serve the data
     without joining to topdeck_player_elos at request time.
     """
-    leaderboard_rows: List[Dict[str, Any]] = []
+    leaderboard_rows: list[dict[str, Any]] = []
     for rating_row in ratings_rows:
         if rating_row.get("region_type") != GLOBAL_REGION_TYPE:
             continue
@@ -668,7 +662,7 @@ def build_active_leaderboard_rows(
         activity_score = _coerce_float(state_stats.get("activity_score"))
         last_game_date = state_stats.get("last_game_date")
 
-        base_row: Dict[str, Any] = {
+        base_row: dict[str, Any] = {
             "player_id": player_id,
             "player_name": player.get("name") or "",
             "topdeck_id": player.get("topdeck_id"),
@@ -718,7 +712,7 @@ def build_active_leaderboard_rows(
             )
 
     # Assign rating rank within each partition.
-    partitions: Dict[Tuple[str, str], List[Dict[str, Any]]] = defaultdict(list)
+    partitions: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in leaderboard_rows:
         partitions[(row["region_type"], row["region_key"])].append(row)
 
@@ -737,7 +731,7 @@ def build_active_leaderboard_rows(
     return leaderboard_rows
 
 
-def fetch_player_index(client: SupabaseClient) -> Dict[str, Dict[str, Any]]:
+def fetch_player_index(client: SupabaseClient) -> dict[str, dict[str, Any]]:
     """Fetch the player directory keyed by id for leaderboard enrichment."""
     rows = fetch_all(
         client,
@@ -747,14 +741,14 @@ def fetch_player_index(client: SupabaseClient) -> Dict[str, Dict[str, Any]]:
     return {row["id"]: row for row in rows if row.get("id")}
 
 
-def fetch_topdeck_elo_by_player(client: SupabaseClient) -> Dict[str, float]:
+def fetch_topdeck_elo_by_player(client: SupabaseClient) -> dict[str, float]:
     """Load the TopDeck Elo snapshot keyed by player_id (table is small)."""
     rows = fetch_all(
         client,
         "topdeck_player_elos",
         {"select": "player_id,elo"},
     )
-    elo_by_player: Dict[str, float] = {}
+    elo_by_player: dict[str, float] = {}
     for row in rows:
         player_id = row.get("player_id")
         elo = _coerce_float(row.get("elo"))
@@ -763,18 +757,16 @@ def fetch_topdeck_elo_by_player(client: SupabaseClient) -> Dict[str, float]:
     return elo_by_player
 
 
-def fetch_primary_state_stats(client: SupabaseClient) -> Dict[str, Dict[str, Any]]:
+def fetch_primary_state_stats(client: SupabaseClient) -> dict[str, dict[str, Any]]:
     """Load primary-state activity per player for country/state slice enrichment."""
     rows = fetch_all(
         client,
         "regional_elo_primary_state_assignments",
         {
-            "select": (
-                "player_id,region_type,region_key,country_key,activity_score,last_game_date"
-            ),
+            "select": ("player_id,region_type,region_key,country_key,activity_score,last_game_date"),
         },
     )
-    by_player: Dict[str, Dict[str, Any]] = {}
+    by_player: dict[str, dict[str, Any]] = {}
     for row in rows:
         player_id = row.get("player_id")
         if not player_id:
@@ -789,9 +781,7 @@ def fetch_primary_state_stats(client: SupabaseClient) -> Dict[str, Dict[str, Any
     return by_player
 
 
-def delete_stale_active_leaderboard_rows(
-    client: SupabaseClient, run_marker: str
-) -> None:
+def delete_stale_active_leaderboard_rows(client: SupabaseClient, run_marker: str) -> None:
     """Delete leaderboard rows that the current run did not refresh."""
     try:
         import requests  # local import to avoid cycles in tests
@@ -801,8 +791,7 @@ def delete_stale_active_leaderboard_rows(
         response = requests.delete(endpoint, headers=client.headers, params=params, timeout=60)
         if response.status_code >= 400:
             print(
-                "Stale leaderboard cleanup failed (non-fatal): "
-                f"{response.status_code} {response.text[:200]}",
+                f"Stale leaderboard cleanup failed (non-fatal): {response.status_code} {response.text[:200]}",
                 flush=True,
             )
     except Exception as exc:  # pragma: no cover - best-effort cleanup
@@ -811,7 +800,7 @@ def delete_stale_active_leaderboard_rows(
 
 def upsert_active_leaderboard_rows(
     client: SupabaseClient,
-    rows: List[Dict[str, Any]],
+    rows: list[dict[str, Any]],
     batch_size: int = ACTIVE_LEADERBOARD_BATCH_SIZE,
 ) -> None:
     """Upsert leaderboard rows in batches keyed on (region_type, region_key, player_id)."""
@@ -838,10 +827,6 @@ def refresh_materialized_views(client: SupabaseClient) -> int:
         except Exception as exc:
             print(f"  {fn_name}() failed (non-fatal): {exc}", flush=True)
     return success_count
-
-
-# === CLI Entry Point ===
-import sys
 
 
 def main() -> None:
@@ -903,32 +888,26 @@ def main() -> None:
         smoke_days = args.smoke_days
         cutoff = get_past_days_cutoff(smoke_days)
         print(f"[DRY RUN] Would compute Elo for games since {cutoff}")
-        print(f"[DRY RUN] Participant fetch not executed in dry-run mode")
+        print("[DRY RUN] Participant fetch not executed in dry-run mode")
         if job_id:
             fail_job(client, job_id, "Dry-run mode")
         sys.exit(0)
 
     print("Fetching participants for leaderboard...")
     update_job_heartbeat(client, job_id)
-    participant_rows = fetch_participants_for_leaderboard(
-        client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS
-    )
+    participant_rows = fetch_participants_for_leaderboard(client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS)
     update_job_heartbeat(client, job_id)
     print(f"Found {len(participant_rows)} participant rows")
 
     print("Fetching distinct entries for global ratings...")
-    entry_ids = fetch_distinct_entry_ids(
-        client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS
-    )
+    entry_ids = fetch_distinct_entry_ids(client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS)
     print(f"Found {len(entry_ids)} distinct entries")
 
     # Build ratings dict
-    player_ratings: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+    player_ratings: dict[tuple[str, str, str], dict[str, Any]] = {}
     for entry_id in entry_ids:
         key = (GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY, entry_id)
-        player_ratings[key] = create_empty_ratings_row(
-            entry_id, GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY
-        )
+        player_ratings[key] = create_empty_ratings_row(entry_id, GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY)
 
     update_job_heartbeat(client, job_id)
 
@@ -977,10 +956,7 @@ def main() -> None:
     )
 
     if all_leaderboard_rows:
-        print(
-            f"Upserting {len(all_leaderboard_rows)} active leaderboard rows "
-            "(global + country + state)..."
-        )
+        print(f"Upserting {len(all_leaderboard_rows)} active leaderboard rows (global + country + state)...")
         upsert_active_leaderboard_rows(client, all_leaderboard_rows)
         delete_stale_active_leaderboard_rows(client, leaderboard_run_marker)
 
