@@ -1524,19 +1524,19 @@ export default async function RegionalPlayerPage({
                     className="block hover:text-primary"
                   >
                     <div className="text-2xl font-semibold text-foreground">
-                      {globalSnapshot?.rank ? `#${globalSnapshot.rank}` : "—"}
+                      {globalSnapshot?.rank ? `#${globalSnapshot.rank}` : (globalEloRank?.topdeck_elo_rank ? `#${globalEloRank.topdeck_elo_rank}` : "—")}
                     </div>
                     <div className="text-sm text-muted-foreground">
-                      {globalSnapshot ? `${globalSnapshot.points} points` : "No points snapshot"}
+                      {globalSnapshot?.points ? `${globalSnapshot.points} points` : (globalSnapshot ? "No points snapshot" : "Regional Rank")}
                     </div>
                   </a>
                 ) : (
                   <>
                     <div className="text-2xl font-semibold text-foreground">
-                      {globalSnapshot?.rank ? `#${globalSnapshot.rank}` : "—"}
+                      {globalSnapshot?.rank ? `#${globalSnapshot.rank}` : (globalEloRank?.topdeck_elo_rank ? `#${globalEloRank.topdeck_elo_rank}` : "—")}
                     </div>
                     <div className="text-sm text-muted-foreground">
-                      {globalSnapshot ? `${globalSnapshot.points} points` : "No points snapshot"}
+                      {globalSnapshot?.points ? `${globalSnapshot.points} points` : (globalSnapshot ? "No points snapshot" : "Regional Rank")}
                     </div>
                   </>
                 )}
