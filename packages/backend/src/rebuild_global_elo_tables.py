@@ -604,21 +604,27 @@ def main() -> None:
         print("Dry run complete. Pass --apply to write changes.", flush=True)
         return
 
-    print("Clearing derived Elo tables", flush=True)
-    rest_delete(client, "global_elo_ratings", {"region_type": "eq.global", "region_key": "eq.ALL"})
-    rest_delete(client, "global_elo_game_events", {"region_type": "eq.global", "region_key": "eq.ALL"})
-    rest_delete(client, "global_elo_active_leaderboard", {"region_type": "not.is.null"})
-    rest_delete(client, "global_elo_state_activity", {"region_type": "eq.state"})
-    rest_delete(client, "global_elo_player_profile_summaries", {"player_id": "not.is.null"})
+    print("Writing derived Elo tables", flush=True)
+    # We use UPSERT for almost everything, so explicit DELETE is only for tables 
+    # where we want to ensure no stale data remains (like state activity).
+    # For global_elo_game_events, we'll just upsert and let it overwrite.
 
     print("Upserting ratings", flush=True)
     chunked_upsert(client, "global_elo_ratings", rating_rows, "player_id,region_type,region_key")
+    
     print("Upserting state activity", flush=True)
+    # Clear state activity before re-upserting to ensure old primary states are removed
+    rest_delete(client, "global_elo_state_activity", {"region_type": "eq.state"})
     chunked_upsert(client, "global_elo_state_activity", state_rows, "region_type,region_key,player_id")
+    
     print("Upserting game events", flush=True)
     chunked_upsert(client, "global_elo_game_events", event_rows, "region_type,region_key,game_id,player_id")
+    
     print("Upserting active leaderboard", flush=True)
+    # We clear the leaderboard because rank order changes and we don't want trailing rows
+    rest_delete(client, "global_elo_active_leaderboard", {"region_type": "not.is.null"})
     chunked_upsert(client, "global_elo_active_leaderboard", leaderboard_rows, "region_type,region_key,player_id")
+    
     print("Upserting profile summaries", flush=True)
     chunked_upsert(client, "global_elo_player_profile_summaries", profile_rows, "player_id")
     print("Done", flush=True)
