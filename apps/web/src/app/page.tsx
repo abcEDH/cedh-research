@@ -10,11 +10,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { supabase } from "@/lib/supabase";
-import {
-  fetchTopdeckEdhEloLeaderboard,
-  TOPDECK_EDH_ELO_PAGE_URL,
-} from "@/lib/topdeck";
-import { buildTopdeckProfileHref } from "@/lib/topdeck-profile";
 import { normalizeDisplayString } from "@/lib/utils";
 import Link from "next/link";
 import { HomeSearchBar } from "@/components/home-search-bar";
@@ -245,29 +240,210 @@ async function getCoreStats() {
 }
 
 interface LeaderboardPlayer {
+  player_id: string;
   topdeck_id: string;
   player_name: string;
-  username?: string | null;
-  rating: number;
   rank: number;
+  topdeck_elo: number | null;
   games_played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  last_game_date: string | null;
+  active_commander: string | null;
+  active_commander_decklist_url: string | null;
+  latest_tournament_name: string | null;
+  latest_tournament_date: string | null;
+  latest_tournament_topdeck_tid: string | null;
 }
 
 async function getLeaderboardPreview(): Promise<LeaderboardPlayer[]> {
   try {
-    const rows = await fetchTopdeckEdhEloLeaderboard();
-    return rows.slice(0, 5).map((row) => ({
-      topdeck_id: row.uid,
-      player_name: row.name,
-      username: row.username,
-      rating: row.elo,
-      rank: row.ranking,
-      games_played: row.gamesPlayed,
-    }));
+    const { data, error } = await supabase
+      .from("global_elo_active_leaderboard")
+      .select(
+        "player_id, player_name, topdeck_id, topdeck_elo, topdeck_elo_rank, games_played, wins, draws, losses, last_game_date"
+      )
+      .eq("region_type", "global")
+      .eq("region_key", "ALL")
+      .not("topdeck_elo_rank", "is", null)
+      .order("topdeck_elo_rank", { ascending: true })
+      .limit(10);
+
+    if (error) {
+      console.error("Error fetching home leaderboard preview:", error);
+      return [];
+    }
+
+    const leaderboardRows = ((data ?? []) as Array<{
+      player_id: string;
+      player_name: string;
+      topdeck_id: string | null;
+      topdeck_elo: number | null;
+      topdeck_elo_rank: number | null;
+      games_played: number;
+      wins: number;
+      draws: number;
+      losses: number;
+      last_game_date: string | null;
+    }>).filter((row) => row.topdeck_id);
+
+    const topdeckIds = leaderboardRows
+      .map((row) => row.topdeck_id)
+      .filter((value): value is string => Boolean(value));
+    const [profileByTopdeckId, latestTournamentByPlayerId] = await Promise.all([
+      fetchHomeLeaderboardProfiles(topdeckIds),
+      fetchHomeLeaderboardLatestTournaments(leaderboardRows.map((row) => row.player_id)),
+    ]);
+
+    return leaderboardRows.map((row, index) => {
+      const topdeckId = row.topdeck_id ?? "";
+      const profile = profileByTopdeckId.get(topdeckId);
+      const latestTournament = latestTournamentByPlayerId.get(row.player_id);
+      return {
+        player_id: row.player_id,
+        topdeck_id: topdeckId,
+        player_name: row.player_name,
+        rank: row.topdeck_elo_rank ?? index + 1,
+        topdeck_elo: row.topdeck_elo,
+        games_played: row.games_played,
+        wins: row.wins,
+        draws: row.draws,
+        losses: row.losses,
+        last_game_date: row.last_game_date,
+        active_commander: isKnownCommanderName(profile?.active_commander)
+          ? profile?.active_commander ?? null
+          : null,
+        active_commander_decklist_url: profile?.latest_decklist_url ?? null,
+        latest_tournament_name: latestTournament?.name ?? null,
+        latest_tournament_date: latestTournament?.date ?? null,
+        latest_tournament_topdeck_tid: latestTournament?.topdeck_tid ?? null,
+      };
+    });
   } catch (error) {
-    console.error("Error fetching TopDeck leaderboard preview:", error);
+    console.error("Error fetching home leaderboard preview:", error);
     return [];
   }
+}
+
+async function fetchHomeLeaderboardProfiles(topdeckIds: string[]) {
+  if (topdeckIds.length === 0) {
+    return new Map<string, {
+      active_commander: string | null;
+      latest_decklist_url: string | null;
+    }>();
+  }
+
+  const { data, error } = await supabase
+    .from("player_commander_profiles")
+    .select("topdeck_id, active_commander, latest_decklist_url")
+    .in("topdeck_id", topdeckIds);
+
+  if (error) {
+    console.error("Error fetching home leaderboard profiles:", error);
+    return new Map();
+  }
+
+  return new Map(
+    ((data ?? []) as Array<{
+      topdeck_id: string | null;
+      active_commander: string | null;
+      latest_decklist_url: string | null;
+    }>)
+      .filter((row) => row.topdeck_id)
+      .map((row) => [row.topdeck_id as string, row])
+  );
+}
+
+async function fetchHomeLeaderboardLatestTournaments(playerIds: string[]) {
+  const uniquePlayerIds = Array.from(new Set(playerIds.filter(Boolean)));
+  const latestByPlayerId = new Map<
+    string,
+    {
+      name: string | null;
+      date: string | null;
+      topdeck_tid: string | null;
+      tournament_id: string | null;
+    }
+  >();
+  if (uniquePlayerIds.length === 0) return latestByPlayerId;
+
+  for (const table of ["global_elo_game_event_log", "regional_elo_game_event_log"]) {
+    const { data, error } = await supabase
+      .from(table)
+      .select("player_id, game_date, tournament_name, tournament_id")
+      .in("player_id", uniquePlayerIds)
+      .order("game_date", { ascending: false })
+      .limit(250);
+
+    if (error) continue;
+
+    for (const row of (data ?? []) as Array<{
+      player_id: string;
+      game_date: string | null;
+      tournament_name: string | null;
+      tournament_id: string | null;
+    }>) {
+      if (latestByPlayerId.has(row.player_id)) continue;
+      latestByPlayerId.set(row.player_id, {
+        name: row.tournament_name ?? null,
+        date: row.game_date ?? null,
+        topdeck_tid: null,
+        tournament_id: row.tournament_id ?? null,
+      });
+    }
+
+    if (latestByPlayerId.size > 0) break;
+  }
+
+  const tournamentIds = Array.from(
+    new Set(
+      Array.from(latestByPlayerId.values())
+        .map((row) => row.tournament_id)
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+  if (tournamentIds.length === 0) return latestByPlayerId;
+
+  const { data, error } = await supabase
+    .from("tournaments")
+    .select("id, name, start_date, topdeck_tid")
+    .in("id", tournamentIds);
+
+  if (error) return latestByPlayerId;
+
+  const tournamentsById = new Map(
+    ((data ?? []) as Array<{
+      id: string;
+      name: string | null;
+      start_date: string | null;
+      topdeck_tid: string | null;
+    }>).map((row) => [row.id, row])
+  );
+
+  for (const latest of latestByPlayerId.values()) {
+    if (!latest.tournament_id) continue;
+    const tournament = tournamentsById.get(latest.tournament_id);
+    if (!tournament) continue;
+    latest.name = tournament.name ?? latest.name;
+    latest.date = tournament.start_date ?? latest.date;
+    latest.topdeck_tid = tournament.topdeck_tid ?? null;
+  }
+
+  return latestByPlayerId;
+}
+
+function formatDate(value: string | null) {
+  if (!value) return "—";
+  return new Date(value).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function buildTopdeckTournamentUrl(tournamentSlug: string | null | undefined) {
+  return tournamentSlug ? `https://topdeck.gg/bracket/${tournamentSlug}` : null;
 }
 
 const getCachedHomeCoreStats = unstable_cache(
@@ -278,7 +454,7 @@ const getCachedHomeCoreStats = unstable_cache(
 
 const getCachedLeaderboardPreview = unstable_cache(
   getLeaderboardPreview,
-  ["home-leaderboard-preview-v1"],
+  ["home-leaderboard-preview-v2"],
   { revalidate: HOME_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -351,37 +527,93 @@ export default async function Home() {
               <CardHeader className="flex flex-row items-center justify-between pb-4">
                 <div>
                   <CardTitle className="text-lg">Global Leaderboard</CardTitle>
-                  <p className="text-sm text-muted-foreground">TopDeck EDH Elo leaderboard</p>
+                  <p className="text-sm text-muted-foreground">Active players ranked by TopDeck Elo</p>
                 </div>
                 <Button asChild variant="ghost" size="sm" className="border border-border/70">
-                  <a href={TOPDECK_EDH_ELO_PAGE_URL} rel="noreferrer" target="_blank">
-                    View Full Leaderboard
-                  </a>
+                  <Link href="/regional-elo">View Full Leaderboard</Link>
                 </Button>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-                  {leaderboardPlayers.map((player) => (
-                    <a
-                      key={player.topdeck_id}
-                      href={buildTopdeckProfileHref(player.topdeck_id) ?? TOPDECK_EDH_ELO_PAGE_URL}
-                      rel="noreferrer"
-                      target="_blank"
-                      className="group flex flex-col gap-1 rounded-xl border border-border/60 bg-card/60 p-4 transition hover:border-primary/40 hover:bg-muted/50"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-mono text-xs text-muted-foreground">#{player.rank}</span>
-                        <span className="font-mono text-xs font-bold text-primary">{Math.round(player.rating)}</span>
-                      </div>
-                      <p className="truncate text-sm font-medium text-foreground group-hover:text-primary">
-                        {player.player_name}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground">
-                        {player.username ? `${player.username} · ` : ""}
-                        {player.games_played.toLocaleString()} games
-                      </p>
-                    </a>
-                  ))}
+                <div className="overflow-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-border/60 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                        <TableHead className="py-3">Rank</TableHead>
+                        <TableHead className="py-3">Player</TableHead>
+                        <TableHead className="py-3">TopDeck Elo</TableHead>
+                        <TableHead className="py-3">Active Commander</TableHead>
+                        <TableHead className="py-3">Games</TableHead>
+                        <TableHead className="py-3">W-L-D</TableHead>
+                        <TableHead className="py-3">Latest Tournament</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {leaderboardPlayers.map((player) => {
+                        const tournamentHref = buildTopdeckTournamentUrl(
+                          player.latest_tournament_topdeck_tid
+                        );
+                        return (
+                          <TableRow key={player.player_id} className="border-border/60">
+                            <TableCell className="font-mono text-xs text-muted-foreground">
+                              #{player.rank}
+                            </TableCell>
+                            <TableCell>
+                              <Link
+                                href={`/regional-elo/player/${player.topdeck_id}`}
+                                className="font-medium text-foreground hover:text-primary"
+                              >
+                                {player.player_name}
+                              </Link>
+                            </TableCell>
+                            <TableCell className="font-mono text-sm font-semibold text-primary">
+                              {player.topdeck_elo == null ? "—" : Math.round(player.topdeck_elo)}
+                            </TableCell>
+                            <TableCell className="max-w-[260px] text-xs text-muted-foreground">
+                              {player.active_commander_decklist_url && player.active_commander ? (
+                                <a
+                                  href={player.active_commander_decklist_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="line-clamp-2 hover:text-primary"
+                                >
+                                  {player.active_commander}
+                                </a>
+                              ) : (
+                                <span className="line-clamp-2">
+                                  {player.active_commander || "No commander data"}
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell className="font-mono text-sm text-muted-foreground">
+                              {player.games_played.toLocaleString()}
+                            </TableCell>
+                            <TableCell className="font-mono text-sm text-muted-foreground">
+                              {player.wins}-{player.losses}-{player.draws}
+                            </TableCell>
+                            <TableCell className="min-w-[220px] text-xs text-muted-foreground">
+                              <div>
+                                {formatDate(player.latest_tournament_date ?? player.last_game_date)}
+                              </div>
+                              <div className="line-clamp-2 text-[11px]">
+                                {tournamentHref && player.latest_tournament_name ? (
+                                  <a
+                                    href={tournamentHref}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="hover:text-primary"
+                                  >
+                                    {player.latest_tournament_name}
+                                  </a>
+                                ) : (
+                                  player.latest_tournament_name || "No tournament data"
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
                 </div>
               </CardContent>
             </Card>

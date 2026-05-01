@@ -10,9 +10,19 @@ test.describe("Home Page", () => {
     await expect(page.getByRole("heading", { name: /competitive Commander, simplified/i })).toBeVisible();
   });
 
-  test("displays global leaderboard ribbon", async ({ page }) => {
+  test("displays global leaderboard table with internal links", async ({ page }) => {
     await expect(page.getByText("Global Leaderboard")).toBeVisible();
-    await expect(page.getByRole("link", { name: "View Full Leaderboard" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "View Full Leaderboard" })).toHaveAttribute(
+      "href",
+      "/regional-elo"
+    );
+    await expect(page.getByRole("columnheader", { name: "TopDeck Elo" })).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: "Latest Tournament" })).toBeVisible();
+
+    const playerLinks = page.locator('a[href^="/regional-elo/player/"]');
+    await expect(playerLinks.first()).toBeVisible();
+    expect(await playerLinks.count()).toBeGreaterThan(0);
+    await expect(page.locator('a[href="https://topdeck.gg/elo/magic-the-gathering/edh"]')).toHaveCount(0);
   });
 
   test("displays top commanders list with real data", async ({ page }) => {

@@ -668,6 +668,8 @@ function buildPlayerAchievements(
       };
     })
     .sort((a, b) => {
+      const dateCompare = (b.startDate ?? "").localeCompare(a.startDate ?? "");
+      if (dateCompare !== 0) return dateCompare;
       if (a.finishRatio === null && b.finishRatio !== null) return 1;
       if (b.finishRatio === null && a.finishRatio !== null) return -1;
       if (a.finishRatio !== null && b.finishRatio !== null && a.finishRatio !== b.finishRatio) {
@@ -676,7 +678,7 @@ function buildPlayerAchievements(
       if ((b.playerCount ?? 0) !== (a.playerCount ?? 0)) {
         return (b.playerCount ?? 0) - (a.playerCount ?? 0);
       }
-      return (b.startDate ?? "").localeCompare(a.startDate ?? "");
+      return a.tournamentName.localeCompare(b.tournamentName);
     });
 }
 

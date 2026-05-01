@@ -11,16 +11,6 @@ export type TopDeckLeaderboardEntry = {
   youtube?: string | null;
 };
 
-export type TopDeckEloLeaderboardEntry = {
-  name: string;
-  username?: string | null;
-  profileImage?: string | null;
-  uid: string;
-  elo: number;
-  gamesPlayed: number;
-  ranking: number;
-};
-
 export type TopDeckProfileStats = {
   tournaments: number;
   gamesPlayed: number;
@@ -89,9 +79,6 @@ type TopDeckRound = {
 
 const CHAMPIONSHIP_LEADERBOARD_URL =
   "https://topdeck.gg/championship-series-2026/leaderboard";
-export const TOPDECK_EDH_ELO_PAGE_URL = "https://topdeck.gg/elo/magic-the-gathering/edh";
-const TOPDECK_EDH_ELO_LEADERBOARD_URL =
-  "https://images.topdeck.gg/elo/magic-the-gathering-edh.json";
 const TOPDECK_FIRESTORE_PROJECT_ID = "eminence-1b40b";
 const TOPDECK_FIRESTORE_API_KEY = "AIzaSyBISF4HIfUsepAAqqYHte2NE_L8eaT6iwI";
 
@@ -188,14 +175,6 @@ export async function fetchChampionshipLeaderboard(): Promise<TopDeckLeaderboard
     throw new Error("TopDeck leaderboard payload not found in HTML");
   }
   return JSON.parse(match[1]) as TopDeckLeaderboardEntry[];
-}
-
-export async function fetchTopdeckEdhEloLeaderboard(): Promise<TopDeckEloLeaderboardEntry[]> {
-  const res = await fetch(TOPDECK_EDH_ELO_LEADERBOARD_URL, { next: { revalidate: 60 * 15 } });
-  if (!res.ok) {
-    throw new Error(`TopDeck EDH Elo leaderboard fetch failed (${res.status})`);
-  }
-  return (await res.json()) as TopDeckEloLeaderboardEntry[];
 }
 
 export async function fetchTopDeckProfileStats(topdeckId: string): Promise<TopDeckProfileStats | null> {
