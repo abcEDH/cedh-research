@@ -196,6 +196,20 @@ async function applyTopdeckElo(rows: LeaderboardRow[]): Promise<LeaderboardRow[]
   });
 }
 
+function sortRowsByTopdeckElo(rows: LeaderboardRow[]): LeaderboardRow[] {
+  return [...rows].sort((a, b) => {
+    const aElo = a.topdeck_elo;
+    const bElo = b.topdeck_elo;
+    if (aElo != null && bElo != null && aElo !== bElo) return bElo - aElo;
+    if (aElo != null && bElo == null) return -1;
+    if (aElo == null && bElo != null) return 1;
+    if (a.topdeck_elo_rank != null && b.topdeck_elo_rank != null) {
+      return a.topdeck_elo_rank - b.topdeck_elo_rank;
+    }
+    return a.player_name.localeCompare(b.player_name);
+  });
+}
+
 async function fetchLeaderboardRows(
   regionType: "global" | "country" | "state",
   regionKey: string,
@@ -213,8 +227,9 @@ async function fetchLeaderboardRows(
     )
     .eq("region_type", regionType)
     .eq("region_key", regionKey)
+    .order("topdeck_elo", { ascending: false, nullsFirst: false })
     .order("topdeck_elo_rank", { ascending: true, nullsFirst: false })
-    .order("rank", { ascending: true })
+    .order("player_name", { ascending: true })
     .range(pageStart, pageStart + pageSize - 1);
 
   if (normalizedSearch) {
@@ -233,7 +248,7 @@ async function fetchLeaderboardRows(
     );
   }
 
-  const rows = await applyTopdeckElo((data as LeaderboardRow[]) ?? []);
+  const rows = sortRowsByTopdeckElo(await applyTopdeckElo((data as LeaderboardRow[]) ?? []));
   logReadSummary("leaderboard-cache-miss", {
     source: "global_elo_active_leaderboard",
     regionType,
@@ -269,7 +284,7 @@ async function fetchLeaderboardRowsFromView(
     .eq("region_type", regionType)
     .eq("region_key", regionKey)
     .gte("last_game_date", cutoffDate)
-    .order("rank", { ascending: true })
+    .order("player_name", { ascending: true })
     .range(pageStart, pageStart + pageSize - 1);
 
   if (searchQuery) {
@@ -287,7 +302,7 @@ async function fetchLeaderboardRowsFromView(
     );
   }
 
-  const rows = await applyTopdeckElo((data as LeaderboardRow[]) ?? []);
+  const rows = sortRowsByTopdeckElo(await applyTopdeckElo((data as LeaderboardRow[]) ?? []));
   logReadSummary("leaderboard-view-cache-miss", {
     source: "global_elo_leaderboard",
     regionType,
@@ -323,7 +338,7 @@ async function fetchLegacyLeaderboardRows(
     .eq("region_type", regionType)
     .eq("region_key", regionKey)
     .gte("last_game_date", cutoffDate)
-    .order("rank", { ascending: true })
+    .order("player_name", { ascending: true })
     .range(pageStart, pageStart + pageSize - 1);
 
   if (searchQuery) {
@@ -336,7 +351,7 @@ async function fetchLegacyLeaderboardRows(
     throw error;
   }
 
-  const rows = await applyTopdeckElo((data as LeaderboardRow[]) ?? []);
+  const rows = sortRowsByTopdeckElo(await applyTopdeckElo((data as LeaderboardRow[]) ?? []));
   logReadSummary("leaderboard-legacy-cache-miss", {
     source: "regional_elo_leaderboard",
     regionType,

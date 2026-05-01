@@ -122,7 +122,7 @@ describe("regional-elo cache configuration", () => {
     expect(source).not.toContain("return { rows: [], totalCount: 0 };");
   });
 
-  it("uses persisted TopDeck Elo rank pagination and avoids request-time full scans for leaderboard rows", async () => {
+  it("sorts leaderboard rows by persisted TopDeck Elo and avoids request-time full scans", async () => {
     const fs = await import("fs");
     const path = await import("path");
     const source = fs.readFileSync(
@@ -131,8 +131,9 @@ describe("regional-elo cache configuration", () => {
     );
 
     expect(source).toContain("rank, topdeck_elo, topdeck_elo_rank");
+    expect(source).toContain('.order("topdeck_elo", { ascending: false, nullsFirst: false })');
     expect(source).toContain('.order("topdeck_elo_rank", { ascending: true, nullsFirst: false })');
-    expect(source).toContain('.order("rank", { ascending: true })');
+    expect(source).not.toContain('.order("rank", { ascending: true })');
     expect(source).toContain('console.info(`[regional-elo] ${event}`, details);');
     expect(source).toContain('logReadSummary("leaderboard-cache-miss"');
     expect(source).toContain('logReadSummary("latest-commanders-cache-miss"');
