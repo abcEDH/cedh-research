@@ -363,6 +363,7 @@ def apply_game(
 
 
 def build_rows(
+    client: SupabaseClient,
     results: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     ratings: dict[str, dict[str, Any]] = {}
@@ -370,6 +371,12 @@ def build_rows(
     player_meta: dict[str, dict[str, str | None]] = {}
     events: list[dict[str, Any]] = []
     today = datetime.now(timezone.utc).date()
+
+    print("Fetching TopDeck Elos for enrichment...", flush=True)
+    topdeck_elos = {
+        row["topdeck_id"]: float(row["elo"])
+        for row in fetch_all(client, "topdeck_player_elos", {"select": "topdeck_id,elo"})
+    }
 
     games: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in results:
@@ -433,6 +440,10 @@ def build_rows(
     leaderboard_rows: list[dict[str, Any]] = []
 
     def append_ranked(region_type: str, region_key: str, country_key: str | None, rows: list[dict[str, Any]]) -> None:
+        # We now offer two primary sort paths. The "rank" column remains tied to
+        # our internal Elo rating. The "topdeck_elo_rank" is calculated separately.
+        
+        # 1. Internal Rank (by rating)
         rows.sort(
             key=lambda row: (
                 -float(row["rating"]),
@@ -441,18 +452,40 @@ def build_rows(
                 player_meta[row["player_id"]].get("player_name") or "",
             )
         )
+        internal_ranks = {row["player_id"]: rank for rank, row in enumerate(rows, start=1)}
+
+        # 2. TopDeck Rank (by topdeck_elo)
+        rows.sort(
+            key=lambda row: (
+                -(topdeck_elos.get(player_meta[row["player_id"]].get("topdeck_id") or "") or 0),
+                -float(row["rating"]),
+                player_meta[row["player_id"]].get("player_name") or "",
+            )
+        )
+        topdeck_ranks = {}
         for rank, row in enumerate(rows, start=1):
-            meta = player_meta[row["player_id"]]
-            primary = primary_by_player.get(row["player_id"], {})
+            tid = player_meta[row["player_id"]].get("topdeck_id")
+            if tid and tid in topdeck_elos:
+                topdeck_ranks[row["player_id"]] = rank
+
+        for row in rows:
+            player_id = row["player_id"]
+            meta = player_meta[player_id]
+            primary = primary_by_player.get(player_id, {})
+            tid = meta.get("topdeck_id")
+            t_elo = topdeck_elos.get(tid) if tid else None
+
             leaderboard_rows.append(
                 {
                     "region_type": region_type,
                     "region_key": region_key,
                     "country_key": country_key,
-                    "player_id": row["player_id"],
+                    "player_id": player_id,
                     "player_name": meta.get("player_name") or "Unknown",
-                    "topdeck_id": meta.get("topdeck_id"),
-                    "rank": rank,
+                    "topdeck_id": tid,
+                    "rank": internal_ranks[player_id],
+                    "topdeck_elo": t_elo,
+                    "topdeck_elo_rank": topdeck_ranks.get(player_id),
                     "rating": row["rating"],
                     "games_played": row["games_played"],
                     "wins": row["wins"],
@@ -540,7 +573,7 @@ def main() -> None:
 
     results = fetch_results_by_month(client)
     print(f"Fetched {len(results):,} participant result rows", flush=True)
-    rating_rows, state_rows, event_rows, leaderboard_rows, profile_rows = build_rows(results)
+    rating_rows, state_rows, event_rows, leaderboard_rows, profile_rows = build_rows(client, results)
     print(
         "Built "
         f"{len(rating_rows):,} ratings, "

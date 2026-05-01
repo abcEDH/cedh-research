@@ -125,13 +125,38 @@ def apply_game(ratings: dict[str, dict[str, Any]], participants: list[dict[str, 
 
 
 def build_leaderboard_rows(
+    client: SupabaseClient,
     ratings: list[dict[str, Any]],
     player_lookup: dict[str, dict[str, Any]],
 ) -> list[dict[str, Any]]:
+    print("Fetching TopDeck Elos for enrichment...", flush=True)
+    topdeck_elos = {
+        row["topdeck_id"]: float(row["elo"])
+        for row in fetch_all(client, "topdeck_player_elos", {"select": "topdeck_id,elo"})
+    }
+
     ranked = sorted(ratings, key=lambda row: (-float(row["rating"]), -int(row["games_played"]), player_lookup.get(row["player_id"], {}).get("name") or ""))
+    
+    # Pre-calculate TopDeck ranks within the active set
+    active_players_with_tid = [
+        (row["player_id"], player_lookup.get(row["player_id"], {}).get("topdeck_id"))
+        for row in ratings
+    ]
+    topdeck_ranked = sorted(
+        active_players_with_tid,
+        key=lambda item: (-(topdeck_elos.get(item[1] or "") or 0), -float(next(r["rating"] for r in ratings if r["player_id"] == item[0]))),
+    )
+    topdeck_ranks = {}
+    for rank, (player_id, tid) in enumerate(topdeck_ranked, start=1):
+        if tid and tid in topdeck_elos:
+            topdeck_ranks[player_id] = rank
+
     rows: list[dict[str, Any]] = []
     for rank, row in enumerate(ranked, start=1):
         player = player_lookup.get(row["player_id"], {})
+        tid = player.get("topdeck_id")
+        t_elo = topdeck_elos.get(tid) if tid else None
+        
         rows.append(
             {
                 "region_type": GLOBAL_REGION_TYPE,
@@ -139,8 +164,10 @@ def build_leaderboard_rows(
                 "country_key": None,
                 "player_id": row["player_id"],
                 "player_name": player.get("name") or "Unknown",
-                "topdeck_id": player.get("topdeck_id"),
+                "topdeck_id": tid,
                 "rank": rank,
+                "topdeck_elo": t_elo,
+                "topdeck_elo_rank": topdeck_ranks.get(row["player_id"]),
                 "rating": row["rating"],
                 "games_played": row["games_played"],
                 "wins": row["wins"],
@@ -205,7 +232,7 @@ def main() -> None:
 
     rating_rows = list(ratings.values())
     player_lookup = fetch_players(client, list(ratings))
-    leaderboard_rows = build_leaderboard_rows(rating_rows, player_lookup)
+    leaderboard_rows = build_leaderboard_rows(client, rating_rows, player_lookup)
     profile_rows = [
         {
             "player_id": row["player_id"],
