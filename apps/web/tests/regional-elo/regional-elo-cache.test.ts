@@ -136,7 +136,6 @@ describe("regional-elo cache configuration", () => {
     );
 
     expect(primaryReadSource).toContain("rank, topdeck_elo, topdeck_elo_rank");
-    expect(primaryReadSource).toContain('.order("topdeck_elo", { ascending: false, nullsFirst: false })');
     expect(primaryReadSource).toContain('.order("topdeck_elo_rank", { ascending: true, nullsFirst: false })');
     expect(primaryReadSource).not.toContain('.order("rank", { ascending: true })');
     expect(source).toContain("const sortedRows = sortRowsByTopdeckElo(await applyTopdeckElo(fallbackRows));");

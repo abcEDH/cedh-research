@@ -228,7 +228,6 @@ async function fetchLeaderboardRows(
     )
     .eq("region_type", regionType)
     .eq("region_key", regionKey)
-    .order("topdeck_elo", { ascending: false, nullsFirst: false })
     .order("topdeck_elo_rank", { ascending: true, nullsFirst: false })
     .order("player_name", { ascending: true })
     .range(pageStart, pageStart + pageSize - 1);
