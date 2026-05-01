@@ -65,6 +65,7 @@ vi.mock("@/lib/supabase", () => {
       not: () => chain,
       order: () => chain,
       in: () => chain,
+      range: () => chain,
       then: (
         onfulfilled?: ((value: { data: unknown; error: null }) => unknown) | null
       ) => {
@@ -163,7 +164,7 @@ describe("Commanders page caching", () => {
     expect(html).toContain("View commander trends");
   });
 
-  it("source contains all four cached wrapper definitions with -v1 cache keys", async () => {
+  it("source contains all four cached wrapper definitions with expected cache keys", async () => {
     const fs = await import("fs");
     const path = await import("path");
     const source = fs.readFileSync(
@@ -181,7 +182,7 @@ describe("Commanders page caching", () => {
     expect(source).toContain('["commander-weekly-entries-v1"]');
 
     expect(source).toContain('getCachedGlobalTrendSeries = unstable_cache(');
-    expect(source).toContain('["commander-global-trends-v1"]');
+    expect(source).toContain('["commander-global-trends-v2"]');
   });
 
   it("page module calls cached wrappers instead of raw functions", async () => {

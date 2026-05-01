@@ -10,6 +10,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { supabase } from "@/lib/supabase";
+import {
+  fetchTopdeckEdhEloLeaderboard,
+  TOPDECK_EDH_ELO_PAGE_URL,
+} from "@/lib/topdeck";
+import { buildTopdeckProfileHref } from "@/lib/topdeck-profile";
 import { normalizeDisplayString } from "@/lib/utils";
 import Link from "next/link";
 import { HomeSearchBar } from "@/components/home-search-bar";
@@ -240,30 +245,29 @@ async function getCoreStats() {
 }
 
 interface LeaderboardPlayer {
-  player_id?: string;
-  topdeck_id?: string;
+  topdeck_id: string;
   player_name: string;
+  username?: string | null;
   rating: number;
   rank: number;
   games_played: number;
-  wins: number;
-  draws: number;
-  losses: number;
 }
 
 async function getLeaderboardPreview(): Promise<LeaderboardPlayer[]> {
-  const { data, error } = await supabase
-    .from("global_elo_active_leaderboard")
-    .select("player_name, topdeck_id, rating, rank, games_played, wins, draws, losses")
-    .eq("region_type", "global")
-    .order("rank", { ascending: true })
-    .limit(5);
-
-  if (error) {
-    console.error("Error fetching leaderboard preview:", error);
+  try {
+    const rows = await fetchTopdeckEdhEloLeaderboard();
+    return rows.slice(0, 5).map((row) => ({
+      topdeck_id: row.uid,
+      player_name: row.name,
+      username: row.username,
+      rating: row.elo,
+      rank: row.ranking,
+      games_played: row.gamesPlayed,
+    }));
+  } catch (error) {
+    console.error("Error fetching TopDeck leaderboard preview:", error);
     return [];
   }
-  return data as LeaderboardPlayer[];
 }
 
 const getCachedHomeCoreStats = unstable_cache(
@@ -347,18 +351,22 @@ export default async function Home() {
               <CardHeader className="flex flex-row items-center justify-between pb-4">
                 <div>
                   <CardTitle className="text-lg">Global Leaderboard</CardTitle>
-                  <p className="text-sm text-muted-foreground">Top active players by Elo rating</p>
+                  <p className="text-sm text-muted-foreground">TopDeck EDH Elo leaderboard</p>
                 </div>
                 <Button asChild variant="ghost" size="sm" className="border border-border/70">
-                  <Link href="/regional-elo">View Full Leaderboard</Link>
+                  <a href={TOPDECK_EDH_ELO_PAGE_URL} rel="noreferrer" target="_blank">
+                    View Full Leaderboard
+                  </a>
                 </Button>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
                   {leaderboardPlayers.map((player) => (
-                    <Link
-                      key={player.player_id || player.topdeck_id}
-                      href={player.topdeck_id ? `/regional-elo/player/${player.topdeck_id}` : "#"}
+                    <a
+                      key={player.topdeck_id}
+                      href={buildTopdeckProfileHref(player.topdeck_id) ?? TOPDECK_EDH_ELO_PAGE_URL}
+                      rel="noreferrer"
+                      target="_blank"
                       className="group flex flex-col gap-1 rounded-xl border border-border/60 bg-card/60 p-4 transition hover:border-primary/40 hover:bg-muted/50"
                     >
                       <div className="flex items-center justify-between">
@@ -369,9 +377,10 @@ export default async function Home() {
                         {player.player_name}
                       </p>
                       <p className="text-[10px] text-muted-foreground">
-                        {player.wins}W / {player.losses}L / {player.draws}D
+                        {player.username ? `${player.username} · ` : ""}
+                        {player.games_played.toLocaleString()} games
                       </p>
-                    </Link>
+                    </a>
                   ))}
                 </div>
               </CardContent>
