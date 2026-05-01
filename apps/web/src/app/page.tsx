@@ -22,8 +22,8 @@ interface TopCommander {
   commander_id: string;
   commander_name: string;
   total_entries: number;
-  avg_win_rate: number;
-  conversion_rate_top_16: number;
+  avg_win_rate: string | number;
+  conversion_rate_top_cut: string | number;
   color_identity: string[] | null;
 }
 
@@ -35,7 +35,7 @@ interface RisingCommander {
   recent_entries: number;
   prior_entries: number;
   total_entries: number;
-  avg_win_rate: number;
+  avg_win_rate: string | number;
   color_identity: string[] | null;
 }
 
@@ -180,23 +180,41 @@ async function getCoreStats() {
     .select("commander_id")
     .gte("week_start_date", oneYearAgoIso);
 
+  if (recentErr) {
+    throw new Error(`Failed to fetch recent commanders: ${recentErr.message}`);
+  }
+
   const activeCommanderIds = [...new Set((recentCommanders ?? []).map((r) => r.commander_id))];
 
+  const topCommandersQuery = supabase
+    .from("commander_stats")
+    .select("commander_id, commander_name, total_entries, avg_win_rate, conversion_rate_top_cut, color_identity")
+    .gt("total_entries", 20)
+    .not("commander_name", "ilike", "unknown commander")
+    .not("commander_name", "is", null)
+    .neq("commander_name", "")
+    .order("total_entries", { ascending: false })
+    .limit(21);
+
+  // Guard: If no active commanders, skip the win rate query to avoid PostgREST empty IN clause error
+  if (activeCommanderIds.length === 0) {
+    const { data: topCommandersData, error: topErr } = await topCommandersQuery;
+    if (topErr) throw new Error(`Top commanders query failed: ${topErr.message}`);
+    return {
+      topCommanders: (topCommandersData as TopCommander[] ?? []).filter((row) =>
+        isKnownCommanderName(row.commander_name)
+      ),
+      topWinRate: [],
+    };
+  }
+
   const [topCommandersResult, topWinRateResult] = await Promise.all([
+    topCommandersQuery,
     supabase
       .from("commander_stats")
       .select("commander_id, commander_name, total_entries, avg_win_rate, conversion_rate_top_cut, color_identity")
-      .gt("total_entries", 20)
-      .not("commander_name", "ilike", "unknown commander")
-      .not("commander_name", "is", null)
-      .neq("commander_name", "")
-      .order("total_entries", { ascending: false })
-      .limit(21),
-    supabase
-      .from("commander_stats")
-      .select("commander_id, commander_name, total_entries, avg_win_rate, conversion_rate_top_cut, color_identity")
-      .gt("total_entries", 60) // Adjusted threshold slightly to allow for high-performing recent commanders
-      .in("commander_id", activeCommanderIds) // ONLY commanders with activity in the last year
+      .gt("total_entries", 60)
+      .in("commander_id", activeCommanderIds)
       .not("commander_name", "ilike", "unknown commander")
       .not("commander_name", "is", null)
       .neq("commander_name", "")
@@ -212,16 +230,28 @@ async function getCoreStats() {
   }
 
   return {
-    topCommanders: ((topCommandersResult.data ?? []) as any[]).filter((row) =>
+    topCommanders: (topCommandersResult.data as TopCommander[] ?? []).filter((row) =>
       isKnownCommanderName(row.commander_name)
     ),
-    topWinRate: ((topWinRateResult.data ?? []) as any[]).filter((row) =>
+    topWinRate: (topWinRateResult.data as TopCommander[] ?? []).filter((row) =>
       isKnownCommanderName(row.commander_name)
     ),
   };
 }
 
-async function getLeaderboardPreview() {
+interface LeaderboardPlayer {
+  player_id?: string;
+  topdeck_id?: string;
+  player_name: string;
+  rating: number;
+  rank: number;
+  games_played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+}
+
+async function getLeaderboardPreview(): Promise<LeaderboardPlayer[]> {
   const { data, error } = await supabase
     .from("global_elo_active_leaderboard")
     .select("player_name, topdeck_id, rating, rank, games_played, wins, draws, losses")
@@ -233,7 +263,7 @@ async function getLeaderboardPreview() {
     console.error("Error fetching leaderboard preview:", error);
     return [];
   }
-  return data;
+  return data as LeaderboardPlayer[];
 }
 
 const getCachedHomeCoreStats = unstable_cache(
@@ -325,7 +355,7 @@ export default async function Home() {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-                  {leaderboardPlayers.map((player: any) => (
+                  {leaderboardPlayers.map((player) => (
                     <Link
                       key={player.player_id || player.topdeck_id}
                       href={player.topdeck_id ? `/regional-elo/player/${player.topdeck_id}` : "#"}
@@ -441,7 +471,7 @@ export default async function Home() {
                 </TableHeader>
                 <TableBody>
                   {topCommanders.length > 0 ? (
-                    topCommanders.map((commander: any, index) => (
+                    topCommanders.map((commander, index) => (
                       <TableRow key={commander.commander_id} className="border-border/60">
                         <TableCell className="font-mono text-xs text-muted-foreground">#{index + 1}</TableCell>
                         <TableCell>
@@ -464,13 +494,13 @@ export default async function Home() {
                         </TableCell>
                         <TableCell className="font-mono text-sm">
                           {(() => {
-                            const wr = parseFloat(commander.avg_win_rate || "0");
+                            const wr = typeof commander.avg_win_rate === "number" ? commander.avg_win_rate : parseFloat(commander.avg_win_rate || "0");
                             return (Number.isFinite(wr) ? wr * 100 : 0).toFixed(1);
                           })()}%
                         </TableCell>
                         <TableCell className="font-mono text-sm text-right text-primary">
                           {(() => {
-                            const conversion = parseFloat(commander.conversion_rate_top_cut || "0");
+                            const conversion = typeof commander.conversion_rate_top_cut === "number" ? commander.conversion_rate_top_cut : parseFloat(commander.conversion_rate_top_cut || "0");
                             return (Number.isFinite(conversion) ? conversion * 100 : 0).toFixed(1);
                           })()}%
                         </TableCell>
@@ -495,7 +525,7 @@ export default async function Home() {
             </CardHeader>
             <CardContent className="space-y-3">
               {topWinRate.length > 0 ? (
-                topWinRate.map((commander: any, index) => (
+                topWinRate.map((commander, index) => (
                   <CommanderRow key={commander.commander_id} commander={commander} rank={index + 1} />
                 ))
               ) : (
@@ -546,7 +576,7 @@ function RisingCommanderRow({
   commander: RisingCommander;
   rank: number;
 }) {
-  const wrValue = parseFloat(commander.avg_win_rate as any);
+  const wrValue = typeof commander.avg_win_rate === "number" ? commander.avg_win_rate : parseFloat(commander.avg_win_rate as string);
   const winRate = (Number.isFinite(wrValue) ? wrValue * 100 : 0).toFixed(1);
   const isAboveExpected = wrValue > 0.25;
 
@@ -584,7 +614,7 @@ function CommanderRow({
   commander: TopCommander;
   rank: number;
 }) {
-  const wrValue = parseFloat(commander.avg_win_rate as any);
+  const wrValue = typeof commander.avg_win_rate === "number" ? commander.avg_win_rate : parseFloat(commander.avg_win_rate as string);
   const winRate = (Number.isFinite(wrValue) ? wrValue * 100 : 0).toFixed(1);
   const isAboveExpected = wrValue > 0.25;
 

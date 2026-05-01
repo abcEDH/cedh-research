@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { unstable_cache } from "next/cache";
 import { supabase } from "@/lib/supabase";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import CommandersTable from "@/components/commanders/commanders-table";
 import CommanderTrendsTable, {

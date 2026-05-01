@@ -644,7 +644,7 @@ export default async function CommanderDetailPage({
                   </div>
                   <hr className="border-border/60" />
                   <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">Top 16 / Top 10 / Top 4 Finishes</span>
+                    <span className="text-muted-foreground">Top Bracket Finishes (Top 16/10/4)</span>
                     <span className="font-mono text-muted-foreground">
                       {commander.top_16_count}
                     </span>
@@ -738,7 +738,7 @@ export default async function CommanderDetailPage({
                 <CardContent>
                   <div className="space-y-3">
                     {recentFinishes.map((finish) => (
-                      <RecentFinishRow key={finish.id} finish={finish} commanderId={commander.commander_id} />
+                      <RecentFinishRow key={finish.id} finish={finish} />
                     ))}
                   </div>
                 </CardContent>
@@ -1155,10 +1155,8 @@ function PerformanceCardRow({
 
 function RecentFinishRow({
   finish,
-  commanderId,
 }: {
   finish: RecentFinish;
-  commanderId: string;
 }) {
   const deckHost = (() => {
     if (!finish.decklist_url) return null;
