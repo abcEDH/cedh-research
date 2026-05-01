@@ -49,7 +49,7 @@ test.describe("Home Page", () => {
   });
 
   test("displays prominent tournament prep section", async ({ page }) => {
-    await expect(page.getByText("Tournament Prep")).toBeVisible();
+    await expect(page.locator('div[data-slot="card-title"]:has-text("Tournament Prep")')).toBeVisible();
     const runSimulatorBtn = page.getByRole("link", { name: /Run Simulator/i });
     await expect(runSimulatorBtn).toBeVisible();
     await runSimulatorBtn.click();

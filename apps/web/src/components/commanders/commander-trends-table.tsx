@@ -18,12 +18,10 @@ export type CommanderPeriodSnapshot = {
   weekEntries: number | null;
   weekWinRate: number | null;
   weekPointsPerGame: number | null;
-  weekPlayers: number | null;
   monthKey: string | null;
   monthEntries: number | null;
   monthWinRate: number | null;
   monthPointsPerGame: number | null;
-  monthPlayers: number | null;
 };
 
 type CommanderStat = {

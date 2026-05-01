@@ -283,70 +283,45 @@ async function getCommanderMatchups(commanderId: string): Promise<CommanderMatch
 type CommanderTrendTableRow = {
   period: string;
   entries: number;
-  players: number | null;
   winRate: number;
   pointsPerGame: number;
 };
 
 async function getCommanderTrendSeries(commanderId: string) {
-  const weeklyPrimary = await supabase
-    .from("commander_weekly_trends")
-    .select("week_key, week_start_date, entries, wins, losses, draws, total_players")
-    .eq("commander_id", commanderId)
-    .order("week_start_date", { ascending: true });
-
-  const monthlyPrimary = await supabase
-    .from("commander_monthly_trends")
-    .select("month_key, entries, wins, losses, draws, total_players")
-    .eq("commander_id", commanderId)
-    .order("month_key", { ascending: true });
-
-  let weeklyData: TrendRow[] = weeklyPrimary.data ?? [];
-  let monthlyData: TrendRow[] = monthlyPrimary.data ?? [];
-
-  if (weeklyPrimary.error) {
-    console.error("Error fetching weekly trends (with players):", weeklyPrimary.error);
-    const weeklyFallback = await supabase
+  const [weeklyResult, monthlyResult] = await Promise.all([
+    supabase
       .from("commander_weekly_trends")
       .select("week_key, week_start_date, entries, wins, losses, draws")
       .eq("commander_id", commanderId)
-      .order("week_start_date", { ascending: true });
-    weeklyData = weeklyFallback.data ?? [];
-  }
-
-  if (monthlyPrimary.error) {
-    console.error("Error fetching monthly trends (with players):", monthlyPrimary.error);
-    const monthlyFallback = await supabase
+      .order("week_start_date", { ascending: true }),
+    supabase
       .from("commander_monthly_trends")
       .select("month_key, entries, wins, losses, draws")
       .eq("commander_id", commanderId)
-      .order("month_key", { ascending: true });
-    monthlyData = monthlyFallback.data ?? [];
+      .order("month_key", { ascending: true }),
+  ]);
+
+  if (weeklyResult.error) {
+    console.error("Error fetching commander weekly trends:", weeklyResult.error);
+  }
+  if (monthlyResult.error) {
+    console.error("Error fetching commander monthly trends:", monthlyResult.error);
   }
 
-  if (weeklyPrimary.error) {
-    console.error("Error fetching commander weekly trends:", weeklyPrimary.error);
-  }
-  if (monthlyPrimary.error) {
-    console.error("Error fetching commander monthly trends:", monthlyPrimary.error);
-  }
-
-  const weeklyRows = (weeklyData || []) as {
+  const weeklyRows = (weeklyResult.data || []) as {
     week_key?: string | null;
     week_start_date?: string | null;
     entries: number;
     wins: number;
     losses: number;
     draws: number;
-    total_players?: number | null;
   }[];
-  const monthlyRows = (monthlyData || []) as {
+  const monthlyRows = (monthlyResult.data || []) as {
     month_key: string;
     entries: number;
     wins: number;
     losses: number;
     draws: number;
-    total_players?: number | null;
   }[];
 
   const weekly: TrendMetricPoint[] = weeklyRows
@@ -377,7 +352,6 @@ async function getCommanderTrendSeries(commanderId: string) {
       return {
         period: normalizeDateKey(row.week_start_date) || row.week_key || "",
         entries: row.entries,
-        players: row.total_players ?? null,
         winRate,
         pointsPerGame,
       };
@@ -393,7 +367,6 @@ async function getCommanderTrendSeries(commanderId: string) {
       return {
         period: row.month_key,
         entries: row.entries,
-        players: row.total_players ?? null,
         winRate,
         pointsPerGame,
       };
