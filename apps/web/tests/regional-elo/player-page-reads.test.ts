@@ -31,4 +31,22 @@ describe("regional player read path", () => {
     expect(source).not.toContain('.from("topdeck_player_elos")');
     expect(source).not.toContain("fetchTopdeckElo(topdeckId)");
   });
+
+  it("does not use a global leaderboard row as the country-rank fallback", async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+    const source = fs.readFileSync(
+      path.resolve(__dirname, "../../src/app/regional-elo/player/[topdeckId]/page.tsx"),
+      "utf-8"
+    );
+
+    const countryRankSource = source.slice(
+      source.indexOf("async function fetchCountryRank"),
+      source.indexOf("async function fetchRegionalRanks")
+    );
+
+    expect(countryRankSource).toContain('.eq("region_type", "country")');
+    expect(countryRankSource).not.toContain('.eq("region_type", "global")');
+    expect(countryRankSource).not.toContain('.eq("region_key", "ALL")');
+  });
 });

@@ -8,6 +8,8 @@ from collections import defaultdict
 from datetime import date, datetime
 from typing import Any
 
+import requests
+
 from ingest import SupabaseClient, load_local_env
 
 K_FACTOR = 48
@@ -36,6 +38,25 @@ def fetch_all(client: SupabaseClient, table: str, params: dict[str, str], limit:
         if offset % 25000 == 0:
             print(f"Fetched {offset} rows from {table}...")
     return rows
+
+
+def fetch_topdeck_elos(client: SupabaseClient) -> dict[str, float]:
+    """Read TopDeck Elo rows from either the live uid schema or normalized schema."""
+    for id_column in ("uid", "topdeck_id"):
+        try:
+            rows = fetch_all(client, "topdeck_player_elos", {"select": f"{id_column},elo"})
+        except requests.exceptions.HTTPError:
+            if id_column == "uid":
+                continue
+            raise
+
+        return {
+            str(row[id_column]): float(row["elo"])
+            for row in rows
+            if row.get(id_column) and row.get("elo") is not None
+        }
+
+    return {}
 
 
 def expected_delta(rating: float, opponent_rating: float, score: float) -> float:
@@ -130,10 +151,8 @@ def build_leaderboard_rows(
     player_lookup: dict[str, dict[str, Any]],
 ) -> list[dict[str, Any]]:
     print("Fetching TopDeck Elos for enrichment...", flush=True)
-    topdeck_elos = {
-        row["topdeck_id"]: float(row["elo"])
-        for row in fetch_all(client, "topdeck_player_elos", {"select": "topdeck_id,elo"})
-    }
+    topdeck_elos = fetch_topdeck_elos(client)
+    rating_by_player_id = {row["player_id"]: float(row["rating"]) for row in ratings}
 
     ranked = sorted(ratings, key=lambda row: (-float(row["rating"]), -int(row["games_played"]), player_lookup.get(row["player_id"], {}).get("name") or ""))
     
@@ -144,7 +163,10 @@ def build_leaderboard_rows(
     ]
     topdeck_ranked = sorted(
         active_players_with_tid,
-        key=lambda item: (-(topdeck_elos.get(item[1] or "") or 0), -float(next(r["rating"] for r in ratings if r["player_id"] == item[0]))),
+        key=lambda item: (
+            -(topdeck_elos.get(item[1] or "") or 0),
+            -rating_by_player_id.get(item[0], DEFAULT_RATING),
+        ),
     )
     topdeck_ranks = {}
     for rank, (player_id, tid) in enumerate(topdeck_ranked, start=1):

@@ -466,16 +466,14 @@ async function fetchCountryRank(playerId: string, countryKey: string): Promise<L
 
   const { data, error } = await supabase
     .from("regional_elo_leaderboard")
-    .select("primary_region_key, rank, rating, games_played, wins, draws, losses, last_game_date")
-    .eq("region_type", "global")
-    .eq("region_key", "ALL")
+    .select("country_key, primary_region_key, region_key, rank, rating, games_played, wins, draws, losses, last_game_date")
+    .eq("region_type", "country")
+    .eq("region_key", countryKey)
     .eq("player_id", playerId)
     .maybeSingle();
 
   if (error) return null;
-  const playerRow = (data as LeaderboardRankRow | null) ?? null;
-  if (!playerRow) return null;
-  return playerRow;
+  return (data as LeaderboardRankRow | null) ?? null;
 }
 
 async function fetchRegionalRanks(playerId: string): Promise<LeaderboardRankRow[]> {

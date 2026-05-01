@@ -148,5 +148,49 @@ class AssignTopdeckEloRanksTests(unittest.TestCase):
         self.assertEqual(global_ranks, [1])
 
 
+class BuildActiveLeaderboardRowsTests(unittest.TestCase):
+    def test_enriches_topdeck_elo_by_topdeck_id_not_player_id(self) -> None:
+        rows = regional_elo.build_active_leaderboard_rows(
+            ratings_rows=[
+                {
+                    "region_type": "global",
+                    "region_key": "ALL",
+                    "player_id": "player-1",
+                    "rating": 1700,
+                    "games_played": 5,
+                    "wins": 3,
+                    "draws": 0,
+                    "losses": 2,
+                }
+            ],
+            player_index={
+                "player-1": {
+                    "id": "player-1",
+                    "name": "Alice",
+                    "topdeck_id": "topdeck-1",
+                }
+            },
+            topdeck_elo_by_topdeck_id={"topdeck-1": 1900.5},
+            state_stats_by_player={},
+            updated_at="2026-05-01T00:00:00+00:00",
+        )
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["topdeck_id"], "topdeck-1")
+        self.assertEqual(rows[0]["topdeck_elo"], 1900.5)
+        self.assertEqual(rows[0]["topdeck_elo_rank"], 1)
+
+    def test_stale_cleanup_uses_minimal_return_and_runs_outside_nonempty_guard(self) -> None:
+        source = Path(regional_elo.__file__).read_text()
+
+        self.assertIn('"Prefer": "return=minimal"', source)
+        self.assertIn("if all_leaderboard_rows:", source)
+        self.assertIn("delete_stale_active_leaderboard_rows(client, leaderboard_run_marker)", source)
+        self.assertNotIn(
+            "        delete_stale_active_leaderboard_rows(client, leaderboard_run_marker)",
+            source,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

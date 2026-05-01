@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
+import requests
+
 from ingest import SupabaseClient
 
 K_FACTOR = 48
@@ -625,7 +627,7 @@ def _coerce_float(value: Any) -> float | None:
 def build_active_leaderboard_rows(
     ratings_rows: Iterable[Mapping[str, Any]],
     player_index: Mapping[str, Mapping[str, Any]],
-    topdeck_elo_by_player: Mapping[str, float],
+    topdeck_elo_by_topdeck_id: Mapping[str, float],
     state_stats_by_player: Mapping[str, Mapping[str, Any]],
     updated_at: str,
 ) -> list[dict[str, Any]]:
@@ -654,7 +656,8 @@ def build_active_leaderboard_rows(
         wins = int(rating_row.get("wins") or 0)
         draws = int(rating_row.get("draws") or 0)
         losses = int(rating_row.get("losses") or 0)
-        topdeck_elo = topdeck_elo_by_player.get(player_id)
+        topdeck_id = player.get("topdeck_id")
+        topdeck_elo = topdeck_elo_by_topdeck_id.get(str(topdeck_id)) if topdeck_id else None
 
         state_stats = state_stats_by_player.get(player_id) or {}
         primary_country_key = state_stats.get("country_key") or ""
@@ -665,7 +668,7 @@ def build_active_leaderboard_rows(
         base_row: dict[str, Any] = {
             "player_id": player_id,
             "player_name": player.get("name") or "",
-            "topdeck_id": player.get("topdeck_id"),
+            "topdeck_id": topdeck_id,
             "rating": rating,
             "games_played": games_played,
             "wins": wins,
@@ -741,20 +744,30 @@ def fetch_player_index(client: SupabaseClient) -> dict[str, dict[str, Any]]:
     return {row["id"]: row for row in rows if row.get("id")}
 
 
-def fetch_topdeck_elo_by_player(client: SupabaseClient) -> dict[str, float]:
-    """Load the TopDeck Elo snapshot keyed by player_id (table is small)."""
-    rows = fetch_all(
-        client,
-        "topdeck_player_elos",
-        {"select": "player_id,elo"},
-    )
-    elo_by_player: dict[str, float] = {}
+def fetch_topdeck_elo_by_topdeck_id(client: SupabaseClient) -> dict[str, float]:
+    """Load the TopDeck Elo snapshot keyed by the external TopDeck player id."""
+    rows: list[dict[str, Any]] = []
+    selected_id_column = "uid"
+    for id_column in ("uid", "topdeck_id"):
+        try:
+            rows = fetch_all(
+                client,
+                "topdeck_player_elos",
+                {"select": f"{id_column},elo"},
+            )
+            selected_id_column = id_column
+            break
+        except requests.exceptions.HTTPError:
+            if id_column == "uid":
+                continue
+            raise
+    elo_by_topdeck_id: dict[str, float] = {}
     for row in rows:
-        player_id = row.get("player_id")
+        topdeck_id = row.get(selected_id_column)
         elo = _coerce_float(row.get("elo"))
-        if player_id and elo is not None:
-            elo_by_player[player_id] = elo
-    return elo_by_player
+        if topdeck_id and elo is not None:
+            elo_by_topdeck_id[str(topdeck_id)] = elo
+    return elo_by_topdeck_id
 
 
 def fetch_primary_state_stats(client: SupabaseClient) -> dict[str, dict[str, Any]]:
@@ -784,11 +797,10 @@ def fetch_primary_state_stats(client: SupabaseClient) -> dict[str, dict[str, Any
 def delete_stale_active_leaderboard_rows(client: SupabaseClient, run_marker: str) -> None:
     """Delete leaderboard rows that the current run did not refresh."""
     try:
-        import requests  # local import to avoid cycles in tests
-
         endpoint = f"{client.url}/rest/v1/{ACTIVE_LEADERBOARD_TABLE}"
         params = {"updated_at": f"lt.{run_marker}"}
-        response = requests.delete(endpoint, headers=client.headers, params=params, timeout=60)
+        headers = {**client.headers, "Prefer": "return=minimal"}
+        response = requests.delete(endpoint, headers=headers, params=params, timeout=60)
         if response.status_code >= 400:
             print(
                 f"Stale leaderboard cleanup failed (non-fatal): {response.status_code} {response.text[:200]}",
@@ -939,8 +951,8 @@ def main() -> None:
     print(f"Loaded {len(player_index)} player rows")
 
     print("Loading TopDeck Elo snapshot...")
-    topdeck_elo_by_player = fetch_topdeck_elo_by_player(client)
-    print(f"Loaded {len(topdeck_elo_by_player)} TopDeck Elo entries")
+    topdeck_elo_by_topdeck_id = fetch_topdeck_elo_by_topdeck_id(client)
+    print(f"Loaded {len(topdeck_elo_by_topdeck_id)} TopDeck Elo entries")
 
     print("Loading primary-state activity stats...")
     state_stats_by_player = fetch_primary_state_stats(client)
@@ -950,7 +962,7 @@ def main() -> None:
     all_leaderboard_rows = build_active_leaderboard_rows(
         ratings_to_upsert,
         player_index,
-        topdeck_elo_by_player,
+        topdeck_elo_by_topdeck_id,
         state_stats_by_player,
         leaderboard_run_marker,
     )
@@ -958,7 +970,7 @@ def main() -> None:
     if all_leaderboard_rows:
         print(f"Upserting {len(all_leaderboard_rows)} active leaderboard rows (global + country + state)...")
         upsert_active_leaderboard_rows(client, all_leaderboard_rows)
-        delete_stale_active_leaderboard_rows(client, leaderboard_run_marker)
+    delete_stale_active_leaderboard_rows(client, leaderboard_run_marker)
 
     update_job_heartbeat(client, job_id)
 
