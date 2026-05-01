@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buildProfiles, selectCommanderForecastRows, type CommanderUsageRow } from "@/lib/meta-prep";
 import { supabase } from "@/lib/supabase";
 import { fetchChampionshipLeaderboard, fetchTopDeckProfileStats } from "@/lib/topdeck";
-import { fetchTopdeckElo } from "@/lib/topdeck-elo";
 import { buildTopdeckProfileHref } from "@/lib/topdeck-profile";
 import { inferCountryForRegion } from "@/lib/region-countries";
 import { OpponentRecordsTable } from "./opponent-records-table";
@@ -79,11 +78,8 @@ type LeaderboardRankRow = {
   draws: number;
   losses: number;
   last_game_date?: string | null;
-};
-
-type TopdeckEloSortRow = {
-  uid: string | null;
-  elo: number | null;
+  topdeck_elo?: number | null;
+  topdeck_elo_rank?: number | null;
 };
 
 type StateAssignmentRow = {
@@ -336,73 +332,25 @@ async function fetchEntries(playerId: string): Promise<EntryRow[]> {
   return rows;
 }
 
-async function fetchActiveDisplayedRank(
-  table: "global_elo_leaderboard" | "regional_elo_leaderboard",
-  regionType: "global" | "state",
-  regionKey: string,
-  playerId: string
-): Promise<number | null> {
-  let rank = 0;
-  const cutoffDate = activePlayerCutoffDate();
-  for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
-    const { data: eloData, error: eloError } = await supabase
-      .from("topdeck_player_elos")
-      .select("uid, elo")
-      .order("elo", { ascending: false })
-      .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
-
-    if (eloError) return null;
-    const eloRows = (eloData as TopdeckEloSortRow[]) ?? [];
-    const topdeckIds = eloRows
-      .map((row) => row.uid)
-      .filter((value): value is string => Boolean(value));
-    if (topdeckIds.length === 0) break;
-
-    const activeRowsByTopdeckId = new Map<string, LeaderboardRankRow>();
-    for (const topdeckIdChunk of chunkValues(topdeckIds, SUPABASE_IN_CHUNK_SIZE)) {
-      const { data, error } = await supabase
-        .from(table)
-        .select("player_id, topdeck_id, rating, games_played, last_game_date")
-        .eq("region_type", regionType)
-        .eq("region_key", regionKey)
-        .gte("last_game_date", cutoffDate)
-        .in("topdeck_id", topdeckIdChunk);
-
-      if (error) return null;
-      for (const row of (data as LeaderboardRankRow[]) ?? []) {
-        if (row.topdeck_id) activeRowsByTopdeckId.set(row.topdeck_id, row);
-      }
-    }
-
-    for (const topdeckId of topdeckIds) {
-      const row = activeRowsByTopdeckId.get(topdeckId);
-      if (!row) continue;
-      rank += 1;
-      if (row.player_id === playerId) return rank;
-    }
-
-    if (eloRows.length < SUPABASE_PAGE_SIZE) break;
-  }
-
-  return null;
-}
-
 async function fetchActiveRankRow(
   table: "global_elo_active_leaderboard" | "regional_elo_active_leaderboard",
-  regionType: "global" | "state",
+  regionType: "global" | "country" | "state",
   regionKey: string,
   playerId: string
 ): Promise<LeaderboardRankRow | null> {
   const { data, error } = await supabase
     .from(table)
-    .select("country_key, primary_country_key, primary_region_key, region_key, rank, rating, games_played, wins, draws, losses, last_game_date")
+    .select(
+      "country_key, primary_country_key, primary_region_key, region_key, rank, rating, games_played, wins, draws, losses, last_game_date, topdeck_elo, topdeck_elo_rank"
+    )
     .eq("region_type", regionType)
     .eq("region_key", regionKey)
     .eq("player_id", playerId)
     .maybeSingle();
 
   if (error) return null;
-  return (data as LeaderboardRankRow | null) ?? null;
+  const row = (data as LeaderboardRankRow | null) ?? null;
+  return row ? { ...row, rank: row.topdeck_elo_rank ?? row.rank } : null;
 }
 
 async function fetchGlobalEloRatingRow(
@@ -425,14 +373,12 @@ async function fetchGlobalEloRatingRow(
 async function fetchGlobalEloRank(playerId: string): Promise<LeaderboardRankRow | null> {
   const globalActiveRow = await fetchActiveRankRow("global_elo_active_leaderboard", "global", "ALL", playerId);
   if (globalActiveRow) {
-    const displayedRank = await fetchActiveDisplayedRank("global_elo_leaderboard", "global", "ALL", playerId);
-    return displayedRank ? { ...globalActiveRow, rank: displayedRank } : globalActiveRow;
+    return globalActiveRow;
   }
 
   const legacyActiveRow = await fetchActiveRankRow("regional_elo_active_leaderboard", "global", "ALL", playerId);
   if (legacyActiveRow) {
-    const displayedRank = await fetchActiveDisplayedRank("regional_elo_leaderboard", "global", "ALL", playerId);
-    return displayedRank ? { ...legacyActiveRow, rank: displayedRank } : legacyActiveRow;
+    return legacyActiveRow;
   }
 
   const { data, error } = await supabase
@@ -456,31 +402,22 @@ async function fetchGlobalEloRank(playerId: string): Promise<LeaderboardRankRow 
       !fallbackError && fallbackData
         ? (fallbackData as LeaderboardRankRow)
         : await fetchGlobalEloRatingRow("regional_elo_ratings", playerId);
-    const displayedRank = row
-      ? await fetchActiveDisplayedRank("regional_elo_leaderboard", "global", "ALL", playerId)
-      : null;
-    return displayedRank && row ? { ...row, rank: displayedRank } : row;
+    return row;
   }
 
-  const row = (data as LeaderboardRankRow | null) ?? null;
-  const displayedRank = row
-    ? await fetchActiveDisplayedRank("global_elo_leaderboard", "global", "ALL", playerId)
-    : null;
-  return displayedRank && row ? { ...row, rank: displayedRank } : row;
+  return (data as LeaderboardRankRow | null) ?? null;
 }
 
 async function fetchRegionalRank(playerId: string, regionKey: string): Promise<LeaderboardRankRow | null> {
   if (!regionKey) return null;
   const globalActiveRow = await fetchActiveRankRow("global_elo_active_leaderboard", "state", regionKey, playerId);
   if (globalActiveRow) {
-    const displayedRank = await fetchActiveDisplayedRank("global_elo_leaderboard", "state", regionKey, playerId);
-    return displayedRank ? { ...globalActiveRow, rank: displayedRank } : globalActiveRow;
+    return globalActiveRow;
   }
 
   const legacyActiveRow = await fetchActiveRankRow("regional_elo_active_leaderboard", "state", regionKey, playerId);
   if (legacyActiveRow) {
-    const displayedRank = await fetchActiveDisplayedRank("regional_elo_leaderboard", "state", regionKey, playerId);
-    return displayedRank ? { ...legacyActiveRow, rank: displayedRank } : legacyActiveRow;
+    return legacyActiveRow;
   }
 
   const { data, error } = await supabase
@@ -501,13 +438,7 @@ async function fetchRegionalRank(playerId: string, regionKey: string): Promise<L
       .maybeSingle();
 
     if (fallbackData) {
-      const displayedRank = await fetchActiveDisplayedRank(
-        "global_elo_leaderboard",
-        "state",
-        regionKey,
-        playerId
-      );
-      return displayedRank ? { ...(fallbackData as LeaderboardRankRow), rank: displayedRank } : fallbackData as LeaderboardRankRow;
+      return fallbackData as LeaderboardRankRow;
     }
 
     const { data: legacyData } = await supabase
@@ -518,85 +449,31 @@ async function fetchRegionalRank(playerId: string, regionKey: string): Promise<L
       .eq("player_id", playerId)
       .maybeSingle();
 
-    const row = (legacyData as LeaderboardRankRow | null) ?? null;
-    const displayedRank = row
-      ? await fetchActiveDisplayedRank("regional_elo_leaderboard", "state", regionKey, playerId)
-      : null;
-    return displayedRank && row ? { ...row, rank: displayedRank } : row;
+    return (legacyData as LeaderboardRankRow | null) ?? null;
   }
 
-  const row = (data as LeaderboardRankRow | null) ?? null;
-  const displayedRank = row
-    ? await fetchActiveDisplayedRank("global_elo_leaderboard", "state", regionKey, playerId)
-    : null;
-  return displayedRank && row ? { ...row, rank: displayedRank } : row;
+  return (data as LeaderboardRankRow | null) ?? null;
 }
 
 async function fetchCountryRank(playerId: string, countryKey: string): Promise<LeaderboardRankRow | null> {
   if (!countryKey || countryKey === "UNKNOWN") return null;
 
+  const globalActiveRow = await fetchActiveRankRow("global_elo_active_leaderboard", "country", countryKey, playerId);
+  if (globalActiveRow) return globalActiveRow;
+
+  const legacyActiveRow = await fetchActiveRankRow("regional_elo_active_leaderboard", "country", countryKey, playerId);
+  if (legacyActiveRow) return legacyActiveRow;
+
   const { data, error } = await supabase
     .from("regional_elo_leaderboard")
-    .select("primary_region_key, rank, rating, games_played, wins, draws, losses, last_game_date")
-    .eq("region_type", "global")
-    .eq("region_key", "ALL")
+    .select("country_key, primary_region_key, region_key, rank, rating, games_played, wins, draws, losses, last_game_date")
+    .eq("region_type", "country")
+    .eq("region_key", countryKey)
     .eq("player_id", playerId)
     .maybeSingle();
 
   if (error) return null;
-  const playerRow = (data as LeaderboardRankRow | null) ?? null;
-  if (!playerRow) return null;
-  if (!isActiveRank(playerRow)) return playerRow;
-
-  let rank = 0;
-  const cutoffDate = activePlayerCutoffDate();
-  for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
-    const { data: eloData, error: eloError } = await supabase
-      .from("topdeck_player_elos")
-      .select("uid, elo")
-      .order("elo", { ascending: false })
-      .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
-
-    if (eloError) break;
-    const eloRows = (eloData as TopdeckEloSortRow[]) ?? [];
-    const topdeckIds = eloRows
-      .map((row) => row.uid)
-      .filter((value): value is string => Boolean(value));
-    if (topdeckIds.length === 0) break;
-
-    const activeRowsByTopdeckId = new Map<string, LeaderboardRankRow>();
-    for (const topdeckIdChunk of chunkValues(topdeckIds, SUPABASE_IN_CHUNK_SIZE)) {
-      const { data: pageData, error: pageError } = await supabase
-        .from("regional_elo_leaderboard")
-        .select("player_id, topdeck_id, primary_region_key, rating, games_played, last_game_date")
-        .eq("region_type", "global")
-        .eq("region_key", "ALL")
-        .gte("last_game_date", cutoffDate)
-        .in("topdeck_id", topdeckIdChunk);
-
-      if (pageError) break;
-      for (const row of (pageData as LeaderboardRankRow[]) ?? []) {
-        if (
-          row.topdeck_id &&
-          row.primary_region_key &&
-          inferCountryForRegion(row.primary_region_key) === countryKey
-        ) {
-          activeRowsByTopdeckId.set(row.topdeck_id, row);
-        }
-      }
-    }
-
-    for (const topdeckId of topdeckIds) {
-      const row = activeRowsByTopdeckId.get(topdeckId);
-      if (!row) continue;
-      rank += 1;
-      if (row.player_id === playerId) return { ...playerRow, rank };
-    }
-
-    if (eloRows.length < SUPABASE_PAGE_SIZE) break;
-  }
-
-  return playerRow;
+  return (data as LeaderboardRankRow | null) ?? null;
 }
 
 async function fetchRegionalRanks(playerId: string): Promise<LeaderboardRankRow[]> {
@@ -1194,19 +1071,19 @@ async function fetchPlayerEventLogs(playerId: string, regionFilter: string): Pro
 
 const fetchCachedGlobalEloRank = unstable_cache(
   async (playerId: string) => fetchGlobalEloRank(playerId),
-  ["regional-player-global-rank-v2"],
+  ["regional-player-global-rank-v3"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
 const fetchCachedRegionalRank = unstable_cache(
   async (playerId: string, regionKey: string) => fetchRegionalRank(playerId, regionKey),
-  ["regional-player-local-rank-v2"],
+  ["regional-player-local-rank-v3"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
 const fetchCachedCountryRank = unstable_cache(
   async (playerId: string, countryKey: string) => fetchCountryRank(playerId, countryKey),
-  ["regional-player-country-rank-v2"],
+  ["regional-player-country-rank-v3"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -1270,7 +1147,6 @@ export default async function RegionalPlayerPage({
 
   const [
     globalSnapshot,
-    topdeckElo,
     globalEloRank,
     regionalRanks,
     profileSummary,
@@ -1278,7 +1154,6 @@ export default async function RegionalPlayerPage({
     fetchedAchievementRows,
   ] = await Promise.all([
     fetchGlobalSnapshot(topdeckId),
-    fetchTopdeckElo(topdeckId),
     fetchCachedGlobalEloRank(player.id),
     fetchCachedRegionalRanks(player.id),
     fetchCachedPlayerProfileSummary(player.id),
@@ -1434,6 +1309,8 @@ export default async function RegionalPlayerPage({
   const regionalRank = await fetchCachedRegionalRank(player.id, selectedRegion);
   const countryRank = await fetchCachedCountryRank(player.id, homeCountry ?? "");
   const activeRank = regionalRank;
+  const displayedTopdeckElo =
+    globalEloRank?.topdeck_elo ?? activeRank?.topdeck_elo ?? countryRank?.topdeck_elo ?? null;
   const shouldShowGlobalRank = isActiveRank(globalEloRank);
   const shouldShowLocalRank = isActiveRank(activeRank);
   const shouldShowCountryRank = isActiveRank(countryRank);
@@ -1645,19 +1522,19 @@ export default async function RegionalPlayerPage({
                     className="block hover:text-primary"
                   >
                     <div className="text-2xl font-semibold text-foreground">
-                      {globalSnapshot?.rank ? `#${globalSnapshot.rank}` : "—"}
+                      {globalSnapshot?.rank ? `#${globalSnapshot.rank}` : (globalEloRank?.topdeck_elo_rank ? `#${globalEloRank.topdeck_elo_rank}` : "—")}
                     </div>
                     <div className="text-sm text-muted-foreground">
-                      {globalSnapshot ? `${globalSnapshot.points} points` : "No points snapshot"}
+                      {globalSnapshot?.points ? `${globalSnapshot.points} points` : (globalSnapshot ? "No points snapshot" : "Regional Rank")}
                     </div>
                   </a>
                 ) : (
                   <>
                     <div className="text-2xl font-semibold text-foreground">
-                      {globalSnapshot?.rank ? `#${globalSnapshot.rank}` : "—"}
+                      {globalSnapshot?.rank ? `#${globalSnapshot.rank}` : (globalEloRank?.topdeck_elo_rank ? `#${globalEloRank.topdeck_elo_rank}` : "—")}
                     </div>
                     <div className="text-sm text-muted-foreground">
-                      {globalSnapshot ? `${globalSnapshot.points} points` : "No points snapshot"}
+                      {globalSnapshot?.points ? `${globalSnapshot.points} points` : (globalSnapshot ? "No points snapshot" : "Regional Rank")}
                     </div>
                   </>
                 )}
@@ -1670,7 +1547,7 @@ export default async function RegionalPlayerPage({
                 </CardTitle>
               </CardHeader>
               <CardContent className="text-2xl font-semibold text-foreground">
-                {topdeckElo === null ? "—" : Math.round(topdeckElo)}
+                {displayedTopdeckElo === null ? "—" : Math.round(displayedTopdeckElo)}
               </CardContent>
             </Card>
             <Card className="knd-panel">

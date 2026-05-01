@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { unstable_cache } from "next/cache";
 import { supabase } from "@/lib/supabase";
@@ -303,29 +304,7 @@ const getCachedGlobalTrendSeries = unstable_cache(
   { revalidate: COMMANDERS_CACHE_REVALIDATE_SECONDS }
 );
 
-export default async function CommandersPage() {
-  const commanders = await getCachedCommanders();
-  const topCommanders = [...commanders].sort((a, b) => b.total_entries - a.total_entries).slice(0, 30);
-  const topCommanderIds = topCommanders
-    .map((commander) => commander.commander_id)
-    .sort((a, b) => a.localeCompare(b));
-  const snapshotsByCommanderId = await getCachedCommanderPeriodSnapshots(
-    topCommanderIds
-  );
-  const weeklyEntriesByCommanderId = await getCachedWeeklyEntries(
-    topCommanderIds,
-    12
-  );
-  const globalSeries = await getCachedGlobalTrendSeries();
-
-  const totalEntries = commanders.reduce((sum, c) => sum + c.total_entries, 0);
-  const avgWinRate =
-    commanders.reduce((sum, c) => sum + parseFloat(c.avg_win_rate), 0) /
-    Math.max(commanders.length, 1);
-  const avgTop16 =
-    commanders.reduce((sum, c) => sum + parseFloat(c.conversion_rate_top_16), 0) /
-    Math.max(commanders.length, 1);
-
+export default function CommandersPage() {
   return (
     <div className="min-h-screen">
       <main className="container mx-auto px-4 py-8">
@@ -341,9 +320,15 @@ export default async function CommandersPage() {
             <h1 className="mt-4 text-3xl font-semibold text-foreground md:text-4xl">
               Commander Rankings
             </h1>
-            <p className="text-muted-foreground mt-2">
-              Performance data for {commanders.length} commanders with 5+ tournament entries.
-            </p>
+            <Suspense
+              fallback={
+                <p className="text-muted-foreground mt-2">
+                  Loading commander rankings…
+                </p>
+              }
+            >
+              <CommanderHeaderSummary />
+            </Suspense>
             <div className="mt-3 flex flex-wrap gap-3 text-sm">
               <Link
                 href="/commanders/trends"
@@ -355,41 +340,14 @@ export default async function CommandersPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-4 mb-8">
-          <StatCard
-            label="Total Commanders"
-            value={commanders.length.toString()}
-            tone="neutral"
-            tooltip="Number of commanders with 5+ entries."
-            testId="stat-total-commanders"
-          />
-          <StatCard
-            label="Total Entries"
-            value={totalEntries.toLocaleString()}
-            tone="neutral"
-            tooltip="Total tournament entries across all listed commanders."
-            testId="stat-total-entries"
-          />
-          <StatCard
-            label="Avg Win Rate"
-            value={`${(avgWinRate * 100).toFixed(1)}%`}
-            tone="neutral"
-            tooltip="Average commander win rate. Baseline in 4-player pods is 25%."
-          />
-          <StatCard
-            label="Avg Top 16/Top 10/Top 4"
-            value={`${(avgTop16 * 100).toFixed(1)}%`}
-            tone="neutral"
-            tooltip="Average conversion into top bracket. Under 64 players, events may use Top 10, and for 34 players or fewer we only count Top 4 finishes."
-          />
-        </div>
+        <Suspense fallback={<StatsSummarySkeleton />}>
+          <StatsSummarySection />
+        </Suspense>
 
         <div className="mb-8">
-          <TrendMetricCharts
-            series={globalSeries}
-            title="All commanders"
-            description="Aggregate trends across all commanders (entries, win rate, points per game)."
-          />
+          <Suspense fallback={<SectionSkeleton label="Loading aggregate trends…" />}>
+            <GlobalTrendsSection />
+          </Suspense>
         </div>
 
         <div className="mb-8">
@@ -404,16 +362,133 @@ export default async function CommandersPage() {
               Explore full trends →
             </Link>
           </div>
-          <CommanderTrendsTable
-            commanders={topCommanders}
-            snapshotsByCommanderId={snapshotsByCommanderId}
-            weeklyEntriesByCommanderId={weeklyEntriesByCommanderId}
-            limit={30}
-          />
+          <Suspense fallback={<SectionSkeleton label="Loading trends snapshot…" />}>
+            <CommanderTrendsSection />
+          </Suspense>
         </div>
 
-        <CommandersTable commanders={commanders} />
+        <Suspense fallback={<SectionSkeleton label="Loading commander rankings…" />}>
+          <CommanderRankingsTable />
+        </Suspense>
       </main>
+    </div>
+  );
+}
+
+async function CommanderHeaderSummary() {
+  const commanders = await getCachedCommanders();
+  return (
+    <p className="text-muted-foreground mt-2">
+      Performance data for {commanders.length} commanders with 5+ tournament entries.
+    </p>
+  );
+}
+
+async function StatsSummarySection() {
+  const commanders = await getCachedCommanders();
+  const totalEntries = commanders.reduce((sum, c) => sum + c.total_entries, 0);
+  const avgWinRate =
+    commanders.reduce((sum, c) => sum + parseFloat(c.avg_win_rate), 0) /
+    Math.max(commanders.length, 1);
+  const avgTop16 =
+    commanders.reduce((sum, c) => sum + parseFloat(c.conversion_rate_top_16), 0) /
+    Math.max(commanders.length, 1);
+
+  return (
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-4 mb-8">
+      <StatCard
+        label="Total Commanders"
+        value={commanders.length.toString()}
+        tone="neutral"
+        tooltip="Number of commanders with 5+ entries."
+        testId="stat-total-commanders"
+      />
+      <StatCard
+        label="Total Entries"
+        value={totalEntries.toLocaleString()}
+        tone="neutral"
+        tooltip="Total tournament entries across all listed commanders."
+        testId="stat-total-entries"
+      />
+      <StatCard
+        label="Avg Win Rate"
+        value={`${(avgWinRate * 100).toFixed(1)}%`}
+        tone="neutral"
+        tooltip="Average commander win rate. Baseline in 4-player pods is 25%."
+      />
+      <StatCard
+        label="Avg Top 16/Top 10/Top 4"
+        value={`${(avgTop16 * 100).toFixed(1)}%`}
+        tone="neutral"
+        tooltip="Average conversion into top bracket. Under 64 players, events may use Top 10, and for 34 players or fewer we only count Top 4 finishes."
+      />
+    </div>
+  );
+}
+
+async function CommanderRankingsTable() {
+  const commanders = await getCachedCommanders();
+  return <CommandersTable commanders={commanders} />;
+}
+
+async function CommanderTrendsSection() {
+  const commanders = await getCachedCommanders();
+  const topCommanders = [...commanders]
+    .sort((a, b) => b.total_entries - a.total_entries)
+    .slice(0, 30);
+  const topCommanderIds = topCommanders
+    .map((commander) => commander.commander_id)
+    .sort((a, b) => a.localeCompare(b));
+  const [snapshotsByCommanderId, weeklyEntriesByCommanderId] = await Promise.all([
+    getCachedCommanderPeriodSnapshots(topCommanderIds),
+    getCachedWeeklyEntries(topCommanderIds, 12),
+  ]);
+  return (
+    <CommanderTrendsTable
+      commanders={topCommanders}
+      snapshotsByCommanderId={snapshotsByCommanderId}
+      weeklyEntriesByCommanderId={weeklyEntriesByCommanderId}
+      limit={30}
+    />
+  );
+}
+
+async function GlobalTrendsSection() {
+  const globalSeries = await getCachedGlobalTrendSeries();
+  return (
+    <TrendMetricCharts
+      series={globalSeries}
+      title="All commanders"
+      description="Aggregate trends across all commanders (entries, win rate, points per game)."
+    />
+  );
+}
+
+function StatsSummarySkeleton() {
+  return (
+    <div
+      aria-hidden
+      className="grid grid-cols-1 gap-4 md:grid-cols-4 mb-8"
+    >
+      {[0, 1, 2, 3].map((i) => (
+        <Card key={i}>
+          <CardContent className="pt-6">
+            <div className="h-3 w-24 rounded bg-muted/40" />
+            <div className="mt-3 h-7 w-20 rounded bg-muted/40" />
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function SectionSkeleton({ label }: { label: string }) {
+  return (
+    <div
+      aria-hidden
+      className="rounded-lg border border-border/40 bg-card/40 px-4 py-6 text-sm text-muted-foreground"
+    >
+      {label}
     </div>
   );
 }
