@@ -180,6 +180,52 @@ class BuildActiveLeaderboardRowsTests(unittest.TestCase):
         self.assertEqual(rows[0]["topdeck_elo"], 1900.5)
         self.assertEqual(rows[0]["topdeck_elo_rank"], 1)
 
+    def test_rating_rank_tie_breaks_by_activity_score(self) -> None:
+        rows = regional_elo.build_active_leaderboard_rows(
+            ratings_rows=[
+                {
+                    "region_type": "global",
+                    "region_key": "ALL",
+                    "player_id": "player-low-activity",
+                    "rating": 1700,
+                    "games_played": 5,
+                },
+                {
+                    "region_type": "global",
+                    "region_key": "ALL",
+                    "player_id": "player-high-activity",
+                    "rating": 1700,
+                    "games_played": 5,
+                },
+            ],
+            player_index={
+                "player-low-activity": {
+                    "id": "player-low-activity",
+                    "name": "Low Activity",
+                    "topdeck_id": "topdeck-low",
+                },
+                "player-high-activity": {
+                    "id": "player-high-activity",
+                    "name": "High Activity",
+                    "topdeck_id": "topdeck-high",
+                },
+            },
+            topdeck_elo_by_topdeck_id={},
+            state_stats_by_player={
+                "player-low-activity": {"activity_score": 1},
+                "player-high-activity": {"activity_score": 10},
+            },
+            updated_at="2026-05-01T00:00:00+00:00",
+        )
+
+        ranks_by_name = {
+            row["player_name"]: row["rank"]
+            for row in rows
+            if row["region_type"] == "global"
+        }
+        self.assertEqual(ranks_by_name["High Activity"], 1)
+        self.assertEqual(ranks_by_name["Low Activity"], 2)
+
     def test_stale_cleanup_uses_minimal_return_and_runs_outside_nonempty_guard(self) -> None:
         source = Path(regional_elo.__file__).read_text()
 

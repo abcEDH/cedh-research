@@ -442,11 +442,17 @@ def with_paging_params(params: QueryParams, limit: int, offset: int) -> QueryPar
     return [*params, *page_params.items()]
 
 
-def fetch_all(client: SupabaseClient, table: str, params: QueryParams, limit: int = 1000) -> list[dict[str, Any]]:
+def fetch_all(
+    client: SupabaseClient,
+    table: str,
+    params: QueryParams,
+    limit: int = 1000,
+    max_retries: int = 8,
+) -> list[dict[str, Any]]:
     offset = 0
     rows: list[dict[str, Any]] = []
     while True:
-        page = client.select(table, with_paging_params(params, limit, offset))
+        page = client.select(table, with_paging_params(params, limit, offset), max_retries=max_retries)
         if not page:
             break
         rows.extend(page)
@@ -723,6 +729,7 @@ def build_active_leaderboard_rows(
         partition_rows.sort(
             key=lambda r: (
                 -float(r.get("rating") or 0),
+                -float(r.get("activity_score") or 0),
                 -int(r.get("games_played") or 0),
                 str(r.get("player_name") or ""),
             )
@@ -747,18 +754,19 @@ def fetch_player_index(client: SupabaseClient) -> dict[str, dict[str, Any]]:
 def fetch_topdeck_elo_by_topdeck_id(client: SupabaseClient) -> dict[str, float]:
     """Load the TopDeck Elo snapshot keyed by the external TopDeck player id."""
     rows: list[dict[str, Any]] = []
-    selected_id_column = "uid"
-    for id_column in ("uid", "topdeck_id"):
+    selected_id_column = "topdeck_id"
+    for id_column in ("topdeck_id", "uid"):
         try:
             rows = fetch_all(
                 client,
                 "topdeck_player_elos",
                 {"select": f"{id_column},elo"},
+                max_retries=1,
             )
             selected_id_column = id_column
             break
         except requests.exceptions.HTTPError:
-            if id_column == "uid":
+            if id_column == "topdeck_id":
                 continue
             raise
     elo_by_topdeck_id: dict[str, float] = {}

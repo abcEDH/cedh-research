@@ -130,10 +130,16 @@ describe("regional-elo cache configuration", () => {
       "utf-8"
     );
 
-    expect(source).toContain("rank, topdeck_elo, topdeck_elo_rank");
-    expect(source).toContain('.order("topdeck_elo", { ascending: false, nullsFirst: false })');
-    expect(source).toContain('.order("topdeck_elo_rank", { ascending: true, nullsFirst: false })');
-    expect(source).not.toContain('.order("rank", { ascending: true })');
+    const primaryReadSource = source.slice(
+      source.indexOf("async function fetchLeaderboardRows("),
+      source.indexOf("async function fetchLeaderboardRowsFromView(")
+    );
+
+    expect(primaryReadSource).toContain("rank, topdeck_elo, topdeck_elo_rank");
+    expect(primaryReadSource).toContain('.order("topdeck_elo", { ascending: false, nullsFirst: false })');
+    expect(primaryReadSource).toContain('.order("topdeck_elo_rank", { ascending: true, nullsFirst: false })');
+    expect(primaryReadSource).not.toContain('.order("rank", { ascending: true })');
+    expect(source).toContain("const sortedRows = sortRowsByTopdeckElo(await applyTopdeckElo(fallbackRows));");
     expect(source).toContain('console.info(`[regional-elo] ${event}`, details);');
     expect(source).toContain('logReadSummary("leaderboard-cache-miss"');
     expect(source).toContain('logReadSummary("latest-commanders-cache-miss"');

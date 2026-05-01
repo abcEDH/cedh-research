@@ -104,12 +104,13 @@ def fetch_all(
     params: dict[str, str] | list[tuple[str, str]],
     limit: int = 1000,
     label: str | None = None,
+    max_retries: int = 8,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     offset = 0
     started = time.time()
     while True:
-        page = client.select(table, with_page_params(params, limit, offset))
+        page = client.select(table, with_page_params(params, limit, offset), max_retries=max_retries)
         if not page:
             break
         rows.extend(page)
@@ -125,17 +126,18 @@ def fetch_all(
 
 def fetch_topdeck_elos(client: SupabaseClient) -> dict[str, float]:
     """Read TopDeck Elo rows from either the normalized or legacy live schema."""
-    for id_column in ("uid", "topdeck_id"):
+    for id_column in ("topdeck_id", "uid"):
         try:
             rows = fetch_all(
                 client,
                 "topdeck_player_elos",
                 {"select": f"{id_column},elo"},
+                max_retries=1,
             )
         except requests.exceptions.HTTPError:
-            if id_column == "uid":
+            if id_column == "topdeck_id":
                 print(
-                    "topdeck_player_elos.uid not available; falling back to topdeck_id",
+                    "topdeck_player_elos.topdeck_id not available; falling back to uid",
                     flush=True,
                 )
                 continue

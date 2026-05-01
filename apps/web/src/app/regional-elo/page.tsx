@@ -10,6 +10,7 @@ import { unstable_cache } from "next/cache";
 export const dynamic = "force-dynamic";
 const GLOBAL_REGION_KEY = "ALL";
 const LEADERBOARD_PAGE_SIZE = 50;
+const FALLBACK_LEADERBOARD_FETCH_SIZE = 1000;
 const ACTIVE_PLAYER_LOOKBACK_MONTHS = 6;
 const REGIONAL_ELO_CACHE_REVALIDATE_SECONDS = 60 * 15; // 15 minutes
 
@@ -275,34 +276,42 @@ async function fetchLeaderboardRowsFromView(
   searchQuery = ""
 ): Promise<LeaderboardPage> {
   const pageStart = (page - 1) * pageSize;
-  let query = supabase
-    .from("global_elo_leaderboard")
-    .select(
-      "region_type, region_key, country_key, primary_country_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank",
-      { count: "exact" }
-    )
-    .eq("region_type", regionType)
-    .eq("region_key", regionKey)
-    .gte("last_game_date", cutoffDate)
-    .order("player_name", { ascending: true })
-    .range(pageStart, pageStart + pageSize - 1);
+  const fallbackRows: LeaderboardRow[] = [];
+  let totalCount = 0;
+  for (let offset = 0; ; offset += FALLBACK_LEADERBOARD_FETCH_SIZE) {
+    let query = supabase
+      .from("global_elo_leaderboard")
+      .select(
+        "region_type, region_key, country_key, primary_country_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank",
+        { count: "exact" }
+      )
+      .eq("region_type", regionType)
+      .eq("region_key", regionKey)
+      .gte("last_game_date", cutoffDate)
+      .order("rank", { ascending: true })
+      .range(offset, offset + FALLBACK_LEADERBOARD_FETCH_SIZE - 1);
 
-  if (searchQuery) {
-    query = query.ilike("player_name", `%${searchQuery}%`);
+    if (searchQuery) {
+      query = query.ilike("player_name", `%${searchQuery}%`);
+    }
+
+    const { data, error, count } = await query;
+    if (error) {
+      return fetchLegacyLeaderboardRows(
+        regionType,
+        regionType === "global" ? GLOBAL_REGION_KEY : regionKey,
+        page,
+        pageSize,
+        searchQuery
+      );
+    }
+    if (offset === 0) totalCount = count ?? 0;
+    fallbackRows.push(...(((data as LeaderboardRow[]) ?? [])));
+    if (!data || data.length < FALLBACK_LEADERBOARD_FETCH_SIZE) break;
   }
 
-  const { data, error, count } = await query;
-  if (error) {
-    return fetchLegacyLeaderboardRows(
-      regionType,
-      regionType === "global" ? GLOBAL_REGION_KEY : regionKey,
-      page,
-      pageSize,
-      searchQuery
-    );
-  }
-
-  const rows = sortRowsByTopdeckElo(await applyTopdeckElo((data as LeaderboardRow[]) ?? []));
+  const sortedRows = sortRowsByTopdeckElo(await applyTopdeckElo(fallbackRows));
+  const rows = sortedRows.slice(pageStart, pageStart + pageSize);
   logReadSummary("leaderboard-view-cache-miss", {
     source: "global_elo_leaderboard",
     regionType,
@@ -311,12 +320,12 @@ async function fetchLeaderboardRowsFromView(
     pageSize,
     search: searchQuery || null,
     rowsReturned: rows.length,
-    totalCount: count ?? 0,
-    supabaseQueries: rows.length > 0 ? 2 : 1,
+    totalCount,
+    supabaseQueries: Math.max(1, Math.ceil(fallbackRows.length / FALLBACK_LEADERBOARD_FETCH_SIZE)) + (fallbackRows.length > 0 ? 1 : 0),
   });
   return {
     rows,
-    totalCount: count ?? 0,
+    totalCount,
   };
 }
 
@@ -329,29 +338,37 @@ async function fetchLegacyLeaderboardRows(
 ): Promise<LeaderboardPage> {
   const cutoffDate = activePlayerCutoffDate();
   const pageStart = (page - 1) * pageSize;
-  let query = supabase
-    .from("regional_elo_leaderboard")
-    .select(
-      "region_type, region_key, country_key, primary_country_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank",
-      { count: "exact" }
-    )
-    .eq("region_type", regionType)
-    .eq("region_key", regionKey)
-    .gte("last_game_date", cutoffDate)
-    .order("player_name", { ascending: true })
-    .range(pageStart, pageStart + pageSize - 1);
+  const fallbackRows: LeaderboardRow[] = [];
+  let totalCount = 0;
+  for (let offset = 0; ; offset += FALLBACK_LEADERBOARD_FETCH_SIZE) {
+    let query = supabase
+      .from("regional_elo_leaderboard")
+      .select(
+        "region_type, region_key, country_key, primary_country_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank",
+        { count: "exact" }
+      )
+      .eq("region_type", regionType)
+      .eq("region_key", regionKey)
+      .gte("last_game_date", cutoffDate)
+      .order("rank", { ascending: true })
+      .range(offset, offset + FALLBACK_LEADERBOARD_FETCH_SIZE - 1);
 
-  if (searchQuery) {
-    query = query.ilike("player_name", `%${searchQuery}%`);
+    if (searchQuery) {
+      query = query.ilike("player_name", `%${searchQuery}%`);
+    }
+
+    const { data, error, count } = await query;
+    if (error) {
+      console.error("Error fetching legacy leaderboard rows:", error);
+      throw error;
+    }
+    if (offset === 0) totalCount = count ?? 0;
+    fallbackRows.push(...(((data as LeaderboardRow[]) ?? [])));
+    if (!data || data.length < FALLBACK_LEADERBOARD_FETCH_SIZE) break;
   }
 
-  const { data, error, count } = await query;
-  if (error) {
-    console.error("Error fetching legacy leaderboard rows:", error);
-    throw error;
-  }
-
-  const rows = sortRowsByTopdeckElo(await applyTopdeckElo((data as LeaderboardRow[]) ?? []));
+  const sortedRows = sortRowsByTopdeckElo(await applyTopdeckElo(fallbackRows));
+  const rows = sortedRows.slice(pageStart, pageStart + pageSize);
   logReadSummary("leaderboard-legacy-cache-miss", {
     source: "regional_elo_leaderboard",
     regionType,
@@ -360,12 +377,12 @@ async function fetchLegacyLeaderboardRows(
     pageSize,
     search: searchQuery || null,
     rowsReturned: rows.length,
-    totalCount: count ?? 0,
-    supabaseQueries: rows.length > 0 ? 2 : 1,
+    totalCount,
+    supabaseQueries: Math.max(1, Math.ceil(fallbackRows.length / FALLBACK_LEADERBOARD_FETCH_SIZE)) + (fallbackRows.length > 0 ? 1 : 0),
   });
   return {
     rows,
-    totalCount: count ?? 0,
+    totalCount,
   };
 }
 

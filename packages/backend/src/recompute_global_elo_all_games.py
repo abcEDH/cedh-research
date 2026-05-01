@@ -24,11 +24,21 @@ def elo_probability(rating_a: float, rating_b: float) -> float:
     return 1 / (1 + pow(ELO_BASE, (rating_b - rating_a) / ELO_DIVISOR))
 
 
-def fetch_all(client: SupabaseClient, table: str, params: dict[str, str], limit: int = 1000) -> list[dict[str, Any]]:
+def fetch_all(
+    client: SupabaseClient,
+    table: str,
+    params: dict[str, str],
+    limit: int = 1000,
+    max_retries: int = 8,
+) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     offset = 0
     while True:
-        page = client.select(table, {**params, "limit": str(limit), "offset": str(offset)})
+        page = client.select(
+            table,
+            {**params, "limit": str(limit), "offset": str(offset)},
+            max_retries=max_retries,
+        )
         if not page:
             break
         rows.extend(page)
@@ -42,11 +52,16 @@ def fetch_all(client: SupabaseClient, table: str, params: dict[str, str], limit:
 
 def fetch_topdeck_elos(client: SupabaseClient) -> dict[str, float]:
     """Read TopDeck Elo rows from either the live uid schema or normalized schema."""
-    for id_column in ("uid", "topdeck_id"):
+    for id_column in ("topdeck_id", "uid"):
         try:
-            rows = fetch_all(client, "topdeck_player_elos", {"select": f"{id_column},elo"})
+            rows = fetch_all(
+                client,
+                "topdeck_player_elos",
+                {"select": f"{id_column},elo"},
+                max_retries=1,
+            )
         except requests.exceptions.HTTPError:
-            if id_column == "uid":
+            if id_column == "topdeck_id":
                 continue
             raise
 
