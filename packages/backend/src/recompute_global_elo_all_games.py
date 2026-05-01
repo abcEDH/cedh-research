@@ -50,28 +50,54 @@ def fetch_all(
     return rows
 
 
-def fetch_topdeck_elos(client: SupabaseClient) -> dict[str, float]:
-    """Read TopDeck Elo rows from either the live uid schema or normalized schema."""
+def _http_error_is_missing_topdeck_column(exc: requests.exceptions.HTTPError, column_name: str) -> bool:
+    response = exc.response
+    status_code = getattr(response, "status_code", None)
+    response_text = str(getattr(response, "text", "") or "").lower()
+    normalized_column = column_name.lower()
+
+    if status_code not in {400, 404} or normalized_column not in response_text:
+        return False
+
+    missing_column_markers = (
+        "42703",
+        "pgrst204",
+        "could not find",
+        "does not exist",
+        "unknown column",
+    )
+    return any(marker in response_text for marker in missing_column_markers)
+
+
+def detect_topdeck_elo_id_column(client: SupabaseClient) -> str:
+    """Detect the TopDeck Elo id column without weakening full snapshot retries."""
+    last_schema_error: requests.exceptions.HTTPError | None = None
     for id_column in ("topdeck_id", "uid"):
         try:
-            rows = fetch_all(
-                client,
+            client.select(
                 "topdeck_player_elos",
-                {"select": f"{id_column},elo"},
+                {"select": id_column, "limit": "1"},
                 max_retries=1,
             )
-        except requests.exceptions.HTTPError:
-            if id_column == "topdeck_id":
+            return id_column
+        except requests.exceptions.HTTPError as exc:
+            if _http_error_is_missing_topdeck_column(exc, id_column):
+                last_schema_error = exc
                 continue
             raise
 
-        return {
-            str(row[id_column]): float(row["elo"])
-            for row in rows
-            if row.get(id_column) and row.get("elo") is not None
-        }
+    raise RuntimeError("topdeck_player_elos is missing both topdeck_id and uid columns") from last_schema_error
 
-    return {}
+
+def fetch_topdeck_elos(client: SupabaseClient) -> dict[str, float]:
+    """Read TopDeck Elo rows from either the live uid schema or normalized schema."""
+    id_column = detect_topdeck_elo_id_column(client)
+    rows = fetch_all(
+        client,
+        "topdeck_player_elos",
+        {"select": f"{id_column},elo"},
+    )
+    return {str(row[id_column]): float(row["elo"]) for row in rows if row.get(id_column) and row.get("elo") is not None}
 
 
 def expected_delta(rating: float, opponent_rating: float, score: float) -> float:
@@ -110,9 +136,7 @@ def game_score(result: str) -> float | None:
 
 def apply_game(ratings: dict[str, dict[str, Any]], participants: list[dict[str, Any]]) -> None:
     valid = [
-        row
-        for row in participants
-        if row.get("player_id") and game_score(str(row.get("result") or "")) is not None
+        row for row in participants if row.get("player_id") and game_score(str(row.get("result") or "")) is not None
     ]
     if len(valid) < 2:
         return
@@ -169,12 +193,18 @@ def build_leaderboard_rows(
     topdeck_elos = fetch_topdeck_elos(client)
     rating_by_player_id = {row["player_id"]: float(row["rating"]) for row in ratings}
 
-    ranked = sorted(ratings, key=lambda row: (-float(row["rating"]), -int(row["games_played"]), player_lookup.get(row["player_id"], {}).get("name") or ""))
-    
+    ranked = sorted(
+        ratings,
+        key=lambda row: (
+            -float(row["rating"]),
+            -int(row["games_played"]),
+            player_lookup.get(row["player_id"], {}).get("name") or "",
+        ),
+    )
+
     # Pre-calculate TopDeck ranks within the active set
     active_players_with_tid = [
-        (row["player_id"], player_lookup.get(row["player_id"], {}).get("topdeck_id"))
-        for row in ratings
+        (row["player_id"], player_lookup.get(row["player_id"], {}).get("topdeck_id")) for row in ratings
     ]
     topdeck_ranked = sorted(
         active_players_with_tid,
@@ -193,7 +223,7 @@ def build_leaderboard_rows(
         player = player_lookup.get(row["player_id"], {})
         tid = player.get("topdeck_id")
         t_elo = topdeck_elos.get(tid) if tid else None
-        
+
         rows.append(
             {
                 "region_type": GLOBAL_REGION_TYPE,

@@ -630,6 +630,45 @@ def _coerce_float(value: Any) -> float | None:
         return None
 
 
+def _http_error_is_missing_topdeck_column(exc: requests.exceptions.HTTPError, column_name: str) -> bool:
+    response = exc.response
+    status_code = getattr(response, "status_code", None)
+    response_text = str(getattr(response, "text", "") or "").lower()
+    normalized_column = column_name.lower()
+
+    if status_code not in {400, 404} or normalized_column not in response_text:
+        return False
+
+    missing_column_markers = (
+        "42703",
+        "pgrst204",
+        "could not find",
+        "does not exist",
+        "unknown column",
+    )
+    return any(marker in response_text for marker in missing_column_markers)
+
+
+def detect_topdeck_elo_id_column(client: SupabaseClient) -> str:
+    """Detect the TopDeck Elo id column without weakening full snapshot retries."""
+    last_schema_error: requests.exceptions.HTTPError | None = None
+    for id_column in ("topdeck_id", "uid"):
+        try:
+            client.select(
+                "topdeck_player_elos",
+                {"select": id_column, "limit": "1"},
+                max_retries=1,
+            )
+            return id_column
+        except requests.exceptions.HTTPError as exc:
+            if _http_error_is_missing_topdeck_column(exc, id_column):
+                last_schema_error = exc
+                continue
+            raise
+
+    raise RuntimeError("topdeck_player_elos is missing both topdeck_id and uid columns") from last_schema_error
+
+
 def build_active_leaderboard_rows(
     ratings_rows: Iterable[Mapping[str, Any]],
     player_index: Mapping[str, Mapping[str, Any]],
@@ -753,22 +792,12 @@ def fetch_player_index(client: SupabaseClient) -> dict[str, dict[str, Any]]:
 
 def fetch_topdeck_elo_by_topdeck_id(client: SupabaseClient) -> dict[str, float]:
     """Load the TopDeck Elo snapshot keyed by the external TopDeck player id."""
-    rows: list[dict[str, Any]] = []
-    selected_id_column = "topdeck_id"
-    for id_column in ("topdeck_id", "uid"):
-        try:
-            rows = fetch_all(
-                client,
-                "topdeck_player_elos",
-                {"select": f"{id_column},elo"},
-                max_retries=1,
-            )
-            selected_id_column = id_column
-            break
-        except requests.exceptions.HTTPError:
-            if id_column == "topdeck_id":
-                continue
-            raise
+    selected_id_column = detect_topdeck_elo_id_column(client)
+    rows = fetch_all(
+        client,
+        "topdeck_player_elos",
+        {"select": f"{selected_id_column},elo"},
+    )
     elo_by_topdeck_id: dict[str, float] = {}
     for row in rows:
         topdeck_id = row.get(selected_id_column)

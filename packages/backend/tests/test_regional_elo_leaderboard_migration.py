@@ -2,6 +2,8 @@ import sys
 import unittest
 from pathlib import Path
 
+import requests
+
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "supabase" / "migrations"
 LEADERBOARD_TOPDECK_MIGRATION = (
@@ -236,6 +238,78 @@ class BuildActiveLeaderboardRowsTests(unittest.TestCase):
             "        delete_stale_active_leaderboard_rows(client, leaderboard_run_marker)",
             source,
         )
+
+
+class FetchTopdeckEloByTopdeckIdTests(unittest.TestCase):
+    @staticmethod
+    def _http_error(status_code: int, text: str) -> requests.exceptions.HTTPError:
+        class FakeResponse:
+            def __init__(self) -> None:
+                self.status_code = status_code
+                self.text = text
+
+        return requests.exceptions.HTTPError(response=FakeResponse())
+
+    def test_probes_legacy_uid_schema_then_fetches_snapshot_with_default_retries(
+        self,
+    ) -> None:
+        class FakeClient:
+            def __init__(self, missing_topdeck_id: requests.exceptions.HTTPError) -> None:
+                self.calls: list[tuple[str, dict[str, object], int]] = []
+                self.missing_topdeck_id = missing_topdeck_id
+
+            def select(
+                self,
+                table: str,
+                filters: dict[str, object] | None = None,
+                max_retries: int = 8,
+            ) -> list[dict[str, object]]:
+                params = filters or {}
+                self.calls.append((table, params, max_retries))
+                selected = params.get("select")
+                if selected == "topdeck_id":
+                    raise self.missing_topdeck_id
+                if selected == "uid":
+                    return []
+                if selected == "uid,elo":
+                    return [{"uid": "td-1", "elo": "2034.5"}]
+                return []
+
+        client = FakeClient(
+            self._http_error(
+                400,
+                '{"code":"PGRST204","message":"Could not find the topdeck_id column"}',
+            )
+        )
+
+        result = regional_elo.fetch_topdeck_elo_by_topdeck_id(client)  # type: ignore[arg-type]
+
+        self.assertEqual(result, {"td-1": 2034.5})
+        self.assertEqual(client.calls[0][1], {"select": "topdeck_id", "limit": "1"})
+        self.assertEqual(client.calls[0][2], 1)
+        self.assertEqual(client.calls[1][1], {"select": "uid", "limit": "1"})
+        self.assertEqual(client.calls[1][2], 1)
+        self.assertEqual(
+            client.calls[2][1],
+            {"select": "uid,elo", "limit": 1000, "offset": 0},
+        )
+        self.assertEqual(client.calls[2][2], 8)
+
+    def test_transient_probe_error_is_not_treated_as_schema_fallback(self) -> None:
+        class FakeClient:
+            def select(
+                self,
+                table: str,
+                filters: dict[str, object] | None = None,
+                max_retries: int = 8,
+            ) -> list[dict[str, object]]:
+                raise FetchTopdeckEloByTopdeckIdTests._http_error(
+                    500,
+                    '{"message":"temporarily unavailable for topdeck_id"}',
+                )
+
+        with self.assertRaises(requests.exceptions.HTTPError):
+            regional_elo.fetch_topdeck_elo_by_topdeck_id(FakeClient())  # type: ignore[arg-type]
 
 
 if __name__ == "__main__":
