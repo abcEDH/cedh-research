@@ -162,7 +162,7 @@ async function getCommanderPeriodSnapshots(commanderIds: string[]) {
   return snapshots;
 }
 
-async function getWeeklyEntries(commanderIds: string[], weeks = 12) {
+async function getWeeklyEntries(commanderIds: string[], weeks = 104) {
   if (commanderIds.length === 0) return {};
 
   const { data, error } = await supabase
@@ -259,7 +259,7 @@ async function getGlobalTrendSeries() {
 
   const weekly: TrendMetricPoint[] = Array.from(weeklyByKey.entries())
     .sort(([a], [b]) => a.localeCompare(b))
-    .slice(-26)
+    .slice(-104)
     .map(([period, values]) => {
       const games = values.wins + values.losses + values.draws;
       const winRate = games ? (values.wins / games) * 100 : 0;
@@ -269,7 +269,7 @@ async function getGlobalTrendSeries() {
 
   const monthly: TrendMetricPoint[] = Array.from(monthlyByKey.entries())
     .sort(([a], [b]) => a.localeCompare(b))
-    .slice(-18)
+    .slice(-52)
     .map(([period, values]) => {
       const games = values.wins + values.losses + values.draws;
       const winRate = games ? (values.wins / games) * 100 : 0;

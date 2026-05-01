@@ -160,7 +160,7 @@ async function getCommanderPeriodSnapshots(commanderIds: string[], sizeFilter: S
   return snapshots;
 }
 
-async function getWeeklyEntries(commanderIds: string[], sizeFilter: SizeFilter, weeks = 12) {
+async function getWeeklyEntries(commanderIds: string[], sizeFilter: SizeFilter, weeks = 104) {
   if (commanderIds.length === 0) return {};
 
   const { weekly } = getTrendViews(sizeFilter);
@@ -197,7 +197,7 @@ async function getWeeklyEntries(commanderIds: string[], sizeFilter: SizeFilter, 
   return result;
 }
 
-async function getWeeklyWinRateSeries(commanders: CommanderStat[], sizeFilter: SizeFilter, weeks = 13) {
+async function getWeeklyWinRateSeries(commanders: CommanderStat[], sizeFilter: SizeFilter, weeks = 104) {
   if (commanders.length === 0) {
     return { data: [] as CommanderTrendSeriesPoint[], series: [] as CommanderTrendSeriesMeta[] };
   }

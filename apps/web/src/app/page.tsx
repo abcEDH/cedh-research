@@ -170,10 +170,22 @@ async function getTopRisingCommandersByTwoWeekTrend(): Promise<RisingCommander[]
 }
 
 async function getCoreStats() {
+  const oneYearAgo = new Date();
+  oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+  const oneYearAgoIso = oneYearAgo.toISOString().split("T")[0];
+
+  // First find commanders with entries in the past year
+  const { data: recentCommanders, error: recentErr } = await supabase
+    .from("commander_weekly_trends")
+    .select("commander_id")
+    .gte("week_start_date", oneYearAgoIso);
+
+  const activeCommanderIds = [...new Set((recentCommanders ?? []).map((r) => r.commander_id))];
+
   const [topCommandersResult, topWinRateResult] = await Promise.all([
     supabase
       .from("commander_stats")
-      .select("commander_id, commander_name, total_entries, avg_win_rate, conversion_rate_top_16, color_identity")
+      .select("commander_id, commander_name, total_entries, avg_win_rate, conversion_rate_top_cut, color_identity")
       .gt("total_entries", 20)
       .not("commander_name", "ilike", "unknown commander")
       .not("commander_name", "is", null)
@@ -182,8 +194,9 @@ async function getCoreStats() {
       .limit(21),
     supabase
       .from("commander_stats")
-      .select("commander_id, commander_name, total_entries, avg_win_rate, conversion_rate_top_16, color_identity")
-      .gt("total_entries", 30)
+      .select("commander_id, commander_name, total_entries, avg_win_rate, conversion_rate_top_cut, color_identity")
+      .gt("total_entries", 60) // Adjusted threshold slightly to allow for high-performing recent commanders
+      .in("commander_id", activeCommanderIds) // ONLY commanders with activity in the last year
       .not("commander_name", "ilike", "unknown commander")
       .not("commander_name", "is", null)
       .neq("commander_name", "")
@@ -199,18 +212,39 @@ async function getCoreStats() {
   }
 
   return {
-    topCommanders: ((topCommandersResult.data ?? []) as TopCommander[]).filter((row) =>
+    topCommanders: ((topCommandersResult.data ?? []) as any[]).filter((row) =>
       isKnownCommanderName(row.commander_name)
     ),
-    topWinRate: ((topWinRateResult.data ?? []) as TopCommander[]).filter((row) =>
+    topWinRate: ((topWinRateResult.data ?? []) as any[]).filter((row) =>
       isKnownCommanderName(row.commander_name)
     ),
   };
 }
 
+async function getLeaderboardPreview() {
+  const { data, error } = await supabase
+    .from("global_elo_active_leaderboard")
+    .select("player_name, topdeck_id, rating, rank, games_played, wins, draws, losses")
+    .eq("region_type", "global")
+    .order("rank", { ascending: true })
+    .limit(5);
+
+  if (error) {
+    console.error("Error fetching leaderboard preview:", error);
+    return [];
+  }
+  return data;
+}
+
 const getCachedHomeCoreStats = unstable_cache(
   getCoreStats,
-  ["home-core-stats-v3"],
+  ["home-core-stats-v5"], // Updated cache key
+  { revalidate: HOME_CACHE_REVALIDATE_SECONDS }
+);
+
+const getCachedLeaderboardPreview = unstable_cache(
+  getLeaderboardPreview,
+  ["home-leaderboard-preview-v1"],
   { revalidate: HOME_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -221,12 +255,13 @@ const getCachedHomeRisingCommanders = unstable_cache(
 );
 
 export default async function Home() {
-  const [{ topCommanders, topWinRate }, topRisingCommanders] = await Promise.all([
+  const [{ topCommanders, topWinRate }, topRisingCommanders, leaderboardPlayers] = await Promise.all([
     getCachedHomeCoreStats(),
     getCachedHomeRisingCommanders().catch((error) => {
       console.error("Home rising commanders cache refresh failed:", error);
       return [];
     }),
+    getCachedLeaderboardPreview(),
   ]);
   const topThreePopular: TopCommander[] = topCommanders.slice(0, 3);
   const showTrendCards = topThreePopular.length > 0 || topRisingCommanders.length > 0;
@@ -264,7 +299,7 @@ export default async function Home() {
           </div>
         </header>
 
-        <section className="mt-16 flex flex-col items-center gap-8 py-8 text-center">
+        <section className="mt-16 flex flex-col items-center gap-8 py-8 text-center border-b border-border/60">
           <div className="space-y-3">
             <h2 className="text-3xl font-semibold leading-tight text-foreground md:text-4xl">
               Competitive Commander, simplified
@@ -274,25 +309,52 @@ export default async function Home() {
             </p>
           </div>
           <HomeSearchBar />
-          <div className="flex flex-wrap justify-center gap-3">
-            <Button asChild size="sm" variant="outline" className="border-border/70 bg-muted/30">
-              <Link href="/commanders">Commanders</Link>
-            </Button>
-            <Button asChild size="sm" variant="outline" className="border-border/70 bg-muted/30">
-              <Link href="/regional-elo">Leaderboard</Link>
-            </Button>
-            <Button asChild size="sm" variant="outline" className="border-border/70 bg-muted/30">
-              <Link href="/about">Methodology</Link>
-            </Button>
-          </div>
         </section>
+
+        {leaderboardPlayers.length > 0 && (
+          <section className="mt-12">
+            <Card className="border-primary/20 bg-primary/5">
+              <CardHeader className="flex flex-row items-center justify-between pb-4">
+                <div>
+                  <CardTitle className="text-lg">Global Leaderboard</CardTitle>
+                  <p className="text-sm text-muted-foreground">Top active players by Elo rating</p>
+                </div>
+                <Button asChild variant="ghost" size="sm" className="border border-border/70">
+                  <Link href="/regional-elo">View Full Leaderboard</Link>
+                </Button>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                  {leaderboardPlayers.map((player: any) => (
+                    <Link
+                      key={player.player_id || player.topdeck_id}
+                      href={player.topdeck_id ? `/regional-elo/player/${player.topdeck_id}` : "#"}
+                      className="group flex flex-col gap-1 rounded-xl border border-border/60 bg-card/60 p-4 transition hover:border-primary/40 hover:bg-muted/50"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-xs text-muted-foreground">#{player.rank}</span>
+                        <span className="font-mono text-xs font-bold text-primary">{Math.round(player.rating)}</span>
+                      </div>
+                      <p className="truncate text-sm font-medium text-foreground group-hover:text-primary">
+                        {player.player_name}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {player.wins}W / {player.losses}L / {player.draws}D
+                      </p>
+                    </Link>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </section>
+        )}
 
         {showTrendCards ? (
           <section className="mt-12 grid gap-6 lg:grid-cols-2">
             {topThreePopular.length > 0 ? (
               <Card data-testid="top-popular-commanders" className="min-w-0">
                 <CardHeader className="knd-panel-header">
-                  <CardTitle className="text-lg">Top 3 most popular commanders</CardTitle>
+                  <CardTitle className="text-lg">Most Popular Commanders</CardTitle>
                   <p className="text-sm text-muted-foreground">
                     Ranked by total entries in large events.
                   </p>
@@ -311,9 +373,9 @@ export default async function Home() {
             {topRisingCommanders.length > 0 ? (
               <Card data-testid="top-rising-commanders" className="min-w-0">
                 <CardHeader className="knd-panel-header">
-                  <CardTitle className="text-lg">Biggest popularity gain (2 weeks)</CardTitle>
+                  <CardTitle className="text-lg">Rising Stars</CardTitle>
                   <p className="text-sm text-muted-foreground">
-                    Extra tournament entries in the latest two ISO weeks vs the stretch before that.
+                    Biggest popularity gains in the past 2 weeks.
                   </p>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-3">
@@ -330,11 +392,41 @@ export default async function Home() {
           </section>
         ) : null}
 
+        <section className="mt-12">
+          <Card className="border-[hsl(var(--knd-amber))]/20 bg-[hsl(var(--knd-amber))]/5">
+            <CardHeader className="flex flex-row items-center justify-between pb-4">
+              <div>
+                <CardTitle className="text-lg text-[hsl(var(--knd-amber))]">Tournament Prep</CardTitle>
+                <p className="text-sm text-muted-foreground">Estimate attendee likelihood and expected meta share for your next event</p>
+              </div>
+              <Button asChild variant="outline" size="sm" className="border-[hsl(var(--knd-amber))]/40 bg-card/60">
+                <Link href="/tournament-likelihood">Run Simulator</Link>
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <div className="rounded-lg border border-border/60 bg-card/40 p-4">
+                  <h4 className="text-sm font-semibold text-foreground mb-1">Meta Simulation</h4>
+                  <p className="text-xs text-muted-foreground">Simulate field compositions based on recent tournament attendance patterns.</p>
+                </div>
+                <div className="rounded-lg border border-border/60 bg-card/40 p-4">
+                  <h4 className="text-sm font-semibold text-foreground mb-1">Archetype Coverage</h4>
+                  <p className="text-xs text-muted-foreground">Identify which deck types are most likely to appear in your specific region.</p>
+                </div>
+                <div className="rounded-lg border border-border/60 bg-card/40 p-4">
+                  <h4 className="text-sm font-semibold text-foreground mb-1">Conversion Odds</h4>
+                  <p className="text-xs text-muted-foreground">Calculate the probability of different commanders reaching the top cut.</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </section>
+
         <section className="mt-12 grid gap-6 lg:grid-cols-[1.4fr_0.6fr]">
           <Card>
             <CardHeader className="knd-panel-header">
-              <CardTitle className="text-lg">Commander performance</CardTitle>
-              <p className="text-sm text-muted-foreground">Sorted by total entries</p>
+              <CardTitle className="text-lg">Field Performance</CardTitle>
+              <p className="text-sm text-muted-foreground">Comprehensive statistics for top commanders</p>
             </CardHeader>
             <CardContent>
               <Table>
@@ -343,18 +435,18 @@ export default async function Home() {
                     <TableHead className="py-3">Rank</TableHead>
                     <TableHead className="py-3">Commander</TableHead>
                     <TableHead className="py-3">Entries</TableHead>
-                    <TableHead className="py-3">Win rate</TableHead>
-                    <TableHead className="py-3">Top Bracket%</TableHead>
+                    <TableHead className="py-3">Win Rate</TableHead>
+                    <TableHead className="py-3 text-right">Top Cut Conversion</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {topCommanders.length > 0 ? (
-                    topCommanders.map((commander, index) => (
+                    topCommanders.map((commander: any, index) => (
                       <TableRow key={commander.commander_id} className="border-border/60">
                         <TableCell className="font-mono text-xs text-muted-foreground">#{index + 1}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-3">
-                            <div className="flex gap-1">
+                            <div className="flex gap-1 shrink-0">
                               {commander.color_identity?.filter(Boolean).map((color: string) => (
                                 <ColorBadge key={color} color={color} />
                               ))}
@@ -367,14 +459,20 @@ export default async function Home() {
                             </Link>
                           </div>
                         </TableCell>
-                        <TableCell className="font-mono text-sm text-primary">
+                        <TableCell className="font-mono text-sm text-muted-foreground">
                           {commander.total_entries}
                         </TableCell>
                         <TableCell className="font-mono text-sm">
-                          {(commander.avg_win_rate * 100).toFixed(1)}%
+                          {(() => {
+                            const wr = parseFloat(commander.avg_win_rate || "0");
+                            return (Number.isFinite(wr) ? wr * 100 : 0).toFixed(1);
+                          })()}%
                         </TableCell>
-                        <TableCell className="font-mono text-sm text-muted-foreground">
-                          {(commander.conversion_rate_top_16 * 100).toFixed(1)}%
+                        <TableCell className="font-mono text-sm text-right text-primary">
+                          {(() => {
+                            const conversion = parseFloat(commander.conversion_rate_top_cut || "0");
+                            return (Number.isFinite(conversion) ? conversion * 100 : 0).toFixed(1);
+                          })()}%
                         </TableCell>
                       </TableRow>
                     ))
@@ -392,19 +490,19 @@ export default async function Home() {
 
           <Card>
             <CardHeader className="knd-panel-header">
-              <CardTitle className="text-lg">Highest win rate</CardTitle>
-              <p className="text-sm text-muted-foreground">30+ entries minimum</p>
+              <CardTitle className="text-lg">Win Rate Leaders</CardTitle>
+              <p className="text-sm text-muted-foreground">Active last 12mo · 60+ entries</p>
             </CardHeader>
             <CardContent className="space-y-3">
               {topWinRate.length > 0 ? (
-                topWinRate.map((commander, index) => (
+                topWinRate.map((commander: any, index) => (
                   <CommanderRow key={commander.commander_id} commander={commander} rank={index + 1} />
                 ))
               ) : (
                 <p className="text-sm text-muted-foreground">No win-rate data available right now.</p>
               )}
-              <Button asChild variant="ghost" className="w-full border border-border/70">
-                <Link href="/commanders">View all commanders</Link>
+              <Button asChild variant="ghost" className="w-full border border-border/70 mt-4">
+                <Link href="/commanders">View All Commanders</Link>
               </Button>
             </CardContent>
           </Card>
@@ -418,9 +516,9 @@ export default async function Home() {
             color="hsl(var(--knd-cyan))"
           />
           <FeatureCard
-            href="/tournament-likelihood"
-            title="Tournament Prep"
-            description="Estimate attendee commander likelihood and expected meta share"
+            href="/commanders/trends"
+            title="Recent Trends"
+            description="Weekly and monthly shifts in meta share and win rates"
             color="hsl(var(--knd-amber))"
           />
           <FeatureCard
@@ -448,8 +546,9 @@ function RisingCommanderRow({
   commander: RisingCommander;
   rank: number;
 }) {
-  const winRate = (commander.avg_win_rate * 100).toFixed(1);
-  const isAboveExpected = commander.avg_win_rate > 0.25;
+  const wrValue = parseFloat(commander.avg_win_rate as any);
+  const winRate = (Number.isFinite(wrValue) ? wrValue * 100 : 0).toFixed(1);
+  const isAboveExpected = wrValue > 0.25;
 
   return (
     <Link
@@ -485,8 +584,9 @@ function CommanderRow({
   commander: TopCommander;
   rank: number;
 }) {
-  const winRate = (commander.avg_win_rate * 100).toFixed(1);
-  const isAboveExpected = commander.avg_win_rate > 0.25;
+  const wrValue = parseFloat(commander.avg_win_rate as any);
+  const winRate = (Number.isFinite(wrValue) ? wrValue * 100 : 0).toFixed(1);
+  const isAboveExpected = wrValue > 0.25;
 
   return (
     <Link
