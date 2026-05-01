@@ -123,6 +123,33 @@ def fetch_all(
     return rows
 
 
+def fetch_topdeck_elos(client: SupabaseClient) -> dict[str, float]:
+    """Read TopDeck Elo rows from either the normalized or legacy live schema."""
+    for id_column in ("uid", "topdeck_id"):
+        try:
+            rows = fetch_all(
+                client,
+                "topdeck_player_elos",
+                {"select": f"{id_column},elo"},
+            )
+        except requests.exceptions.HTTPError:
+            if id_column == "uid":
+                print(
+                    "topdeck_player_elos.uid not available; falling back to topdeck_id",
+                    flush=True,
+                )
+                continue
+            raise
+
+        return {
+            str(row[id_column]): float(row["elo"])
+            for row in rows
+            if row.get(id_column) and row.get("elo") is not None
+        }
+
+    return {}
+
+
 def month_starts(start: date, end: date) -> list[date]:
     current = date(start.year, start.month, 1)
     months: list[date] = []
@@ -373,10 +400,7 @@ def build_rows(
     today = datetime.now(timezone.utc).date()
 
     print("Fetching TopDeck Elos for enrichment...", flush=True)
-    topdeck_elos = {
-        row["topdeck_id"]: float(row["elo"])
-        for row in fetch_all(client, "topdeck_player_elos", {"select": "topdeck_id,elo"})
-    }
+    topdeck_elos = fetch_topdeck_elos(client)
 
     games: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in results:
