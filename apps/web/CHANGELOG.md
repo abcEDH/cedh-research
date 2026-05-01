@@ -1,3 +1,11 @@
+# [1.8.0](https://github.com/abcEDH/cedh-research/compare/v1.7.7...v1.8.0) (2026-05-01)
+
+
+### Features
+
+* **backend:** persist latest tournament + commander metadata on player_commander_profiles (closes [#130](https://github.com/abcEDH/cedh-research/issues/130)) ([#133](https://github.com/abcEDH/cedh-research/issues/133)) ([c8fd33b](https://github.com/abcEDH/cedh-research/commit/c8fd33bd43528187c54044e8a8b5e5379698386e))
+* **backend:** persist topdeck_elo + country slices on leaderboard (closes [#129](https://github.com/abcEDH/cedh-research/issues/129)) ([#134](https://github.com/abcEDH/cedh-research/issues/134)) ([10e4a04](https://github.com/abcEDH/cedh-research/commit/10e4a04656c4b5f8c512d8ab0689bf88baa28b90))
+
 ## [1.7.7](https://github.com/abcEDH/cedh-research/compare/v1.7.6...v1.7.7) (2026-04-29)
 
 
