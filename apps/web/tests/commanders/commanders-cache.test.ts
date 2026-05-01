@@ -150,16 +150,17 @@ describe("Commanders page caching", () => {
     expect(typeof pageModule.default).toBe("function");
   });
 
-  it("renders the page with cached data wrappers", async () => {
+  it("renders the synchronous page shell without throwing", async () => {
     const pageModule = await import("@/app/commanders/page");
     const element = await pageModule.default();
     const html = renderToStaticMarkup(element);
 
-    // Verify the page renders with commander data
+    // The heading and navigation render synchronously; data-driven
+    // sections are wrapped in <Suspense> so renderToStaticMarkup
+    // shows their fallbacks rather than the resolved content.
     expect(html).toContain("Commander Rankings");
-    expect(html).toContain("Total Commanders");
-    expect(html).toContain("Total Entries");
-    expect(html).toContain("Avg Win Rate");
+    expect(html).toContain("Back to Home");
+    expect(html).toContain("View commander trends");
   });
 
   it("source contains all four cached wrapper definitions with -v1 cache keys", async () => {
@@ -183,7 +184,7 @@ describe("Commanders page caching", () => {
     expect(source).toContain('["commander-global-trends-v1"]');
   });
 
-  it("CommandersPage calls cached wrappers instead of raw functions", async () => {
+  it("page module calls cached wrappers instead of raw functions", async () => {
     const fs = await import("fs");
     const path = await import("path");
     const source = fs.readFileSync(
@@ -191,25 +192,24 @@ describe("Commanders page caching", () => {
       "utf-8"
     );
 
-    // Extract the CommandersPage function body
-    const pageBodyMatch = source.match(
-      /export default async function CommandersPage\(\)[\s\S]*?\n\s*return \(/
+    // Strip the cached wrapper definitions before checking for raw calls,
+    // since the cached wrappers themselves legitimately call the raw fns.
+    const sourceWithoutCachedDefs = source.replace(
+      /unstable_cache\([\s\S]*?\)/g,
+      "unstable_cache(/* stripped */)"
     );
-    expect(pageBodyMatch).not.toBeNull();
-    const pageBody = pageBodyMatch![0];
 
-    // Should use cached versions
-    expect(pageBody).toContain("getCachedCommanders()");
-    expect(pageBody).toContain("getCachedCommanderPeriodSnapshots(");
-    expect(pageBody).toContain("getCachedWeeklyEntries(");
-    expect(pageBody).toContain("getCachedGlobalTrendSeries()");
+    // Cached wrappers must be invoked somewhere in the module.
+    expect(sourceWithoutCachedDefs).toMatch(/getCachedCommanders\(\)/);
+    expect(sourceWithoutCachedDefs).toMatch(/getCachedCommanderPeriodSnapshots\(/);
+    expect(sourceWithoutCachedDefs).toMatch(/getCachedWeeklyEntries\(/);
+    expect(sourceWithoutCachedDefs).toMatch(/getCachedGlobalTrendSeries\(\)/);
 
-    // Should NOT call raw functions directly in CommandersPage
-    // (raw function calls should only exist in the cached wrappers)
-    expect(pageBody).not.toMatch(/\bawait getCommanders\(\)/);
-    expect(pageBody).not.toMatch(/\bawait getCommanderPeriodSnapshots\(/);
-    expect(pageBody).not.toMatch(/\bawait getWeeklyEntries\(/);
-    expect(pageBody).not.toMatch(/\bawait getGlobalTrendSeries\(\)/);
+    // Raw functions must never be awaited outside their cached wrappers.
+    expect(sourceWithoutCachedDefs).not.toMatch(/\bawait getCommanders\(\)/);
+    expect(sourceWithoutCachedDefs).not.toMatch(/\bawait getCommanderPeriodSnapshots\(/);
+    expect(sourceWithoutCachedDefs).not.toMatch(/\bawait getWeeklyEntries\(/);
+    expect(sourceWithoutCachedDefs).not.toMatch(/\bawait getGlobalTrendSeries\(\)/);
   });
 
   it("source throws on fetch errors instead of caching fallback empties", async () => {
@@ -237,7 +237,7 @@ describe("Commanders page caching", () => {
 
     expect(source).toContain("const topCommanderIds = topCommanders");
     expect(source).toContain(".sort((a, b) => a.localeCompare(b))");
-    expect(source).toContain("getCachedCommanderPeriodSnapshots(\n    topCommanderIds");
-    expect(source).toContain("getCachedWeeklyEntries(\n    topCommanderIds,");
+    expect(source).toContain("getCachedCommanderPeriodSnapshots(topCommanderIds)");
+    expect(source).toContain("getCachedWeeklyEntries(topCommanderIds, 12)");
   });
 });
