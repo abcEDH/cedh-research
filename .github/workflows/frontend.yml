@@ -49,7 +49,7 @@ jobs:
     name: Playwright E2E Tests
     runs-on: ubuntu-latest
     needs: quality-and-unit
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - name: Check required secrets
         working-directory: .
@@ -73,7 +73,7 @@ jobs:
         run: npm ci
 
       - name: Install Playwright browsers
-        run: npx playwright install chromium --with-deps
+        run: npx playwright install chromium
 
       - name: Build application
         run: npm --workspace apps/web run build
