@@ -1,3 +1,10 @@
+# [1.10.0](https://github.com/abcEDH/cedh-research/compare/v1.9.0...v1.10.0) (2026-05-02)
+
+
+### Features
+
+* overhaul home page, seed scouting events, and clean repo bloat ([#144](https://github.com/abcEDH/cedh-research/issues/144)) ([bd0b5ad](https://github.com/abcEDH/cedh-research/commit/bd0b5adde02d7ff2b5c835f9b9caaeb938bc7b32))
+
 # [1.9.0](https://github.com/abcEDH/cedh-research/compare/v1.8.0...v1.9.0) (2026-05-02)
 
 
