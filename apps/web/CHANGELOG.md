@@ -1,3 +1,10 @@
+# [1.9.0](https://github.com/abcEDH/cedh-research/compare/v1.8.0...v1.9.0) (2026-05-02)
+
+
+### Features
+
+* **web:** refine home page, commander details, and expand trend history ([#143](https://github.com/abcEDH/cedh-research/issues/143)) ([8cb9e46](https://github.com/abcEDH/cedh-research/commit/8cb9e46d58a2c9e107084e72d5a162ec3b37294b))
+
 # [1.8.0](https://github.com/abcEDH/cedh-research/compare/v1.7.7...v1.8.0) (2026-05-01)
 
 
