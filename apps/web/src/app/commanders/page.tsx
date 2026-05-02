@@ -12,6 +12,7 @@ import TrendMetricCharts, {
   TrendMetricPoint,
   TrendMetricSeries,
 } from "@/components/commanders/trend-metric-charts";
+import { aggregateTrendPoint, formatPercent, mean } from "@/lib/commander-stats";
 
 export const dynamic = "force-dynamic";
 const COMMANDERS_CACHE_REVALIDATE_SECONDS = 60 * 30; // 30 minutes
@@ -287,22 +288,12 @@ async function getGlobalTrendSeries() {
   const weekly: TrendMetricPoint[] = Array.from(weeklyByKey.entries())
     .sort(([a], [b]) => a.localeCompare(b))
     .slice(-104)
-    .map(([period, values]) => {
-      const games = values.wins + values.losses + values.draws;
-      const winRate = games ? (values.wins / games) * 100 : 0;
-      const pointsPerGame = games ? (values.wins * 5 + values.draws) / games : 0;
-      return { period, entries: values.entries, winRate, pointsPerGame };
-    });
+    .map(([period, values]) => ({ period, ...aggregateTrendPoint(values) }));
 
   const monthly: TrendMetricPoint[] = Array.from(monthlyByKey.entries())
     .sort(([a], [b]) => a.localeCompare(b))
     .slice(-52)
-    .map(([period, values]) => {
-      const games = values.wins + values.losses + values.draws;
-      const winRate = games ? (values.wins / games) * 100 : 0;
-      const pointsPerGame = games ? (values.wins * 5 + values.draws) / games : 0;
-      return { period, entries: values.entries, winRate, pointsPerGame };
-    });
+    .map(([period, values]) => ({ period, ...aggregateTrendPoint(values) }));
 
   return { weekly, monthly } satisfies TrendMetricSeries;
 }
@@ -414,12 +405,10 @@ async function CommanderHeaderSummary() {
 async function StatsSummarySection() {
   const commanders = await getCachedCommanders();
   const totalEntries = commanders.reduce((sum, c) => sum + c.total_entries, 0);
-  const avgWinRate =
-    commanders.reduce((sum, c) => sum + parseFloat(c.avg_win_rate), 0) /
-    Math.max(commanders.length, 1);
-  const avgTop16 =
-    commanders.reduce((sum, c) => sum + parseFloat(c.conversion_rate_top_16), 0) /
-    Math.max(commanders.length, 1);
+  const avgWinRate = mean(commanders.map((c) => parseFloat(c.avg_win_rate)));
+  const avgTop16 = mean(
+    commanders.map((c) => parseFloat(c.conversion_rate_top_16))
+  );
 
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-4 mb-8">
@@ -439,13 +428,14 @@ async function StatsSummarySection() {
       />
       <StatCard
         label="Avg Win Rate"
-        value={`${(avgWinRate * 100).toFixed(1)}%`}
+        value={formatPercent(avgWinRate)}
         tone="neutral"
         tooltip="Average commander win rate. Baseline in 4-player pods is 25%."
+        testId="stat-avg-win-rate"
       />
       <StatCard
         label="Avg Top 16/Top 10/Top 4"
-        value={`${(avgTop16 * 100).toFixed(1)}%`}
+        value={formatPercent(avgTop16)}
         tone="neutral"
         tooltip="Average conversion into top bracket. Under 64 players, events may use Top 10, and for 34 players or fewer we only count Top 4 finishes."
       />

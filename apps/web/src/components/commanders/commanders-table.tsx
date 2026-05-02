@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { normalizeDisplayString } from "@/lib/utils";
+import { formatPercent } from "@/lib/commander-stats";
 import {
   Table,
   TableBody,
@@ -53,6 +54,13 @@ function getArchetypeIcon(archetype: string | null) {
   return null;
 }
 
+function safeNumber(value: string): number {
+  // parseFloat(null) is NaN, which sorts unpredictably. Treat missing values
+  // as -Infinity so they consistently land at the bottom of asc/top of desc.
+  const n = parseFloat(value);
+  return Number.isFinite(n) ? n : -Infinity;
+}
+
 function compareValues(a: CommanderStat, b: CommanderStat, key: SortKey) {
   switch (key) {
     case "commander":
@@ -62,7 +70,7 @@ function compareValues(a: CommanderStat, b: CommanderStat, key: SortKey) {
     case "tournaments":
       return a.tournaments_played - b.tournaments_played;
     case "winRate":
-      return parseFloat(a.avg_win_rate) - parseFloat(b.avg_win_rate);
+      return safeNumber(a.avg_win_rate) - safeNumber(b.avg_win_rate);
     case "pointsPerGame": {
       const aGames = a.total_wins + a.total_losses + a.total_draws;
       const bGames = b.total_wins + b.total_losses + b.total_draws;
@@ -72,13 +80,13 @@ function compareValues(a: CommanderStat, b: CommanderStat, key: SortKey) {
     }
     case "top16":
       return (
-        parseFloat(a.conversion_rate_top_16) -
-        parseFloat(b.conversion_rate_top_16)
+        safeNumber(a.conversion_rate_top_16) -
+        safeNumber(b.conversion_rate_top_16)
       );
     case "topCut":
       return (
-        parseFloat(a.conversion_rate_top_cut) -
-        parseFloat(b.conversion_rate_top_cut)
+        safeNumber(a.conversion_rate_top_cut) -
+        safeNumber(b.conversion_rate_top_cut)
       );
     default:
       return 0;
@@ -210,7 +218,7 @@ export default function CommandersTable({
           <TableBody>
             {sortedCommanders.map((commander, index) => {
               const archetypeIcon = getArchetypeIcon(commander.archetype);
-              const winRate = parseFloat(commander.avg_win_rate) * 100;
+              const winRate = parseFloat(commander.avg_win_rate);
               const totalGames = commander.total_wins + commander.total_losses + commander.total_draws;
               const pointsPerGame = totalGames ? (commander.total_wins * 5 + commander.total_draws) / totalGames : 0;
               const rank = baseRank.get(commander.commander_id) ?? index + 1;
@@ -246,17 +254,17 @@ export default function CommandersTable({
                   </TableCell>
                   <TableCell className="text-right font-mono">
                     <span className="text-muted-foreground">
-                      {winRate.toFixed(1)}%
+                      {formatPercent(winRate)}
                     </span>
                   </TableCell>
                   <TableCell className="text-right font-mono text-muted-foreground">
                     {pointsPerGame.toFixed(2)}
                   </TableCell>
                   <TableCell className="text-right font-mono text-muted-foreground">
-                    {(parseFloat(commander.conversion_rate_top_16) * 100).toFixed(1)}%
+                    {formatPercent(parseFloat(commander.conversion_rate_top_16))}
                   </TableCell>
                   <TableCell className="text-right font-mono text-muted-foreground">
-                    {(parseFloat(commander.conversion_rate_top_cut) * 100).toFixed(1)}%
+                    {formatPercent(parseFloat(commander.conversion_rate_top_cut))}
                   </TableCell>
                 </TableRow>
               );
