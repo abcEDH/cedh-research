@@ -13,8 +13,8 @@ import {
 export type TrendMetricPoint = {
   period: string;
   entries: number;
-  winRate: number;
-  pointsPerGame: number;
+  winRate: number | null;
+  pointsPerGame: number | null;
 };
 
 export type TrendMetricSeries = {
