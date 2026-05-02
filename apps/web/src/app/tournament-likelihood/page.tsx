@@ -522,10 +522,10 @@ export default async function TournamentLikelihoodPage({
                   The Quest: Part 1
                 </Link>
                 <Link 
-                  href="/tournament-likelihood?tournament=PuntCity3"
+                  href="/tournament-likelihood?tournament=puntcity5"
                   className="knd-chip border border-border/60 bg-muted/20 px-3 py-2 text-xs hover:border-primary/40 hover:bg-muted/40 transition"
                 >
-                  Punt City 3
+                  Punt City 5
                 </Link>
               </div>
             </div>
