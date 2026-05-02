@@ -27,8 +27,17 @@ describe("regional player read path", () => {
     expect(source).toContain("last_game_date, topdeck_elo, topdeck_elo_rank");
     expect(source).toContain("row.topdeck_elo_rank ?? row.rank");
     expect(source).toContain("const displayedTopdeckElo");
+    expect(source).toContain('.from("global_elo_active_leaderboard")');
+    expect(source).toContain('.from("global_elo_player_profile_summaries")');
+    expect(source).toContain("fetchPlayerCommanderProfile");
     expect(source).not.toContain("fetchActiveDisplayedRank");
     expect(source).not.toContain('.from("topdeck_player_elos")');
+    expect(source).not.toContain('.from("global_elo_leaderboard")');
+    expect(source).not.toContain('.from("regional_elo_leaderboard")');
+    expect(source).not.toContain('.from("regional_elo_active_leaderboard")');
+    expect(source).not.toContain('.from("regional_elo_player_profile_summaries")');
+    expect(source).not.toContain("buildProfiles");
+    expect(source).not.toContain("selectCommanderForecastRows");
     expect(source).not.toContain("fetchTopdeckElo(topdeckId)");
   });
 
@@ -45,7 +54,7 @@ describe("regional player read path", () => {
       source.indexOf("async function fetchRegionalRanks")
     );
 
-    expect(countryRankSource).toContain('.eq("region_type", "country")');
+    expect(countryRankSource).toContain('fetchActiveRankRow("country", countryKey, playerId)');
     expect(countryRankSource).not.toContain('.eq("region_type", "global")');
     expect(countryRankSource).not.toContain('.eq("region_key", "ALL")');
   });
