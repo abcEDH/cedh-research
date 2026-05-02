@@ -118,12 +118,23 @@ class CardFrequencyClient:
         return response.json()
 
     def get_commander_card_pool(self, commander_name: str) -> Optional[CommanderCardPool]:
-        """Get card frequency data for a specific commander."""
-        # Query the commander_card_report view for synergy scores
+        """Get card frequency data for a specific commander by name (case-insensitive)."""
         params = {
             "commander": f"ilike.%{commander_name}%",
             "order": "inclusion_rate.desc",
         }
+        return self._fetch_card_pool(params)
+
+    def get_commander_card_pool_by_id(self, commander_id: str) -> Optional[CommanderCardPool]:
+        """Get card frequency data for a specific commander by their UUID."""
+        params = {
+            "commander_id": f"eq.{commander_id}",
+            "order": "inclusion_rate.desc",
+        }
+        return self._fetch_card_pool(params)
+
+    def _fetch_card_pool(self, params: dict) -> Optional[CommanderCardPool]:
+        """Internal helper to fetch card pool from commander_card_report."""
         results = self._query("commander_card_report", params)
 
         if not results:

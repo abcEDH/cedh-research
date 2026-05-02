@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { unstable_cache } from "next/cache";
 import { supabase } from "@/lib/supabase";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import CommandersTable from "@/components/commanders/commanders-table";
 import CommanderTrendsTable, {
@@ -15,6 +15,7 @@ import TrendMetricCharts, {
 
 export const dynamic = "force-dynamic";
 const COMMANDERS_CACHE_REVALIDATE_SECONDS = 60 * 30; // 30 minutes
+const SUPABASE_TREND_PAGE_SIZE = 1000;
 
 interface CommanderStat {
   commander_id: string;
@@ -52,6 +53,23 @@ type MonthlyTrendRow = {
   losses?: number | null;
   draws?: number | null;
   total_players?: number | null;
+};
+
+type GlobalWeeklyTrendRow = {
+  week_key?: string | null;
+  week_start_date?: string | null;
+  entries: number;
+  wins: number;
+  losses: number;
+  draws: number;
+};
+
+type GlobalMonthlyTrendRow = {
+  month_key: string;
+  entries: number;
+  wins: number;
+  losses: number;
+  draws: number;
 };
 
 function normalizeDateKey(value: string | null | undefined) {
@@ -162,7 +180,7 @@ async function getCommanderPeriodSnapshots(commanderIds: string[]) {
   return snapshots;
 }
 
-async function getWeeklyEntries(commanderIds: string[], weeks = 12) {
+async function getWeeklyEntries(commanderIds: string[], weeks = 104) {
   if (commanderIds.length === 0) return {};
 
   const { data, error } = await supabase
@@ -198,42 +216,51 @@ async function getWeeklyEntries(commanderIds: string[], weeks = 12) {
   return result;
 }
 
-async function getGlobalTrendSeries() {
-  const [weeklyResult, monthlyResult] = await Promise.all([
-    supabase
+async function fetchGlobalWeeklyTrendRows() {
+  const rows: GlobalWeeklyTrendRow[] = [];
+  for (let offset = 0; ; offset += SUPABASE_TREND_PAGE_SIZE) {
+    const { data, error } = await supabase
       .from("commander_weekly_trends")
       .select("week_key, week_start_date, entries, wins, losses, draws")
-      .order("week_start_date", { ascending: true }),
-    supabase
+      .order("week_start_date", { ascending: true })
+      .range(offset, offset + SUPABASE_TREND_PAGE_SIZE - 1);
+
+    if (error) {
+      console.error("Error fetching global weekly trends:", error);
+      throw error;
+    }
+
+    rows.push(...(((data as GlobalWeeklyTrendRow[]) ?? [])));
+    if (!data || data.length < SUPABASE_TREND_PAGE_SIZE) break;
+  }
+  return rows;
+}
+
+async function fetchGlobalMonthlyTrendRows() {
+  const rows: GlobalMonthlyTrendRow[] = [];
+  for (let offset = 0; ; offset += SUPABASE_TREND_PAGE_SIZE) {
+    const { data, error } = await supabase
       .from("commander_monthly_trends")
       .select("month_key, entries, wins, losses, draws")
-      .order("month_key", { ascending: true }),
+      .order("month_key", { ascending: true })
+      .range(offset, offset + SUPABASE_TREND_PAGE_SIZE - 1);
+
+    if (error) {
+      console.error("Error fetching global monthly trends:", error);
+      throw error;
+    }
+
+    rows.push(...(((data as GlobalMonthlyTrendRow[]) ?? [])));
+    if (!data || data.length < SUPABASE_TREND_PAGE_SIZE) break;
+  }
+  return rows;
+}
+
+async function getGlobalTrendSeries() {
+  const [weeklyRows, monthlyRows] = await Promise.all([
+    fetchGlobalWeeklyTrendRows(),
+    fetchGlobalMonthlyTrendRows(),
   ]);
-
-  if (weeklyResult.error) {
-    console.error("Error fetching global weekly trends:", weeklyResult.error);
-    throw weeklyResult.error;
-  }
-  if (monthlyResult.error) {
-    console.error("Error fetching global monthly trends:", monthlyResult.error);
-    throw monthlyResult.error;
-  }
-
-  const weeklyRows = (weeklyResult.data || []) as {
-    week_key?: string | null;
-    week_start_date?: string | null;
-    entries: number;
-    wins: number;
-    losses: number;
-    draws: number;
-  }[];
-  const monthlyRows = (monthlyResult.data || []) as {
-    month_key: string;
-    entries: number;
-    wins: number;
-    losses: number;
-    draws: number;
-  }[];
 
   const weeklyByKey = new Map<string, { entries: number; wins: number; losses: number; draws: number }>();
   weeklyRows.forEach((row) => {
@@ -259,7 +286,7 @@ async function getGlobalTrendSeries() {
 
   const weekly: TrendMetricPoint[] = Array.from(weeklyByKey.entries())
     .sort(([a], [b]) => a.localeCompare(b))
-    .slice(-26)
+    .slice(-104)
     .map(([period, values]) => {
       const games = values.wins + values.losses + values.draws;
       const winRate = games ? (values.wins / games) * 100 : 0;
@@ -269,7 +296,7 @@ async function getGlobalTrendSeries() {
 
   const monthly: TrendMetricPoint[] = Array.from(monthlyByKey.entries())
     .sort(([a], [b]) => a.localeCompare(b))
-    .slice(-18)
+    .slice(-52)
     .map(([period, values]) => {
       const games = values.wins + values.losses + values.draws;
       const winRate = games ? (values.wins / games) * 100 : 0;
@@ -300,7 +327,7 @@ const getCachedWeeklyEntries = unstable_cache(
 
 const getCachedGlobalTrendSeries = unstable_cache(
   getGlobalTrendSeries,
-  ["commander-global-trends-v1"],
+  ["commander-global-trends-v2"],
   { revalidate: COMMANDERS_CACHE_REVALIDATE_SECONDS }
 );
 

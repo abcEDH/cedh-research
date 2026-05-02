@@ -10,8 +10,23 @@ test.describe("Home Page", () => {
     await expect(page.getByRole("heading", { name: /competitive Commander, simplified/i })).toBeVisible();
   });
 
+  test("displays global leaderboard table with internal links", async ({ page }) => {
+    await expect(page.getByText("Global Leaderboard")).toBeVisible();
+    await expect(page.getByRole("link", { name: "View Full Leaderboard" })).toHaveAttribute(
+      "href",
+      "/regional-elo"
+    );
+    await expect(page.getByRole("columnheader", { name: "TopDeck Elo" })).toBeVisible();
+    await expect(page.getByRole("columnheader", { name: "Latest Tournament" })).toBeVisible();
+
+    const playerLinks = page.locator('a[href^="/regional-elo/player/"]');
+    await expect(playerLinks.first()).toBeVisible();
+    expect(await playerLinks.count()).toBeGreaterThan(0);
+    await expect(page.locator('a[href="https://topdeck.gg/elo/magic-the-gathering/edh"]')).toHaveCount(0);
+  });
+
   test("displays top commanders list with real data", async ({ page }) => {
-    await expect(page.getByText("Commander performance")).toBeVisible();
+    await expect(page.getByText("Field Performance")).toBeVisible();
 
     // Should have at least one commander link
     await page.waitForTimeout(2000);
@@ -22,7 +37,7 @@ test.describe("Home Page", () => {
 
   test("displays top 3 popular commanders widget when data loads", async ({ page }) => {
     await expect(page.getByTestId("top-popular-commanders")).toBeVisible();
-    await expect(page.getByText("Top 3 most popular commanders")).toBeVisible();
+    await expect(page.getByText("Most Popular Commanders")).toBeVisible();
 
     await page.waitForTimeout(2000);
     const widgetLinks = page.getByTestId("top-popular-commanders").locator('a[href^="/commanders/"]');
@@ -36,19 +51,27 @@ test.describe("Home Page", () => {
     const rising = page.getByTestId("top-rising-commanders");
     if ((await rising.count()) === 0) return;
 
-    await expect(rising.getByText("Biggest popularity gain (2 weeks)")).toBeVisible();
+    await expect(rising.getByText("Rising Stars")).toBeVisible();
     const risingLinks = rising.locator('a[href^="/commanders/"]');
     const n = await risingLinks.count();
     expect(n).toBeGreaterThanOrEqual(1);
     expect(n).toBeLessThanOrEqual(3);
   });
 
+  test("displays prominent tournament prep section", async ({ page }) => {
+    await expect(page.locator('div[data-slot="card-title"]:has-text("Tournament Prep")')).toBeVisible();
+    const runSimulatorBtn = page.getByRole("link", { name: /Run Simulator/i });
+    await expect(runSimulatorBtn).toBeVisible();
+    await runSimulatorBtn.click();
+    await expect(page).toHaveURL(/\/tournament-likelihood/);
+  });
+
   test("feature cards link to supported tool pages", async ({ page }) => {
     const featureCards = page.getByTestId("home-feature-cards");
-    const tournamentPrepCard = featureCards.getByRole("link", { name: /Tournament Prep/i });
-    await expect(tournamentPrepCard).toBeVisible();
-    await tournamentPrepCard.click();
-    await expect(page).toHaveURL(/\/tournament-likelihood/);
+    const trendsCard = featureCards.getByRole("link", { name: /Recent Trends/i });
+    await expect(trendsCard).toBeVisible();
+    await trendsCard.click();
+    await expect(page).toHaveURL(/\/commanders\/trends/);
   });
 
   test("tool links on home are valid when present", async ({ page }) => {
