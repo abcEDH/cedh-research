@@ -236,7 +236,9 @@ function chunkArray<T>(values: T[], chunkSize: number) {
   return chunks;
 }
 
-async function fetchLatestCommanders(rows: LeaderboardRow[]): Promise<Map<string, LatestCommanderRow>> {
+async function fetchLatestCommanders(
+  rows: Array<{ topdeck_id: string | null }>
+): Promise<Map<string, LatestCommanderRow>> {
   const topdeckIds = rows
     .map((row) => row.topdeck_id)
     .filter((value): value is string => Boolean(value));
@@ -327,7 +329,7 @@ const getCachedLeaderboardRows = unstable_cache(
 const getCachedLatestCommanders = unstable_cache(
   async (topdeckIds: string[]) => {
     // We fetch profiles using IDs to ensure the cache key is stable and specific to the players shown.
-    const map = await fetchLatestCommanders(topdeckIds.map(id => ({ topdeck_id: id } as any)));
+    const map = await fetchLatestCommanders(topdeckIds.map((id) => ({ topdeck_id: id })));
     return Object.fromEntries(map.entries());
   },
   ["regional-elo-latest-commanders-v3"],
