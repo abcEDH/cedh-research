@@ -1,3 +1,10 @@
+## [1.10.3](https://github.com/abcEDH/cedh-research/compare/v1.10.2...v1.10.3) (2026-05-02)
+
+
+### Bug Fixes
+
+* resolve commander performance truncation and decklist parsing bugs ([#154](https://github.com/abcEDH/cedh-research/issues/154)) ([3448264](https://github.com/abcEDH/cedh-research/commit/3448264652687b6bf428c454f03602483b7222b1))
+
 ## [1.10.2](https://github.com/abcEDH/cedh-research/compare/v1.10.1...v1.10.2) (2026-05-02)
 
 
