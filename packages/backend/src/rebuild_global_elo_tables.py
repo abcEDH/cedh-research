@@ -10,7 +10,7 @@ import os
 import re
 import time
 from collections import defaultdict
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -99,7 +99,9 @@ def empty_rating(player_id: str) -> dict[str, Any]:
     }
 
 
-def with_page_params(params: dict[str, str] | list[tuple[str, str]], limit: int, offset: int) -> dict[str, str] | list[tuple[str, str]]:
+def with_page_params(
+    params: dict[str, str] | list[tuple[str, str]], limit: int, offset: int
+) -> dict[str, str] | list[tuple[str, str]]:
     if isinstance(params, list):
         return [*params, ("limit", str(limit)), ("offset", str(offset))]
     return {**params, "limit": str(limit), "offset": str(offset)}
@@ -111,12 +113,13 @@ def fetch_all(
     params: dict[str, str] | list[tuple[str, str]],
     limit: int = 1000,
     label: str | None = None,
+    max_retries: int = 8,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     offset = 0
     started = time.time()
     while True:
-        page = client.select(table, with_page_params(params, limit, offset))
+        page = client.select(table, with_page_params(params, limit, offset), max_retries=max_retries)
         if not page:
             break
         rows.extend(page)
@@ -128,6 +131,61 @@ def fetch_all(
             source = label or table
             print(f"Fetched {offset:,} rows from {source} in {elapsed:.1f}s", flush=True)
     return rows
+
+
+def _http_error_is_missing_topdeck_column(exc: requests.exceptions.HTTPError, column_name: str) -> bool:
+    response = exc.response
+    status_code = getattr(response, "status_code", None)
+    response_text = str(getattr(response, "text", "") or "").lower()
+    normalized_column = column_name.lower()
+
+    if status_code not in {400, 404} or normalized_column not in response_text:
+        return False
+
+    missing_column_markers = (
+        "42703",
+        "pgrst204",
+        "could not find",
+        "does not exist",
+        "unknown column",
+    )
+    return any(marker in response_text for marker in missing_column_markers)
+
+
+def detect_topdeck_elo_id_column(client: SupabaseClient) -> str:
+    """Detect the TopDeck Elo id column without weakening full snapshot retries."""
+    last_schema_error: requests.exceptions.HTTPError | None = None
+    for id_column in ("topdeck_id", "uid"):
+        try:
+            client.select(
+                "topdeck_player_elos",
+                {"select": id_column, "limit": "1"},
+                max_retries=1,
+            )
+            return id_column
+        except requests.exceptions.HTTPError as exc:
+            if _http_error_is_missing_topdeck_column(exc, id_column):
+                last_schema_error = exc
+                if id_column == "topdeck_id":
+                    print(
+                        "topdeck_player_elos.topdeck_id not available; falling back to uid",
+                        flush=True,
+                    )
+                continue
+            raise
+
+    raise RuntimeError("topdeck_player_elos is missing both topdeck_id and uid columns") from last_schema_error
+
+
+def fetch_topdeck_elos(client: SupabaseClient) -> dict[str, float]:
+    """Read TopDeck Elo rows from either the normalized or legacy live schema."""
+    id_column = detect_topdeck_elo_id_column(client)
+    rows = fetch_all(
+        client,
+        "topdeck_player_elos",
+        {"select": f"{id_column},elo"},
+    )
+    return {str(row[id_column]): float(row["elo"]) for row in rows if row.get(id_column) and row.get("elo") is not None}
 
 
 def month_starts(start: date, end: date) -> list[date]:
@@ -185,7 +243,7 @@ def fetch_results_by_month(client: SupabaseClient) -> list[dict[str, Any]]:
         "player_name,result,is_draw,round_number,round_name,table_number"
     )
     all_rows: list[dict[str, Any]] = []
-    windows = month_starts(date(2022, 8, 1), datetime.now(timezone.utc).date())
+    windows = month_starts(date(2022, 8, 1), datetime.now(UTC).date())
     for window_start in windows:
         window_end = next_month(window_start)
         rows = fetch_all(
@@ -527,6 +585,7 @@ def build_state_from_results(
 
 
 def finalize_rows(
+    topdeck_elos: dict[str, float],
     ratings: dict[str, dict[str, Any]],
     state_activity: dict[tuple[str, str], dict[str, Any]],
     player_meta: dict[str, dict[str, str | None]],
@@ -571,22 +630,28 @@ def finalize_rows(
             }
         )
 
-    primary_by_player = {
-        row["player_id"]: row
-        for row in state_rows
-        if row.get("is_primary_state")
-    }
+    primary_by_player = {row["player_id"]: row for row in state_rows if row.get("is_primary_state")}
     active_cutoff = today - timedelta(days=ACTIVE_LOOKBACK_DAYS)
     active_rating_rows = [
         row
         for row in rating_rows
         if row.get("last_game_date") and date.fromisoformat(row["last_game_date"]) >= active_cutoff
     ]
-    active_rating_rows.sort(key=lambda row: (-float(row["rating"]), -int(row["games_played"]), player_meta[row["player_id"]].get("player_name") or ""))
+    active_rating_rows.sort(
+        key=lambda row: (
+            -float(row["rating"]),
+            -int(row["games_played"]),
+            player_meta[row["player_id"]].get("player_name") or "",
+        )
+    )
 
     leaderboard_rows: list[dict[str, Any]] = []
 
     def append_ranked(region_type: str, region_key: str, country_key: str | None, rows: list[dict[str, Any]]) -> None:
+        # We now offer two primary sort paths. The "rank" column remains tied to
+        # our internal Elo rating. The "topdeck_elo_rank" is calculated separately.
+
+        # 1. Internal Rank (by rating)
         rows.sort(
             key=lambda row: (
                 -float(row["rating"]),
@@ -595,18 +660,40 @@ def finalize_rows(
                 player_meta[row["player_id"]].get("player_name") or "",
             )
         )
+        internal_ranks = {row["player_id"]: rank for rank, row in enumerate(rows, start=1)}
+
+        # 2. TopDeck Rank (by topdeck_elo)
+        rows.sort(
+            key=lambda row: (
+                -(topdeck_elos.get(player_meta[row["player_id"]].get("topdeck_id") or "") or 0),
+                -float(row["rating"]),
+                player_meta[row["player_id"]].get("player_name") or "",
+            )
+        )
+        topdeck_ranks = {}
         for rank, row in enumerate(rows, start=1):
-            meta = player_meta[row["player_id"]]
-            primary = primary_by_player.get(row["player_id"], {})
+            tid = player_meta[row["player_id"]].get("topdeck_id")
+            if tid and tid in topdeck_elos:
+                topdeck_ranks[row["player_id"]] = rank
+
+        for row in rows:
+            player_id = row["player_id"]
+            meta = player_meta[player_id]
+            primary = primary_by_player.get(player_id, {})
+            tid = meta.get("topdeck_id")
+            t_elo = topdeck_elos.get(tid) if tid else None
+
             leaderboard_rows.append(
                 {
                     "region_type": region_type,
                     "region_key": region_key,
                     "country_key": country_key,
-                    "player_id": row["player_id"],
+                    "player_id": player_id,
                     "player_name": meta.get("player_name") or "Unknown",
-                    "topdeck_id": meta.get("topdeck_id"),
-                    "rank": rank,
+                    "topdeck_id": tid,
+                    "rank": internal_ranks[player_id],
+                    "topdeck_elo": t_elo,
+                    "topdeck_elo_rank": topdeck_ranks.get(player_id),
                     "rating": row["rating"],
                     "games_played": row["games_played"],
                     "wins": row["wins"],
@@ -680,12 +767,15 @@ def finalize_rows(
 
 
 def build_rows(
+    client: SupabaseClient,
     results: list[dict[str, Any]],
     ratings: dict[str, dict[str, Any]] | None = None,
     state_activity: dict[tuple[str, str], dict[str, Any]] | None = None,
     player_meta: dict[str, dict[str, str | None]] | None = None,
     events: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    print("Fetching TopDeck Elos for enrichment...", flush=True)
+    topdeck_elos = fetch_topdeck_elos(client)
     ratings, state_activity, player_meta, events = build_state_from_results(
         results,
         ratings=ratings,
@@ -693,7 +783,7 @@ def build_rows(
         player_meta=player_meta,
         events=events,
     )
-    return finalize_rows(ratings, state_activity, player_meta, events)
+    return finalize_rows(topdeck_elos, ratings, state_activity, player_meta, events)
 
 
 def fetch_existing_rating_state(
@@ -856,7 +946,10 @@ def main() -> None:
         )
         recent_state_results = fetch_recent_state_results(client, datetime.now(timezone.utc).date() - timedelta(days=365))
         recompute_rolling_state_windows(state_activity, recent_state_results, datetime.now(timezone.utc).date())
+        print("Fetching TopDeck Elos for enrichment...", flush=True)
+        topdeck_elos = fetch_topdeck_elos(client)
         rating_rows, state_rows, event_rows, leaderboard_rows, profile_rows = finalize_rows(
+            topdeck_elos,
             ratings,
             state_activity,
             player_meta,
@@ -868,7 +961,7 @@ def main() -> None:
         results = fetch_results_by_month(client)
         merge_seat_positions(results, seat_positions)
         print(f"Fetched {len(results):,} participant result rows", flush=True)
-        rating_rows, state_rows, event_rows, leaderboard_rows, profile_rows = build_rows(results)
+        rating_rows, state_rows, event_rows, leaderboard_rows, profile_rows = build_rows(client, results)
     print(
         "Built "
         f"{len(rating_rows):,} ratings, "
@@ -918,12 +1011,20 @@ def main() -> None:
 
     print("Upserting ratings", flush=True)
     chunked_upsert(client, "global_elo_ratings", rating_rows, "player_id,region_type,region_key")
+
     print("Upserting state activity", flush=True)
+    # Clear state activity before re-upserting to ensure old primary states are removed
+    rest_delete(client, "global_elo_state_activity", {"region_type": "eq.state"})
     chunked_upsert(client, "global_elo_state_activity", state_rows, "region_type,region_key,player_id")
+
     print("Upserting game events", flush=True)
     chunked_upsert(client, "global_elo_game_events", event_rows, "region_type,region_key,game_id,player_id")
+
     print("Upserting active leaderboard", flush=True)
+    # We clear the leaderboard because rank order changes and we don't want trailing rows
+    rest_delete(client, "global_elo_active_leaderboard", {"region_type": "not.is.null"})
     chunked_upsert(client, "global_elo_active_leaderboard", leaderboard_rows, "region_type,region_key,player_id")
+
     print("Upserting profile summaries", flush=True)
     chunked_upsert(client, "global_elo_player_profile_summaries", profile_rows, "player_id")
     print("Done", flush=True)

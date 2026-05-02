@@ -5,11 +5,13 @@ test.describe("Commander Detail Page", () => {
   let commanderId: string;
 
   test.beforeAll(async ({ browser }) => {
+    test.setTimeout(60000);
     const page = await browser.newPage();
     await page.goto("/commanders");
 
     // Get the first commander's link to extract ID
     const firstCommanderLink = page.locator('a[href^="/commanders/"]').first();
+    await expect(firstCommanderLink).toBeVisible({ timeout: 45000 });
     const href = await firstCommanderLink.getAttribute("href");
     commanderId = href?.replace("/commanders/", "") || "";
     await page.close();

@@ -1,4 +1,6 @@
+import { Suspense } from "react";
 import Link from "next/link";
+import { unstable_cache } from "next/cache";
 import { supabase } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -12,6 +14,7 @@ import TrendMetricCharts, {
 } from "@/components/commanders/trend-metric-charts";
 
 export const dynamic = "force-dynamic";
+const COMMANDERS_CACHE_REVALIDATE_SECONDS = 60 * 30; // 30 minutes
 
 interface CommanderStat {
   commander_id: string;
@@ -66,7 +69,7 @@ async function getCommanders() {
 
   if (error) {
     console.error("Error fetching commanders:", error);
-    return [];
+    throw error;
   }
   return data as CommanderStat[];
 }
@@ -95,6 +98,10 @@ async function getCommanderPeriodSnapshots(commanderIds: string[]) {
       .select("commander_id, week_start_date, entries, wins, losses, draws")
       .in("commander_id", commanderIds)
       .order("week_start_date", { ascending: true });
+    if (weeklyFallback.error) {
+      console.error("Error fetching weekly trends fallback:", weeklyFallback.error);
+      throw weeklyFallback.error;
+    }
     weeklyData = weeklyFallback.data ?? [];
   }
 
@@ -105,14 +112,11 @@ async function getCommanderPeriodSnapshots(commanderIds: string[]) {
       .select("commander_id, month_key, entries, wins, losses, draws")
       .in("commander_id", commanderIds)
       .order("month_key", { ascending: true });
+    if (monthlyFallback.error) {
+      console.error("Error fetching monthly trends fallback:", monthlyFallback.error);
+      throw monthlyFallback.error;
+    }
     monthlyData = monthlyFallback.data ?? [];
-  }
-
-  if (weeklyPrimary.error) {
-    console.error("Error fetching weekly trends:", weeklyPrimary.error);
-  }
-  if (monthlyPrimary.error) {
-    console.error("Error fetching monthly trends:", monthlyPrimary.error);
   }
 
   const weeklyRows = weeklyData;
@@ -169,7 +173,7 @@ async function getWeeklyEntries(commanderIds: string[], weeks = 12) {
 
   if (error) {
     console.error("Error fetching weekly trends:", error);
-    return {};
+    throw error;
   }
 
   const rows = (data || []) as WeeklyTrendRow[];
@@ -208,9 +212,11 @@ async function getGlobalTrendSeries() {
 
   if (weeklyResult.error) {
     console.error("Error fetching global weekly trends:", weeklyResult.error);
+    throw weeklyResult.error;
   }
   if (monthlyResult.error) {
     console.error("Error fetching global monthly trends:", monthlyResult.error);
+    throw monthlyResult.error;
   }
 
   const weeklyRows = (weeklyResult.data || []) as {
@@ -274,26 +280,31 @@ async function getGlobalTrendSeries() {
   return { weekly, monthly } satisfies TrendMetricSeries;
 }
 
-export default async function CommandersPage() {
-  const commanders = await getCommanders();
-  const topCommanders = [...commanders].sort((a, b) => b.total_entries - a.total_entries).slice(0, 30);
-  const snapshotsByCommanderId = await getCommanderPeriodSnapshots(
-    topCommanders.map((commander) => commander.commander_id)
-  );
-  const weeklyEntriesByCommanderId = await getWeeklyEntries(
-    topCommanders.map((commander) => commander.commander_id),
-    12
-  );
-  const globalSeries = await getGlobalTrendSeries();
+const getCachedCommanders = unstable_cache(
+  getCommanders,
+  ["commanders-list-v1"],
+  { revalidate: COMMANDERS_CACHE_REVALIDATE_SECONDS }
+);
 
-  const totalEntries = commanders.reduce((sum, c) => sum + c.total_entries, 0);
-  const avgWinRate =
-    commanders.reduce((sum, c) => sum + parseFloat(c.avg_win_rate), 0) /
-    Math.max(commanders.length, 1);
-  const avgTop16 =
-    commanders.reduce((sum, c) => sum + parseFloat(c.conversion_rate_top_16), 0) /
-    Math.max(commanders.length, 1);
+const getCachedCommanderPeriodSnapshots = unstable_cache(
+  async (commanderIds: string[]) => getCommanderPeriodSnapshots(commanderIds),
+  ["commander-period-snapshots-v1"],
+  { revalidate: COMMANDERS_CACHE_REVALIDATE_SECONDS }
+);
 
+const getCachedWeeklyEntries = unstable_cache(
+  async (commanderIds: string[], weeks: number) => getWeeklyEntries(commanderIds, weeks),
+  ["commander-weekly-entries-v1"],
+  { revalidate: COMMANDERS_CACHE_REVALIDATE_SECONDS }
+);
+
+const getCachedGlobalTrendSeries = unstable_cache(
+  getGlobalTrendSeries,
+  ["commander-global-trends-v1"],
+  { revalidate: COMMANDERS_CACHE_REVALIDATE_SECONDS }
+);
+
+export default function CommandersPage() {
   return (
     <div className="min-h-screen">
       <main className="container mx-auto px-4 py-8">
@@ -309,9 +320,15 @@ export default async function CommandersPage() {
             <h1 className="mt-4 text-3xl font-semibold text-foreground md:text-4xl">
               Commander Rankings
             </h1>
-            <p className="text-muted-foreground mt-2">
-              Performance data for {commanders.length} commanders with 5+ tournament entries.
-            </p>
+            <Suspense
+              fallback={
+                <p className="text-muted-foreground mt-2">
+                  Loading commander rankings…
+                </p>
+              }
+            >
+              <CommanderHeaderSummary />
+            </Suspense>
             <div className="mt-3 flex flex-wrap gap-3 text-sm">
               <Link
                 href="/commanders/trends"
@@ -323,41 +340,14 @@ export default async function CommandersPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-4 mb-8">
-          <StatCard
-            label="Total Commanders"
-            value={commanders.length.toString()}
-            tone="neutral"
-            tooltip="Number of commanders with 5+ entries."
-            testId="stat-total-commanders"
-          />
-          <StatCard
-            label="Total Entries"
-            value={totalEntries.toLocaleString()}
-            tone="neutral"
-            tooltip="Total tournament entries across all listed commanders."
-            testId="stat-total-entries"
-          />
-          <StatCard
-            label="Avg Win Rate"
-            value={`${(avgWinRate * 100).toFixed(1)}%`}
-            tone="neutral"
-            tooltip="Average commander win rate. Baseline in 4-player pods is 25%."
-          />
-          <StatCard
-            label="Avg Top 16/Top 10/Top 4"
-            value={`${(avgTop16 * 100).toFixed(1)}%`}
-            tone="neutral"
-            tooltip="Average conversion into top bracket. Under 64 players, events may use Top 10, and for 34 players or fewer we only count Top 4 finishes."
-          />
-        </div>
+        <Suspense fallback={<StatsSummarySkeleton />}>
+          <StatsSummarySection />
+        </Suspense>
 
         <div className="mb-8">
-          <TrendMetricCharts
-            series={globalSeries}
-            title="All commanders"
-            description="Aggregate trends across all commanders (entries, win rate, points per game)."
-          />
+          <Suspense fallback={<SectionSkeleton label="Loading aggregate trends…" />}>
+            <GlobalTrendsSection />
+          </Suspense>
         </div>
 
         <div className="mb-8">
@@ -372,16 +362,133 @@ export default async function CommandersPage() {
               Explore full trends →
             </Link>
           </div>
-          <CommanderTrendsTable
-            commanders={topCommanders}
-            snapshotsByCommanderId={snapshotsByCommanderId}
-            weeklyEntriesByCommanderId={weeklyEntriesByCommanderId}
-            limit={30}
-          />
+          <Suspense fallback={<SectionSkeleton label="Loading trends snapshot…" />}>
+            <CommanderTrendsSection />
+          </Suspense>
         </div>
 
-        <CommandersTable commanders={commanders} />
+        <Suspense fallback={<SectionSkeleton label="Loading commander rankings…" />}>
+          <CommanderRankingsTable />
+        </Suspense>
       </main>
+    </div>
+  );
+}
+
+async function CommanderHeaderSummary() {
+  const commanders = await getCachedCommanders();
+  return (
+    <p className="text-muted-foreground mt-2">
+      Performance data for {commanders.length} commanders with 5+ tournament entries.
+    </p>
+  );
+}
+
+async function StatsSummarySection() {
+  const commanders = await getCachedCommanders();
+  const totalEntries = commanders.reduce((sum, c) => sum + c.total_entries, 0);
+  const avgWinRate =
+    commanders.reduce((sum, c) => sum + parseFloat(c.avg_win_rate), 0) /
+    Math.max(commanders.length, 1);
+  const avgTop16 =
+    commanders.reduce((sum, c) => sum + parseFloat(c.conversion_rate_top_16), 0) /
+    Math.max(commanders.length, 1);
+
+  return (
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-4 mb-8">
+      <StatCard
+        label="Total Commanders"
+        value={commanders.length.toString()}
+        tone="neutral"
+        tooltip="Number of commanders with 5+ entries."
+        testId="stat-total-commanders"
+      />
+      <StatCard
+        label="Total Entries"
+        value={totalEntries.toLocaleString()}
+        tone="neutral"
+        tooltip="Total tournament entries across all listed commanders."
+        testId="stat-total-entries"
+      />
+      <StatCard
+        label="Avg Win Rate"
+        value={`${(avgWinRate * 100).toFixed(1)}%`}
+        tone="neutral"
+        tooltip="Average commander win rate. Baseline in 4-player pods is 25%."
+      />
+      <StatCard
+        label="Avg Top 16/Top 10/Top 4"
+        value={`${(avgTop16 * 100).toFixed(1)}%`}
+        tone="neutral"
+        tooltip="Average conversion into top bracket. Under 64 players, events may use Top 10, and for 34 players or fewer we only count Top 4 finishes."
+      />
+    </div>
+  );
+}
+
+async function CommanderRankingsTable() {
+  const commanders = await getCachedCommanders();
+  return <CommandersTable commanders={commanders} />;
+}
+
+async function CommanderTrendsSection() {
+  const commanders = await getCachedCommanders();
+  const topCommanders = [...commanders]
+    .sort((a, b) => b.total_entries - a.total_entries)
+    .slice(0, 30);
+  const topCommanderIds = topCommanders
+    .map((commander) => commander.commander_id)
+    .sort((a, b) => a.localeCompare(b));
+  const [snapshotsByCommanderId, weeklyEntriesByCommanderId] = await Promise.all([
+    getCachedCommanderPeriodSnapshots(topCommanderIds),
+    getCachedWeeklyEntries(topCommanderIds, 12),
+  ]);
+  return (
+    <CommanderTrendsTable
+      commanders={topCommanders}
+      snapshotsByCommanderId={snapshotsByCommanderId}
+      weeklyEntriesByCommanderId={weeklyEntriesByCommanderId}
+      limit={30}
+    />
+  );
+}
+
+async function GlobalTrendsSection() {
+  const globalSeries = await getCachedGlobalTrendSeries();
+  return (
+    <TrendMetricCharts
+      series={globalSeries}
+      title="All commanders"
+      description="Aggregate trends across all commanders (entries, win rate, points per game)."
+    />
+  );
+}
+
+function StatsSummarySkeleton() {
+  return (
+    <div
+      aria-hidden
+      className="grid grid-cols-1 gap-4 md:grid-cols-4 mb-8"
+    >
+      {[0, 1, 2, 3].map((i) => (
+        <Card key={i}>
+          <CardContent className="pt-6">
+            <div className="h-3 w-24 rounded bg-muted/40" />
+            <div className="mt-3 h-7 w-20 rounded bg-muted/40" />
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+function SectionSkeleton({ label }: { label: string }) {
+  return (
+    <div
+      aria-hidden
+      className="rounded-lg border border-border/40 bg-card/40 px-4 py-6 text-sm text-muted-foreground"
+    >
+      {label}
     </div>
   );
 }

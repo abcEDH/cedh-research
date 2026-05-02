@@ -17,6 +17,7 @@ type LeaderboardRow = {
   rank: number;
   hidden_rating?: number;
   topdeck_elo?: number | null;
+  topdeck_elo_rank?: number | null;
 };
 
 type LatestCommanderRow = {
@@ -103,7 +104,8 @@ export function RegionalLeaderboardTable({
             {leaderboard.map((row, index) => {
               const latestCommander = row.topdeck_id ? latestByPlayer[row.topdeck_id] : undefined;
               const latestTournamentHref = buildTopdeckTournamentUrl(latestCommander?.latest_tournament_topdeck_tid);
-              const displayRank = (currentPage - 1) * pageSize + index + 1;
+              const displayRank =
+                row.topdeck_elo_rank ?? (currentPage - 1) * pageSize + index + 1;
               const playerHref =
                 row.topdeck_id && row.region_type === "state"
                   ? `/regional-elo/player/${row.topdeck_id}?region=${encodeURIComponent(row.region_key)}`
@@ -128,7 +130,7 @@ export function RegionalLeaderboardTable({
                     )}
                   </td>
                   <td className="px-2 py-3 font-semibold text-primary">
-                    {row.topdeck_elo == null ? "-" : Math.round(row.rating)}
+                    {row.topdeck_elo == null ? "-" : Math.round(row.topdeck_elo)}
                   </td>
                   <td className="px-2 py-3 text-xs text-muted-foreground">
                     <div className="truncate">

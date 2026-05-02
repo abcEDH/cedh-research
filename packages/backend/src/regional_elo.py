@@ -7,13 +7,17 @@ Usage:
 
 from __future__ import annotations
 
-import os
-import time
 import argparse
+import os
+import sys
+import time
 from collections import defaultdict
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
+from typing import Any
+
+import requests
 
 from ingest import SupabaseClient
 
@@ -205,7 +209,7 @@ def elo_probability(rating_a: float, rating_b: float) -> float:
     return 1 / (1 + pow(ELO_BASE, (rating_b - rating_a) / ELO_DIVISOR))
 
 
-def update_elo(winner_rating: float, loser_rating: float) -> Tuple[float, float]:
+def update_elo(winner_rating: float, loser_rating: float) -> tuple[float, float]:
     """Calculate new Elo ratings after a game."""
     expected_winner = elo_probability(winner_rating, loser_rating)
     expected_loser = elo_probability(loser_rating, winner_rating)
@@ -239,7 +243,7 @@ def get_country_for_state(state: str) -> str:
 
 def create_empty_ratings_row(
     player_id: str, region_type: str, region_key: str, rating: float = DEFAULT_RATING
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Create a new ratings row with default values."""
     return {
         "player_id": player_id,
@@ -256,16 +260,15 @@ def create_empty_ratings_row(
 
 
 def process_results(
-    participant_records: Iterable[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
+    participant_records: Iterable[dict[str, Any]],
+) -> list[dict[str, Any]]:
     """Process participant records into ratings updates."""
-    player_ratings: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
-    game_events: List[Dict[str, Any]] = []
+    game_events: list[dict[str, Any]] = []
 
-    standings: List[Tuple[float, int, Dict[str, Any]]] = []
+    standings: list[tuple[float, int, dict[str, Any]]] = []
     for p in participant_records:
         entry_id = p.get("entry_id") or ""
-        standing: Dict[str, Any] = {
+        standing: dict[str, Any] = {
             "id": entry_id,
             "wins": p.get("wins", 0) or 0,
             "draws": p.get("draws", 0) or 0,
@@ -316,8 +319,8 @@ def process_results(
 
 
 def update_ratings_with_games(
-    player_ratings: Dict[Tuple[str, str, str], Dict[str, Any]],
-    game_events: Iterable[Dict[str, Any]],
+    player_ratings: dict[tuple[str, str, str], dict[str, Any]],
+    game_events: Iterable[dict[str, Any]],
 ) -> None:
     """Update ratings based on game results."""
     for event in game_events:
@@ -345,9 +348,7 @@ def update_ratings_with_games(
         opp_row = player_ratings[opp_key]
 
         if outcome == "win":
-            new_player, new_opp = update_elo(
-                player_row["rating"], opp_row["rating"]
-            )
+            new_player, new_opp = update_elo(player_row["rating"], opp_row["rating"])
             player_row["wins"] += 1
             player_row["win_streak"] += 1
             player_row["loss_streak"] = 0
@@ -355,9 +356,7 @@ def update_ratings_with_games(
             opp_row["win_streak"] = 0
             opp_row["loss_streak"] += 1
         elif outcome == "loss":
-            new_opp, new_player = update_elo(
-                opp_row["rating"], player_row["rating"]
-            )
+            new_opp, new_player = update_elo(opp_row["rating"], player_row["rating"])
             player_row["losses"] += 1
             player_row["loss_streak"] += 1
             player_row["win_streak"] = 0
@@ -433,7 +432,7 @@ def fail_job(client: SupabaseClient, job_id: str, error: str) -> None:
         print(f"Failed to record job failure for {job_id}: {exc}", flush=True)
 
 
-QueryParams = Mapping[str, Any] | Sequence[Tuple[str, Any]]
+QueryParams = Mapping[str, Any] | Sequence[tuple[str, Any]]
 
 
 def with_paging_params(params: QueryParams, limit: int, offset: int) -> QueryParams:
@@ -443,11 +442,17 @@ def with_paging_params(params: QueryParams, limit: int, offset: int) -> QueryPar
     return [*params, *page_params.items()]
 
 
-def fetch_all(client: SupabaseClient, table: str, params: QueryParams, limit: int = 1000) -> List[Dict[str, Any]]:
+def fetch_all(
+    client: SupabaseClient,
+    table: str,
+    params: QueryParams,
+    limit: int = 1000,
+    max_retries: int = 8,
+) -> list[dict[str, Any]]:
     offset = 0
-    rows: List[Dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
     while True:
-        page = client.select(table, with_paging_params(params, limit, offset))
+        page = client.select(table, with_paging_params(params, limit, offset), max_retries=max_retries)
         if not page:
             break
         rows.extend(page)
@@ -459,7 +464,7 @@ def fetch_all(client: SupabaseClient, table: str, params: QueryParams, limit: in
 
 def fetch_participants_for_leaderboard(
     client: SupabaseClient, lookback_months: int = ACTIVE_PLAYER_LOOKBACK_MONTHS
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     cutoff = get_past_months_cutoff(lookback_months)
     return fetch_all(
         client,
@@ -475,7 +480,7 @@ def fetch_participants_for_leaderboard(
 
 def fetch_commander_participants(
     client: SupabaseClient, lookback_months: int = COMMANDER_PRIMARY_LOOKBACK_MONTHS
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     cutoff = get_past_months_cutoff(lookback_months)
     return fetch_all(
         client,
@@ -489,9 +494,7 @@ def fetch_commander_participants(
     )
 
 
-def fetch_distinct_entry_ids(
-    client: SupabaseClient, lookback_months: int = ACTIVE_PLAYER_LOOKBACK_MONTHS
-) -> set[str]:
+def fetch_distinct_entry_ids(client: SupabaseClient, lookback_months: int = ACTIVE_PLAYER_LOOKBACK_MONTHS) -> set[str]:
     cutoff = get_past_months_cutoff(lookback_months)
     rows = fetch_all(
         client,
@@ -521,11 +524,9 @@ def fetch_distinct_commander_ids(
     return {r["commander_id"] for r in rows if r.get("commander_id")}
 
 
-def compute_leaderboard(
-    player_rows: List[Dict[str, Any]]
-) -> Dict[Tuple[str, str, str], List[Dict[str, Any]]]:
+def compute_leaderboard(player_rows: list[dict[str, Any]]) -> dict[tuple[str, str, str], list[dict[str, Any]]]:
     """Build leaderboard grouped by region."""
-    by_region: Dict[Tuple[str, str, str], List[Dict[str, Any]]] = defaultdict(list)
+    by_region: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in player_rows:
         region_type = row.get("region_type", GLOBAL_REGION_TYPE)
         region_key = row.get("region_key", GLOBAL_REGION_KEY)
@@ -536,17 +537,18 @@ def compute_leaderboard(
 
 
 def build_player_profiles(
-    player_rows: List[Dict[str, Any]],
+    player_rows: list[dict[str, Any]],
     lookback_days: int = 30,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Build profile summary with recent activity indicators."""
+    cutoff = get_past_days_cutoff(lookback_days)
     recent_set = {r["player_id"] for r in player_rows if r.get("last_activity") and r["last_activity"] >= cutoff}
     return [r for r in player_rows if r.get("player_id") in recent_set]
 
 
 def detect_active_players(
     client: SupabaseClient, lookback_months: int = ACTIVE_PLAYER_LOOKBACK_MONTHS
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Identify players with recent activity."""
     cutoff = get_past_months_cutoff(lookback_months)
     rows = fetch_all(
@@ -560,7 +562,7 @@ def detect_active_players(
         },
     )
     seen: set[str] = set()
-    active: List[Dict[str, Any]] = []
+    active: list[dict[str, Any]] = []
     for r in rows:
         pid = r["player_id"]
         if pid and pid not in seen:
@@ -579,8 +581,301 @@ def compute_commander_recency_weight(
     return min(1.0, max(0.5, weight))
 
 
-# === CLI Entry Point ===
-import sys
+MATERIALIZED_VIEW_REFRESH_FUNCTIONS = [
+    "refresh_commander_trends",
+    "refresh_card_frequencies",
+    "refresh_card_performance",
+]
+
+ACTIVE_LEADERBOARD_TABLE = "global_elo_active_leaderboard"
+ACTIVE_LEADERBOARD_BATCH_SIZE = 1000
+
+
+def assign_topdeck_elo_ranks(
+    rows: list[dict[str, Any]],
+) -> None:
+    """Assign topdeck_elo_rank within each (region_type, region_key) partition.
+
+    Rows are sorted by topdeck_elo DESC with NULLs last; rows whose
+    topdeck_elo is None receive rank = None. Ties are broken stably by
+    rating DESC, then player_name ASC for deterministic ordering. Mutates
+    rows in place by setting the ``topdeck_elo_rank`` field.
+    """
+    partitions: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        partitions[(row.get("region_type", ""), row.get("region_key", ""))].append(row)
+
+    for partition_rows in partitions.values():
+        ranked = [r for r in partition_rows if r.get("topdeck_elo") is not None]
+        unranked = [r for r in partition_rows if r.get("topdeck_elo") is None]
+        ranked.sort(
+            key=lambda r: (
+                -float(r.get("topdeck_elo") or 0),
+                -float(r.get("rating") or 0),
+                str(r.get("player_name") or ""),
+            )
+        )
+        for index, row in enumerate(ranked, start=1):
+            row["topdeck_elo_rank"] = index
+        for row in unranked:
+            row["topdeck_elo_rank"] = None
+
+
+def _coerce_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _http_error_is_missing_topdeck_column(exc: requests.exceptions.HTTPError, column_name: str) -> bool:
+    response = exc.response
+    status_code = getattr(response, "status_code", None)
+    response_text = str(getattr(response, "text", "") or "").lower()
+    normalized_column = column_name.lower()
+
+    if status_code not in {400, 404} or normalized_column not in response_text:
+        return False
+
+    missing_column_markers = (
+        "42703",
+        "pgrst204",
+        "could not find",
+        "does not exist",
+        "unknown column",
+    )
+    return any(marker in response_text for marker in missing_column_markers)
+
+
+def detect_topdeck_elo_id_column(client: SupabaseClient) -> str:
+    """Detect the TopDeck Elo id column without weakening full snapshot retries."""
+    last_schema_error: requests.exceptions.HTTPError | None = None
+    for id_column in ("topdeck_id", "uid"):
+        try:
+            client.select(
+                "topdeck_player_elos",
+                {"select": id_column, "limit": "1"},
+                max_retries=1,
+            )
+            return id_column
+        except requests.exceptions.HTTPError as exc:
+            if _http_error_is_missing_topdeck_column(exc, id_column):
+                last_schema_error = exc
+                continue
+            raise
+
+    raise RuntimeError("topdeck_player_elos is missing both topdeck_id and uid columns") from last_schema_error
+
+
+def build_active_leaderboard_rows(
+    ratings_rows: Iterable[Mapping[str, Any]],
+    player_index: Mapping[str, Mapping[str, Any]],
+    topdeck_elo_by_topdeck_id: Mapping[str, float],
+    state_stats_by_player: Mapping[str, Mapping[str, Any]],
+    updated_at: str,
+) -> list[dict[str, Any]]:
+    """Materialise active leaderboard rows for global, country, and state slices.
+
+    Mirrors the shape produced by the regional_elo_leaderboard view but is
+    persisted to the leaderboard table so PostgREST can serve the data
+    without joining to topdeck_player_elos at request time.
+    """
+    leaderboard_rows: list[dict[str, Any]] = []
+    for rating_row in ratings_rows:
+        if rating_row.get("region_type") != GLOBAL_REGION_TYPE:
+            continue
+        if rating_row.get("region_key") != GLOBAL_REGION_KEY:
+            continue
+
+        player_id = rating_row.get("player_id")
+        if not player_id:
+            continue
+        player = player_index.get(player_id)
+        if not player:
+            continue
+
+        rating = _coerce_float(rating_row.get("rating")) or DEFAULT_RATING
+        games_played = int(rating_row.get("games_played") or 0)
+        wins = int(rating_row.get("wins") or 0)
+        draws = int(rating_row.get("draws") or 0)
+        losses = int(rating_row.get("losses") or 0)
+        topdeck_id = player.get("topdeck_id")
+        topdeck_elo = topdeck_elo_by_topdeck_id.get(str(topdeck_id)) if topdeck_id else None
+
+        state_stats = state_stats_by_player.get(player_id) or {}
+        primary_country_key = state_stats.get("country_key") or ""
+        primary_region_key = state_stats.get("region_key") or ""
+        activity_score = _coerce_float(state_stats.get("activity_score"))
+        last_game_date = state_stats.get("last_game_date")
+
+        base_row: dict[str, Any] = {
+            "player_id": player_id,
+            "player_name": player.get("name") or "",
+            "topdeck_id": topdeck_id,
+            "rating": rating,
+            "games_played": games_played,
+            "wins": wins,
+            "draws": draws,
+            "losses": losses,
+            "last_game_date": last_game_date,
+            "primary_country_key": primary_country_key or None,
+            "primary_region_key": primary_region_key or None,
+            "activity_score": activity_score,
+            "topdeck_elo": topdeck_elo,
+            "updated_at": updated_at,
+        }
+
+        # Global slice - one row per player.
+        leaderboard_rows.append(
+            {
+                **base_row,
+                "region_type": GLOBAL_REGION_TYPE,
+                "region_key": GLOBAL_REGION_KEY,
+                "country_key": None,
+            }
+        )
+
+        # Country slice - first-class row per country, no longer inferred at read time.
+        if primary_country_key:
+            leaderboard_rows.append(
+                {
+                    **base_row,
+                    "region_type": "country",
+                    "region_key": primary_country_key,
+                    "country_key": primary_country_key,
+                }
+            )
+
+        # State slice - keyed on the state region key under its country.
+        if primary_region_key:
+            leaderboard_rows.append(
+                {
+                    **base_row,
+                    "region_type": STATE_REGION_TYPE,
+                    "region_key": primary_region_key,
+                    "country_key": primary_country_key or None,
+                }
+            )
+
+    # Assign rating rank within each partition.
+    partitions: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    for row in leaderboard_rows:
+        partitions[(row["region_type"], row["region_key"])].append(row)
+
+    for partition_rows in partitions.values():
+        partition_rows.sort(
+            key=lambda r: (
+                -float(r.get("rating") or 0),
+                -float(r.get("activity_score") or 0),
+                -int(r.get("games_played") or 0),
+                str(r.get("player_name") or ""),
+            )
+        )
+        for index, row in enumerate(partition_rows, start=1):
+            row["rank"] = index
+
+    assign_topdeck_elo_ranks(leaderboard_rows)
+    return leaderboard_rows
+
+
+def fetch_player_index(client: SupabaseClient) -> dict[str, dict[str, Any]]:
+    """Fetch the player directory keyed by id for leaderboard enrichment."""
+    rows = fetch_all(
+        client,
+        "players",
+        {"select": "id,name,topdeck_id"},
+    )
+    return {row["id"]: row for row in rows if row.get("id")}
+
+
+def fetch_topdeck_elo_by_topdeck_id(client: SupabaseClient) -> dict[str, float]:
+    """Load the TopDeck Elo snapshot keyed by the external TopDeck player id."""
+    selected_id_column = detect_topdeck_elo_id_column(client)
+    rows = fetch_all(
+        client,
+        "topdeck_player_elos",
+        {"select": f"{selected_id_column},elo"},
+    )
+    elo_by_topdeck_id: dict[str, float] = {}
+    for row in rows:
+        topdeck_id = row.get(selected_id_column)
+        elo = _coerce_float(row.get("elo"))
+        if topdeck_id and elo is not None:
+            elo_by_topdeck_id[str(topdeck_id)] = elo
+    return elo_by_topdeck_id
+
+
+def fetch_primary_state_stats(client: SupabaseClient) -> dict[str, dict[str, Any]]:
+    """Load primary-state activity per player for country/state slice enrichment."""
+    rows = fetch_all(
+        client,
+        "regional_elo_primary_state_assignments",
+        {
+            "select": ("player_id,region_type,region_key,country_key,activity_score,last_game_date"),
+        },
+    )
+    by_player: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        player_id = row.get("player_id")
+        if not player_id:
+            continue
+        # Backfill country_key from the state lookup when the source view does
+        # not expose it directly (older view definitions only carry region_key).
+        if not row.get("country_key"):
+            inferred_country = get_country_for_state(row.get("region_key") or "")
+            if inferred_country:
+                row["country_key"] = inferred_country
+        by_player[player_id] = row
+    return by_player
+
+
+def delete_stale_active_leaderboard_rows(client: SupabaseClient, run_marker: str) -> None:
+    """Delete leaderboard rows that the current run did not refresh."""
+    try:
+        endpoint = f"{client.url}/rest/v1/{ACTIVE_LEADERBOARD_TABLE}"
+        params = {"updated_at": f"lt.{run_marker}"}
+        headers = {**client.headers, "Prefer": "return=minimal"}
+        response = requests.delete(endpoint, headers=headers, params=params, timeout=60)
+        if response.status_code >= 400:
+            print(
+                f"Stale leaderboard cleanup failed (non-fatal): {response.status_code} {response.text[:200]}",
+                flush=True,
+            )
+    except Exception as exc:  # pragma: no cover - best-effort cleanup
+        print(f"Stale leaderboard cleanup raised (non-fatal): {exc}", flush=True)
+
+
+def upsert_active_leaderboard_rows(
+    client: SupabaseClient,
+    rows: list[dict[str, Any]],
+    batch_size: int = ACTIVE_LEADERBOARD_BATCH_SIZE,
+) -> None:
+    """Upsert leaderboard rows in batches keyed on (region_type, region_key, player_id)."""
+    if not rows:
+        return
+    for start_index in range(0, len(rows), batch_size):
+        batch = rows[start_index : start_index + batch_size]
+        client.upsert(
+            ACTIVE_LEADERBOARD_TABLE,
+            batch,
+            on_conflict="region_type,region_key,player_id",
+        )
+
+
+def refresh_materialized_views(client: SupabaseClient) -> int:
+    """Refresh downstream materialized views. Returns count of successful refreshes."""
+    success_count = 0
+    for fn_name in MATERIALIZED_VIEW_REFRESH_FUNCTIONS:
+        try:
+            print(f"Refreshing materialized views via {fn_name}()...")
+            client.rpc(fn_name)
+            success_count += 1
+            print(f"  {fn_name}() completed.")
+        except Exception as exc:
+            print(f"  {fn_name}() failed (non-fatal): {exc}", flush=True)
+    return success_count
 
 
 def main() -> None:
@@ -642,32 +937,26 @@ def main() -> None:
         smoke_days = args.smoke_days
         cutoff = get_past_days_cutoff(smoke_days)
         print(f"[DRY RUN] Would compute Elo for games since {cutoff}")
-        print(f"[DRY RUN] Participant fetch not executed in dry-run mode")
+        print("[DRY RUN] Participant fetch not executed in dry-run mode")
         if job_id:
             fail_job(client, job_id, "Dry-run mode")
         sys.exit(0)
 
     print("Fetching participants for leaderboard...")
     update_job_heartbeat(client, job_id)
-    participant_rows = fetch_participants_for_leaderboard(
-        client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS
-    )
+    participant_rows = fetch_participants_for_leaderboard(client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS)
     update_job_heartbeat(client, job_id)
     print(f"Found {len(participant_rows)} participant rows")
 
     print("Fetching distinct entries for global ratings...")
-    entry_ids = fetch_distinct_entry_ids(
-        client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS
-    )
+    entry_ids = fetch_distinct_entry_ids(client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS)
     print(f"Found {len(entry_ids)} distinct entries")
 
     # Build ratings dict
-    player_ratings: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+    player_ratings: dict[tuple[str, str, str], dict[str, Any]] = {}
     for entry_id in entry_ids:
         key = (GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY, entry_id)
-        player_ratings[key] = create_empty_ratings_row(
-            entry_id, GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY
-        )
+        player_ratings[key] = create_empty_ratings_row(entry_id, GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY)
 
     update_job_heartbeat(client, job_id)
 
@@ -690,34 +979,35 @@ def main() -> None:
 
     update_job_heartbeat(client, job_id)
 
-    # Compute leaderboard
+    # Compute leaderboard - persist global, country, and state slices so
+    # /regional-elo can serve sorted reads (including TopDeck Elo) without a
+    # second query against topdeck_player_elos.
     print("Computing leaderboard...")
-    leaderboard = compute_leaderboard(ratings_to_upsert)
-    all_leaderboard_rows: List[Dict[str, Any]] = []
-    for (region_type, region_key), rows in leaderboard.items():
-        for rank, row in enumerate(rows, start=1):
-            all_leaderboard_rows.append(
-                {
-                    "player_id": row["player_id"],
-                    "region_type": region_type,
-                    "region_key": region_key,
-                    "rank": rank,
-                    "rating": row["rating"],
-                    "games_played": row["games_played"],
-                    "wins": row["wins"],
-                    "draws": row["draws"],
-                    "losses": row["losses"],
-                    "win_streak": row["win_streak"],
-                    "loss_streak": row["loss_streak"],
-                }
-            )
+    print("Loading player directory...")
+    player_index = fetch_player_index(client)
+    print(f"Loaded {len(player_index)} player rows")
+
+    print("Loading TopDeck Elo snapshot...")
+    topdeck_elo_by_topdeck_id = fetch_topdeck_elo_by_topdeck_id(client)
+    print(f"Loaded {len(topdeck_elo_by_topdeck_id)} TopDeck Elo entries")
+
+    print("Loading primary-state activity stats...")
+    state_stats_by_player = fetch_primary_state_stats(client)
+    print(f"Loaded {len(state_stats_by_player)} primary-state stat rows")
+
+    leaderboard_run_marker = utc_now().isoformat()
+    all_leaderboard_rows = build_active_leaderboard_rows(
+        ratings_to_upsert,
+        player_index,
+        topdeck_elo_by_topdeck_id,
+        state_stats_by_player,
+        leaderboard_run_marker,
+    )
 
     if all_leaderboard_rows:
-        client.upsert(
-            "global_elo_active_leaderboard",
-            all_leaderboard_rows,
-            on_conflict="player_id,region_type,region_key",
-        )
+        print(f"Upserting {len(all_leaderboard_rows)} active leaderboard rows (global + country + state)...")
+        upsert_active_leaderboard_rows(client, all_leaderboard_rows)
+    delete_stale_active_leaderboard_rows(client, leaderboard_run_marker)
 
     update_job_heartbeat(client, job_id)
 
@@ -764,6 +1054,13 @@ def main() -> None:
             event_rows,
             on_conflict="",
         )
+
+    update_job_heartbeat(client, job_id)
+
+    # Refresh downstream materialized views
+    print("Refreshing materialized views...")
+    mv_count = refresh_materialized_views(client)
+    print(f"Refreshed {mv_count}/{len(MATERIALIZED_VIEW_REFRESH_FUNCTIONS)} materialized views.")
 
     update_job_heartbeat(client, job_id)
 

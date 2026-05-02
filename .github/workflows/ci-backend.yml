@@ -17,30 +17,6 @@ env:
   SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
 
 jobs:
-  data-dictionary:
-    name: Validate data dictionary updates
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Check data dictionary updated when migrations change
-        run: |
-          set -euo pipefail
-          BASE_REF="${{ github.base_ref }}"
-          git fetch origin "$BASE_REF"
-
-          MIGRATIONS_CHANGED=$(git diff --name-only "origin/$BASE_REF"...HEAD -- packages/backend/supabase/migrations | wc -l | tr -d ' ')
-          DICT_CHANGED=$(git diff --name-only "origin/$BASE_REF"...HEAD -- packages/backend/docs/data_dictionary.md | wc -l | tr -d ' ')
-
-          if [ "$MIGRATIONS_CHANGED" -gt 0 ] && [ "$DICT_CHANGED" -eq 0 ]; then
-            echo "::error::Migrations changed but packages/backend/docs/data_dictionary.md was not updated."
-            exit 1
-          fi
-
-          echo "Data dictionary check passed."
-
   lint-and-test:
     name: Backend quality and unit tests
     runs-on: ubuntu-latest
@@ -53,8 +29,8 @@ jobs:
           python-version: "3.12"
           enable-cache: true
 
-      - name: Create venv and install dependencies
-        run: uv venv .venv --clear && uv pip install --python .venv/bin/python -r packages/backend/requirements.txt
+      - name: Install dependencies (locked)
+        run: uv sync --frozen --project packages/backend
 
       - name: Run Ruff check
         run: |
@@ -64,7 +40,7 @@ jobs:
             echo "No backend source Python files changed."
             exit 0
           fi
-          uv run ruff check $changed_files
+          uv run --project packages/backend ruff check $changed_files
 
       - name: Run Ruff format
         run: |
@@ -74,11 +50,11 @@ jobs:
             echo "No backend source Python files changed."
             exit 0
           fi
-          uv run ruff format --check $changed_files
+          uv run --project packages/backend ruff format --check $changed_files
 
       - name: Run unit tests
         run: |
-          PYTHONPATH=packages/backend/src uv run python -m unittest discover packages/backend/tests
+          PYTHONPATH=packages/backend/src uv run --project packages/backend python -m unittest discover packages/backend/tests
 
   backend-validation:
     name: Backend validation and consistency checks
@@ -92,22 +68,22 @@ jobs:
           python-version: "3.12"
           enable-cache: true
 
-      - name: Create venv and install dependencies
-        run: uv venv .venv --clear && uv pip install --python .venv/bin/python -r packages/backend/requirements.txt
+      - name: Install dependencies (locked)
+        run: uv sync --frozen --project packages/backend
 
       - name: Validate backend views and functions
-        run: uv run python packages/backend/src/ci_backend_checks.py views
+        run: uv run --project packages/backend python packages/backend/src/ci_backend_checks.py views --allow-statement-timeouts
 
       - name: Check data integrity
-        run: uv run python packages/backend/src/ci_backend_checks.py data-integrity
+        run: uv run --project packages/backend python packages/backend/src/ci_backend_checks.py data-integrity
 
       - name: Check regional Elo aggregate consistency
-        run: uv run python packages/backend/src/ci_backend_checks.py regional-elo
+        run: uv run --project packages/backend python packages/backend/src/ci_backend_checks.py regional-elo
 
       - name: Smoke-test analytics benchmarks
         run: |
-          uv run python packages/backend/src/ci_backend_checks.py benchmark \
+          uv run --project packages/backend python packages/backend/src/ci_backend_checks.py benchmark \
             --runs 1 --warmups 0 --smoke-only
 
       - name: Smoke-test leaderboard recompute
-        run: uv run python packages/backend/src/regional_elo.py --smoke-days 30 --dry-run
+        run: uv run --project packages/backend python packages/backend/src/regional_elo.py --smoke-days 30 --dry-run

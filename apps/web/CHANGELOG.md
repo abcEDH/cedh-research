@@ -1,3 +1,35 @@
+# [1.8.0](https://github.com/abcEDH/cedh-research/compare/v1.7.7...v1.8.0) (2026-05-01)
+
+
+### Features
+
+* **backend:** persist latest tournament + commander metadata on player_commander_profiles (closes [#130](https://github.com/abcEDH/cedh-research/issues/130)) ([#133](https://github.com/abcEDH/cedh-research/issues/133)) ([c8fd33b](https://github.com/abcEDH/cedh-research/commit/c8fd33bd43528187c54044e8a8b5e5379698386e))
+* **backend:** persist topdeck_elo + country slices on leaderboard (closes [#129](https://github.com/abcEDH/cedh-research/issues/129)) ([#134](https://github.com/abcEDH/cedh-research/issues/134)) ([10e4a04](https://github.com/abcEDH/cedh-research/commit/10e4a04656c4b5f8c512d8ab0689bf88baa28b90))
+
+## [1.7.7](https://github.com/abcEDH/cedh-research/compare/v1.7.6...v1.7.7) (2026-04-29)
+
+
+### Bug Fixes
+
+* cache homepage and remove stale widgets ([#122](https://github.com/abcEDH/cedh-research/issues/122)) ([22722d9](https://github.com/abcEDH/cedh-research/commit/22722d999ccdca3fbfec9e2ec99523b30c704812))
+
+## [1.7.6](https://github.com/abcEDH/cedh-research/compare/v1.7.5...v1.7.6) (2026-04-29)
+
+
+### Bug Fixes
+
+* load app fonts via next/font ([#123](https://github.com/abcEDH/cedh-research/issues/123)) ([1882cc2](https://github.com/abcEDH/cedh-research/commit/1882cc21b9eb5c0df05ddbfef8e42427c4fb4b06))
+
+## [1.7.5](https://github.com/abcEDH/cedh-research/compare/v1.7.4...v1.7.5) (2026-04-17)
+
+
+### Bug Fixes
+
+* **cd:** add manual Vercel alias override ([#101](https://github.com/abcEDH/cedh-research/issues/101)) ([3e093ff](https://github.com/abcEDH/cedh-research/commit/3e093ffc6687b53d56ef76516dbb9cde4322168d))
+* **cd:** drop project name from vercel ls to fix deployment lookup ([#97](https://github.com/abcEDH/cedh-research/issues/97)) ([25a6c11](https://github.com/abcEDH/cedh-research/commit/25a6c116fba6a9739bce147134091a74527e238e))
+* **cd:** use Vercel REST API and fire on merge to main ([#98](https://github.com/abcEDH/cedh-research/issues/98)) ([4fa8856](https://github.com/abcEDH/cedh-research/commit/4fa88560ce4fec477ad86ccac9850892ae5159f3))
+* **hygiene:** guard generated report paths ([#78](https://github.com/abcEDH/cedh-research/issues/78)) ([04dfaaa](https://github.com/abcEDH/cedh-research/commit/04dfaaa1216f21a100f675f35dfad729391382ce))
+
 ## [1.7.4](https://github.com/abcEDH/cedh-research/compare/v1.7.3...v1.7.4) (2026-04-11)
 
 

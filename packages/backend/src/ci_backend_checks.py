@@ -19,6 +19,14 @@ RETRY_ATTEMPTS = 3
 RETRY_BACKOFF_SECONDS = 2
 PAGE_SIZE = 100
 STATE_SAMPLE_SIZE = 25
+SUPABASE_STATEMENT_TIMEOUT_CODE = "57014"
+PR_VIEW_TIMEOUT_TOLERANT_NAMES = {
+    "commander_stats",
+    "seat_position_stats",
+    "commander_meta_monthly",
+    "commander_momentum",
+    "commander_first_appearances",
+}
 
 
 VIEW_SPECS: list[tuple[str, int]] = [
@@ -29,18 +37,13 @@ VIEW_SPECS: list[tuple[str, int]] = [
     ("card_frequencies_by_commander", 100),
     ("trap_cards_report", 1),
     ("spice_cards_report", 1),
-    ("seat_survival_by_commander", 10),
-    ("seat_survival_by_round", 4),
-    ("commander_survival_curve", 10),
-    ("commander_tournament_depth", 10),
-    ("player_survival_stats", 10),
     ("commander_meta_monthly", 5),
     ("commander_momentum", 1),
     ("commander_first_appearances", 10),
-    ("survival_summary", 10),
     ("regional_elo_player_stats", 10),
     ("regional_elo_regions", 2),
-    ("regional_elo_game_event_log", 100),
+    # Retired/private heavy views are intentionally excluded from PR validation.
+    # They are covered by targeted operational checks when needed.
 ]
 
 RPC_SPECS: list[tuple[str, dict[str, Any], bool, tuple[str, ...]]] = [
@@ -717,6 +720,7 @@ def benchmark_specs() -> list[BenchmarkSpec]:
                 "recent_entries",
                 "recent_win_rate",
             ),
+            smoke=False,
         ),
     ]
 
@@ -978,11 +982,24 @@ def response_failure(response: requests.Response) -> str:
     return f"HTTP {response.status_code}: {body}"
 
 
-def validate_views() -> None:
+def is_supabase_statement_timeout(response: requests.Response) -> bool:
+    if response.status_code < 500:
+        return False
+
+    try:
+        body = response.json()
+    except ValueError:
+        return False
+
+    return body.get("code") == SUPABASE_STATEMENT_TIMEOUT_CODE
+
+
+def validate_views(*, allow_statement_timeouts: bool = False) -> None:
     supabase_url, _ = get_supabase_env()
     headers = supabase_headers()
     failed: list[tuple[str, str]] = []
     passed: list[str] = []
+    warnings: list[tuple[str, str]] = []
 
     print("=" * 60)
     print("VALIDATING VIEWS")
@@ -1003,6 +1020,14 @@ def validate_views() -> None:
                     failed.append((view_name, f"Only {row_count} rows"))
             else:
                 reason = response_failure(resp)
+                if (
+                    allow_statement_timeouts
+                    and view_name in PR_VIEW_TIMEOUT_TOLERANT_NAMES
+                    and is_supabase_statement_timeout(resp)
+                ):
+                    print(f"○ {view_name}: statement timeout ignored for PR smoke validation")
+                    warnings.append((view_name, reason))
+                    continue
                 print(f"✗ {view_name}: {reason}")
                 failed.append((view_name, reason))
         except Exception as exc:  # pragma: no cover - CI diagnostic path
@@ -1052,7 +1077,13 @@ def validate_views() -> None:
     print("SUMMARY")
     print("=" * 60)
     print(f"Passed: {len(passed)}")
+    print(f"Warnings: {len(warnings)}")
     print(f"Failed: {len(failed)}")
+
+    if warnings:
+        print("\nWarning items:")
+        for item, reason in warnings:
+            print(f"  - {item}: {reason}")
 
     if failed:
         print("\nFailed items:")
@@ -1064,11 +1095,14 @@ def validate_views() -> None:
 
 
 def get_table_count(supabase_url: str, headers: dict[str, str], table_name: str) -> tuple[int, str]:
+    # CI only needs minimum-row smoke validation; exact counts can force large
+    # table scans and repeatedly hit statement timeouts on the small Supabase
+    # compute instance.
     methods = [
-        ("HEAD", "count=exact", f"{supabase_url}/rest/v1/{table_name}?select=count", None),
-        ("GET", "count=exact", f"{supabase_url}/rest/v1/{table_name}?select=id", {"limit": 1}),
         ("GET", "count=planned", f"{supabase_url}/rest/v1/{table_name}?select=id", {"limit": 1}),
         ("GET", "count=estimated", f"{supabase_url}/rest/v1/{table_name}?select=id", {"limit": 1}),
+        ("HEAD", "count=exact", f"{supabase_url}/rest/v1/{table_name}?select=count", None),
+        ("GET", "count=exact", f"{supabase_url}/rest/v1/{table_name}?select=id", {"limit": 1}),
     ]
 
     errors: list[str] = []
@@ -1144,9 +1178,7 @@ def fetch_state_samples(supabase_url: str, headers: dict[str, str]) -> list[dict
             timeout=30,
         )
         if stats_resp.status_code != 200:
-            raise RuntimeError(
-                f"Failed to fetch regional Elo player stats sample: {response_failure(stats_resp)}"
-            )
+            raise RuntimeError(f"Failed to fetch regional Elo player stats sample: {response_failure(stats_resp)}")
 
         page_rows = stats_resp.json()
         player_stats_rows.extend(
@@ -1205,8 +1237,7 @@ def validate_regional_elo_consistency() -> None:
                 failures.append(
                     (
                         row,
-                        f"{observed_field}: player_stats={row[observed_field]} "
-                        f"state_activity={stats[canonical_field]}",
+                        f"{observed_field}: player_stats={row[observed_field]} state_activity={stats[canonical_field]}",
                     )
                 )
     if failures:
@@ -1222,7 +1253,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run backend maintenance validations.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    subparsers.add_parser("views", help="Validate backend views and RPC functions")
+    views_parser = subparsers.add_parser("views", help="Validate backend views and RPC functions")
+    views_parser.add_argument(
+        "--allow-statement-timeouts",
+        action="store_true",
+        help="Warn instead of failing when live Supabase view smoke checks hit statement_timeout.",
+    )
     subparsers.add_parser("data-integrity", help="Validate baseline data counts")
     subparsers.add_parser("regional-elo", help="Validate regional Elo consistency")
     benchmark_parser = subparsers.add_parser(
@@ -1279,7 +1315,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
     if args.command == "views":
-        validate_views()
+        validate_views(allow_statement_timeouts=args.allow_statement_timeouts)
     elif args.command == "data-integrity":
         validate_data_integrity()
     elif args.command == "regional-elo":

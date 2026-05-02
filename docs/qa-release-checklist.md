@@ -8,6 +8,6 @@
 - Confirm production and preview resolve to the expected deployment when the change is intended to be live.
 
 ## Production sanity
-- Verify the production domain points to the latest intended deployment.
+- Verify `tedh.gg` points to the latest intended deployment.
 - Spot-check one route that was updated in the PR on both preview and production.
 - Confirm no user-facing analytics page presents conflicting totals and drilldowns.

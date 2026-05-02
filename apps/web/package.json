@@ -1,6 +1,6 @@
 {
   "name": "cedh-research-web",
-  "version": "1.7.4",
+  "version": "1.8.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -13,7 +13,7 @@
     "test:e2e": "playwright test",
     "test:e2e:url": "BASE_URL=$npm_config_base_url playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:e2e:prod": "BASE_URL=https://cedh-research.vercel.app playwright test",
+    "test:e2e:prod": "BASE_URL=${BASE_URL:-https://tedh.gg} playwright test",
     "release": "semantic-release"
   },
   "dependencies": {
