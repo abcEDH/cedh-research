@@ -1,4 +1,5 @@
 import * as React from "react";
+import Image from "next/image";
 
 export function MotifLayer({
   variant = "B",
@@ -20,51 +21,72 @@ export function MotifLayer({
       ].join(" ")}
       style={{ opacity }}
     >
-      <img
+      <Image
         src="/motifs/gridlines.svg"
-        className="absolute inset-0 h-full w-full opacity-[0.12] mix-blend-screen"
+        fill
+        className="opacity-[0.12] mix-blend-screen object-cover"
         alt=""
+        priority
+        unoptimized
       />
-      <img
+      <Image
         src="/motifs/particles.svg"
-        className="absolute inset-0 h-full w-full opacity-[0.2] mix-blend-screen"
+        fill
+        className="opacity-[0.2] mix-blend-screen object-cover"
         alt=""
+        priority
+        unoptimized
       />
 
       {variant === "A" && (
-        <img
-          src="/motifs/canopy-corner.svg"
-          className="absolute -top-40 -left-40 w-[1100px] opacity-[0.18] mix-blend-screen"
-          alt=""
-        />
+        <div className="absolute -top-40 -left-40 h-[1100px] w-[1100px] opacity-[0.18] mix-blend-screen">
+          <Image
+            src="/motifs/canopy-corner.svg"
+            fill
+            alt=""
+            unoptimized
+          />
+        </div>
       )}
 
       {variant === "B" && (
-        <img
-          src="/motifs/transit-arc.svg"
-          className="absolute top-28 left-[-22%] w-[1500px] opacity-[0.18] mix-blend-screen"
-          alt=""
-        />
+        <div className="absolute top-28 left-[-22%] h-[1500px] w-[1500px] opacity-[0.18] mix-blend-screen">
+          <Image
+            src="/motifs/transit-arc.svg"
+            fill
+            alt=""
+            unoptimized
+          />
+        </div>
       )}
 
       {variant === "C" && (
-        <img
-          src="/motifs/spirit-core.svg"
-          className="absolute top-[-20%] left-[2%] w-[1400px] opacity-[0.28] mix-blend-screen"
-          alt=""
-        />
+        <div className="absolute top-[-20%] left-[2%] h-[1400px] w-[1400px] opacity-[0.28] mix-blend-screen">
+          <Image
+            src="/motifs/spirit-core.svg"
+            fill
+            alt=""
+            unoptimized
+          />
+        </div>
       )}
 
-      <img
-        src="/motifs/corner-glyph.svg"
-        className="absolute -top-24 -left-24 w-[560px] opacity-[0.10] mix-blend-screen"
-        alt=""
-      />
-      <img
-        src="/motifs/corner-glyph.svg"
-        className="absolute -bottom-28 -right-28 w-[560px] rotate-180 opacity-[0.10] mix-blend-screen"
-        alt=""
-      />
+      <div className="absolute -top-24 -left-24 h-[560px] w-[560px] opacity-[0.10] mix-blend-screen">
+        <Image
+          src="/motifs/corner-glyph.svg"
+          fill
+          alt=""
+          unoptimized
+        />
+      </div>
+      <div className="absolute -bottom-28 -right-28 h-[560px] w-[560px] rotate-180 opacity-[0.10] mix-blend-screen">
+        <Image
+          src="/motifs/corner-glyph.svg"
+          fill
+          alt=""
+          unoptimized
+        />
+      </div>
     </div>
   );
 }
