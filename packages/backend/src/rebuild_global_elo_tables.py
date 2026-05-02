@@ -18,13 +18,20 @@ import requests
 
 from ingest import SupabaseClient, load_local_env
 
-K_FACTOR = 48
+K_FACTOR_DECISIVE = 64
+K_FACTOR_DRAW = 24
 DEFAULT_RATING = 1500.0
 ELO_BASE = 2
 ELO_DIVISOR = 200
 GLOBAL_REGION_TYPE = "global"
 GLOBAL_REGION_KEY = "ALL"
 ACTIVE_LOOKBACK_DAYS = 180
+SEAT_ELO_BONUS = {
+    1: 0.0,
+    2: -50.0,
+    3: -96.0,
+    4: -142.0,
+}
 
 
 def load_region_country_map() -> dict[str, str]:
@@ -199,6 +206,108 @@ def fetch_results_by_month(client: SupabaseClient) -> list[dict[str, Any]]:
     return all_rows
 
 
+def fetch_results_from_tournament_start(
+    client: SupabaseClient,
+    threshold_start_date: str,
+) -> list[dict[str, Any]]:
+    select = (
+        "game_id,tournament_id,start_date,state,country,entry_id,player_id,topdeck_id,"
+        "player_name,result,is_draw,round_number,round_name,table_number"
+    )
+    all_rows: list[dict[str, Any]] = []
+    start_day = parse_datetime(threshold_start_date).date() if threshold_start_date else date(2022, 8, 1)
+    windows = month_starts(start_day, datetime.now(timezone.utc).date())
+    for window_start in windows:
+        window_end = next_month(window_start)
+        rows = fetch_all(
+            client,
+            "global_elo_game_results",
+            [
+                ("select", select),
+                ("start_date", f"gte.{window_start.isoformat()}"),
+                ("start_date", f"lt.{window_end.isoformat()}"),
+            ],
+            label=f"global_elo_game_results {window_start:%Y-%m}",
+        )
+        filtered = [
+            row
+            for row in rows
+            if (row.get("start_date") or "") >= threshold_start_date
+        ]
+        all_rows.extend(filtered)
+        print(
+            f"Fetched {len(filtered):,} suffix rows for {window_start:%Y-%m}; total {len(all_rows):,}",
+            flush=True,
+        )
+    return all_rows
+
+
+def fetch_seat_positions(client: SupabaseClient) -> dict[tuple[str, str], int]:
+    rows = fetch_all(
+        client,
+        "game_participants",
+        {"select": "game_id,entry_id,seat_position"},
+        label="game_participants",
+    )
+    seats: dict[tuple[str, str], int] = {}
+    for row in rows:
+        game_id = row.get("game_id")
+        entry_id = row.get("entry_id")
+        seat_position = row.get("seat_position")
+        if game_id and entry_id and isinstance(seat_position, int):
+            seats[(game_id, entry_id)] = seat_position
+    return seats
+
+
+def fetch_seat_positions_for_games(
+    client: SupabaseClient,
+    game_ids: set[str],
+) -> dict[tuple[str, str], int]:
+    if not game_ids:
+        return {}
+    seats: dict[tuple[str, str], int] = {}
+    ordered_ids = sorted(game_ids)
+    chunk_size = 200
+    for start in range(0, len(ordered_ids), chunk_size):
+        chunk = ordered_ids[start : start + chunk_size]
+        rows = client.select(
+            "game_participants",
+            {
+                "select": "game_id,entry_id,seat_position",
+                "game_id": f"in.({','.join(chunk)})",
+            },
+        )
+        for row in rows:
+            game_id = row.get("game_id")
+            entry_id = row.get("entry_id")
+            seat_position = row.get("seat_position")
+            if game_id and entry_id and isinstance(seat_position, int):
+                seats[(game_id, entry_id)] = seat_position
+    return seats
+
+
+def fetch_recent_state_results(client: SupabaseClient, since: date) -> list[dict[str, Any]]:
+    select = "player_id,state,country,result,start_date"
+    rows = fetch_all(
+        client,
+        "global_elo_game_results",
+        {
+            "select": select,
+            "start_date": f"gte.{since.isoformat()}",
+        },
+        label="recent state results",
+    )
+    return rows
+
+
+def merge_seat_positions(results: list[dict[str, Any]], seats: dict[tuple[str, str], int]) -> None:
+    for row in results:
+        game_id = row.get("game_id")
+        entry_id = row.get("entry_id")
+        if game_id and entry_id:
+            row["seat_position"] = seats.get((game_id, entry_id))
+
+
 def rest_delete(client: SupabaseClient, table: str, params: dict[str, str]) -> None:
     response = requests.delete(
         f"{client.url}/rest/v1/{table}",
@@ -221,6 +330,16 @@ def chunked_upsert(
         client.upsert(table, rows[start : start + chunk_size], on_conflict=on_conflict)
         if start and start % 25000 == 0:
             print(f"Upserted {start:,}/{len(rows):,} rows into {table}", flush=True)
+
+
+def delete_by_tournament_ids(client: SupabaseClient, table: str, tournament_ids: set[str]) -> None:
+    if not tournament_ids:
+        return
+    ordered_ids = sorted(tournament_ids)
+    chunk_size = 200
+    for start in range(0, len(ordered_ids), chunk_size):
+        chunk = ordered_ids[start : start + chunk_size]
+        rest_delete(client, table, {"tournament_id": f"in.({','.join(chunk)})"})
 
 
 def apply_game(
@@ -263,8 +382,28 @@ def apply_game(
         )
         before_ratings[player_id] = float(ratings[player_id]["rating"])
 
-    total_equity = sum(rating_equity(before_ratings[row["player_id"]]) for row in participants)
     draw_count = sum(1 for row in participants if row.get("result") == "draw")
+    k_factor = K_FACTOR_DRAW if draw_count else K_FACTOR_DECISIVE
+    use_seat_bonus = (
+        draw_count == 0
+        and len(participants) == 4
+        and sorted(
+            row.get("seat_position")
+            for row in participants
+            if isinstance(row.get("seat_position"), int)
+        )
+        == [0, 1, 2, 3]
+    )
+    expected_ratings = {}
+    for row in participants:
+        player_id = row["player_id"]
+        expected_rating = before_ratings[player_id]
+        if use_seat_bonus:
+            seat_position = row.get("seat_position")
+            if isinstance(seat_position, int):
+                expected_rating += SEAT_ELO_BONUS.get(seat_position + 1, 0.0)
+        expected_ratings[player_id] = expected_rating
+    total_equity = sum(rating_equity(expected_ratings[row["player_id"]]) for row in participants)
 
     for row in participants:
         player_id = row["player_id"]
@@ -272,9 +411,9 @@ def apply_game(
         if score is None:
             continue
         actual = 1 / draw_count if row.get("result") == "draw" and draw_count else score
-        expected = rating_equity(before_ratings[player_id]) / total_equity
+        expected = rating_equity(expected_ratings[player_id]) / total_equity
         expected_scores[player_id] = expected
-        deltas[player_id] = K_FACTOR * (actual - expected)
+        deltas[player_id] = k_factor * (actual - expected)
 
     events: list[dict[str, Any]] = []
     for row in participants:
@@ -362,13 +501,17 @@ def apply_game(
     return events
 
 
-def build_rows(
+def build_state_from_results(
     results: list[dict[str, Any]],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    ratings: dict[str, dict[str, Any]] = {}
-    state_activity: dict[tuple[str, str], dict[str, Any]] = {}
-    player_meta: dict[str, dict[str, str | None]] = {}
-    events: list[dict[str, Any]] = []
+    ratings: dict[str, dict[str, Any]] | None = None,
+    state_activity: dict[tuple[str, str], dict[str, Any]] | None = None,
+    player_meta: dict[str, dict[str, str | None]] | None = None,
+    events: list[dict[str, Any]] | None = None,
+) -> tuple[dict[str, dict[str, Any]], dict[tuple[str, str], dict[str, Any]], dict[str, dict[str, str | None]], list[dict[str, Any]]]:
+    ratings = ratings or {}
+    state_activity = state_activity or {}
+    player_meta = player_meta or {}
+    events = events or []
     today = datetime.now(timezone.utc).date()
 
     games: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -379,6 +522,17 @@ def build_rows(
         events.extend(apply_game(rows, ratings, state_activity, player_meta, today))
         if index % 25000 == 0:
             print(f"Processed {index:,}/{len(games):,} games", flush=True)
+
+    return ratings, state_activity, player_meta, events
+
+
+def finalize_rows(
+    ratings: dict[str, dict[str, Any]],
+    state_activity: dict[tuple[str, str], dict[str, Any]],
+    player_meta: dict[str, dict[str, str | None]],
+    events: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    today = datetime.now(timezone.utc).date()
 
     for activity in state_activity.values():
         activity["activity_score"] = round(float(activity["activity_score"]), 6)
@@ -525,10 +679,148 @@ def build_rows(
     return rating_rows, state_rows, events, leaderboard_rows, profile_rows
 
 
+def build_rows(
+    results: list[dict[str, Any]],
+    ratings: dict[str, dict[str, Any]] | None = None,
+    state_activity: dict[tuple[str, str], dict[str, Any]] | None = None,
+    player_meta: dict[str, dict[str, str | None]] | None = None,
+    events: list[dict[str, Any]] | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    ratings, state_activity, player_meta, events = build_state_from_results(
+        results,
+        ratings=ratings,
+        state_activity=state_activity,
+        player_meta=player_meta,
+        events=events,
+    )
+    return finalize_rows(ratings, state_activity, player_meta, events)
+
+
+def fetch_existing_rating_state(
+    client: SupabaseClient,
+) -> tuple[dict[str, dict[str, Any]], dict[tuple[str, str], dict[str, Any]], dict[str, dict[str, str | None]]]:
+    ratings: dict[str, dict[str, Any]] = {}
+    rating_rows = fetch_all(
+        client,
+        "global_elo_ratings",
+        {"select": "player_id,region_type,region_key,rating,games_played,wins,draws,losses,last_game_date"},
+        label="global_elo_ratings",
+    )
+    for row in rating_rows:
+        player_id = row.get("player_id")
+        if not player_id or row.get("region_type") != GLOBAL_REGION_TYPE or row.get("region_key") != GLOBAL_REGION_KEY:
+            continue
+        ratings[player_id] = {
+            "player_id": player_id,
+            "region_type": GLOBAL_REGION_TYPE,
+            "region_key": GLOBAL_REGION_KEY,
+            "rating": float(row.get("rating") or DEFAULT_RATING),
+            "games_played": int(row.get("games_played") or 0),
+            "wins": int(row.get("wins") or 0),
+            "draws": int(row.get("draws") or 0),
+            "losses": int(row.get("losses") or 0),
+            "last_game_date": parse_date(row.get("last_game_date")),
+        }
+
+    state_activity: dict[tuple[str, str], dict[str, Any]] = {}
+    state_rows = fetch_all(
+        client,
+        "global_elo_state_activity",
+        {
+            "select": (
+                "region_type,region_key,country_key,player_id,games_30d,games_90d,games_365d,"
+                "games_lifetime,wins,draws,losses,last_game_date,activity_score,is_primary_state"
+            )
+        },
+        label="global_elo_state_activity",
+    )
+    for row in state_rows:
+        player_id = row.get("player_id")
+        region_key = row.get("region_key")
+        if not player_id or not region_key:
+            continue
+        state_activity[(player_id, region_key)] = {
+            "region_type": row.get("region_type") or "state",
+            "region_key": region_key,
+            "country_key": row.get("country_key"),
+            "player_id": player_id,
+            "games_30d": int(row.get("games_30d") or 0),
+            "games_90d": int(row.get("games_90d") or 0),
+            "games_365d": int(row.get("games_365d") or 0),
+            "games_lifetime": int(row.get("games_lifetime") or 0),
+            "wins": int(row.get("wins") or 0),
+            "draws": int(row.get("draws") or 0),
+            "losses": int(row.get("losses") or 0),
+            "last_game_date": parse_date(row.get("last_game_date")),
+            "activity_score": float(row.get("activity_score") or 0),
+            "is_primary_state": bool(row.get("is_primary_state")),
+        }
+
+    player_meta: dict[str, dict[str, str | None]] = {}
+    profile_rows = fetch_all(
+        client,
+        "global_elo_player_profile_summaries",
+        {"select": "player_id,topdeck_id,player_name"},
+        label="global_elo_player_profile_summaries",
+    )
+    for row in profile_rows:
+        player_id = row.get("player_id")
+        if not player_id:
+            continue
+        player_meta[player_id] = {
+            "player_name": row.get("player_name"),
+            "topdeck_id": row.get("topdeck_id"),
+        }
+
+    return ratings, state_activity, player_meta
+
+
+def decay_state_activity(state_activity: dict[tuple[str, str], dict[str, Any]], days_elapsed: int) -> None:
+    if days_elapsed <= 0:
+        return
+    decay_factor = math.pow(0.5, days_elapsed / 180)
+    for row in state_activity.values():
+        row["activity_score"] = float(row.get("activity_score") or 0.0) * decay_factor
+
+
+def recompute_rolling_state_windows(
+    state_activity: dict[tuple[str, str], dict[str, Any]],
+    recent_results: list[dict[str, Any]],
+    today: date,
+) -> None:
+    for row in state_activity.values():
+        row["games_30d"] = 0
+        row["games_90d"] = 0
+        row["games_365d"] = 0
+        row["is_primary_state"] = False
+
+    for result in recent_results:
+        player_id = result.get("player_id")
+        state_key = normalize_key(result.get("state"))
+        game_date = parse_date(result.get("start_date"))
+        if not player_id or not state_key or not game_date:
+            continue
+        activity = state_activity.get((player_id, state_key))
+        if not activity:
+            continue
+        age_days = (today - game_date).days
+        if age_days <= 30:
+            activity["games_30d"] += 1
+        if age_days <= 90:
+            activity["games_90d"] += 1
+        if age_days <= 365:
+            activity["games_365d"] += 1
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--preview-topdeck-id", default="")
+    parser.add_argument(
+        "--since-start-date",
+        default="",
+        help="Incrementally rebuild from tournaments with start_date >= this ISO timestamp/date",
+    )
     args = parser.parse_args()
 
     load_local_env()
@@ -538,9 +830,45 @@ def main() -> None:
         raise SystemExit("SUPABASE_URL and SUPABASE_SERVICE_KEY are required")
     client = SupabaseClient(url, key)
 
-    results = fetch_results_by_month(client)
-    print(f"Fetched {len(results):,} participant result rows", flush=True)
-    rating_rows, state_rows, event_rows, leaderboard_rows, profile_rows = build_rows(results)
+    incremental_start: dict[str, Any] | None = None
+    if args.since_start_date:
+        incremental_start = {
+            "topdeck_tid": "manual-since-start-date",
+            "start_date": args.since_start_date,
+        }
+        print(f"Incremental rebuild from explicit start_date {args.since_start_date}", flush=True)
+
+    if incremental_start:
+        base_ratings, base_state_activity, base_player_meta = fetch_existing_rating_state(client)
+        results = fetch_results_from_tournament_start(
+            client,
+            str(incremental_start["start_date"]),
+        )
+        relevant_game_ids = {row["game_id"] for row in results if row.get("game_id")}
+        seat_positions = fetch_seat_positions_for_games(client, relevant_game_ids)
+        merge_seat_positions(results, seat_positions)
+        print(f"Fetched {len(results):,} incremental participant result rows", flush=True)
+        ratings, state_activity, player_meta, event_rows = build_state_from_results(
+            results,
+            ratings=base_ratings,
+            state_activity=base_state_activity,
+            player_meta=base_player_meta,
+        )
+        recent_state_results = fetch_recent_state_results(client, datetime.now(timezone.utc).date() - timedelta(days=365))
+        recompute_rolling_state_windows(state_activity, recent_state_results, datetime.now(timezone.utc).date())
+        rating_rows, state_rows, event_rows, leaderboard_rows, profile_rows = finalize_rows(
+            ratings,
+            state_activity,
+            player_meta,
+            event_rows,
+        )
+    else:
+        seat_positions = fetch_seat_positions(client)
+        print(f"Fetched {len(seat_positions):,} seat assignments", flush=True)
+        results = fetch_results_by_month(client)
+        merge_seat_positions(results, seat_positions)
+        print(f"Fetched {len(results):,} participant result rows", flush=True)
+        rating_rows, state_rows, event_rows, leaderboard_rows, profile_rows = build_rows(results)
     print(
         "Built "
         f"{len(rating_rows):,} ratings, "
@@ -571,12 +899,22 @@ def main() -> None:
         print("Dry run complete. Pass --apply to write changes.", flush=True)
         return
 
-    print("Clearing derived Elo tables", flush=True)
-    rest_delete(client, "global_elo_ratings", {"region_type": "eq.global", "region_key": "eq.ALL"})
-    rest_delete(client, "global_elo_game_events", {"region_type": "eq.global", "region_key": "eq.ALL"})
-    rest_delete(client, "global_elo_active_leaderboard", {"region_type": "not.is.null"})
-    rest_delete(client, "global_elo_state_activity", {"region_type": "eq.state"})
-    rest_delete(client, "global_elo_player_profile_summaries", {"player_id": "not.is.null"})
+    if incremental_start:
+        affected_tournament_ids = {row["tournament_id"] for row in results if row.get("tournament_id")}
+        print(
+            f"Incremental apply: replacing game events for {len(affected_tournament_ids):,} tournaments",
+            flush=True,
+        )
+        delete_by_tournament_ids(client, "global_elo_game_events", affected_tournament_ids)
+        print("Clearing active leaderboard for full re-rank", flush=True)
+        rest_delete(client, "global_elo_active_leaderboard", {"region_type": "not.is.null"})
+    else:
+        print("Clearing derived Elo tables", flush=True)
+        rest_delete(client, "global_elo_ratings", {"region_type": "eq.global", "region_key": "eq.ALL"})
+        rest_delete(client, "global_elo_game_events", {"region_type": "eq.global", "region_key": "eq.ALL"})
+        rest_delete(client, "global_elo_active_leaderboard", {"region_type": "not.is.null"})
+        rest_delete(client, "global_elo_state_activity", {"region_type": "eq.state"})
+        rest_delete(client, "global_elo_player_profile_summaries", {"player_id": "not.is.null"})
 
     print("Upserting ratings", flush=True)
     chunked_upsert(client, "global_elo_ratings", rating_rows, "player_id,region_type,region_key")
