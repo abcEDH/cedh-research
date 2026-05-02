@@ -57,6 +57,7 @@ class MockQuery {
   private orderAscending = true;
   private rangeStart: number | null = null;
   private rangeEnd: number | null = null;
+  private limitCount: number | null = null;
 
   constructor(private table: string) {}
 
@@ -90,6 +91,11 @@ class MockQuery {
     return this;
   }
 
+  limit(count: number) {
+    this.limitCount = count;
+    return this;
+  }
+
   maybeSingle() {
     return this;
   }
@@ -108,6 +114,9 @@ class MockQuery {
     }
     if (this.rangeStart !== null && this.rangeEnd !== null) {
       rows = rows.slice(this.rangeStart, this.rangeEnd + 1);
+    }
+    if (this.limitCount !== null) {
+      rows = rows.slice(0, this.limitCount);
     }
     return { data: rows, error: null, count: rows.length };
   }
