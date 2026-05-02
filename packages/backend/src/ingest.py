@@ -865,10 +865,10 @@ class TopDeckClient:
         for attempt in range(max_retries):
             try:
                 if method == "GET":
-                    response = requests.get(url, headers=headers, timeout=30)
+                    response = requests.get(url, headers=headers, timeout=90)
                 elif method == "POST":
                     response = requests.post(
-                        url, json=json_payload, headers=headers, timeout=30
+                        url, json=json_payload, headers=headers, timeout=90
                     )
                 else:
                     raise ValueError(f"Unsupported HTTP method: {method}")
