@@ -1774,7 +1774,7 @@ class DataIngester:
                                 participant_map[seat_num] = {
                                     "entry_id": db_id,
                                     "standing": e,
-                                    "topdeck_id": e.get("topdeck_id"),
+                                    "topdeck_id": e.get("topdeck_entry_id", "").replace(f"{tid}_", ""),
                                 }
                                 break
 
@@ -1783,7 +1783,12 @@ class DataIngester:
 
                 game_key = build_game_key(tournament_id, round_num, round_name, table_num, is_bracket)
                 winner_topdeck_id = table.get("winner_id") or table.get("winnerId")
-                uses_topdeck_winner_id = "winner_id" in table or "winnerId" in table
+                
+                # Only use the topdeck winner_id path if a winner_id is explicitly provided
+                # or if the game is actually completed.
+                uses_topdeck_winner_id = ("winner_id" in table or "winnerId" in table) and (
+                    winner_topdeck_id is not None or table.get("status") == "Completed"
+                )
 
                 # Process current TopDeck v2 results.
                 if uses_topdeck_winner_id:
