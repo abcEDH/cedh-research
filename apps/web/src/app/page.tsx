@@ -174,31 +174,50 @@ async function getCoreStats() {
   oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
   const oneYearAgoIso = oneYearAgo.toISOString().split("T")[0];
 
-  // First find all commanders with entries in the past year, paginating to bypass the API row cap
-  const activeSet = new Set<string>();
-  let offset = 0;
-  const pageSize = 1000;
+  // Fetch candidates with > 60 entries (only ~200 rows)
+  const { data: candidates, error: candidateErr } = await supabase
+    .from("commander_stats")
+    .select("commander_id, commander_name, total_entries, avg_win_rate, conversion_rate_top_cut, color_identity")
+    .gt("total_entries", 60)
+    .not("commander_name", "ilike", "unknown commander")
+    .not("commander_name", "is", null)
+    .neq("commander_name", "")
+    .order("avg_win_rate", { ascending: false });
 
-  while (true) {
-    const { data: recentCommanders, error: recentErr } = await supabase
-      .from("commander_weekly_trends")
-      .select("commander_id")
-      .gte("week_start_date", oneYearAgoIso)
-      .range(offset, offset + pageSize - 1);
-
-    if (recentErr) {
-      throw new Error(`Failed to fetch recent commanders at offset ${offset}: ${recentErr.message}`);
-    }
-
-    if (!recentCommanders || recentCommanders.length === 0) break;
-
-    for (const row of recentCommanders) {
-      activeSet.add(row.commander_id);
-    }
-
-    if (recentCommanders.length < pageSize) break;
-    offset += pageSize;
+  if (candidateErr) {
+    throw new Error(`Failed to fetch commander candidates: ${candidateErr.message}`);
   }
+
+  const candidateIds = (candidates ?? []).map((c) => c.commander_id);
+
+  // Check which candidates were active in the past year using monthly trends (fewer rows)
+  // We chunk the IN clause to avoid URL length limits
+  const activeIdsSet = new Set<string>();
+  const CHUNK_SIZE = 100;
+  for (let i = 0; i < candidateIds.length; i += CHUNK_SIZE) {
+    const chunk = candidateIds.slice(i, i + CHUNK_SIZE);
+    const { data: activeRows, error: activeErr } = await supabase
+      .from("commander_monthly_trends")
+      .select("commander_id")
+      .in("commander_id", chunk)
+      .gte("month_start_date", oneYearAgoIso);
+
+    if (activeErr) {
+      console.error(`Error fetching activity for chunk ${i}:`, activeErr.message);
+      continue;
+    }
+
+    if (activeRows) {
+      for (const row of activeRows) {
+        activeIdsSet.add(row.commander_id);
+      }
+    }
+  }
+
+  const topWinRate = (candidates as TopCommander[] ?? [])
+    .filter((row) => activeIdsSet.has(row.commander_id))
+    .filter((row) => isKnownCommanderName(row.commander_name))
+    .slice(0, 10);
 
   const topCommandersQuery = supabase
     .from("commander_stats")
@@ -210,44 +229,11 @@ async function getCoreStats() {
     .order("total_entries", { ascending: false })
     .limit(21);
 
-  // Guard: If no active commanders, skip the win rate query to avoid PostgREST empty IN clause error
-  if (activeSet.size === 0) {
-    const { data: topCommandersData, error: topErr } = await topCommandersQuery;
-    if (topErr) throw new Error(`Top commanders query failed: ${topErr.message}`);
-    return {
-      topCommanders: (topCommandersData as TopCommander[] ?? []).filter((row) =>
-        isKnownCommanderName(row.commander_name)
-      ),
-      topWinRate: [],
-    };
-  }
-
-  const [topCommandersResult, allTopWinRateResult] = await Promise.all([
-    topCommandersQuery,
-    supabase
-      .from("commander_stats")
-      .select("commander_id, commander_name, total_entries, avg_win_rate, conversion_rate_top_cut, color_identity")
-      .gt("total_entries", 60)
-      .not("commander_name", "ilike", "unknown commander")
-      .not("commander_name", "is", null)
-      .neq("commander_name", "")
-      .order("avg_win_rate", { ascending: false }),
-  ]);
-
-  if (topCommandersResult.error) {
-    throw new Error(`Top commanders query failed: ${topCommandersResult.error.message}`);
-  }
-  if (allTopWinRateResult.error) {
-    throw new Error(`Top win rate query failed: ${allTopWinRateResult.error.message}`);
-  }
-
-  const topWinRate = (allTopWinRateResult.data as TopCommander[] ?? [])
-    .filter((row) => activeSet.has(row.commander_id))
-    .filter((row) => isKnownCommanderName(row.commander_name))
-    .slice(0, 10);
+  const { data: topCommandersData, error: topErr } = await topCommandersQuery;
+  if (topErr) throw new Error(`Top commanders query failed: ${topErr.message}`);
 
   return {
-    topCommanders: (topCommandersResult.data as TopCommander[] ?? []).filter((row) =>
+    topCommanders: (topCommandersData as TopCommander[] ?? []).filter((row) =>
       isKnownCommanderName(row.commander_name)
     ),
     topWinRate,
