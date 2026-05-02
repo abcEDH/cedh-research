@@ -178,7 +178,8 @@ async function getCoreStats() {
   const { data: recentCommanders, error: recentErr } = await supabase
     .from("commander_weekly_trends")
     .select("commander_id")
-    .gte("week_start_date", oneYearAgoIso);
+    .gte("week_start_date", oneYearAgoIso)
+    .limit(10000);
 
   if (recentErr) {
     throw new Error(`Failed to fetch recent commanders: ${recentErr.message}`);
@@ -448,19 +449,19 @@ function buildTopdeckTournamentUrl(tournamentSlug: string | null | undefined) {
 
 const getCachedHomeCoreStats = unstable_cache(
   getCoreStats,
-  ["home-core-stats-v6"], // Updated cache key
+  ["home-core-stats-v7"], // Updated cache key
   { revalidate: HOME_CACHE_REVALIDATE_SECONDS }
 );
 
 const getCachedLeaderboardPreview = unstable_cache(
   getLeaderboardPreview,
-  ["home-leaderboard-preview-v3"],
+  ["home-leaderboard-preview-v4"],
   { revalidate: HOME_CACHE_REVALIDATE_SECONDS }
 );
 
 const getCachedHomeRisingCommanders = unstable_cache(
   getTopRisingCommandersByTwoWeekTrend,
-  ["home-rising-commanders-v1"],
+  ["home-rising-commanders-v2"],
   { revalidate: HOME_CACHE_REVALIDATE_SECONDS }
 );
 
