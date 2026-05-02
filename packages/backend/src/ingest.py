@@ -1637,9 +1637,9 @@ class DataIngester:
                     "decklist": decklist,
                     "rank": standing.get("rank") or standing.get("standing"),
                     "points": standing.get("points") or 0,
-                    "wins": standing.get("wins") or 0,
-                    "losses": standing.get("losses") or 0,
-                    "draws": standing.get("draws") or 0,
+                    "wins": standing.get("wins"),
+                    "losses": standing.get("losses"),
+                    "draws": standing.get("draws"),
                     "omw": standing.get("omw"),
                     "gw": standing.get("gw"),
                     "pgw": standing.get("pgw"),
@@ -1695,14 +1695,21 @@ class DataIngester:
                 "commander_id": commander_id,
                 "final_standing": info["rank"],
                 "points": info["points"],
-                "wins": info.get("wins", 0),
-                "losses": info.get("losses", 0),
-                "draws": info.get("draws", 0),
                 "win_rate": primary_rate,
                 "opponent_win_rate": opponent_rate,
                 "decklist_text": info["decklist"],
                 "topdeck_entry_id": f"{tid}_{info['topdeck_id']}",
             }
+
+            # Only add W/L/D if they are explicitly present in the data to avoid
+            # overwriting with zeros during re-ingestion.
+            if info.get("wins") is not None:
+                entry["wins"] = info["wins"]
+            if info.get("losses") is not None:
+                entry["losses"] = info["losses"]
+            if info.get("draws") is not None:
+                entry["draws"] = info["draws"]
+
             entries.append(entry)
 
         # Step 5: Batch upsert entries
