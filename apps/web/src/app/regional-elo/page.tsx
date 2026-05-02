@@ -244,39 +244,7 @@ async function fetchLatestCommanders(
     .filter((value): value is string => Boolean(value));
   if (topdeckIds.length === 0) return new Map();
 
-  const profileRows: Array<{
-    topdeck_id: string | null;
-    active_commander: string | null;
-    latest_decklist_url: string | null;
-    latest_tournament_name: string | null;
-    latest_tournament_date: string | null;
-    latest_tournament_topdeck_tid: string | null;
-  }> = [];
-  for (const topdeckIdChunk of chunkArray(topdeckIds, 250)) {
-    const { data, error } = await supabase
-      .from("player_commander_profiles")
-      .select("topdeck_id, active_commander, latest_decklist_url, latest_tournament_name, latest_tournament_date, latest_tournament_topdeck_tid")
-      .in("topdeck_id", topdeckIdChunk);
-
-    if (error) {
-      console.warn("[regional-elo] Error fetching player profiles chunk (falling back to event log):", error.message);
-      continue;
-    }
-    if (!data?.length) continue;
-    profileRows.push(
-      ...(data as Array<{
-        topdeck_id: string | null;
-        active_commander: string | null;
-        latest_decklist_url: string | null;
-        latest_tournament_name: string | null;
-        latest_tournament_date: string | null;
-        latest_tournament_topdeck_tid: string | null;
-      }>)
-    );
-  }
-
   const latestByPlayer = new Map<string, LatestCommanderRow>();
-
   for (const row of rows) {
     if (!row.topdeck_id) continue;
     latestByPlayer.set(row.topdeck_id, {
@@ -287,6 +255,53 @@ async function fetchLatestCommanders(
       latest_tournament_date: null,
       latest_tournament_topdeck_tid: null,
     });
+  }
+
+  // Layer 1: Try enriched profile query (includes tournament metadata)
+  const profileRows: Array<{
+    topdeck_id: string | null;
+    active_commander: string | null;
+    latest_decklist_url: string | null;
+    latest_tournament_name?: string | null;
+    latest_tournament_date?: string | null;
+    latest_tournament_topdeck_tid?: string | null;
+  }> = [];
+
+  for (const topdeckIdChunk of chunkArray(topdeckIds, 250)) {
+    const { data, error } = await supabase
+      .from("player_commander_profiles")
+      .select("topdeck_id, active_commander, latest_decklist_url, latest_tournament_name, latest_tournament_date, latest_tournament_topdeck_tid")
+      .in("topdeck_id", topdeckIdChunk);
+
+    if (error) {
+      // Layer 2: Safe profile query (only basic columns known to exist in older schemas)
+      console.warn("[regional-elo] Enriched profile query failed, trying safe query:", error.message);
+      const { data: safeData, error: safeError } = await supabase
+        .from("player_commander_profiles")
+        .select("topdeck_id, active_commander, latest_decklist_url")
+        .in("topdeck_id", topdeckIdChunk);
+
+      if (safeError) {
+        console.error("[regional-elo] Safe profile query also failed:", safeError.message);
+        continue;
+      }
+      if (safeData) {
+        profileRows.push(...(safeData as Array<{
+          topdeck_id: string | null;
+          active_commander: string | null;
+          latest_decklist_url: string | null;
+        }>));
+      }
+    } else if (data) {
+      profileRows.push(...(data as Array<{
+        topdeck_id: string | null;
+        active_commander: string | null;
+        latest_decklist_url: string | null;
+        latest_tournament_name?: string | null;
+        latest_tournament_date?: string | null;
+        latest_tournament_topdeck_tid?: string | null;
+      }>));
+    }
   }
 
   for (const row of profileRows) {
@@ -300,38 +315,40 @@ async function fetchLatestCommanders(
     existing.latest_tournament_topdeck_tid = row.latest_tournament_topdeck_tid ?? null;
   }
 
-  // Fallback for missing tournament data or missing profile columns
-  const playersMissingTournament = Array.from(latestByPlayer.values())
-    .filter((row) => !row.latest_tournament_name)
+  // Layer 3: Fallback to event logs for missing tournament OR missing commander data
+  const playersNeedingFallback = Array.from(latestByPlayer.values())
+    .filter((row) => !row.latest_tournament_name || !row.active_commander)
     .map((row) => rows.find((r) => r.topdeck_id === row.topdeck_id)?.player_id)
     .filter((id): id is string => Boolean(id));
 
-  if (playersMissingTournament.length > 0) {
-    const fallbackTournaments = new Map<string, { name: string | null; date: string | null; topdeck_tid: string | null; tournament_id: string | null }>();
+  if (playersNeedingFallback.length > 0) {
+    const fallbackData = new Map<string, { commander: string | null; tournament: string | null; date: string | null; tournament_id: string | null }>();
     
     for (const table of ["global_elo_game_event_log", "regional_elo_game_event_log"]) {
       const { data, error } = await supabase
         .from(table)
-        .select("player_id, game_date, tournament_name, tournament_id")
-        .in("player_id", playersMissingTournament)
+        .select("player_id, game_date, tournament_name, tournament_id, commander_name")
+        .in("player_id", playersNeedingFallback)
         .order("game_date", { ascending: false })
         .limit(500);
 
       if (error) continue;
 
-      for (const row of (data ?? []) as Array<{ player_id: string; game_date: string | null; tournament_name: string | null; tournament_id: string | null }>) {
-        if (fallbackTournaments.has(row.player_id)) continue;
-        fallbackTournaments.set(row.player_id, {
-          name: row.tournament_name ?? null,
+      for (const row of (data ?? []) as Array<{ player_id: string; game_date: string | null; tournament_name: string | null; tournament_id: string | null; commander_name: string | null }>) {
+        if (fallbackData.has(row.player_id)) continue;
+        fallbackData.set(row.player_id, {
+          commander: row.commander_name ?? null,
+          tournament: row.tournament_name ?? null,
           date: row.game_date ?? null,
-          topdeck_tid: null,
           tournament_id: row.tournament_id ?? null,
         });
       }
-      if (fallbackTournaments.size === playersMissingTournament.length) break;
+      if (fallbackData.size === playersNeedingFallback.length) break;
     }
 
-    const tournamentIds = Array.from(new Set(Array.from(fallbackTournaments.values()).map((row) => row.tournament_id).filter((id): id is string => Boolean(id))));
+    const tournamentIds = Array.from(new Set(Array.from(fallbackData.values()).map((row) => row.tournament_id).filter((id): id is string => Boolean(id))));
+    const tournamentMetadataById = new Map<string, { name: string | null; date: string | null; topdeck_tid: string | null }>();
+    
     if (tournamentIds.length > 0) {
       const { data, error } = await supabase
         .from("tournaments")
@@ -339,36 +356,40 @@ async function fetchLatestCommanders(
         .in("id", tournamentIds);
 
       if (!error && data) {
-        const tournamentsById = new Map((data as Array<{ id: string; name: string | null; start_date: string | null; topdeck_tid: string | null }>).map((row) => [row.id, row]));
-        for (const latest of fallbackTournaments.values()) {
-          if (!latest.tournament_id) continue;
-          const tournament = tournamentsById.get(latest.tournament_id);
-          if (!tournament) continue;
-          latest.name = tournament.name ?? latest.name;
-          latest.date = tournament.start_date ?? latest.date;
-          latest.topdeck_tid = tournament.topdeck_tid ?? null;
+        for (const t of (data as Array<{ id: string; name: string | null; start_date: string | null; topdeck_tid: string | null }>)) {
+          tournamentMetadataById.set(t.id, {
+            name: t.name ?? null,
+            date: t.start_date ?? null,
+            topdeck_tid: t.topdeck_tid ?? null
+          });
         }
       }
     }
 
     for (const row of rows) {
       if (!row.topdeck_id || !row.player_id) continue;
-      const fallback = fallbackTournaments.get(row.player_id);
+      const fallback = fallbackData.get(row.player_id);
       if (!fallback) continue;
       const existing = latestByPlayer.get(row.topdeck_id);
-      if (existing && !existing.latest_tournament_name) {
-        existing.latest_tournament_name = fallback.name;
-        existing.latest_tournament_date = fallback.date;
-        existing.latest_tournament_topdeck_tid = fallback.topdeck_tid;
+      if (!existing) continue;
+
+      if (!existing.active_commander) {
+        existing.active_commander = isKnownCommander(fallback.commander) ? fallback.commander : null;
+      }
+      
+      if (!existing.latest_tournament_name) {
+        const meta = fallback.tournament_id ? tournamentMetadataById.get(fallback.tournament_id) : null;
+        existing.latest_tournament_name = meta?.name ?? fallback.tournament;
+        existing.latest_tournament_date = meta?.date ?? fallback.date;
+        existing.latest_tournament_topdeck_tid = meta?.topdeck_tid ?? null;
       }
     }
   }
 
   logReadSummary("latest-commanders-cache-miss", {
     players: rows.length,
-    playerProfileQueries: Math.ceil(topdeckIds.length / 250),
     profilesFound: profileRows.length,
-    fallbacksUsed: playersMissingTournament.length,
+    fallbacksUsed: playersNeedingFallback.length,
   });
 
   return latestByPlayer;
