@@ -1,3 +1,10 @@
+## [1.10.1](https://github.com/abcEDH/cedh-research/compare/v1.10.0...v1.10.1) (2026-05-02)
+
+
+### Performance Improvements
+
+* **web:** consume regional Elo read models ([#145](https://github.com/abcEDH/cedh-research/issues/145)) ([b4601f8](https://github.com/abcEDH/cedh-research/commit/b4601f8cbf184a4a8885445620a7ee2d4ab4364d))
+
 # [1.10.0](https://github.com/abcEDH/cedh-research/compare/v1.9.0...v1.10.0) (2026-05-02)
 
 
