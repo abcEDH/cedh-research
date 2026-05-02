@@ -174,18 +174,30 @@ async function getCoreStats() {
   oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
   const oneYearAgoIso = oneYearAgo.toISOString().split("T")[0];
 
-  // First find commanders with entries in the past year
-  const { data: recentCommanders, error: recentErr } = await supabase
-    .from("commander_weekly_trends")
-    .select("commander_id")
-    .gte("week_start_date", oneYearAgoIso)
-    .limit(10000);
+  // First find all commanders with entries in the past year, paginating to bypass the API row cap
+  let activeCommanderIds: string[] = [];
+  let offset = 0;
+  const pageSize = 1000;
 
-  if (recentErr) {
-    throw new Error(`Failed to fetch recent commanders: ${recentErr.message}`);
+  while (true) {
+    const { data: recentCommanders, error: recentErr } = await supabase
+      .from("commander_weekly_trends")
+      .select("commander_id")
+      .gte("week_start_date", oneYearAgoIso)
+      .range(offset, offset + pageSize - 1);
+
+    if (recentErr) {
+      throw new Error(`Failed to fetch recent commanders at offset ${offset}: ${recentErr.message}`);
+    }
+
+    if (!recentCommanders || recentCommanders.length === 0) break;
+
+    const batchIds = recentCommanders.map((r) => r.commander_id);
+    activeCommanderIds = [...new Set([...activeCommanderIds, ...batchIds])];
+
+    if (recentCommanders.length < pageSize) break;
+    offset += pageSize;
   }
-
-  const activeCommanderIds = [...new Set((recentCommanders ?? []).map((r) => r.commander_id))];
 
   const topCommandersQuery = supabase
     .from("commander_stats")
