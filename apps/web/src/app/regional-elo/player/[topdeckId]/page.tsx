@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { buildProfiles, selectCommanderForecastRows, type CommanderUsageRow } from "@/lib/meta-prep";
+import type { CommanderUsageRow } from "@/lib/meta-prep";
 import { supabase } from "@/lib/supabase";
 import { fetchChampionshipLeaderboard, fetchTopDeckProfileStats } from "@/lib/topdeck";
 import { buildTopdeckProfileHref } from "@/lib/topdeck-profile";
@@ -159,6 +159,10 @@ type PlayerAchievementRow = {
 
 type PlayerCommanderProfileRow = {
   active_commander: string | null;
+  latest_decklist_url: string | null;
+  latest_tournament_name: string | null;
+  latest_tournament_date: string | null;
+  latest_tournament_topdeck_tid: string | null;
 };
 
 type PlayerEventLogRow = {
@@ -333,13 +337,12 @@ async function fetchEntries(playerId: string): Promise<EntryRow[]> {
 }
 
 async function fetchActiveRankRow(
-  table: "global_elo_active_leaderboard" | "regional_elo_active_leaderboard",
   regionType: "global" | "country" | "state",
   regionKey: string,
   playerId: string
 ): Promise<LeaderboardRankRow | null> {
   const { data, error } = await supabase
-    .from(table)
+    .from("global_elo_active_leaderboard")
     .select(
       "country_key, primary_country_key, primary_region_key, region_key, rank, rating, games_played, wins, draws, losses, last_game_date, topdeck_elo, topdeck_elo_rank"
     )
@@ -353,167 +356,37 @@ async function fetchActiveRankRow(
   return row ? { ...row, rank: row.topdeck_elo_rank ?? row.rank } : null;
 }
 
-async function fetchGlobalEloRatingRow(
-  table: "global_elo_ratings" | "regional_elo_ratings",
-  playerId: string
-): Promise<LeaderboardRankRow | null> {
-  const { data, error } = await supabase
-    .from(table)
-    .select("rating, games_played, wins, draws, losses, last_game_date")
-    .eq("region_type", "global")
-    .eq("region_key", "ALL")
-    .eq("player_id", playerId)
-    .maybeSingle();
-
-  if (error) return null;
-  const row = data as Omit<LeaderboardRankRow, "rank"> | null;
-  return row ? { ...row, rank: 0 } : null;
-}
-
 async function fetchGlobalEloRank(playerId: string): Promise<LeaderboardRankRow | null> {
-  const globalActiveRow = await fetchActiveRankRow("global_elo_active_leaderboard", "global", "ALL", playerId);
-  if (globalActiveRow) {
-    return globalActiveRow;
-  }
-
-  const legacyActiveRow = await fetchActiveRankRow("regional_elo_active_leaderboard", "global", "ALL", playerId);
-  if (legacyActiveRow) {
-    return legacyActiveRow;
-  }
-
-  const { data, error } = await supabase
-    .from("global_elo_leaderboard")
-    .select("primary_country_key, primary_region_key, rank, rating, games_played, wins, draws, losses, last_game_date")
-    .eq("region_type", "global")
-    .eq("region_key", "ALL")
-    .eq("player_id", playerId)
-    .maybeSingle();
-
-  if (error) {
-    const { data: fallbackData, error: fallbackError } = await supabase
-      .from("regional_elo_leaderboard")
-      .select("rank, rating, games_played, wins, draws, losses, last_game_date")
-      .eq("region_type", "global")
-      .eq("region_key", "ALL")
-      .eq("player_id", playerId)
-      .maybeSingle();
-
-    const row =
-      !fallbackError && fallbackData
-        ? (fallbackData as LeaderboardRankRow)
-        : await fetchGlobalEloRatingRow("regional_elo_ratings", playerId);
-    return row;
-  }
-
-  return (data as LeaderboardRankRow | null) ?? null;
+  return fetchActiveRankRow("global", "ALL", playerId);
 }
 
 async function fetchRegionalRank(playerId: string, regionKey: string): Promise<LeaderboardRankRow | null> {
   if (!regionKey) return null;
-  const globalActiveRow = await fetchActiveRankRow("global_elo_active_leaderboard", "state", regionKey, playerId);
-  if (globalActiveRow) {
-    return globalActiveRow;
-  }
-
-  const legacyActiveRow = await fetchActiveRankRow("regional_elo_active_leaderboard", "state", regionKey, playerId);
-  if (legacyActiveRow) {
-    return legacyActiveRow;
-  }
-
-  const { data, error } = await supabase
-    .from("global_elo_leaderboard")
-    .select("country_key, region_key, rank, rating, games_played, wins, draws, losses, last_game_date")
-    .eq("region_type", "state")
-    .eq("region_key", regionKey)
-    .eq("player_id", playerId)
-    .maybeSingle();
-
-  if (error) {
-    const { data: fallbackData } = await supabase
-      .from("global_elo_leaderboard")
-      .select("region_key, rank, rating, games_played, wins, draws, losses, last_game_date")
-      .eq("region_type", "state")
-      .eq("region_key", regionKey)
-      .eq("player_id", playerId)
-      .maybeSingle();
-
-    if (fallbackData) {
-      return fallbackData as LeaderboardRankRow;
-    }
-
-    const { data: legacyData } = await supabase
-      .from("regional_elo_leaderboard")
-      .select("region_key, rank, rating, games_played, wins, draws, losses, last_game_date")
-      .eq("region_type", "state")
-      .eq("region_key", regionKey)
-      .eq("player_id", playerId)
-      .maybeSingle();
-
-    return (legacyData as LeaderboardRankRow | null) ?? null;
-  }
-
-  return (data as LeaderboardRankRow | null) ?? null;
+  return fetchActiveRankRow("state", regionKey, playerId);
 }
 
 async function fetchCountryRank(playerId: string, countryKey: string): Promise<LeaderboardRankRow | null> {
   if (!countryKey || countryKey === "UNKNOWN") return null;
-
-  const globalActiveRow = await fetchActiveRankRow("global_elo_active_leaderboard", "country", countryKey, playerId);
-  if (globalActiveRow) return globalActiveRow;
-
-  const legacyActiveRow = await fetchActiveRankRow("regional_elo_active_leaderboard", "country", countryKey, playerId);
-  if (legacyActiveRow) return legacyActiveRow;
-
-  const { data, error } = await supabase
-    .from("regional_elo_leaderboard")
-    .select("country_key, primary_region_key, region_key, rank, rating, games_played, wins, draws, losses, last_game_date")
-    .eq("region_type", "country")
-    .eq("region_key", countryKey)
-    .eq("player_id", playerId)
-    .maybeSingle();
-
-  if (error) return null;
-  return (data as LeaderboardRankRow | null) ?? null;
+  return fetchActiveRankRow("country", countryKey, playerId);
 }
 
 async function fetchRegionalRanks(playerId: string): Promise<LeaderboardRankRow[]> {
   const { data, error } = await supabase
-    .from("global_elo_leaderboard")
-    .select("country_key, region_key, rank, rating, games_played, wins, draws, losses, last_game_date")
+    .from("global_elo_active_leaderboard")
+    .select("country_key, region_key, rank, rating, games_played, wins, draws, losses, last_game_date, topdeck_elo, topdeck_elo_rank")
     .eq("region_type", "state")
     .eq("player_id", playerId)
-    .order("rank", { ascending: true });
+    .order("topdeck_elo_rank", { ascending: true, nullsFirst: false })
+    .order("region_key", { ascending: true });
 
-  if (error) {
-    const { data: fallbackData } = await supabase
-      .from("global_elo_leaderboard")
-      .select("region_key, rank, rating, games_played, wins, draws, losses, last_game_date")
-      .eq("region_type", "state")
-      .eq("player_id", playerId)
-      .order("rank", { ascending: true });
-
-    if (fallbackData) {
-      return ((fallbackData as LeaderboardRankRow[]) ?? []).sort((a, b) => {
-        if (a.rank !== b.rank) return a.rank - b.rank;
-        return (a.region_key ?? "").localeCompare(b.region_key ?? "");
-      });
-    }
-
-    const { data: legacyData } = await supabase
-      .from("regional_elo_leaderboard")
-      .select("region_key, rank, rating, games_played, wins, draws, losses, last_game_date")
-      .eq("region_type", "state")
-      .eq("player_id", playerId)
-      .order("rank", { ascending: true });
-
-    return ((legacyData as LeaderboardRankRow[]) ?? []).sort((a, b) => {
-      if (a.rank !== b.rank) return a.rank - b.rank;
-      return (a.region_key ?? "").localeCompare(b.region_key ?? "");
-    });
-  }
+  if (error) return [];
 
   return ((data as LeaderboardRankRow[]) ?? []).sort((a, b) => {
-    if (a.rank !== b.rank) return a.rank - b.rank;
+    if (a.topdeck_elo_rank != null && b.topdeck_elo_rank != null && a.topdeck_elo_rank !== b.topdeck_elo_rank) {
+      return a.topdeck_elo_rank - b.topdeck_elo_rank;
+    }
+    if (a.topdeck_elo_rank != null && b.topdeck_elo_rank == null) return -1;
+    if (a.topdeck_elo_rank == null && b.topdeck_elo_rank != null) return 1;
     return (a.region_key ?? "").localeCompare(b.region_key ?? "");
   });
 }
@@ -539,23 +412,24 @@ function parseStateAssignments(value: unknown): StateAssignmentRow[] {
 }
 
 async function fetchPlayerProfileSummary(playerId: string): Promise<PlayerProfileSummaryRow | null> {
-  for (const table of ["global_elo_player_profile_summaries", "regional_elo_player_profile_summaries"]) {
-    const { data, error } = await supabase
-      .from(table)
-      .select("games_played, wins, draws, losses, last_game_date, home_country_key, home_region_key, state_assignments")
-      .eq("player_id", playerId)
-      .maybeSingle();
+  const { data, error } = await supabase
+    .from("global_elo_player_profile_summaries")
+    .select("games_played, wins, draws, losses, last_game_date, home_country_key, home_region_key, state_assignments")
+    .eq("player_id", playerId)
+    .maybeSingle();
 
-    if (error) continue;
-    const row = data as Omit<PlayerProfileSummaryRow, "state_assignments"> & { state_assignments: unknown } | null;
-    if (!row) continue;
-    return {
-      ...row,
-      state_assignments: parseStateAssignments(row.state_assignments),
-    };
+  if (error) {
+    console.error("Error fetching player profile summary:", describeSupabaseError(error));
+    return null;
   }
 
-  return null;
+  const row = data as Omit<PlayerProfileSummaryRow, "state_assignments"> & { state_assignments: unknown } | null;
+  return row
+    ? {
+        ...row,
+        state_assignments: parseStateAssignments(row.state_assignments),
+      }
+    : null;
 }
 
 const fetchGlobalSnapshot = unstable_cache(async (topdeckId: string): Promise<GlobalSnapshotRow | null> => {
@@ -725,36 +599,27 @@ async function fetchPlayerCommanderUsageRows(
   return buildPlayerCommanderUsageRows(rows, topdeckId, playerName);
 }
 
-async function fetchActiveCommander(
-  playerId: string,
-  topdeckId: string,
-  playerName: string,
-  usageRows?: PlayerCommanderUsageRow[]
-): Promise<string | null> {
+async function fetchPlayerCommanderProfile(topdeckId: string): Promise<PlayerCommanderProfileRow | null> {
   const { data: profileRow, error: profileError } = await supabase
     .from("player_commander_profiles")
-    .select("active_commander")
+    .select("active_commander, latest_decklist_url, latest_tournament_name, latest_tournament_date, latest_tournament_topdeck_tid")
     .eq("topdeck_id", topdeckId)
     .maybeSingle();
 
-  if (!profileError) {
-    const profile = profileRow as PlayerCommanderProfileRow | null;
-    if (isKnownCommanderName(profile?.active_commander)) {
-      return profile?.active_commander ?? null;
-    }
+  if (profileError) {
+    console.error("Error fetching player commander profile:", describeSupabaseError(profileError));
+    return null;
   }
 
-  const referenceDate = new Date();
-  const commanderUsageRows = usageRows ?? (await fetchPlayerCommanderUsageRows(playerId, topdeckId, playerName));
-  const forecastRows = selectCommanderForecastRows([topdeckId], commanderUsageRows, referenceDate);
-  const profiles = buildProfiles(
-    [topdeckId],
-    forecastRows,
-    1,
-    referenceDate.toISOString()
-  );
-
-  return profiles.players[0]?.commanders[0]?.commander ?? null;
+  const profile = profileRow as PlayerCommanderProfileRow | null;
+  return profile
+    ? {
+        ...profile,
+        active_commander: isKnownCommanderName(profile.active_commander)
+          ? profile.active_commander
+          : null,
+      }
+    : null;
 }
 
 async function fetchGamesAndParticipants(entryIds: string[]) {
@@ -1073,31 +938,37 @@ async function fetchPlayerEventLogs(playerId: string, regionFilter: string): Pro
 
 const fetchCachedGlobalEloRank = unstable_cache(
   async (playerId: string) => fetchGlobalEloRank(playerId),
-  ["regional-player-global-rank-v3"],
+  ["regional-player-global-rank-v4"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
 const fetchCachedRegionalRank = unstable_cache(
   async (playerId: string, regionKey: string) => fetchRegionalRank(playerId, regionKey),
-  ["regional-player-local-rank-v3"],
+  ["regional-player-local-rank-v4"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
 const fetchCachedCountryRank = unstable_cache(
   async (playerId: string, countryKey: string) => fetchCountryRank(playerId, countryKey),
-  ["regional-player-country-rank-v3"],
+  ["regional-player-country-rank-v4"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
 const fetchCachedRegionalRanks = unstable_cache(
   async (playerId: string) => fetchRegionalRanks(playerId),
-  ["regional-player-regional-ranks-v2"],
+  ["regional-player-regional-ranks-v3"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
 const fetchCachedPlayerProfileSummary = unstable_cache(
   async (playerId: string) => fetchPlayerProfileSummary(playerId),
-  ["regional-player-profile-summary-v3"],
+  ["regional-player-profile-summary-v4"],
+  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
+);
+
+const fetchCachedPlayerCommanderProfile = unstable_cache(
+  async (topdeckId: string) => fetchPlayerCommanderProfile(topdeckId),
+  ["regional-player-commander-profile-v1"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -1152,6 +1023,7 @@ export default async function RegionalPlayerPage({
     globalEloRank,
     regionalRanks,
     profileSummary,
+    commanderProfile,
     commanderUsageRows,
     fetchedAchievementRows,
   ] = await Promise.all([
@@ -1159,10 +1031,11 @@ export default async function RegionalPlayerPage({
     fetchCachedGlobalEloRank(player.id),
     fetchCachedRegionalRanks(player.id),
     fetchCachedPlayerProfileSummary(player.id),
+    fetchCachedPlayerCommanderProfile(topdeckId),
     fetchCachedPlayerCommanderUsageRows(player.id, topdeckId, player.name),
     fetchCachedPlayerAchievements(player.id, topdeckId),
   ]);
-  const activeCommander = await fetchActiveCommander(player.id, topdeckId, player.name, commanderUsageRows);
+  const activeCommander = commanderProfile?.active_commander ?? null;
   const regionalRankRows = regionalRanks.map((row) => ({
     ...row,
     country_key: row.country_key ?? inferCountryForRegion(row.region_key) ?? "UNKNOWN",
@@ -1238,60 +1111,14 @@ export default async function RegionalPlayerPage({
     bestCommanderMatchup,
     worstCommanderMatchup,
   } = summarizePlayerLogs(playerLogs, topdeckId);
-  const canonicalGames = totalGames;
-  const canonicalWins = totalWins;
-  const canonicalDraws = totalDraws;
-  const canonicalLosses = totalLosses;
+  const canonicalGames = profileSummary?.games_played ?? totalGames;
+  const canonicalWins = profileSummary?.wins ?? totalWins;
+  const canonicalDraws = profileSummary?.draws ?? totalDraws;
+  const canonicalLosses = profileSummary?.losses ?? totalLosses;
   const assignmentRowsByRegion = new Map<string, StateAssignmentRow>();
-  const historicalRegionKeys = new Set<string>();
   if (profileSummary?.state_assignments?.length) {
     for (const row of profileSummary.state_assignments) {
       assignmentRowsByRegion.set(row.region_key, row);
-    }
-  } else {
-    for (const row of regionalRankRows) {
-      const regionKey = row.region_key ?? "";
-      if (!regionKey) continue;
-      assignmentRowsByRegion.set(regionKey, {
-        country_key: row.country_key ?? inferCountryForRegion(regionKey) ?? "UNKNOWN",
-        region_key: regionKey,
-        games_played: row.games_played,
-        wins: row.wins,
-        draws: row.draws,
-        losses: row.losses,
-      });
-    }
-    for (const log of playerLogs) {
-      const regionKey = (log.state ?? "").trim().toUpperCase() || "UNKNOWN";
-      const existing = assignmentRowsByRegion.get(regionKey);
-      const current =
-        existing && !historicalRegionKeys.has(regionKey)
-          ? {
-              ...existing,
-              games_played: 0,
-              wins: 0,
-              draws: 0,
-              losses: 0,
-            }
-          : existing ?? {
-              country_key: inferCountryForRegion(regionKey) ?? "UNKNOWN",
-              region_key: regionKey,
-              games_played: 0,
-              wins: 0,
-              draws: 0,
-              losses: 0,
-            };
-
-      historicalRegionKeys.add(regionKey);
-      current.games_played += 1;
-      if (log.result === "win") {
-        current.wins += 1;
-      } else if (log.result === "draw") {
-        current.draws += 1;
-      } else if (log.result === "loss") {
-        current.losses += 1;
-      }
-      assignmentRowsByRegion.set(regionKey, current);
     }
   }
   const derivedHomeRegion =
@@ -1301,7 +1128,7 @@ export default async function RegionalPlayerPage({
         if (b.games_played !== a.games_played) return b.games_played - a.games_played;
         return a.region_key.localeCompare(b.region_key);
       })[0]?.region_key ?? null;
-  const homeRegion = globalEloRank?.primary_region_key ?? profileSummary?.home_region_key ?? regionalRanks[0]?.region_key ?? derivedHomeRegion;
+  const homeRegion = profileSummary?.home_region_key ?? globalEloRank?.primary_region_key ?? regionalRanks[0]?.region_key ?? derivedHomeRegion;
   const homeCountry =
     profileSummary?.home_country_key ??
     globalEloRank?.primary_country_key ??
@@ -1392,6 +1219,21 @@ export default async function RegionalPlayerPage({
         date: row.start_date,
         name: tournamentName,
         url: buildTopdeckTournamentUrl(row.tournament_topdeck_tid),
+      });
+    }
+  }
+  if (activeCommander) {
+    if (commanderProfile?.latest_decklist_url && commanderProfile.latest_tournament_date) {
+      latestDecklistByCommander.set(activeCommander, {
+        date: commanderProfile.latest_tournament_date,
+        url: commanderProfile.latest_decklist_url,
+      });
+    }
+    if (commanderProfile?.latest_tournament_date) {
+      latestTournamentByCommander.set(activeCommander, {
+        date: commanderProfile.latest_tournament_date,
+        name: commanderProfile.latest_tournament_name || "Unknown tournament",
+        url: buildTopdeckTournamentUrl(commanderProfile.latest_tournament_topdeck_tid),
       });
     }
   }

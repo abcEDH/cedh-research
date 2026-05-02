@@ -3,15 +3,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
 import { RegionalLeaderboardTable } from "./regional-leaderboard-table";
 import { RegionSelector } from "./region-selector";
-import { inferCountryForRegion } from "@/lib/region-countries";
-import { fetchTopdeckEloMap } from "@/lib/topdeck-elo";
 import { unstable_cache } from "next/cache";
 
 export const dynamic = "force-dynamic";
 const GLOBAL_REGION_KEY = "ALL";
 const LEADERBOARD_PAGE_SIZE = 50;
-const FALLBACK_LEADERBOARD_FETCH_SIZE = 1000;
-const ACTIVE_PLAYER_LOOKBACK_MONTHS = 6;
 const REGIONAL_ELO_CACHE_REVALIDATE_SECONDS = 60 * 15; // 15 minutes
 
 function readRegionParam(
@@ -155,60 +151,17 @@ function formatDate(value: string | null) {
   });
 }
 
-function activePlayerCutoffDate() {
-  const cutoff = new Date();
-  cutoff.setMonth(cutoff.getMonth() - ACTIVE_PLAYER_LOOKBACK_MONTHS);
-  return cutoff.toISOString().slice(0, 10);
-}
-
 function logReadSummary(event: string, details: Record<string, unknown>) {
   console.info(`[regional-elo] ${event}`, details);
 }
 
-async function applyTopdeckElo(rows: LeaderboardRow[]): Promise<LeaderboardRow[]> {
-  const topdeckIds = rows
-    .filter((row) => row.topdeck_elo == null)
-    .map((row) => row.topdeck_id)
-    .filter((value): value is string => Boolean(value));
-  if (topdeckIds.length === 0) {
-    return rows.map((row) => ({
-      ...row,
-      hidden_rating: row.rating,
-      topdeck_elo: row.topdeck_elo ?? null,
-    }));
-  }
-
-  const topdeckEloById = await fetchTopdeckEloMap(topdeckIds);
-  if (topdeckEloById.size === 0) {
-    return rows.map((row) => ({
-      ...row,
-      hidden_rating: row.rating,
-      topdeck_elo: row.topdeck_elo ?? null,
-    }));
-  }
-
-  return rows.map((row) => {
-    const topdeckElo = row.topdeck_id ? topdeckEloById.get(row.topdeck_id) : undefined;
-    return {
-      ...row,
-      hidden_rating: row.rating,
-      topdeck_elo: row.topdeck_elo ?? topdeckElo ?? null,
-    };
-  });
-}
-
-function sortRowsByTopdeckElo(rows: LeaderboardRow[]): LeaderboardRow[] {
-  return [...rows].sort((a, b) => {
-    const aElo = a.topdeck_elo;
-    const bElo = b.topdeck_elo;
-    if (aElo != null && bElo != null && aElo !== bElo) return bElo - aElo;
-    if (aElo != null && bElo == null) return -1;
-    if (aElo == null && bElo != null) return 1;
-    if (a.topdeck_elo_rank != null && b.topdeck_elo_rank != null) {
-      return a.topdeck_elo_rank - b.topdeck_elo_rank;
-    }
-    return a.player_name.localeCompare(b.player_name);
-  });
+function normalizeLeaderboardRows(rows: LeaderboardRow[]): LeaderboardRow[] {
+  return rows.map((row) => ({
+    ...row,
+    hidden_rating: row.rating,
+    topdeck_elo: row.topdeck_elo ?? null,
+    topdeck_elo_rank: row.topdeck_elo_rank ?? null,
+  }));
 }
 
 async function fetchLeaderboardRows(
@@ -238,17 +191,11 @@ async function fetchLeaderboardRows(
 
   const { data, error, count } = await query;
   if (error) {
-    return fetchLeaderboardRowsFromView(
-      regionType,
-      regionKey,
-      page,
-      pageSize,
-      activePlayerCutoffDate(),
-      normalizedSearch
-    );
+    console.error("Error fetching active leaderboard rows:", error);
+    throw error;
   }
 
-  const rows = sortRowsByTopdeckElo(await applyTopdeckElo((data as LeaderboardRow[]) ?? []));
+  const rows = normalizeLeaderboardRows((data as LeaderboardRow[]) ?? []);
   logReadSummary("leaderboard-cache-miss", {
     source: "global_elo_active_leaderboard",
     regionType,
@@ -266,185 +213,19 @@ async function fetchLeaderboardRows(
   };
 }
 
-async function fetchLeaderboardRowsFromView(
-  regionType: "global" | "country" | "state",
-  regionKey: string,
-  page: number,
-  pageSize: number,
-  cutoffDate: string,
-  searchQuery = ""
-): Promise<LeaderboardPage> {
-  const pageStart = (page - 1) * pageSize;
-  const fallbackRows: LeaderboardRow[] = [];
-  let totalCount = 0;
-  for (let offset = 0; ; offset += FALLBACK_LEADERBOARD_FETCH_SIZE) {
-    let query = supabase
-      .from("global_elo_leaderboard")
-      .select(
-        "region_type, region_key, country_key, primary_country_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank",
-        { count: "exact" }
-      )
-      .eq("region_type", regionType)
-      .eq("region_key", regionKey)
-      .gte("last_game_date", cutoffDate)
-      .order("rank", { ascending: true })
-      .range(offset, offset + FALLBACK_LEADERBOARD_FETCH_SIZE - 1);
-
-    if (searchQuery) {
-      query = query.ilike("player_name", `%${searchQuery}%`);
-    }
-
-    const { data, error, count } = await query;
-    if (error) {
-      return fetchLegacyLeaderboardRows(
-        regionType,
-        regionType === "global" ? GLOBAL_REGION_KEY : regionKey,
-        page,
-        pageSize,
-        searchQuery
-      );
-    }
-    if (offset === 0) totalCount = count ?? 0;
-    fallbackRows.push(...(((data as LeaderboardRow[]) ?? [])));
-    if (!data || data.length < FALLBACK_LEADERBOARD_FETCH_SIZE) break;
-  }
-
-  const sortedRows = sortRowsByTopdeckElo(await applyTopdeckElo(fallbackRows));
-  const rows = sortedRows.slice(pageStart, pageStart + pageSize);
-  logReadSummary("leaderboard-view-cache-miss", {
-    source: "global_elo_leaderboard",
-    regionType,
-    regionKey,
-    page,
-    pageSize,
-    search: searchQuery || null,
-    rowsReturned: rows.length,
-    totalCount,
-    supabaseQueries: Math.max(1, Math.ceil(fallbackRows.length / FALLBACK_LEADERBOARD_FETCH_SIZE)) + (fallbackRows.length > 0 ? 1 : 0),
-  });
-  return {
-    rows,
-    totalCount,
-  };
-}
-
-async function fetchLegacyLeaderboardRows(
-  regionType: "global" | "country" | "state",
-  regionKey: string,
-  page: number,
-  pageSize: number,
-  searchQuery = ""
-): Promise<LeaderboardPage> {
-  const cutoffDate = activePlayerCutoffDate();
-  const pageStart = (page - 1) * pageSize;
-  const fallbackRows: LeaderboardRow[] = [];
-  let totalCount = 0;
-  for (let offset = 0; ; offset += FALLBACK_LEADERBOARD_FETCH_SIZE) {
-    let query = supabase
-      .from("regional_elo_leaderboard")
-      .select(
-        "region_type, region_key, country_key, primary_country_key, primary_region_key, player_id, player_name, topdeck_id, rating, games_played, wins, draws, losses, last_game_date, rank",
-        { count: "exact" }
-      )
-      .eq("region_type", regionType)
-      .eq("region_key", regionKey)
-      .gte("last_game_date", cutoffDate)
-      .order("rank", { ascending: true })
-      .range(offset, offset + FALLBACK_LEADERBOARD_FETCH_SIZE - 1);
-
-    if (searchQuery) {
-      query = query.ilike("player_name", `%${searchQuery}%`);
-    }
-
-    const { data, error, count } = await query;
-    if (error) {
-      console.error("Error fetching legacy leaderboard rows:", error);
-      throw error;
-    }
-    if (offset === 0) totalCount = count ?? 0;
-    fallbackRows.push(...(((data as LeaderboardRow[]) ?? [])));
-    if (!data || data.length < FALLBACK_LEADERBOARD_FETCH_SIZE) break;
-  }
-
-  const sortedRows = sortRowsByTopdeckElo(await applyTopdeckElo(fallbackRows));
-  const rows = sortedRows.slice(pageStart, pageStart + pageSize);
-  logReadSummary("leaderboard-legacy-cache-miss", {
-    source: "regional_elo_leaderboard",
-    regionType,
-    regionKey,
-    page,
-    pageSize,
-    search: searchQuery || null,
-    rowsReturned: rows.length,
-    totalCount,
-    supabaseQueries: Math.max(1, Math.ceil(fallbackRows.length / FALLBACK_LEADERBOARD_FETCH_SIZE)) + (fallbackRows.length > 0 ? 1 : 0),
-  });
-  return {
-    rows,
-    totalCount,
-  };
-}
-
-async function fetchRegionRows(): Promise<{ rows: RegionRow[]; supportsCountry: boolean }> {
+async function fetchRegionRows(): Promise<RegionRow[]> {
   const { data, error } = await supabase
     .from("global_elo_regions")
     .select("region_type, region_key, country_key, player_count, updated_at")
     .order("region_type", { ascending: true })
     .order("region_key", { ascending: true });
 
-  if (!error) {
-    return { rows: (data ?? []) as RegionRow[], supportsCountry: true };
+  if (error) {
+    console.error("Error fetching region rows:", error);
+    throw error;
   }
 
-  const { data: fallbackData, error: fallbackError } = await supabase
-    .from("regional_elo_regions")
-    .select("region_type, region_key, player_count, updated_at")
-    .order("region_type", { ascending: true })
-    .order("region_key", { ascending: true });
-
-  if (fallbackError) {
-    console.error("Error fetching region rows:", fallbackError);
-    throw fallbackError;
-  }
-
-  const fallbackRows = ((fallbackData ?? []) as Omit<RegionRow, "country_key">[]).map((row) => ({
-    ...row,
-    country_key: row.region_type === "state" ? inferCountryForRegion(row.region_key) : null,
-  }));
-  const inferredCountries = new Map<string, RegionRow>();
-  for (const row of fallbackRows) {
-    if (row.region_type !== "state" || !row.country_key) continue;
-    const existing = inferredCountries.get(row.country_key);
-    inferredCountries.set(row.country_key, {
-      region_type: "country",
-      region_key: row.country_key,
-      country_key: row.country_key,
-      player_count: (existing?.player_count ?? 0) + Number(row.player_count ?? 0),
-      updated_at:
-        existing?.updated_at && row.updated_at
-          ? existing.updated_at > row.updated_at
-            ? existing.updated_at
-            : row.updated_at
-          : existing?.updated_at ?? row.updated_at ?? null,
-    });
-  }
-  const legacyCountryRows: RegionRow[] =
-    fallbackRows.some((row) => row.region_type === "country")
-      ? []
-      : Array.from(inferredCountries.values()).sort((a, b) =>
-          a.region_key.localeCompare(b.region_key)
-        );
-
-  return {
-    rows: [
-      ...legacyCountryRows,
-      ...fallbackRows.map((row) => ({
-        ...row,
-        country_key: row.country_key ?? null,
-      })),
-    ],
-    supportsCountry: false,
-  };
+  return (data ?? []) as RegionRow[];
 }
 
 function chunkArray<T>(values: T[], chunkSize: number) {
@@ -455,121 +236,19 @@ function chunkArray<T>(values: T[], chunkSize: number) {
   return chunks;
 }
 
-async function fetchLatestCommanders(rows: LeaderboardRow[]): Promise<Map<string, LatestCommanderRow>> {
+async function fetchLatestCommanders(
+  rows: Array<{ player_id?: string; topdeck_id: string | null }>
+): Promise<Map<string, LatestCommanderRow>> {
   const topdeckIds = rows
     .map((row) => row.topdeck_id)
     .filter((value): value is string => Boolean(value));
   if (topdeckIds.length === 0) return new Map();
-  const playerIdByTopdeckId = new Map<string, string>();
-  const topdeckIdByPlayerId = new Map<string, string>();
-  for (const row of rows) {
-    if (!row.topdeck_id) continue;
-    playerIdByTopdeckId.set(row.topdeck_id, row.player_id);
-    topdeckIdByPlayerId.set(row.player_id, row.topdeck_id);
-  }
-
-  const profileRows: Array<{
-    topdeck_id: string | null;
-    active_commander: string | null;
-    latest_decklist_url: string | null;
-  }> = [];
-  for (const topdeckIdChunk of chunkArray(topdeckIds, 250)) {
-    const { data, error } = await supabase
-      .from("player_commander_profiles")
-      .select("topdeck_id, active_commander, latest_decklist_url")
-      .in("topdeck_id", topdeckIdChunk);
-
-    if (error || !data?.length) continue;
-    profileRows.push(
-      ...(data as Array<{
-        topdeck_id: string | null;
-        active_commander: string | null;
-        latest_decklist_url: string | null;
-      }>)
-    );
-  }
 
   const latestByPlayer = new Map<string, LatestCommanderRow>();
-  const profileActiveCommanderByTopdeckId = new Map<string, string>();
-  const latestPlayedEventByPlayerId = new Map<
-    string,
-    { tournament_id: string | null; tournament_name: string | null; game_date: string | null }
-  >();
-  const tournamentsById = new Map<
-    string,
-    { id: string; name: string | null; start_date: string | null; topdeck_tid: string | null }
-  >();
-  const pageSize = 1000;
-  const playerIds = Array.from(topdeckIdByPlayerId.keys());
-
-  for (const table of ["global_elo_game_event_log", "regional_elo_game_event_log"]) {
-    let tableWorked = false;
-    for (const playerIdChunk of chunkArray(playerIds, 100)) {
-      const remainingPlayerIds = new Set(playerIdChunk);
-      for (let offset = 0; ; offset += pageSize) {
-        const { data, error } = await supabase
-          .from(table)
-          .select("player_id, game_date, tournament_name, tournament_id")
-          .in("player_id", playerIdChunk)
-          .order("game_date", { ascending: false })
-          .range(offset, offset + pageSize - 1);
-
-        if (error) {
-          latestPlayedEventByPlayerId.clear();
-          tableWorked = false;
-          break;
-        }
-
-        const page =
-          (data as Array<{
-            player_id: string;
-            game_date: string | null;
-            tournament_name: string | null;
-            tournament_id: string | null;
-          }>) ?? [];
-        tableWorked = tableWorked || page.length > 0;
-        for (const row of page) {
-          const existing = latestPlayedEventByPlayerId.get(row.player_id);
-          if (!existing || (row.game_date && (!existing.game_date || row.game_date > existing.game_date))) {
-            latestPlayedEventByPlayerId.set(row.player_id, {
-              tournament_id: row.tournament_id ?? null,
-              tournament_name: row.tournament_name ?? null,
-              game_date: row.game_date ?? null,
-            });
-          }
-          remainingPlayerIds.delete(row.player_id);
-        }
-
-        if (remainingPlayerIds.size === 0) break;
-        if (page.length < pageSize) break;
-      }
-      if (!tableWorked && latestPlayedEventByPlayerId.size === 0) continue;
-    }
-    if (tableWorked || latestPlayedEventByPlayerId.size > 0) break;
-  }
-
-  const latestTournamentIds = Array.from(
-    new Set(
-      Array.from(latestPlayedEventByPlayerId.values())
-        .map((row) => row.tournament_id)
-        .filter((value): value is string => Boolean(value))
-    )
-  );
-  for (const idChunk of chunkArray(latestTournamentIds, 100)) {
-    const { data, error } = await supabase
-      .from("tournaments")
-      .select("id, name, start_date, topdeck_tid")
-      .in("id", idChunk);
-
-    if (error || !data?.length) continue;
-    for (const row of data as Array<{ id: string; name: string | null; start_date: string | null; topdeck_tid: string | null }>) {
-      tournamentsById.set(row.id, row);
-    }
-  }
-
-  for (const topdeckId of topdeckIds) {
-    latestByPlayer.set(topdeckId, {
-      topdeck_id: topdeckId,
+  for (const row of rows) {
+    if (!row.topdeck_id) continue;
+    latestByPlayer.set(row.topdeck_id, {
+      topdeck_id: row.topdeck_id,
       active_commander: null,
       active_commander_decklist_url: null,
       latest_tournament_name: null,
@@ -578,42 +257,139 @@ async function fetchLatestCommanders(rows: LeaderboardRow[]): Promise<Map<string
     });
   }
 
+  // Layer 1: Try enriched profile query (includes tournament metadata)
+  const profileRows: Array<{
+    topdeck_id: string | null;
+    active_commander: string | null;
+    latest_decklist_url: string | null;
+    latest_tournament_name?: string | null;
+    latest_tournament_date?: string | null;
+    latest_tournament_topdeck_tid?: string | null;
+  }> = [];
+
+  for (const topdeckIdChunk of chunkArray(topdeckIds, 250)) {
+    const { data, error } = await supabase
+      .from("player_commander_profiles")
+      .select("topdeck_id, active_commander, latest_decklist_url, latest_tournament_name, latest_tournament_date, latest_tournament_topdeck_tid")
+      .in("topdeck_id", topdeckIdChunk);
+
+    if (error) {
+      // Layer 2: Safe profile query (only basic columns known to exist in older schemas)
+      console.warn("[regional-elo] Enriched profile query failed, trying safe query:", error.message);
+      const { data: safeData, error: safeError } = await supabase
+        .from("player_commander_profiles")
+        .select("topdeck_id, active_commander, latest_decklist_url")
+        .in("topdeck_id", topdeckIdChunk);
+
+      if (safeError) {
+        console.error("[regional-elo] Safe profile query also failed:", safeError.message);
+        continue;
+      }
+      if (safeData) {
+        profileRows.push(...(safeData as Array<{
+          topdeck_id: string | null;
+          active_commander: string | null;
+          latest_decklist_url: string | null;
+        }>));
+      }
+    } else if (data) {
+      profileRows.push(...(data as Array<{
+        topdeck_id: string | null;
+        active_commander: string | null;
+        latest_decklist_url: string | null;
+        latest_tournament_name?: string | null;
+        latest_tournament_date?: string | null;
+        latest_tournament_topdeck_tid?: string | null;
+      }>));
+    }
+  }
+
   for (const row of profileRows) {
-    const activeCommander = row.active_commander;
-    if (row.topdeck_id && activeCommander && isKnownCommander(activeCommander)) {
-      profileActiveCommanderByTopdeckId.set(row.topdeck_id, activeCommander);
+    if (!row.topdeck_id) continue;
+    const existing = latestByPlayer.get(row.topdeck_id);
+    if (!existing) continue;
+    existing.active_commander = isKnownCommander(row.active_commander) ? row.active_commander : null;
+    existing.active_commander_decklist_url = row.latest_decklist_url ?? null;
+    existing.latest_tournament_name = row.latest_tournament_name ?? null;
+    existing.latest_tournament_date = row.latest_tournament_date ?? null;
+    existing.latest_tournament_topdeck_tid = row.latest_tournament_topdeck_tid ?? null;
+  }
+
+  // Layer 3: Fallback to event logs for missing tournament OR missing commander data
+  const playersNeedingFallback = Array.from(latestByPlayer.values())
+    .filter((row) => !row.latest_tournament_name || !row.active_commander)
+    .map((row) => rows.find((r) => r.topdeck_id === row.topdeck_id)?.player_id)
+    .filter((id): id is string => Boolean(id));
+
+  if (playersNeedingFallback.length > 0) {
+    const fallbackData = new Map<string, { commander: string | null; tournament: string | null; date: string | null; tournament_id: string | null }>();
+    
+    for (const table of ["global_elo_game_event_log", "regional_elo_game_event_log"]) {
+      const { data, error } = await supabase
+        .from(table)
+        .select("player_id, game_date, tournament_name, tournament_id, commander_name")
+        .in("player_id", playersNeedingFallback)
+        .order("game_date", { ascending: false })
+        .limit(500);
+
+      if (error) continue;
+
+      for (const row of (data ?? []) as Array<{ player_id: string; game_date: string | null; tournament_name: string | null; tournament_id: string | null; commander_name: string | null }>) {
+        if (fallbackData.has(row.player_id)) continue;
+        fallbackData.set(row.player_id, {
+          commander: row.commander_name ?? null,
+          tournament: row.tournament_name ?? null,
+          date: row.game_date ?? null,
+          tournament_id: row.tournament_id ?? null,
+        });
+      }
+      if (fallbackData.size === playersNeedingFallback.length) break;
+    }
+
+    const tournamentIds = Array.from(new Set(Array.from(fallbackData.values()).map((row) => row.tournament_id).filter((id): id is string => Boolean(id))));
+    const tournamentMetadataById = new Map<string, { name: string | null; date: string | null; topdeck_tid: string | null }>();
+    
+    if (tournamentIds.length > 0) {
+      const { data, error } = await supabase
+        .from("tournaments")
+        .select("id, name, start_date, topdeck_tid")
+        .in("id", tournamentIds);
+
+      if (!error && data) {
+        for (const t of (data as Array<{ id: string; name: string | null; start_date: string | null; topdeck_tid: string | null }>)) {
+          tournamentMetadataById.set(t.id, {
+            name: t.name ?? null,
+            date: t.start_date ?? null,
+            topdeck_tid: t.topdeck_tid ?? null
+          });
+        }
+      }
+    }
+
+    for (const row of rows) {
+      if (!row.topdeck_id || !row.player_id) continue;
+      const fallback = fallbackData.get(row.player_id);
+      if (!fallback) continue;
       const existing = latestByPlayer.get(row.topdeck_id);
-      if (existing) {
-        existing.active_commander_decklist_url = row.latest_decklist_url ?? null;
+      if (!existing) continue;
+
+      if (!existing.active_commander) {
+        existing.active_commander = isKnownCommander(fallback.commander) ? fallback.commander : null;
+      }
+      
+      if (!existing.latest_tournament_name) {
+        const meta = fallback.tournament_id ? tournamentMetadataById.get(fallback.tournament_id) : null;
+        existing.latest_tournament_name = meta?.name ?? fallback.tournament;
+        existing.latest_tournament_date = meta?.date ?? fallback.date;
+        existing.latest_tournament_topdeck_tid = meta?.topdeck_tid ?? null;
       }
     }
   }
 
-  for (const [playerId, latestPlayed] of latestPlayedEventByPlayerId.entries()) {
-    const topdeckId = topdeckIdByPlayerId.get(playerId);
-    if (!topdeckId) continue;
-    const existing = latestByPlayer.get(topdeckId);
-    if (!existing || !latestPlayed.game_date) continue;
-    const matchedTournament = latestPlayed.tournament_id
-      ? (tournamentsById.get(latestPlayed.tournament_id) ?? null)
-      : null;
-
-    existing.latest_tournament_name = matchedTournament?.name ?? latestPlayed.tournament_name;
-    existing.latest_tournament_date = matchedTournament?.start_date ?? latestPlayed.game_date;
-    existing.latest_tournament_topdeck_tid = matchedTournament?.topdeck_tid ?? null;
-  }
-
-  for (const [topdeckId, activeCommander] of profileActiveCommanderByTopdeckId.entries()) {
-    const existing = latestByPlayer.get(topdeckId);
-    if (!existing) continue;
-    existing.active_commander = activeCommander;
-  }
-
   logReadSummary("latest-commanders-cache-miss", {
     players: rows.length,
-    playerProfileQueries: Math.ceil(topdeckIds.length / 250),
-    eventLogQueries: Math.ceil(playerIds.length / 100),
-    tournamentQueries: Math.ceil(latestTournamentIds.length / 100),
+    profilesFound: profileRows.length,
+    fallbacksUsed: playersNeedingFallback.length,
   });
 
   return latestByPlayer;
@@ -621,7 +397,7 @@ async function fetchLatestCommanders(rows: LeaderboardRow[]): Promise<Map<string
 
 const getCachedRegionRows = unstable_cache(
   fetchRegionRows,
-  ["regional-elo-regions-v1"],
+  ["regional-elo-regions-v2"],
   { revalidate: REGIONAL_ELO_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -633,28 +409,17 @@ const getCachedLeaderboardRows = unstable_cache(
     pageSize: number,
     searchQuery: string
   ) => fetchLeaderboardRows(regionType, regionKey, page, pageSize, searchQuery),
-  ["regional-elo-leaderboard-v3"],
-  { revalidate: REGIONAL_ELO_CACHE_REVALIDATE_SECONDS }
-);
-
-const getCachedLegacyLeaderboardRows = unstable_cache(
-  async (
-    regionType: "global" | "country" | "state",
-    regionKey: string,
-    page: number,
-    pageSize: number,
-    searchQuery: string
-  ) => fetchLegacyLeaderboardRows(regionType, regionKey, page, pageSize, searchQuery),
-  ["regional-elo-legacy-leaderboard-v1"],
+  ["regional-elo-leaderboard-v4"],
   { revalidate: REGIONAL_ELO_CACHE_REVALIDATE_SECONDS }
 );
 
 const getCachedLatestCommanders = unstable_cache(
-  async (rows: LeaderboardRow[]) => {
-    const map = await fetchLatestCommanders(rows);
+  async (players: Array<{ player_id: string; topdeck_id: string }>) => {
+    // We fetch profiles using IDs to ensure the cache key is stable and specific to the players shown.
+    const map = await fetchLatestCommanders(players);
     return Object.fromEntries(map.entries());
   },
-  ["regional-elo-latest-commanders-v1"],
+  ["regional-elo-latest-commanders-v4"],
   { revalidate: REGIONAL_ELO_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -666,10 +431,7 @@ export default async function RegionalEloPage({
     | Promise<{ country?: string | string[]; q?: string | string[]; region?: string | string[]; scope?: string | string[] }>;
 }) {
   const resolvedSearchParams = await Promise.resolve(searchParams);
-  const regionResult = await getCachedRegionRows();
-
-  const regions = regionResult.rows;
-  const supportsCountryRegions = regionResult.supportsCountry;
+  const regions = await getCachedRegionRows();
   const requestedScope = readScopeParam(resolvedSearchParams).trim().toLowerCase();
   const requestedCountry = decodeURIComponent(readCountryParam(resolvedSearchParams)).trim();
   const requestedRegion = decodeURIComponent(readRegionParam(resolvedSearchParams)).trim();
@@ -703,21 +465,13 @@ export default async function RegionalEloPage({
 
   const leaderboardPage =
     activeRegionKey
-      ? supportsCountryRegions
-        ? await getCachedLeaderboardRows(
-            activeRegionType,
-            activeRegionKey,
-            requestedPage,
-            LEADERBOARD_PAGE_SIZE,
-            playerSearch
-          )
-        : await getCachedLegacyLeaderboardRows(
-            activeRegionType,
-            activeRegionType === "global" ? GLOBAL_REGION_KEY : activeRegionKey,
-            requestedPage,
-            LEADERBOARD_PAGE_SIZE,
-            playerSearch
-          )
+      ? await getCachedLeaderboardRows(
+          activeRegionType,
+          activeRegionKey,
+          requestedPage,
+          LEADERBOARD_PAGE_SIZE,
+          playerSearch
+        )
       : { rows: [], totalCount: 0 };
 
   const totalPages = Math.max(Math.ceil(leaderboardPage.totalCount / LEADERBOARD_PAGE_SIZE), 1);
@@ -727,26 +481,23 @@ export default async function RegionalEloPage({
       ? leaderboardPage.rows
       : activeRegionKey
         ? (
-            supportsCountryRegions
-              ? await getCachedLeaderboardRows(
-                  activeRegionType,
-                  activeRegionKey,
-                  currentPage,
-                  LEADERBOARD_PAGE_SIZE,
-                  playerSearch
-                )
-              : await getCachedLegacyLeaderboardRows(
-                  activeRegionType,
-                  activeRegionType === "global" ? GLOBAL_REGION_KEY : activeRegionKey,
-                  currentPage,
-                  LEADERBOARD_PAGE_SIZE,
-                  playerSearch
-                )
+            await getCachedLeaderboardRows(
+              activeRegionType,
+              activeRegionKey,
+              currentPage,
+              LEADERBOARD_PAGE_SIZE,
+              playerSearch
+            )
           ).rows
         : [];
   const leaderboard = leaderboardRows;
 
-  const latestByPlayerRecord = await getCachedLatestCommanders(leaderboard);
+  const playerKeys = leaderboard
+    .map((r) => ({ player_id: r.player_id, topdeck_id: r.topdeck_id }))
+    .filter((p): p is { player_id: string; topdeck_id: string } => Boolean(p.topdeck_id));
+
+  const latestByPlayerRecord = await getCachedLatestCommanders(playerKeys);
+
 
   const updatedAt =
     regions.find((r) =>
