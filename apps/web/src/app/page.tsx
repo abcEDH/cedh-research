@@ -174,50 +174,18 @@ async function getCoreStats() {
   oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
   const oneYearAgoIso = oneYearAgo.toISOString().split("T")[0];
 
-  // Fetch candidates with > 60 entries (only ~200 rows)
-  const { data: candidates, error: candidateErr } = await supabase
-    .from("commander_stats")
-    .select("commander_id, commander_name, total_entries, avg_win_rate, conversion_rate_top_cut, color_identity")
-    .gt("total_entries", 60)
-    .not("commander_name", "ilike", "unknown commander")
-    .not("commander_name", "is", null)
-    .neq("commander_name", "")
-    .order("avg_win_rate", { ascending: false });
+  // First find commanders with entries in the past year
+  const { data: recentCommanders, error: recentErr } = await supabase
+    .from("commander_weekly_trends")
+    .select("commander_id")
+    .gte("week_start_date", oneYearAgoIso)
+    .limit(10000);
 
-  if (candidateErr) {
-    throw new Error(`Failed to fetch commander candidates: ${candidateErr.message}`);
+  if (recentErr) {
+    throw new Error(`Failed to fetch recent commanders: ${recentErr.message}`);
   }
 
-  const candidateIds = (candidates ?? []).map((c) => c.commander_id);
-
-  // Check which candidates were active in the past year using monthly trends (fewer rows)
-  // We chunk the IN clause to avoid URL length limits
-  const activeIdsSet = new Set<string>();
-  const CHUNK_SIZE = 100;
-  for (let i = 0; i < candidateIds.length; i += CHUNK_SIZE) {
-    const chunk = candidateIds.slice(i, i + CHUNK_SIZE);
-    const { data: activeRows, error: activeErr } = await supabase
-      .from("commander_monthly_trends")
-      .select("commander_id")
-      .in("commander_id", chunk)
-      .gte("month_start_date", oneYearAgoIso);
-
-    if (activeErr) {
-      console.error(`Error fetching activity for chunk ${i}:`, activeErr.message);
-      continue;
-    }
-
-    if (activeRows) {
-      for (const row of activeRows) {
-        activeIdsSet.add(row.commander_id);
-      }
-    }
-  }
-
-  const topWinRate = (candidates as TopCommander[] ?? [])
-    .filter((row) => activeIdsSet.has(row.commander_id))
-    .filter((row) => isKnownCommanderName(row.commander_name))
-    .slice(0, 10);
+  const activeCommanderIds = [...new Set((recentCommanders ?? []).map((r) => r.commander_id))];
 
   const topCommandersQuery = supabase
     .from("commander_stats")
@@ -229,14 +197,46 @@ async function getCoreStats() {
     .order("total_entries", { ascending: false })
     .limit(21);
 
-  const { data: topCommandersData, error: topErr } = await topCommandersQuery;
-  if (topErr) throw new Error(`Top commanders query failed: ${topErr.message}`);
+  // Guard: If no active commanders, skip the win rate query to avoid PostgREST empty IN clause error
+  if (activeCommanderIds.length === 0) {
+    const { data: topCommandersData, error: topErr } = await topCommandersQuery;
+    if (topErr) throw new Error(`Top commanders query failed: ${topErr.message}`);
+    return {
+      topCommanders: (topCommandersData as TopCommander[] ?? []).filter((row) =>
+        isKnownCommanderName(row.commander_name)
+      ),
+      topWinRate: [],
+    };
+  }
+
+  const [topCommandersResult, topWinRateResult] = await Promise.all([
+    topCommandersQuery,
+    supabase
+      .from("commander_stats")
+      .select("commander_id, commander_name, total_entries, avg_win_rate, conversion_rate_top_cut, color_identity")
+      .gt("total_entries", 60)
+      .in("commander_id", activeCommanderIds)
+      .not("commander_name", "ilike", "unknown commander")
+      .not("commander_name", "is", null)
+      .neq("commander_name", "")
+      .order("avg_win_rate", { ascending: false })
+      .limit(10),
+  ]);
+
+  if (topCommandersResult.error) {
+    throw new Error(`Top commanders query failed: ${topCommandersResult.error.message}`);
+  }
+  if (topWinRateResult.error) {
+    throw new Error(`Top win rate query failed: ${topWinRateResult.error.message}`);
+  }
 
   return {
-    topCommanders: (topCommandersData as TopCommander[] ?? []).filter((row) =>
+    topCommanders: (topCommandersResult.data as TopCommander[] ?? []).filter((row) =>
       isKnownCommanderName(row.commander_name)
     ),
-    topWinRate,
+    topWinRate: (topWinRateResult.data as TopCommander[] ?? []).filter((row) =>
+      isKnownCommanderName(row.commander_name)
+    ),
   };
 }
 
@@ -292,11 +292,15 @@ async function getLeaderboardPreview(): Promise<LeaderboardPlayer[]> {
     const topdeckIds = leaderboardRows
       .map((row) => row.topdeck_id)
       .filter((value): value is string => Boolean(value));
-    const profileByTopdeckId = await fetchHomeLeaderboardProfiles(topdeckIds);
+    const [profileByTopdeckId, latestTournamentByPlayerId] = await Promise.all([
+      fetchHomeLeaderboardProfiles(topdeckIds),
+      fetchHomeLeaderboardLatestTournaments(leaderboardRows.map((row) => row.player_id)),
+    ]);
 
     return leaderboardRows.map((row, index) => {
       const topdeckId = row.topdeck_id ?? "";
       const profile = profileByTopdeckId.get(topdeckId);
+      const latestTournament = latestTournamentByPlayerId.get(row.player_id);
       return {
         player_id: row.player_id,
         topdeck_id: topdeckId,
@@ -312,9 +316,9 @@ async function getLeaderboardPreview(): Promise<LeaderboardPlayer[]> {
           ? profile?.active_commander ?? null
           : null,
         active_commander_decklist_url: profile?.latest_decklist_url ?? null,
-        latest_tournament_name: profile?.latest_tournament_name ?? null,
-        latest_tournament_date: profile?.latest_tournament_date ?? null,
-        latest_tournament_topdeck_tid: profile?.latest_tournament_topdeck_tid ?? null,
+        latest_tournament_name: latestTournament?.name ?? null,
+        latest_tournament_date: latestTournament?.date ?? null,
+        latest_tournament_topdeck_tid: latestTournament?.topdeck_tid ?? null,
       };
     });
   } catch (error) {
@@ -333,7 +337,7 @@ async function fetchHomeLeaderboardProfiles(topdeckIds: string[]) {
 
   const { data, error } = await supabase
     .from("player_commander_profiles")
-    .select("topdeck_id, active_commander, latest_decklist_url, latest_tournament_name, latest_tournament_date, latest_tournament_topdeck_tid")
+    .select("topdeck_id, active_commander, latest_decklist_url")
     .in("topdeck_id", topdeckIds);
 
   if (error) {
@@ -346,13 +350,88 @@ async function fetchHomeLeaderboardProfiles(topdeckIds: string[]) {
       topdeck_id: string | null;
       active_commander: string | null;
       latest_decklist_url: string | null;
-      latest_tournament_name?: string | null;
-      latest_tournament_date?: string | null;
-      latest_tournament_topdeck_tid?: string | null;
     }>)
       .filter((row) => row.topdeck_id)
       .map((row) => [row.topdeck_id as string, row])
   );
+}
+
+async function fetchHomeLeaderboardLatestTournaments(playerIds: string[]) {
+  const uniquePlayerIds = Array.from(new Set(playerIds.filter(Boolean)));
+  const latestByPlayerId = new Map<
+    string,
+    {
+      name: string | null;
+      date: string | null;
+      topdeck_tid: string | null;
+      tournament_id: string | null;
+    }
+  >();
+  if (uniquePlayerIds.length === 0) return latestByPlayerId;
+
+  for (const table of ["global_elo_game_event_log", "regional_elo_game_event_log"]) {
+    const { data, error } = await supabase
+      .from(table)
+      .select("player_id, game_date, tournament_name, tournament_id")
+      .in("player_id", uniquePlayerIds)
+      .order("game_date", { ascending: false })
+      .limit(250);
+
+    if (error) continue;
+
+    for (const row of (data ?? []) as Array<{
+      player_id: string;
+      game_date: string | null;
+      tournament_name: string | null;
+      tournament_id: string | null;
+    }>) {
+      if (latestByPlayerId.has(row.player_id)) continue;
+      latestByPlayerId.set(row.player_id, {
+        name: row.tournament_name ?? null,
+        date: row.game_date ?? null,
+        topdeck_tid: null,
+        tournament_id: row.tournament_id ?? null,
+      });
+    }
+
+    if (latestByPlayerId.size > 0) break;
+  }
+
+  const tournamentIds = Array.from(
+    new Set(
+      Array.from(latestByPlayerId.values())
+        .map((row) => row.tournament_id)
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+  if (tournamentIds.length === 0) return latestByPlayerId;
+
+  const { data, error } = await supabase
+    .from("tournaments")
+    .select("id, name, start_date, topdeck_tid")
+    .in("id", tournamentIds);
+
+  if (error) return latestByPlayerId;
+
+  const tournamentsById = new Map(
+    ((data ?? []) as Array<{
+      id: string;
+      name: string | null;
+      start_date: string | null;
+      topdeck_tid: string | null;
+    }>).map((row) => [row.id, row])
+  );
+
+  for (const latest of latestByPlayerId.values()) {
+    if (!latest.tournament_id) continue;
+    const tournament = tournamentsById.get(latest.tournament_id);
+    if (!tournament) continue;
+    latest.name = tournament.name ?? latest.name;
+    latest.date = tournament.start_date ?? latest.date;
+    latest.topdeck_tid = tournament.topdeck_tid ?? null;
+  }
+
+  return latestByPlayerId;
 }
 
 function formatDate(value: string | null) {
@@ -791,5 +870,31 @@ function ColorBadge({ color }: { color: string }) {
     >
       {color}
     </span>
+  );
+}
+
+function FeatureCard({
+  href,
+  title,
+  description,
+  color,
+}: {
+  href: string;
+  title: string;
+  description: string;
+  color: string;
+}) {
+  return (
+    <Link href={href}>
+      <Card className="h-full border-border/60 transition hover:border-primary/40">
+        <CardHeader>
+          <div className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
+          <CardTitle className="text-lg">{title}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">{description}</p>
+        </CardContent>
+      </Card>
+    </Link>
   );
 }

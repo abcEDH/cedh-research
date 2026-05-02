@@ -16,8 +16,7 @@ def rpc(url, key, function, params):
         "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
     }
-    # 10 minute timeout
-    r = requests.post(endpoint, headers=headers, json=params, timeout=600)
+    r = requests.post(endpoint, headers=headers, json=params)
     if r.status_code >= 400:
         print(f"Error {r.status_code}: {r.text}", file=sys.stderr)
         return None

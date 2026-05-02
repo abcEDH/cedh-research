@@ -865,10 +865,10 @@ class TopDeckClient:
         for attempt in range(max_retries):
             try:
                 if method == "GET":
-                    response = requests.get(url, headers=headers, timeout=90)
+                    response = requests.get(url, headers=headers, timeout=30)
                 elif method == "POST":
                     response = requests.post(
-                        url, json=json_payload, headers=headers, timeout=90
+                        url, json=json_payload, headers=headers, timeout=30
                     )
                 else:
                     raise ValueError(f"Unsupported HTTP method: {method}")
@@ -1065,7 +1065,7 @@ class SupabaseClient:
         for attempt in range(max_retries):
             try:
                 response = requests.post(
-                    endpoint, json=data, headers=headers, params=params, timeout=90
+                    endpoint, json=data, headers=headers, params=params, timeout=30
                 )
                 if response.status_code >= 400:
                     logger.error(f"Supabase error: {response.text}")
@@ -1100,7 +1100,7 @@ class SupabaseClient:
         for attempt in range(max_retries):
             try:
                 response = requests.get(
-                    endpoint, headers=self.headers, params=params, timeout=90
+                    endpoint, headers=self.headers, params=params, timeout=60
                 )
                 if response.status_code >= 500:
                     raise requests.exceptions.HTTPError(
@@ -1142,7 +1142,7 @@ class SupabaseClient:
         for attempt in range(max_retries):
             try:
                 response = requests.patch(
-                    endpoint, json=data, headers=self.headers, params=params, timeout=90
+                    endpoint, json=data, headers=self.headers, params=params, timeout=30
                 )
                 if response.status_code >= 400:
                     logger.error(f"Supabase update error: {response.text}")
@@ -1637,9 +1637,9 @@ class DataIngester:
                     "decklist": decklist,
                     "rank": standing.get("rank") or standing.get("standing"),
                     "points": standing.get("points") or 0,
-                    "wins": standing.get("wins"),
-                    "losses": standing.get("losses"),
-                    "draws": standing.get("draws"),
+                    "wins": standing.get("wins") or 0,
+                    "losses": standing.get("losses") or 0,
+                    "draws": standing.get("draws") or 0,
                     "omw": standing.get("omw"),
                     "gw": standing.get("gw"),
                     "pgw": standing.get("pgw"),
@@ -1695,21 +1695,14 @@ class DataIngester:
                 "commander_id": commander_id,
                 "final_standing": info["rank"],
                 "points": info["points"],
+                "wins": info.get("wins", 0),
+                "losses": info.get("losses", 0),
+                "draws": info.get("draws", 0),
                 "win_rate": primary_rate,
                 "opponent_win_rate": opponent_rate,
                 "decklist_text": info["decklist"],
                 "topdeck_entry_id": f"{tid}_{info['topdeck_id']}",
             }
-
-            # Only add W/L/D if they are explicitly present in the data to avoid
-            # overwriting with zeros during re-ingestion.
-            if info.get("wins") is not None:
-                entry["wins"] = info["wins"]
-            if info.get("losses") is not None:
-                entry["losses"] = info["losses"]
-            if info.get("draws") is not None:
-                entry["draws"] = info["draws"]
-
             entries.append(entry)
 
         # Step 5: Batch upsert entries
@@ -1774,7 +1767,7 @@ class DataIngester:
                                 participant_map[seat_num] = {
                                     "entry_id": db_id,
                                     "standing": e,
-                                    "topdeck_id": e.get("topdeck_entry_id", "").replace(f"{tid}_", ""),
+                                    "topdeck_id": e.get("topdeck_id"),
                                 }
                                 break
 
@@ -1783,12 +1776,7 @@ class DataIngester:
 
                 game_key = build_game_key(tournament_id, round_num, round_name, table_num, is_bracket)
                 winner_topdeck_id = table.get("winner_id") or table.get("winnerId")
-                
-                # Only use the topdeck winner_id path if a winner_id is explicitly provided
-                # or if the game is actually completed.
-                uses_topdeck_winner_id = ("winner_id" in table or "winnerId" in table) and (
-                    winner_topdeck_id is not None or table.get("status") == "Completed"
-                )
+                uses_topdeck_winner_id = "winner_id" in table or "winnerId" in table
 
                 # Process current TopDeck v2 results.
                 if uses_topdeck_winner_id:

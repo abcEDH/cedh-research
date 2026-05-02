@@ -509,44 +509,43 @@ export default async function RegionalEloPage({
     <div className="min-h-screen">
       <main className="container mx-auto px-4 pb-24 pt-10">
         <header className="flex flex-col gap-6 border-b border-border/60 pb-8">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <p className="knd-chip">TopDeck Elo</p>
-              <h1 className="mt-4 text-3xl font-semibold text-foreground md:text-4xl">
-                Global Leaderboard
-              </h1>
+          <div className="flex flex-col gap-6 xl:grid xl:grid-cols-[1fr_350px] xl:items-start xl:gap-12">
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between md:gap-4">
+                <div>
+                  <p className="knd-chip">TopDeck Elo</p>
+                  <h1 className="mt-4 text-3xl font-semibold text-foreground md:text-4xl">
+                    Global Leaderboard
+                  </h1>
+                </div>
+                <nav className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+                  <Link className="transition hover:text-foreground" href="/">
+                    Home
+                  </Link>
+                  <Link className="transition hover:text-foreground" href="/tournament-likelihood">
+                    Tournament Prep
+                  </Link>
+                  <Link className="transition hover:text-foreground" href="/about">
+                    Elo methodology
+                  </Link>
+                </nav>
+              </div>
+              <p className="text-base text-muted-foreground">
+                TopDeck Elo is shown for players with a published TopDeck Elo snapshot. Country and
+                state views are filtered slices of the local active player set.
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Rating model details:{" "}
+                <Link href="/methodology/elo" className="text-primary hover:text-foreground">
+                  cEDH Elo methodology
+                </Link>
+              </p>
             </div>
-            <nav className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-              <Link className="transition hover:text-foreground" href="/">
-                Home
-              </Link>
-              <Link className="transition hover:text-foreground" href="/tournament-likelihood">
-                Tournament Prep
-              </Link>
-              <Link className="transition hover:text-foreground" href="/about">
-                Elo methodology
-              </Link>
-            </nav>
-          </div>
-          <p className="max-w-4xl text-base text-muted-foreground">
-            TopDeck Elo is shown for players with a published TopDeck Elo snapshot. Country and
-            state views are filtered slices of the local active player set.
-          </p>
-          <p className="text-sm text-muted-foreground">
-            Rating model details:{" "}
-            <Link href="/methodology/elo" className="text-primary hover:text-foreground">
-              cEDH Elo methodology
-            </Link>
-          </p>
-        </header>
-
-        <div className="mt-8 space-y-6">
-          <div className="grid gap-6 xl:grid-cols-[300px]">
-            <Card className="knd-panel">
+            <Card className="knd-panel w-full">
               <CardHeader>
                 <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">Region</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3">
                 <RegionSelector
                   regions={regions}
                   selectedScope={selectedScope}
@@ -559,9 +558,10 @@ export default async function RegionalEloPage({
                 </div>
               </CardContent>
             </Card>
-
           </div>
+        </header>
 
+        <div className="mt-8 space-y-6">
           <Card className="knd-panel">
             <CardHeader className="gap-4 md:flex-row md:items-end md:justify-between">
               <div className="space-y-2">

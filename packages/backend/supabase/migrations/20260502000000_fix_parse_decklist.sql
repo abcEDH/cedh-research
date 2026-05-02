@@ -21,7 +21,7 @@ BEGIN
     -- Normalize escaped newlines (\n, \r\n) and actual newlines to a single format
     -- We use regexp_split_to_array to handle multiple newline formats
     lines := regexp_split_to_array(
-        replace(replace(decklist, '\r\n', chr(10)), '\n', chr(10)),
+        replace(replace(decklist, E'\\r\\n', chr(10)), E'\\n', chr(10)),
         E'[\\n\\r]+'
     );
     
