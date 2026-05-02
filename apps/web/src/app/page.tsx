@@ -485,26 +485,18 @@ export default async function Home() {
               <h1 className="text-3xl font-semibold text-foreground md:text-4xl">tedh.gg</h1>
             </div>
             <nav className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+              <Link className="transition hover:text-foreground" href="/regional-elo">
+                Leaderboard
+              </Link>
               <Link className="transition hover:text-foreground" href="/commanders">
                 Commanders
               </Link>
               <Link className="transition hover:text-foreground" href="/tournament-likelihood">
                 Tournament Prep
               </Link>
-              <Link className="transition hover:text-foreground" href="/regional-elo">
-                Leaderboard
-              </Link>
               <Link className="transition hover:text-foreground" href="/about">
                 Methodology
               </Link>
-              <a
-                className="transition hover:text-foreground"
-                href="https://github.com/victoremnm/cedh-research"
-                rel="noreferrer"
-                target="_blank"
-              >
-                GitHub
-              </a>
             </nav>
           </div>
         </header>
@@ -512,10 +504,10 @@ export default async function Home() {
         <section className="mt-16 flex flex-col items-center gap-8 py-8 text-center border-b border-border/60">
           <div className="space-y-3">
             <h2 className="text-3xl font-semibold leading-tight text-foreground md:text-4xl">
-              Competitive Commander, simplified
+              Competitive Intelligence for cEDH
             </h2>
             <p className="text-base text-muted-foreground">
-              tedh.gg keeps the cEDH field, leaders, and trends in one place.
+              Player intelligence and competition research platform.
             </p>
           </div>
           <HomeSearchBar />
@@ -779,32 +771,6 @@ export default async function Home() {
           </Card>
         </section>
 
-        <section data-testid="home-feature-cards" className="mt-12 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
-          <FeatureCard
-            href="/commanders"
-            title="Commander Rankings"
-            description="Sortable performance data for all commanders"
-            color="hsl(var(--knd-cyan))"
-          />
-          <FeatureCard
-            href="/commanders/trends"
-            title="Recent Trends"
-            description="Weekly and monthly shifts in meta share and win rates"
-            color="hsl(var(--knd-amber))"
-          />
-          <FeatureCard
-            href="/regional-elo"
-            title="Leaderboard"
-            description="Global Elo by default, with optional state-assigned leaderboard views"
-            color="hsl(var(--knd-lime))"
-          />
-          <FeatureCard
-            href="/about"
-            title="Methodology"
-            description="Statistics, formulas, and how it all works"
-            color="hsl(var(--knd-line))"
-          />
-        </section>
       </main>
     </div>
   );

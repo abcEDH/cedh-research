@@ -511,6 +511,24 @@ export default async function TournamentLikelihoodPage({
               since {lookbackStart}, then estimates likely deck choice from their recent history.
               Players with sparse recent history fall back to a {COMMANDER_FALLBACK_LOOKBACK_MONTHS}-month window.
             </p>
+
+            <div className="mt-6 border-t border-border/60 pt-6">
+              <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground mb-3">Suggested Upcoming Events</p>
+              <div className="flex flex-wrap gap-2">
+                <Link 
+                  href="/tournament-likelihood?tournament=the-quest-part-1"
+                  className="knd-chip border border-border/60 bg-muted/20 px-3 py-2 text-xs hover:border-primary/40 hover:bg-muted/40 transition"
+                >
+                  The Quest: Part 1
+                </Link>
+                <Link 
+                  href="/tournament-likelihood?tournament=puntcity5"
+                  className="knd-chip border border-border/60 bg-muted/20 px-3 py-2 text-xs hover:border-primary/40 hover:bg-muted/40 transition"
+                >
+                  Punt City 5
+                </Link>
+              </div>
+            </div>
           </CardContent>
         </Card>
 

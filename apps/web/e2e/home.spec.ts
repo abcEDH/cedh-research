@@ -7,7 +7,7 @@ test.describe("Home Page", () => {
 
   test("loads and displays hero section", async ({ page }) => {
     await expect(page.getByRole("heading", { name: /tedh\.gg/i })).toBeVisible();
-    await expect(page.getByRole("heading", { name: /competitive Commander, simplified/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /competitive Intelligence for cEDH/i })).toBeVisible();
   });
 
   test("displays global leaderboard table with internal links", async ({ page }) => {
@@ -66,25 +66,17 @@ test.describe("Home Page", () => {
     await expect(page).toHaveURL(/\/tournament-likelihood/);
   });
 
-  test("feature cards link to supported tool pages", async ({ page }) => {
-    const featureCards = page.getByTestId("home-feature-cards");
-    const trendsCard = featureCards.getByRole("link", { name: /Recent Trends/i });
-    await expect(trendsCard).toBeVisible();
-    await trendsCard.click();
-    await expect(page).toHaveURL(/\/commanders\/trends/);
-  });
-
-  test("tool links on home are valid when present", async ({ page }) => {
-    const optionalToolPaths = [
+  test("navigation links are valid", async ({ page }) => {
+    const navPaths = [
       "/tournament-likelihood",
       "/regional-elo",
+      "/commanders",
+      "/about",
     ];
 
-    for (const path of optionalToolPaths) {
-      const link = page.locator(`a[href="${path}"]`).first();
-      if ((await link.count()) > 0) {
-        await expect(link).toBeVisible();
-      }
+    for (const path of navPaths) {
+      const link = page.locator(`header nav a[href="${path}"]`).first();
+      await expect(link).toBeVisible();
     }
   });
 });
