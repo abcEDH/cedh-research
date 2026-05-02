@@ -448,13 +448,13 @@ function buildTopdeckTournamentUrl(tournamentSlug: string | null | undefined) {
 
 const getCachedHomeCoreStats = unstable_cache(
   getCoreStats,
-  ["home-core-stats-v5"], // Updated cache key
+  ["home-core-stats-v6"], // Updated cache key
   { revalidate: HOME_CACHE_REVALIDATE_SECONDS }
 );
 
 const getCachedLeaderboardPreview = unstable_cache(
   getLeaderboardPreview,
-  ["home-leaderboard-preview-v2"],
+  ["home-leaderboard-preview-v3"],
   { revalidate: HOME_CACHE_REVALIDATE_SECONDS }
 );
 
