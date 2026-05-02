@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { notFound } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { normalizeDisplayString } from "@/lib/utils";
@@ -67,17 +68,6 @@ interface CommanderMeta {
   scryfall_ids: string[] | null;
   commander_names: string[] | null;
 }
-
-type TrendRow = {
-  week_key?: string | null;
-  week_start_date?: string | null;
-  month_key?: string | null;
-  entries: number;
-  wins?: number | null;
-  losses?: number | null;
-  draws?: number | null;
-  total_players?: number | null;
-};
 
 function normalizeDateKey(value: string | null | undefined) {
   if (!value) return "";
@@ -452,13 +442,16 @@ export default async function CommanderDetailPage({
               {commanderMeta?.scryfall_ids && commanderMeta.scryfall_ids.length > 0 && (
                 <div className="flex items-center gap-3">
                   {commanderMeta.scryfall_ids.slice(0, 2).map((scryfallId) => (
-                    <img
-                      key={scryfallId}
-                      src={`https://cards.scryfall.io/art_crop/${scryfallId}.jpg`}
-                      alt={normalizeDisplayString(commander.commander_name)}
-                      className="h-28 w-28 rounded-xl border border-border/60 object-cover shadow-lg"
-                      loading="lazy"
-                    />
+                    <div key={scryfallId} className="h-28 w-28 relative rounded-xl border border-border/60 overflow-hidden shadow-lg">
+                      <Image
+                        src={`https://cards.scryfall.io/art_crop/${scryfallId}.jpg`}
+                        alt={normalizeDisplayString(commander.commander_name)}
+                        fill
+                        className="object-cover"
+                        loading="lazy"
+                        unoptimized
+                      />
+                    </div>
                   ))}
                 </div>
               )}

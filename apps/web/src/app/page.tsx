@@ -174,17 +174,50 @@ async function getCoreStats() {
   oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
   const oneYearAgoIso = oneYearAgo.toISOString().split("T")[0];
 
-  // First find commanders with entries in the past year
-  const { data: recentCommanders, error: recentErr } = await supabase
-    .from("commander_weekly_trends")
-    .select("commander_id")
-    .gte("week_start_date", oneYearAgoIso);
+  // Fetch candidates with > 60 entries (only ~200 rows)
+  const { data: candidates, error: candidateErr } = await supabase
+    .from("commander_stats")
+    .select("commander_id, commander_name, total_entries, avg_win_rate, conversion_rate_top_cut, color_identity")
+    .gt("total_entries", 60)
+    .not("commander_name", "ilike", "unknown commander")
+    .not("commander_name", "is", null)
+    .neq("commander_name", "")
+    .order("avg_win_rate", { ascending: false });
 
-  if (recentErr) {
-    throw new Error(`Failed to fetch recent commanders: ${recentErr.message}`);
+  if (candidateErr) {
+    throw new Error(`Failed to fetch commander candidates: ${candidateErr.message}`);
   }
 
-  const activeCommanderIds = [...new Set((recentCommanders ?? []).map((r) => r.commander_id))];
+  const candidateIds = (candidates ?? []).map((c) => c.commander_id);
+
+  // Check which candidates were active in the past year using monthly trends (fewer rows)
+  // We chunk the IN clause to avoid URL length limits
+  const activeIdsSet = new Set<string>();
+  const CHUNK_SIZE = 100;
+  for (let i = 0; i < candidateIds.length; i += CHUNK_SIZE) {
+    const chunk = candidateIds.slice(i, i + CHUNK_SIZE);
+    const { data: activeRows, error: activeErr } = await supabase
+      .from("commander_monthly_trends")
+      .select("commander_id")
+      .in("commander_id", chunk)
+      .gte("month_start_date", oneYearAgoIso);
+
+    if (activeErr) {
+      console.error(`Error fetching activity for chunk ${i}:`, activeErr.message);
+      continue;
+    }
+
+    if (activeRows) {
+      for (const row of activeRows) {
+        activeIdsSet.add(row.commander_id);
+      }
+    }
+  }
+
+  const topWinRate = (candidates as TopCommander[] ?? [])
+    .filter((row) => activeIdsSet.has(row.commander_id))
+    .filter((row) => isKnownCommanderName(row.commander_name))
+    .slice(0, 10);
 
   const topCommandersQuery = supabase
     .from("commander_stats")
@@ -196,46 +229,14 @@ async function getCoreStats() {
     .order("total_entries", { ascending: false })
     .limit(21);
 
-  // Guard: If no active commanders, skip the win rate query to avoid PostgREST empty IN clause error
-  if (activeCommanderIds.length === 0) {
-    const { data: topCommandersData, error: topErr } = await topCommandersQuery;
-    if (topErr) throw new Error(`Top commanders query failed: ${topErr.message}`);
-    return {
-      topCommanders: (topCommandersData as TopCommander[] ?? []).filter((row) =>
-        isKnownCommanderName(row.commander_name)
-      ),
-      topWinRate: [],
-    };
-  }
-
-  const [topCommandersResult, topWinRateResult] = await Promise.all([
-    topCommandersQuery,
-    supabase
-      .from("commander_stats")
-      .select("commander_id, commander_name, total_entries, avg_win_rate, conversion_rate_top_cut, color_identity")
-      .gt("total_entries", 60)
-      .in("commander_id", activeCommanderIds)
-      .not("commander_name", "ilike", "unknown commander")
-      .not("commander_name", "is", null)
-      .neq("commander_name", "")
-      .order("avg_win_rate", { ascending: false })
-      .limit(10),
-  ]);
-
-  if (topCommandersResult.error) {
-    throw new Error(`Top commanders query failed: ${topCommandersResult.error.message}`);
-  }
-  if (topWinRateResult.error) {
-    throw new Error(`Top win rate query failed: ${topWinRateResult.error.message}`);
-  }
+  const { data: topCommandersData, error: topErr } = await topCommandersQuery;
+  if (topErr) throw new Error(`Top commanders query failed: ${topErr.message}`);
 
   return {
-    topCommanders: (topCommandersResult.data as TopCommander[] ?? []).filter((row) =>
+    topCommanders: (topCommandersData as TopCommander[] ?? []).filter((row) =>
       isKnownCommanderName(row.commander_name)
     ),
-    topWinRate: (topWinRateResult.data as TopCommander[] ?? []).filter((row) =>
-      isKnownCommanderName(row.commander_name)
-    ),
+    topWinRate,
   };
 }
 
@@ -448,19 +449,19 @@ function buildTopdeckTournamentUrl(tournamentSlug: string | null | undefined) {
 
 const getCachedHomeCoreStats = unstable_cache(
   getCoreStats,
-  ["home-core-stats-v6"], // Updated cache key
+  ["home-core-stats-v7"], // Updated cache key
   { revalidate: HOME_CACHE_REVALIDATE_SECONDS }
 );
 
 const getCachedLeaderboardPreview = unstable_cache(
   getLeaderboardPreview,
-  ["home-leaderboard-preview-v3"],
+  ["home-leaderboard-preview-v4"],
   { revalidate: HOME_CACHE_REVALIDATE_SECONDS }
 );
 
 const getCachedHomeRisingCommanders = unstable_cache(
   getTopRisingCommandersByTwoWeekTrend,
-  ["home-rising-commanders-v1"],
+  ["home-rising-commanders-v2"],
   { revalidate: HOME_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -869,31 +870,5 @@ function ColorBadge({ color }: { color: string }) {
     >
       {color}
     </span>
-  );
-}
-
-function FeatureCard({
-  href,
-  title,
-  description,
-  color,
-}: {
-  href: string;
-  title: string;
-  description: string;
-  color: string;
-}) {
-  return (
-    <Link href={href}>
-      <Card className="h-full border-border/60 transition hover:border-primary/40">
-        <CardHeader>
-          <div className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
-          <CardTitle className="text-lg">{title}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">{description}</p>
-        </CardContent>
-      </Card>
-    </Link>
   );
 }
