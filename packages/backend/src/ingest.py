@@ -1065,7 +1065,7 @@ class SupabaseClient:
         for attempt in range(max_retries):
             try:
                 response = requests.post(
-                    endpoint, json=data, headers=headers, params=params, timeout=30
+                    endpoint, json=data, headers=headers, params=params, timeout=90
                 )
                 if response.status_code >= 400:
                     logger.error(f"Supabase error: {response.text}")
@@ -1100,7 +1100,7 @@ class SupabaseClient:
         for attempt in range(max_retries):
             try:
                 response = requests.get(
-                    endpoint, headers=self.headers, params=params, timeout=60
+                    endpoint, headers=self.headers, params=params, timeout=90
                 )
                 if response.status_code >= 500:
                     raise requests.exceptions.HTTPError(
@@ -1142,7 +1142,7 @@ class SupabaseClient:
         for attempt in range(max_retries):
             try:
                 response = requests.patch(
-                    endpoint, json=data, headers=self.headers, params=params, timeout=30
+                    endpoint, json=data, headers=self.headers, params=params, timeout=90
                 )
                 if response.status_code >= 400:
                     logger.error(f"Supabase update error: {response.text}")
