@@ -154,4 +154,25 @@ describe("RegionalEloPage", () => {
     expect(html).not.toContain("No commander data");
     expect(html).not.toContain("No tournament data");
   });
+
+  it("renders 'No commander data' and 'No tournament data' when enriched profile rows are missing", async () => {
+    // Clear the profile data for this test
+    const originalProfiles = [...tableData.player_commander_profiles];
+    tableData.player_commander_profiles = [];
+    
+    try {
+      const pageModule = await import("@/app/regional-elo/page");
+      const element = await pageModule.default({
+        searchParams: { scope: "global" },
+      });
+
+      const html = renderToStaticMarkup(element);
+
+      expect(html).toContain("Jason Doan // CriticalEDH");
+      expect(html).toContain("No commander data");
+      expect(html).toContain("No tournament data");
+    } finally {
+      tableData.player_commander_profiles = originalProfiles;
+    }
+  });
 });

@@ -256,7 +256,11 @@ async function fetchLatestCommanders(rows: LeaderboardRow[]): Promise<Map<string
       .select("topdeck_id, active_commander, latest_decklist_url, latest_tournament_name, latest_tournament_date, latest_tournament_topdeck_tid")
       .in("topdeck_id", topdeckIdChunk);
 
-    if (error || !data?.length) continue;
+    if (error) {
+      console.error("[regional-elo] Error fetching player profiles chunk:", error.message, error.details);
+      continue;
+    }
+    if (!data?.length) continue;
     profileRows.push(
       ...(data as Array<{
         topdeck_id: string | null;
@@ -296,6 +300,7 @@ async function fetchLatestCommanders(rows: LeaderboardRow[]): Promise<Map<string
   logReadSummary("latest-commanders-cache-miss", {
     players: rows.length,
     playerProfileQueries: Math.ceil(topdeckIds.length / 250),
+    profilesFound: profileRows.length,
   });
 
   return latestByPlayer;
@@ -320,11 +325,12 @@ const getCachedLeaderboardRows = unstable_cache(
 );
 
 const getCachedLatestCommanders = unstable_cache(
-  async (rows: LeaderboardRow[]) => {
-    const map = await fetchLatestCommanders(rows);
+  async (topdeckIds: string[]) => {
+    // We fetch profiles using IDs to ensure the cache key is stable and specific to the players shown.
+    const map = await fetchLatestCommanders(topdeckIds.map(id => ({ topdeck_id: id } as any)));
     return Object.fromEntries(map.entries());
   },
-  ["regional-elo-latest-commanders-v2"],
+  ["regional-elo-latest-commanders-v3"],
   { revalidate: REGIONAL_ELO_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -397,7 +403,11 @@ export default async function RegionalEloPage({
         : [];
   const leaderboard = leaderboardRows;
 
-  const latestByPlayerRecord = await getCachedLatestCommanders(leaderboard);
+  const topdeckIds = leaderboard
+    .map((r) => r.topdeck_id)
+    .filter((id): id is string => Boolean(id));
+
+  const latestByPlayerRecord = await getCachedLatestCommanders(topdeckIds);
 
   const updatedAt =
     regions.find((r) =>
