@@ -1,3 +1,10 @@
+## [1.10.2](https://github.com/abcEDH/cedh-research/compare/v1.10.1...v1.10.2) (2026-05-02)
+
+
+### Bug Fixes
+
+* **web:** drop NaN% and zero-game dips on commanders page ([#152](https://github.com/abcEDH/cedh-research/issues/152)) ([88d6c40](https://github.com/abcEDH/cedh-research/commit/88d6c40e5c2558bf5d1b010dca970f6c3ecb72da))
+
 ## [1.10.1](https://github.com/abcEDH/cedh-research/compare/v1.10.0...v1.10.1) (2026-05-02)
 
 
