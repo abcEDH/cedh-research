@@ -1,3 +1,10 @@
+# [1.12.0](https://github.com/abcEDH/cedh-research/compare/v1.11.0...v1.12.0) (2026-05-03)
+
+
+### Features
+
+* [Analytics] PostHog integration for user analytics ([#156](https://github.com/abcEDH/cedh-research/issues/156)) ([8956a79](https://github.com/abcEDH/cedh-research/commit/8956a7929e6718a2cf92a1dbda5f1c6e11e881d7)), closes [#74](https://github.com/abcEDH/cedh-research/issues/74) [#75](https://github.com/abcEDH/cedh-research/issues/75) [#76](https://github.com/abcEDH/cedh-research/issues/76) [#77](https://github.com/abcEDH/cedh-research/issues/77)
+
 # [1.11.0](https://github.com/abcEDH/cedh-research/compare/v1.10.4...v1.11.0) (2026-05-03)
 
 
