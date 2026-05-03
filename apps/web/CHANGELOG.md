@@ -1,3 +1,10 @@
+# [1.11.0](https://github.com/abcEDH/cedh-research/compare/v1.10.4...v1.11.0) (2026-05-03)
+
+
+### Features
+
+* **web:** move Region selector into header ([#157](https://github.com/abcEDH/cedh-research/issues/157)) ([d559b2a](https://github.com/abcEDH/cedh-research/commit/d559b2ab0170af64b3b5545d98a1920da50182db))
+
 ## [1.10.4](https://github.com/abcEDH/cedh-research/compare/v1.10.3...v1.10.4) (2026-05-03)
 
 
