@@ -280,7 +280,14 @@ async function fetchLatestCommanders(
       continue;
     }
     if (data) {
-      profileRows.push(...(data as any[]));
+      profileRows.push(...(data as Array<{
+        topdeck_id: string | null;
+        active_commander: string | null;
+        latest_decklist_url: string | null;
+        latest_tournament_name?: string | null;
+        latest_tournament_date?: string | null;
+        latest_tournament_topdeck_tid?: string | null;
+      }>));
     }
   }
 

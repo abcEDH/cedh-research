@@ -1135,45 +1135,31 @@ export async function PlayerProfileBody({
     country_key: row.country_key ?? inferCountryForRegion(row.region_key) ?? "UNKNOWN",
   }));
 
-  // Layer 2: Deferred log summary. Only fetch and process if we are missing precomputed summary fields.
-  // Note: We still fetch commanderUsageRows and fetchedAchievementRows above for the tables,
-  // but we can optimize the event logs fetch.
-  let playerLogs: PlayerLog[] = [];
-  let podSummary: ReturnType<typeof summarizePlayerLogs> | null = null;
-
-  const getPodSummary = async () => {
-    if (podSummary) return podSummary;
-    const eventPlayerLogsResult = await Promise.resolve(fetchCachedPlayerEventLogs(player.id, ""))
-      .then((value) => ({ status: "fulfilled" as const, value }))
-      .catch((reason) => ({ status: "rejected" as const, reason }));
-    const eventPlayerLogs = eventPlayerLogsResult.status === "fulfilled" ? eventPlayerLogsResult.value : [];
-    playerLogs =
-      eventPlayerLogs.length > 0
-        ? eventPlayerLogs
-        : await fetchEntries(player.id).then((entries) => buildPlayerLogsFromRawHistory(entries));
-    podSummary = summarizePlayerLogs(playerLogs, topdeckId);
-    return podSummary;
-  };
-
-  const canonicalGames = profileSummary?.games_played ?? (await getPodSummary()).totalGames;
-  const canonicalWins = profileSummary?.wins ?? (await getPodSummary()).totalWins;
-  const canonicalDraws = profileSummary?.draws ?? (await getPodSummary()).totalDraws;
-  const canonicalLosses = profileSummary?.losses ?? (await getPodSummary()).totalLosses;
-  
-  // Ensure logs are fetched for tables and calculations below
-  const { 
+  const eventPlayerLogsResult = await Promise.resolve(fetchCachedPlayerEventLogs(player.id, ""))
+    .then((value) => ({ status: "fulfilled" as const, value }))
+    .catch((reason) => ({ status: "rejected" as const, reason }));
+  const eventPlayerLogs = eventPlayerLogsResult.status === "fulfilled" ? eventPlayerLogsResult.value : [];
+  const playerLogs: PlayerLog[] =
+    eventPlayerLogs.length > 0
+      ? eventPlayerLogs
+      : await fetchEntries(player.id).then((entries) => buildPlayerLogsFromRawHistory(entries));
+  const {
     totalGames,
     totalWins,
     totalDraws,
     totalLosses,
-    seatRows, 
-    opponentRecords, 
-    commanderRecords, 
-    bestOpponentMatchup, 
-    worstOpponentMatchup, 
-    bestCommanderMatchup, 
-    worstCommanderMatchup 
-  } = await getPodSummary();
+    seatRows,
+    opponentRecords,
+    commanderRecords,
+    bestOpponentMatchup,
+    worstOpponentMatchup,
+    bestCommanderMatchup,
+    worstCommanderMatchup,
+  } = summarizePlayerLogs(playerLogs, topdeckId);
+  const canonicalGames = profileSummary?.games_played ?? totalGames;
+  const canonicalWins = profileSummary?.wins ?? totalWins;
+  const canonicalDraws = profileSummary?.draws ?? totalDraws;
+  const canonicalLosses = profileSummary?.losses ?? totalLosses;
   const achievementResultByTournament = playerLogs.reduce(
     (results, log) => {
       const key = achievementTournamentKey(log.tournamentName, log.startDate);
