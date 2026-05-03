@@ -4,7 +4,7 @@ const TOPDECK_ELO_CHUNK_SIZE = 250;
 const TOPDECK_ELO_PAGE_SIZE = 1000;
 
 type TopdeckEloRow = {
-  uid: string | null;
+  topdeck_id: string | null;
   elo: number | null;
 };
 
@@ -22,13 +22,13 @@ export async function fetchTopdeckEloMap(topdeckIds: string[]) {
   for (const topdeckIdChunk of chunkArray(uniqueTopdeckIds)) {
     const { data, error } = await supabase
       .from("topdeck_player_elos")
-      .select("uid, elo")
-      .in("uid", topdeckIdChunk);
+      .select("topdeck_id, elo")
+      .in("topdeck_id", topdeckIdChunk);
 
     if (error || !data?.length) continue;
     for (const row of data as TopdeckEloRow[]) {
-      if (row.uid && typeof row.elo === "number") {
-        eloByTopdeckId.set(row.uid, row.elo);
+      if (row.topdeck_id && typeof row.elo === "number") {
+        eloByTopdeckId.set(row.topdeck_id, row.elo);
       }
     }
   }
@@ -40,14 +40,14 @@ export async function fetchAllTopdeckEloMap() {
   for (let offset = 0; ; offset += TOPDECK_ELO_PAGE_SIZE) {
     const { data, error } = await supabase
       .from("topdeck_player_elos")
-      .select("uid, elo")
-      .order("uid", { ascending: true })
+      .select("topdeck_id, elo")
+      .order("topdeck_id", { ascending: true })
       .range(offset, offset + TOPDECK_ELO_PAGE_SIZE - 1);
 
     if (error || !data?.length) break;
     for (const row of data as TopdeckEloRow[]) {
-      if (row.uid && typeof row.elo === "number") {
-        eloByTopdeckId.set(row.uid, row.elo);
+      if (row.topdeck_id && typeof row.elo === "number") {
+        eloByTopdeckId.set(row.topdeck_id, row.elo);
       }
     }
     if (data.length < TOPDECK_ELO_PAGE_SIZE) break;
@@ -58,8 +58,8 @@ export async function fetchAllTopdeckEloMap() {
 export async function fetchTopdeckElo(topdeckId: string) {
   const { data, error } = await supabase
     .from("topdeck_player_elos")
-    .select("uid, elo")
-    .eq("uid", topdeckId)
+    .select("topdeck_id, elo")
+    .eq("topdeck_id", topdeckId)
     .maybeSingle();
 
   if (error) return null;

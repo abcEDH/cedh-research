@@ -58,10 +58,11 @@ describe("fetchTopdeckEloMap", () => {
   });
 
   it("correctly maps topdeck IDs to elo values", async () => {
+    // Use topdeck_id (matches actual database schema)
     const mockData = [
-      { uid: "player-1", elo: 1600 },
-      { uid: "player-2", elo: 1650 },
-      { uid: "player-3", elo: 1700 },
+      { topdeck_id: "player-1", elo: 1600 },
+      { topdeck_id: "player-2", elo: 1650 },
+      { topdeck_id: "player-3", elo: 1700 },
     ];
 
     vi.mocked(supabase.from).mockReturnValue({
@@ -78,11 +79,11 @@ describe("fetchTopdeckEloMap", () => {
     expect(result.get("player-3")).toBe(1700);
   });
 
-  it("skips rows with null uid", async () => {
+  it("skips rows with null topdeck_id", async () => {
     const mockData = [
-      { uid: null, elo: 1600 },
-      { uid: "player-2", elo: 1650 },
-      { uid: null, elo: 1700 },
+      { topdeck_id: null, elo: 1600 },
+      { topdeck_id: "player-2", elo: 1650 },
+      { topdeck_id: null, elo: 1700 },
     ];
 
     vi.mocked(supabase.from).mockReturnValue({
@@ -100,9 +101,9 @@ describe("fetchTopdeckEloMap", () => {
 
   it("skips rows with non-numeric elo", async () => {
     const mockData = [
-      { uid: "player-1", elo: null },
-      { uid: "player-2", elo: 1650 },
-      { uid: "player-3", elo: "not-a-number" },
+      { topdeck_id: "player-1", elo: null },
+      { topdeck_id: "player-2", elo: 1650 },
+      { topdeck_id: "player-3", elo: "not-a-number" },
     ];
 
     vi.mocked(supabase.from).mockReturnValue({
@@ -133,7 +134,7 @@ describe("fetchTopdeckEloMap", () => {
     expect(chunks[1].length).toBe(50);
   });
 
-  it("calls supabase with correct table name", async () => {
+  it("calls supabase with correct table and column names", async () => {
     vi.mocked(supabase.from).mockReturnValue({
       select: vi.fn(() => ({
         in: vi.fn(() => Promise.resolve({ data: [], error: null })),
@@ -167,8 +168,8 @@ describe("fetchAllTopdeckEloMap", () => {
 
   it("correctly maps all players to elo values", async () => {
     const mockData = [
-      { uid: "player-1", elo: 1600 },
-      { uid: "player-2", elo: 1650 },
+      { topdeck_id: "player-1", elo: 1600 },
+      { topdeck_id: "player-2", elo: 1650 },
     ];
 
     vi.mocked(supabase.from).mockReturnValue({
@@ -223,7 +224,7 @@ describe("fetchTopdeckElo", () => {
     vi.mocked(supabase.from).mockReturnValue({
       select: vi.fn(() => ({
         eq: vi.fn(() => ({
-          maybeSingle: () => Promise.resolve({ data: { uid: "player-1", elo: 1700 }, error: null }),
+          maybeSingle: () => Promise.resolve({ data: { topdeck_id: "player-1", elo: 1700 }, error: null }),
         })),
       })),
     } as ReturnType<typeof supabase.from>);
@@ -236,7 +237,7 @@ describe("fetchTopdeckElo", () => {
     vi.mocked(supabase.from).mockReturnValue({
       select: vi.fn(() => ({
         eq: vi.fn(() => ({
-          maybeSingle: () => Promise.resolve({ data: { uid: "player-1", elo: null }, error: null }),
+          maybeSingle: () => Promise.resolve({ data: { topdeck_id: "player-1", elo: null }, error: null }),
         })),
       })),
     } as ReturnType<typeof supabase.from>);
