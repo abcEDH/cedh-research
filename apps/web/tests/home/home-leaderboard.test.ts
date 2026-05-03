@@ -86,13 +86,13 @@ describe("Home Page Data Fetching", () => {
     );
 
     // Verify correct fields are selected from profiles
-    expect(source).toContain("latest_tournament_name, latest_tournament_date, latest_tournament_topdeck_tid");
+    expect(source).not.toContain("latest_tournament_name, latest_tournament_date, latest_tournament_topdeck_tid");
     
     // Verify we map them properly
-    expect(source).toContain("latest_tournament_name: profile?.latest_tournament_name ?? null");
+    expect(source).toContain("latest_tournament_name: latestTournament?.name ?? null");
     
-    // Verify we DO NOT call fetchHomeLeaderboardLatestTournaments anymore
-    expect(source).not.toContain("fetchHomeLeaderboardLatestTournaments");
-    expect(source).not.toContain("global_elo_game_event_log");
+    // Verify we DO call fetchHomeLeaderboardLatestTournaments anymore
+    expect(source).toContain("fetchHomeLeaderboardLatestTournaments");
+    expect(source).toContain("global_elo_game_event_log");
   });
 });

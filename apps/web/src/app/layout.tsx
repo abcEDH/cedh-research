@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import "./globals.css";
+import { PostHogProvider } from "./providers";
+import { WebVitals } from "./web-vitals";
 import { MotifLayer } from "@/components/motifs/MotifLayer";
 
 const spaceGrotesk = Space_Grotesk({
@@ -26,21 +28,24 @@ export default function RootLayout({
   return (
     <html lang="en" className={`dark ${spaceGrotesk.variable} ${jetBrainsMono.variable}`}>
       <body className="knd-body">
-        <MotifLayer variant="B" intensity={0.9} />
-        <div className="flex min-h-screen flex-col">
-          <div className="flex-1">{children}</div>
-          <footer className="border-t border-border/60 px-4 py-4 text-center text-xs text-muted-foreground">
-            Data provided by{" "}
-            <a
-              href="https://topdeck.gg"
-              target="_blank"
-              rel="noreferrer"
-              className="text-foreground hover:text-primary"
-            >
-              TopDeck.gg
-            </a>
-          </footer>
-        </div>
+        <PostHogProvider>
+          <WebVitals />
+          <MotifLayer variant="B" intensity={0.9} />
+          <div className="flex min-h-screen flex-col">
+            <div className="flex-1">{children}</div>
+            <footer className="border-t border-border/60 px-4 py-4 text-center text-xs text-muted-foreground">
+              Data provided by{" "}
+              <a
+                href="https://topdeck.gg"
+                target="_blank"
+                rel="noreferrer"
+                className="text-foreground hover:text-primary"
+              >
+                TopDeck.gg
+              </a>
+            </footer>
+          </div>
+        </PostHogProvider>
       </body>
     </html>
   );
