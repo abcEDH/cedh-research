@@ -1,3 +1,10 @@
+## [1.13.1](https://github.com/abcEDH/cedh-research/compare/v1.13.0...v1.13.1) (2026-05-03)
+
+
+### Bug Fixes
+
+* **regional-elo:** complete issue [#128](https://github.com/abcEDH/cedh-research/issues/128) gaps and documentation ([#162](https://github.com/abcEDH/cedh-research/issues/162)) ([0555f87](https://github.com/abcEDH/cedh-research/commit/0555f87f15b9548666c850553ac33741fb3a51e8))
+
 # [1.13.0](https://github.com/abcEDH/cedh-research/compare/v1.12.1...v1.13.0) (2026-05-03)
 
 
