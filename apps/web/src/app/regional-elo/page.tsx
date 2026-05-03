@@ -509,7 +509,7 @@ export default async function RegionalEloPage({
     <div className="min-h-screen">
       <main className="container mx-auto px-4 pb-24 pt-10">
         <header className="flex flex-col gap-6 border-b border-border/60 pb-8">
-          <nav className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+          <nav className="flex flex-wrap items-center justify-end gap-4 text-sm text-muted-foreground">
             <Link className="transition hover:text-foreground" href="/">
               Home
             </Link>
