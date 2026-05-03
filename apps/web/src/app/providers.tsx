@@ -33,7 +33,9 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
     }
     const debug = process.env.NEXT_PUBLIC_POSTHOG_DEBUG === 'true'
     posthog.init(token, {
-      api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST,
+      api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST || 'https://metrics.tedh.gg',
+      ui_host: 'https://us.posthog.com',
+      person_profiles: 'identified_only',
       defaults: '2026-01-30',
       capture_pageview: false, // turned off to avoid double-counting
       capture_performance: true,
