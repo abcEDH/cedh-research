@@ -1139,7 +1139,7 @@ export async function PlayerProfileBody({
     .then((value) => ({ status: "fulfilled" as const, value }))
     .catch((reason) => ({ status: "rejected" as const, reason }));
   const eventPlayerLogs = eventPlayerLogsResult.status === "fulfilled" ? eventPlayerLogsResult.value : [];
-  const playerLogs: PlayerLog[] =
+  const playerLogs: PlayerGameLog[] =
     eventPlayerLogs.length > 0
       ? eventPlayerLogs
       : await fetchEntries(player.id).then((entries) => buildPlayerLogsFromRawHistory(entries));
