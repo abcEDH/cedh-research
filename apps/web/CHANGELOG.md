@@ -1,3 +1,10 @@
+## [1.12.1](https://github.com/abcEDH/cedh-research/compare/v1.12.0...v1.12.1) (2026-05-03)
+
+
+### Performance Improvements
+
+* **regional-elo:** bump cache TTLs, add loading state, achievements sort+filter ([#158](https://github.com/abcEDH/cedh-research/issues/158)) ([2941e7a](https://github.com/abcEDH/cedh-research/commit/2941e7a770eeb0a3d6671f162f24b19d80eea1cb))
+
 # [1.12.0](https://github.com/abcEDH/cedh-research/compare/v1.11.0...v1.12.0) (2026-05-03)
 
 
