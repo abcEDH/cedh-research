@@ -465,15 +465,36 @@ vi.mock("@/lib/supabase", () => ({
   },
 }));
 
+async function renderPlayerPage(
+  topdeckId: string,
+  searchParams: Record<string, string | string[] | undefined> = {}
+) {
+  const pageModule = await import("@/app/regional-elo/player/[topdeckId]/page");
+  const wrapperElement = await pageModule.default({
+    params: { topdeckId },
+    searchParams,
+  });
+  const wrapperHtml = renderToStaticMarkup(wrapperElement);
+
+  const player = (tableData.players ?? []).find(
+    (row) => row.topdeck_id === topdeckId
+  ) as { id: string; name: string; topdeck_id: string } | undefined;
+  if (!player) return wrapperHtml;
+
+  const bodyElement = await pageModule.PlayerProfileBody({
+    topdeckId,
+    player,
+    searchParams,
+  });
+  const bodyHtml = renderToStaticMarkup(bodyElement);
+  return wrapperHtml + bodyHtml;
+}
+
 describe("RegionalPlayerPage", () => {
   it("renders summary cards and regional rankings from the same canonical counts", async () => {
-    const pageModule = await import("@/app/regional-elo/player/[topdeckId]/page");
-    const element = await pageModule.default({
-      params: { topdeckId: "CCIQroaCHHQi7EELyNXlHiHQiQy1" },
-      searchParams: { region: "CALIFORNIA" },
+    const html = await renderPlayerPage("CCIQroaCHHQi7EELyNXlHiHQiQy1", {
+      region: "CALIFORNIA",
     });
-
-    const html = renderToStaticMarkup(element);
 
     expect(html).toContain("Alex Lien");
     expect(html).toContain("TopDeck Rank");
@@ -492,13 +513,7 @@ describe("RegionalPlayerPage", () => {
   });
 
   it("groups unknown-region games for any player profile", async () => {
-    const pageModule = await import("@/app/regional-elo/player/[topdeckId]/page");
-    const element = await pageModule.default({
-      params: { topdeckId: "unknown-region-player" },
-      searchParams: {},
-    });
-
-    const html = renderToStaticMarkup(element);
+    const html = await renderPlayerPage("unknown-region-player");
 
     expect(html).toContain("Unknown Region Player");
     expect(html).toMatch(/Games Played[\s\S]*?>1</);
@@ -506,13 +521,9 @@ describe("RegionalPlayerPage", () => {
   });
 
   it("hides inactive player global and state ranks", async () => {
-    const pageModule = await import("@/app/regional-elo/player/[topdeckId]/page");
-    const element = await pageModule.default({
-      params: { topdeckId: "inactive-player" },
-      searchParams: { region: "CALIFORNIA" },
+    const html = await renderPlayerPage("inactive-player", {
+      region: "CALIFORNIA",
     });
-
-    const html = renderToStaticMarkup(element);
 
     expect(html).toContain("Inactive Player");
     expect(html).toMatch(/State Rank[\s\S]*?>--</);
@@ -521,15 +532,9 @@ describe("RegionalPlayerPage", () => {
   });
 
   it("links opponent records to the head-to-head page", async () => {
-    const pageModule = await import("@/app/regional-elo/player/[topdeckId]/page");
-    const element = await pageModule.default({
-      params: { topdeckId: "CCIQroaCHHQi7EELyNXlHiHQiQy1" },
-      searchParams: {},
-    });
+    const html = await renderPlayerPage("CCIQroaCHHQi7EELyNXlHiHQiQy1");
 
-    const html = renderToStaticMarkup(element);
-
-    expect(html).toContain('/regional-elo/player/CCIQroaCHHQi7EELyNXlHiHQiQy1/vs/opp-a');
+    expect(html).toContain("/regional-elo/player/CCIQroaCHHQi7EELyNXlHiHQiQy1/vs/opp-a");
     expect(html).not.toContain('href="/regional-elo/player/opp-a"');
   });
 });

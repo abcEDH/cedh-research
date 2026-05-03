@@ -8,7 +8,7 @@ import { unstable_cache } from "next/cache";
 export const dynamic = "force-dynamic";
 const GLOBAL_REGION_KEY = "ALL";
 const LEADERBOARD_PAGE_SIZE = 50;
-const REGIONAL_ELO_CACHE_REVALIDATE_SECONDS = 60 * 15; // 15 minutes
+const REGIONAL_ELO_CACHE_REVALIDATE_SECONDS = 60 * 60; // 60 minutes
 
 function readRegionParam(
   params: Awaited<Promise<{ region?: string | string[] }> | { region?: string | string[] }> | undefined
