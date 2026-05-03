@@ -1127,93 +1127,53 @@ export async function PlayerProfileBody({
     fetchCachedPlayerCommanderUsageRows(player.id, topdeckId, player.name),
     fetchCachedPlayerAchievements(player.id, topdeckId),
   ]);
+
   const activeCommander = commanderProfile?.active_commander ?? null;
+
   const regionalRankRows = regionalRanks.map((row) => ({
     ...row,
     country_key: row.country_key ?? inferCountryForRegion(row.region_key) ?? "UNKNOWN",
   }));
-  const eventPlayerLogsResult = await Promise.resolve(fetchCachedPlayerEventLogs(player.id, ""))
-    .then((value) => ({ status: "fulfilled" as const, value }))
-    .catch((reason) => ({ status: "rejected" as const, reason }));
-  const eventPlayerLogs = eventPlayerLogsResult.status === "fulfilled" ? eventPlayerLogsResult.value : [];
-  const playerLogs =
-    eventPlayerLogs.length > 0
-      ? eventPlayerLogs
-      : await fetchEntries(player.id).then((entries) => buildPlayerLogsFromRawHistory(entries));
-  const achievementResultByTournament = playerLogs.reduce(
-    (results, log) => {
-      const key = achievementTournamentKey(log.tournamentName, log.startDate);
-      const current = results.get(key) ?? { wins: 0, draws: 0, losses: 0, games: 0 };
-      current.games += 1;
-      if (log.result === "win") {
-        current.wins += 1;
-      } else if (log.result === "draw") {
-        current.draws += 1;
-      } else if (log.result === "loss") {
-        current.losses += 1;
-      }
-      results.set(key, current);
-      return results;
-    },
-    new Map<string, { wins: number; draws: number; losses: number; games: number }>()
-  );
-  const allAchievementRows = fetchedAchievementRows
-    .map((row) => {
-      const gameResults = achievementResultByTournament.get(
-        achievementTournamentKey(row.tournamentName, row.startDate)
-      );
-      if (!gameResults?.games) return row;
-      return {
-        ...row,
-        wins: gameResults.wins,
-        draws: gameResults.draws,
-        losses: gameResults.losses,
-        recordGames: gameResults.games,
-      };
-    })
-    .filter((row) => row.recordGames > 0);
-  const normalizedAchievementTournamentSearch = achievementTournamentSearch.toLocaleLowerCase();
-  const normalizedAchievementCommanderSearch = achievementCommanderSearch.toLocaleLowerCase();
-  const filteredAchievementRows = allAchievementRows.filter((row) => {
-    const matchesTournament =
-      !normalizedAchievementTournamentSearch ||
-      row.tournamentName.toLocaleLowerCase().includes(normalizedAchievementTournamentSearch);
-    const matchesCommander =
-      !normalizedAchievementCommanderSearch ||
-      (row.commanderName ?? "Unknown").toLocaleLowerCase().includes(normalizedAchievementCommanderSearch);
-    const rowDate = (row.startDate ?? "").slice(0, 10);
-    const matchesFrom = !achievementDateFrom || (rowDate && rowDate >= achievementDateFrom);
-    const matchesTo = !achievementDateTo || (rowDate && rowDate <= achievementDateTo);
-    return matchesTournament && matchesCommander && matchesFrom && matchesTo;
-  });
-  const achievementRows =
-    achievementSort === "best"
-      ? sortAchievementsByFinish(filteredAchievementRows)
-      : filteredAchievementRows;
-  const achievementPageCount = Math.max(1, Math.ceil(achievementRows.length / ACHIEVEMENTS_PAGE_SIZE));
-  const achievementPage = Math.min(requestedAchievementsPage, achievementPageCount);
-  const visibleAchievementRows = achievementRows.slice(
-    (achievementPage - 1) * ACHIEVEMENTS_PAGE_SIZE,
-    achievementPage * ACHIEVEMENTS_PAGE_SIZE
-  );
 
-  const {
+  // Layer 2: Deferred log summary. Only fetch and process if we are missing precomputed summary fields.
+  // Note: We still fetch commanderUsageRows and fetchedAchievementRows above for the tables,
+  // but we can optimize the event logs fetch.
+  let playerLogs: PlayerLog[] = [];
+  let podSummary: ReturnType<typeof summarizePlayerLogs> | null = null;
+
+  const getPodSummary = async () => {
+    if (podSummary) return podSummary;
+    const eventPlayerLogsResult = await Promise.resolve(fetchCachedPlayerEventLogs(player.id, ""))
+      .then((value) => ({ status: "fulfilled" as const, value }))
+      .catch((reason) => ({ status: "rejected" as const, reason }));
+    const eventPlayerLogs = eventPlayerLogsResult.status === "fulfilled" ? eventPlayerLogsResult.value : [];
+    playerLogs =
+      eventPlayerLogs.length > 0
+        ? eventPlayerLogs
+        : await fetchEntries(player.id).then((entries) => buildPlayerLogsFromRawHistory(entries));
+    podSummary = summarizePlayerLogs(playerLogs, topdeckId);
+    return podSummary;
+  };
+
+  const canonicalGames = profileSummary?.games_played ?? (await getPodSummary()).totalGames;
+  const canonicalWins = profileSummary?.wins ?? (await getPodSummary()).totalWins;
+  const canonicalDraws = profileSummary?.draws ?? (await getPodSummary()).totalDraws;
+  const canonicalLosses = profileSummary?.losses ?? (await getPodSummary()).totalLosses;
+  
+  // Ensure logs are fetched for tables and calculations below
+  const { 
     totalGames,
     totalWins,
     totalDraws,
     totalLosses,
-    seatRows,
-    opponentRecords,
-    commanderRecords,
-    bestOpponentMatchup,
-    worstOpponentMatchup,
-    bestCommanderMatchup,
-    worstCommanderMatchup,
-  } = summarizePlayerLogs(playerLogs, topdeckId);
-  const canonicalGames = profileSummary?.games_played ?? totalGames;
-  const canonicalWins = profileSummary?.wins ?? totalWins;
-  const canonicalDraws = profileSummary?.draws ?? totalDraws;
-  const canonicalLosses = profileSummary?.losses ?? totalLosses;
+    seatRows, 
+    opponentRecords, 
+    commanderRecords, 
+    bestOpponentMatchup, 
+    worstOpponentMatchup, 
+    bestCommanderMatchup, 
+    worstCommanderMatchup 
+  } = await getPodSummary();
   const assignmentRowsByRegion = new Map<string, StateAssignmentRow>();
   if (profileSummary?.state_assignments?.length) {
     for (const row of profileSummary.state_assignments) {
