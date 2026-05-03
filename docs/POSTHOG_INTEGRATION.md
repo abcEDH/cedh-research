@@ -146,6 +146,20 @@
  *    - VS matchup queries
  * 
  * =============================================================================
+ * REVERSE PROXY CONFIGURATION
+ * =============================================================================
+ * 
+ * To improve tracking reliability and bypass ad-blockers, we use a managed 
+ * reverse proxy at: https://metrics.tedh.gg
+ * 
+ * This is configured in `apps/web/src/app/providers.tsx` via the `api_host` 
+ * and `ui_host` options.
+ * 
+ * Environment Variables:
+ *   NEXT_PUBLIC_POSTHOG_HOST=https://metrics.tedh.gg
+ *   NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN=your_ph_project_token_here
+ * 
+ * =============================================================================
  * DEBUGGING
  * =============================================================================
  * 
