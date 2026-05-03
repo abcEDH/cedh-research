@@ -49,6 +49,7 @@ type RegionalLeaderboardQueryRow = {
   topdeck_id: string | null;
   player_name: string;
   rating: number;
+  topdeck_elo: number | null;
   games_played: number;
   primary_region_key: string | null;
   region_key: string;
@@ -128,9 +129,10 @@ async function fetchBestEloRows(topdeckIds: string[]): Promise<EloRow[]> {
 
   // Query global_elo_active_leaderboard for player ratings
   // The rating column contains our calculated Elo for each player
+  // The topdeck_elo column contains the official TopDeck Elo
   const { data, error } = await supabase
     .from("global_elo_active_leaderboard")
-    .select("topdeck_id, player_name, rating, games_played, primary_region_key, region_key, rank")
+    .select("topdeck_id, player_name, rating, topdeck_elo, games_played, primary_region_key, region_key, rank")
     .in("topdeck_id", topdeckIds)
     .eq("region_type", "global")
     .eq("region_key", "ALL");
@@ -153,7 +155,7 @@ async function fetchBestEloRows(topdeckIds: string[]): Promise<EloRow[]> {
         player_name: row?.player_name ?? "",
         rating: row?.rating ?? null,
         hidden_rating: null,
-        topdeck_elo: row?.rating ?? null,
+        topdeck_elo: row?.topdeck_elo ?? null,
         games_played: row?.games_played ?? 0,
         region_key: row?.primary_region_key ?? row?.region_key ?? "",
       };

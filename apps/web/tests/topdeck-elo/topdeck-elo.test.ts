@@ -3,20 +3,26 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 // Mock supabase at module level
-vi.mock("@/lib/supabase", () => ({
-  supabase: {
-    from: vi.fn((_table: string) => ({
-      select: vi.fn((_columns: string) => ({
-        eq: vi.fn(() => Promise.resolve({ data: null, error: null })),
-        in: vi.fn(() => Promise.resolve({ data: null, error: null })),
-        order: vi.fn(() => ({
-          range: vi.fn(() => Promise.resolve({ data: null, error: null })),
-        })),
-        limit: vi.fn(() => Promise.resolve({ data: null, error: null })),
-      })),
-    })),
-  },
-}));
+vi.mock("@/lib/supabase", () => {
+  const mockQueryBuilder = {
+    select: vi.fn().mockReturnThis(),
+    in: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    order: vi.fn().mockReturnThis(),
+    range: vi.fn().mockReturnThis(),
+    maybeSingle: vi.fn().mockReturnValue(Promise.resolve({ data: null, error: null })),
+    limit: vi.fn().mockReturnValue(Promise.resolve({ data: null, error: null })),
+    then: vi.fn().mockImplementation((onfulfilled) => 
+      Promise.resolve({ data: null, error: null }).then(onfulfilled)
+    ),
+  };
+
+  return {
+    supabase: {
+      from: vi.fn(() => mockQueryBuilder),
+    },
+  };
+});
 
 // Import after mocks are set up
 import { fetchTopdeckEloMap, fetchAllTopdeckEloMap, fetchTopdeckElo } from "@/lib/topdeck-elo";
@@ -34,11 +40,10 @@ describe("fetchTopdeckEloMap", () => {
   });
 
   it("returns empty map when supabase returns no data", async () => {
-    vi.mocked(supabase.from).mockReturnValue({
-      select: vi.fn(() => ({
-        in: vi.fn(() => Promise.resolve({ data: null, error: null })),
-      })),
-    } as ReturnType<typeof supabase.from>);
+    const mockQueryBuilder = vi.mocked(supabase.from("any")).in("any", []);
+    vi.mocked(mockQueryBuilder.then).mockImplementationOnce((onfulfilled) => 
+      Promise.resolve({ data: null, error: null }).then(onfulfilled)
+    );
 
     const result = await fetchTopdeckEloMap(["player-1"]);
     expect(result).toBeInstanceOf(Map);
@@ -46,11 +51,10 @@ describe("fetchTopdeckEloMap", () => {
   });
 
   it("returns empty map when supabase returns error", async () => {
-    vi.mocked(supabase.from).mockReturnValue({
-      select: vi.fn(() => ({
-        in: vi.fn(() => Promise.resolve({ data: null, error: { message: "Network error" } })),
-      })),
-    } as ReturnType<typeof supabase.from>);
+    const mockQueryBuilder = vi.mocked(supabase.from("any")).in("any", []);
+    vi.mocked(mockQueryBuilder.then).mockImplementationOnce((onfulfilled) => 
+      Promise.resolve({ data: null, error: { message: "Network error" } }).then(onfulfilled)
+    );
 
     const result = await fetchTopdeckEloMap(["player-1"]);
     expect(result).toBeInstanceOf(Map);
@@ -58,18 +62,16 @@ describe("fetchTopdeckEloMap", () => {
   });
 
   it("correctly maps topdeck IDs to elo values", async () => {
-    // Use topdeck_id (matches actual database schema)
     const mockData = [
-      { topdeck_id: "player-1", elo: 1600 },
-      { topdeck_id: "player-2", elo: 1650 },
-      { topdeck_id: "player-3", elo: 1700 },
+      { topdeck_id: "player-1", topdeck_elo: 1600 },
+      { topdeck_id: "player-2", topdeck_elo: 1650 },
+      { topdeck_id: "player-3", topdeck_elo: 1700 },
     ];
 
-    vi.mocked(supabase.from).mockReturnValue({
-      select: vi.fn(() => ({
-        in: vi.fn(() => Promise.resolve({ data: mockData, error: null })),
-      })),
-    } as ReturnType<typeof supabase.from>);
+    const mockQueryBuilder = vi.mocked(supabase.from("any")).in("any", []);
+    vi.mocked(mockQueryBuilder.then).mockImplementationOnce((onfulfilled) => 
+      Promise.resolve({ data: mockData, error: null }).then(onfulfilled)
+    );
 
     const result = await fetchTopdeckEloMap(["player-1", "player-2", "player-3"]);
 
@@ -81,16 +83,15 @@ describe("fetchTopdeckEloMap", () => {
 
   it("skips rows with null topdeck_id", async () => {
     const mockData = [
-      { topdeck_id: null, elo: 1600 },
-      { topdeck_id: "player-2", elo: 1650 },
-      { topdeck_id: null, elo: 1700 },
+      { topdeck_id: null, topdeck_elo: 1600 },
+      { topdeck_id: "player-2", topdeck_elo: 1650 },
+      { topdeck_id: null, topdeck_elo: 1700 },
     ];
 
-    vi.mocked(supabase.from).mockReturnValue({
-      select: vi.fn(() => ({
-        in: vi.fn(() => Promise.resolve({ data: mockData, error: null })),
-      })),
-    } as ReturnType<typeof supabase.from>);
+    const mockQueryBuilder = vi.mocked(supabase.from("any")).in("any", []);
+    vi.mocked(mockQueryBuilder.then).mockImplementationOnce((onfulfilled) => 
+      Promise.resolve({ data: mockData, error: null }).then(onfulfilled)
+    );
 
     const result = await fetchTopdeckEloMap(["player-1", "player-2", "player-3"]);
 
@@ -101,16 +102,15 @@ describe("fetchTopdeckEloMap", () => {
 
   it("skips rows with non-numeric elo", async () => {
     const mockData = [
-      { topdeck_id: "player-1", elo: null },
-      { topdeck_id: "player-2", elo: 1650 },
-      { topdeck_id: "player-3", elo: "not-a-number" },
+      { topdeck_id: "player-1", topdeck_elo: null },
+      { topdeck_id: "player-2", topdeck_elo: 1650 },
+      { topdeck_id: "player-3", topdeck_elo: "not-a-number" },
     ];
 
-    vi.mocked(supabase.from).mockReturnValue({
-      select: vi.fn(() => ({
-        in: vi.fn(() => Promise.resolve({ data: mockData, error: null })),
-      })),
-    } as ReturnType<typeof supabase.from>);
+    const mockQueryBuilder = vi.mocked(supabase.from("any")).in("any", []);
+    vi.mocked(mockQueryBuilder.then).mockImplementationOnce((onfulfilled) => 
+      Promise.resolve({ data: mockData, error: null }).then(onfulfilled)
+    );
 
     const result = await fetchTopdeckEloMap(["player-1", "player-2", "player-3"]);
 
@@ -135,15 +135,14 @@ describe("fetchTopdeckEloMap", () => {
   });
 
   it("calls supabase with correct table and column names", async () => {
-    vi.mocked(supabase.from).mockReturnValue({
-      select: vi.fn(() => ({
-        in: vi.fn(() => Promise.resolve({ data: [], error: null })),
-      })),
-    } as ReturnType<typeof supabase.from>);
-
+    const mockQueryBuilder = vi.mocked(supabase.from("any"));
+    
     await fetchTopdeckEloMap(["player-1"]);
 
-    expect(supabase.from).toHaveBeenCalledWith("topdeck_player_elos");
+    expect(supabase.from).toHaveBeenCalledWith("global_elo_active_leaderboard");
+    expect(mockQueryBuilder.select).toHaveBeenCalledWith("topdeck_id, topdeck_elo");
+    expect(mockQueryBuilder.eq).toHaveBeenCalledWith("region_type", "global");
+    expect(mockQueryBuilder.eq).toHaveBeenCalledWith("region_key", "ALL");
   });
 });
 
@@ -153,13 +152,10 @@ describe("fetchAllTopdeckEloMap", () => {
   });
 
   it("returns empty map when supabase returns no data", async () => {
-    vi.mocked(supabase.from).mockReturnValue({
-      select: vi.fn(() => ({
-        order: vi.fn(() => ({
-          range: vi.fn(() => Promise.resolve({ data: null, error: null })),
-        })),
-      })),
-    } as ReturnType<typeof supabase.from>);
+    const mockQueryBuilder = vi.mocked(supabase.from("any")).range(0, 0);
+    vi.mocked(mockQueryBuilder.then).mockImplementationOnce((onfulfilled) => 
+      Promise.resolve({ data: null, error: null }).then(onfulfilled)
+    );
 
     const result = await fetchAllTopdeckEloMap();
     expect(result).toBeInstanceOf(Map);
@@ -168,17 +164,14 @@ describe("fetchAllTopdeckEloMap", () => {
 
   it("correctly maps all players to elo values", async () => {
     const mockData = [
-      { topdeck_id: "player-1", elo: 1600 },
-      { topdeck_id: "player-2", elo: 1650 },
+      { topdeck_id: "player-1", topdeck_elo: 1600 },
+      { topdeck_id: "player-2", topdeck_elo: 1650 },
     ];
 
-    vi.mocked(supabase.from).mockReturnValue({
-      select: vi.fn(() => ({
-        order: vi.fn(() => ({
-          range: vi.fn(() => Promise.resolve({ data: mockData, error: null })),
-        })),
-      })),
-    } as ReturnType<typeof supabase.from>);
+    const mockQueryBuilder = vi.mocked(supabase.from("any")).range(0, 0);
+    vi.mocked(mockQueryBuilder.then).mockImplementationOnce((onfulfilled) => 
+      Promise.resolve({ data: mockData, error: null }).then(onfulfilled)
+    );
 
     const result = await fetchAllTopdeckEloMap();
 
@@ -188,17 +181,9 @@ describe("fetchAllTopdeckEloMap", () => {
   });
 
   it("calls supabase with correct table name", async () => {
-    vi.mocked(supabase.from).mockReturnValue({
-      select: vi.fn(() => ({
-        order: vi.fn(() => ({
-          range: vi.fn(() => Promise.resolve({ data: null, error: null })),
-        })),
-      })),
-    } as ReturnType<typeof supabase.from>);
-
     await fetchAllTopdeckEloMap();
 
-    expect(supabase.from).toHaveBeenCalledWith("topdeck_player_elos");
+    expect(supabase.from).toHaveBeenCalledWith("global_elo_active_leaderboard");
   });
 });
 
@@ -208,39 +193,30 @@ describe("fetchTopdeckElo", () => {
   });
 
   it("returns null for non-existent player", async () => {
-    vi.mocked(supabase.from).mockReturnValue({
-      select: vi.fn(() => ({
-        eq: vi.fn(() => ({
-          maybeSingle: () => Promise.resolve({ data: null, error: null }),
-        })),
-      })),
-    } as ReturnType<typeof supabase.from>);
+    const mockQueryBuilder = vi.mocked(supabase.from("any"));
+    vi.mocked(mockQueryBuilder.maybeSingle).mockReturnValueOnce(
+      Promise.resolve({ data: null, error: null })
+    );
 
     const result = await fetchTopdeckElo("non-existent");
     expect(result).toBeNull();
   });
 
   it("returns the elo value for existing player", async () => {
-    vi.mocked(supabase.from).mockReturnValue({
-      select: vi.fn(() => ({
-        eq: vi.fn(() => ({
-          maybeSingle: () => Promise.resolve({ data: { topdeck_id: "player-1", elo: 1700 }, error: null }),
-        })),
-      })),
-    } as ReturnType<typeof supabase.from>);
+    const mockQueryBuilder = vi.mocked(supabase.from("any"));
+    vi.mocked(mockQueryBuilder.maybeSingle).mockReturnValueOnce(
+      Promise.resolve({ data: { topdeck_id: "player-1", topdeck_elo: 1700 }, error: null })
+    );
 
     const result = await fetchTopdeckElo("player-1");
     expect(result).toBe(1700);
   });
 
   it("returns null when elo is not a number", async () => {
-    vi.mocked(supabase.from).mockReturnValue({
-      select: vi.fn(() => ({
-        eq: vi.fn(() => ({
-          maybeSingle: () => Promise.resolve({ data: { topdeck_id: "player-1", elo: null }, error: null }),
-        })),
-      })),
-    } as ReturnType<typeof supabase.from>);
+    const mockQueryBuilder = vi.mocked(supabase.from("any"));
+    vi.mocked(mockQueryBuilder.maybeSingle).mockReturnValueOnce(
+      Promise.resolve({ data: { topdeck_id: "player-1", topdeck_elo: null }, error: null })
+    );
 
     const result = await fetchTopdeckElo("player-1");
     expect(result).toBeNull();
