@@ -1174,6 +1174,62 @@ export async function PlayerProfileBody({
     bestCommanderMatchup, 
     worstCommanderMatchup 
   } = await getPodSummary();
+  const achievementResultByTournament = playerLogs.reduce(
+    (results, log) => {
+      const key = achievementTournamentKey(log.tournamentName, log.startDate);
+      const current = results.get(key) ?? { wins: 0, draws: 0, losses: 0, games: 0 };
+      current.games += 1;
+      if (log.result === "win") {
+        current.wins += 1;
+      } else if (log.result === "draw") {
+        current.draws += 1;
+      } else if (log.result === "loss") {
+        current.losses += 1;
+      }
+      results.set(key, current);
+      return results;
+    },
+    new Map<string, { wins: number; draws: number; losses: number; games: number }>()
+  );
+  const allAchievementRows = fetchedAchievementRows
+    .map((row) => {
+      const gameResults = achievementResultByTournament.get(
+        achievementTournamentKey(row.tournamentName, row.startDate)
+      );
+      if (!gameResults?.games) return row;
+      return {
+        ...row,
+        wins: gameResults.wins,
+        draws: gameResults.draws,
+        losses: gameResults.losses,
+        recordGames: gameResults.games,
+      };
+    })
+    .filter((row) => row.recordGames > 0);
+  const normalizedAchievementTournamentSearch = achievementTournamentSearch.toLocaleLowerCase();
+  const normalizedAchievementCommanderSearch = achievementCommanderSearch.toLocaleLowerCase();
+  const filteredAchievementRows = allAchievementRows.filter((row) => {
+    const matchesTournament =
+      !normalizedAchievementTournamentSearch ||
+      row.tournamentName.toLocaleLowerCase().includes(normalizedAchievementTournamentSearch);
+    const matchesCommander =
+      !normalizedAchievementCommanderSearch ||
+      (row.commanderName ?? "Unknown").toLocaleLowerCase().includes(normalizedAchievementCommanderSearch);
+    const rowDate = (row.startDate ?? "").slice(0, 10);
+    const matchesFrom = !achievementDateFrom || (rowDate && rowDate >= achievementDateFrom);
+    const matchesTo = !achievementDateTo || (rowDate && rowDate <= achievementDateTo);
+    return matchesTournament && matchesCommander && matchesFrom && matchesTo;
+  });
+  const achievementRows =
+    achievementSort === "best"
+      ? sortAchievementsByFinish(filteredAchievementRows)
+      : filteredAchievementRows;
+  const achievementPageCount = Math.max(1, Math.ceil(achievementRows.length / ACHIEVEMENTS_PAGE_SIZE));
+  const achievementPage = Math.min(requestedAchievementsPage, achievementPageCount);
+  const visibleAchievementRows = achievementRows.slice(
+    (achievementPage - 1) * ACHIEVEMENTS_PAGE_SIZE,
+    achievementPage * ACHIEVEMENTS_PAGE_SIZE
+  );
   const assignmentRowsByRegion = new Map<string, StateAssignmentRow>();
   if (profileSummary?.state_assignments?.length) {
     for (const row of profileSummary.state_assignments) {

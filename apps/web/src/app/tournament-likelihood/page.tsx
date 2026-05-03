@@ -154,7 +154,7 @@ async function fetchBestEloRows(topdeckIds: string[]): Promise<EloRow[]> {
         topdeck_id: topdeckId,
         player_name: row?.player_name ?? "",
         rating: row?.rating ?? null,
-        hidden_rating: null,
+        hidden_rating: undefined,
         topdeck_elo: row?.topdeck_elo ?? null,
         games_played: row?.games_played ?? 0,
         region_key: row?.primary_region_key ?? row?.region_key ?? "",
