@@ -10,7 +10,8 @@ import os
 import re
 import time
 from collections import defaultdict
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
+UTC = timezone.utc
 from pathlib import Path
 from typing import Any
 

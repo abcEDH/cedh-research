@@ -1127,19 +1127,39 @@ export async function PlayerProfileBody({
     fetchCachedPlayerCommanderUsageRows(player.id, topdeckId, player.name),
     fetchCachedPlayerAchievements(player.id, topdeckId),
   ]);
+
   const activeCommander = commanderProfile?.active_commander ?? null;
+
   const regionalRankRows = regionalRanks.map((row) => ({
     ...row,
     country_key: row.country_key ?? inferCountryForRegion(row.region_key) ?? "UNKNOWN",
   }));
+
   const eventPlayerLogsResult = await Promise.resolve(fetchCachedPlayerEventLogs(player.id, ""))
     .then((value) => ({ status: "fulfilled" as const, value }))
     .catch((reason) => ({ status: "rejected" as const, reason }));
   const eventPlayerLogs = eventPlayerLogsResult.status === "fulfilled" ? eventPlayerLogsResult.value : [];
-  const playerLogs =
+  const playerLogs: PlayerGameLog[] =
     eventPlayerLogs.length > 0
       ? eventPlayerLogs
       : await fetchEntries(player.id).then((entries) => buildPlayerLogsFromRawHistory(entries));
+  const {
+    totalGames,
+    totalWins,
+    totalDraws,
+    totalLosses,
+    seatRows,
+    opponentRecords,
+    commanderRecords,
+    bestOpponentMatchup,
+    worstOpponentMatchup,
+    bestCommanderMatchup,
+    worstCommanderMatchup,
+  } = summarizePlayerLogs(playerLogs, topdeckId);
+  const canonicalGames = profileSummary?.games_played ?? totalGames;
+  const canonicalWins = profileSummary?.wins ?? totalWins;
+  const canonicalDraws = profileSummary?.draws ?? totalDraws;
+  const canonicalLosses = profileSummary?.losses ?? totalLosses;
   const achievementResultByTournament = playerLogs.reduce(
     (results, log) => {
       const key = achievementTournamentKey(log.tournamentName, log.startDate);
@@ -1196,24 +1216,6 @@ export async function PlayerProfileBody({
     (achievementPage - 1) * ACHIEVEMENTS_PAGE_SIZE,
     achievementPage * ACHIEVEMENTS_PAGE_SIZE
   );
-
-  const {
-    totalGames,
-    totalWins,
-    totalDraws,
-    totalLosses,
-    seatRows,
-    opponentRecords,
-    commanderRecords,
-    bestOpponentMatchup,
-    worstOpponentMatchup,
-    bestCommanderMatchup,
-    worstCommanderMatchup,
-  } = summarizePlayerLogs(playerLogs, topdeckId);
-  const canonicalGames = profileSummary?.games_played ?? totalGames;
-  const canonicalWins = profileSummary?.wins ?? totalWins;
-  const canonicalDraws = profileSummary?.draws ?? totalDraws;
-  const canonicalLosses = profileSummary?.losses ?? totalLosses;
   const assignmentRowsByRegion = new Map<string, StateAssignmentRow>();
   if (profileSummary?.state_assignments?.length) {
     for (const row of profileSummary.state_assignments) {
