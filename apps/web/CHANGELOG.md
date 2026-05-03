@@ -1,3 +1,10 @@
+# [1.13.0](https://github.com/abcEDH/cedh-research/compare/v1.12.1...v1.13.0) (2026-05-03)
+
+
+### Features
+
+* configure PostHog reverse proxy and secure project token ([#160](https://github.com/abcEDH/cedh-research/issues/160)) ([0e83a92](https://github.com/abcEDH/cedh-research/commit/0e83a922581868ad7488f8f36ea21278b8b4a20e))
+
 ## [1.12.1](https://github.com/abcEDH/cedh-research/compare/v1.12.0...v1.12.1) (2026-05-03)
 
 
