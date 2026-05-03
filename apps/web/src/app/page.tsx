@@ -292,15 +292,11 @@ async function getLeaderboardPreview(): Promise<LeaderboardPlayer[]> {
     const topdeckIds = leaderboardRows
       .map((row) => row.topdeck_id)
       .filter((value): value is string => Boolean(value));
-    const [profileByTopdeckId, latestTournamentByPlayerId] = await Promise.all([
-      fetchHomeLeaderboardProfiles(topdeckIds),
-      fetchHomeLeaderboardLatestTournaments(leaderboardRows.map((row) => row.player_id)),
-    ]);
+    const profileByTopdeckId = await fetchHomeLeaderboardProfiles(topdeckIds);
 
     return leaderboardRows.map((row, index) => {
       const topdeckId = row.topdeck_id ?? "";
       const profile = profileByTopdeckId.get(topdeckId);
-      const latestTournament = latestTournamentByPlayerId.get(row.player_id);
       return {
         player_id: row.player_id,
         topdeck_id: topdeckId,
@@ -316,9 +312,9 @@ async function getLeaderboardPreview(): Promise<LeaderboardPlayer[]> {
           ? profile?.active_commander ?? null
           : null,
         active_commander_decklist_url: profile?.latest_decklist_url ?? null,
-        latest_tournament_name: latestTournament?.name ?? null,
-        latest_tournament_date: latestTournament?.date ?? null,
-        latest_tournament_topdeck_tid: latestTournament?.topdeck_tid ?? null,
+        latest_tournament_name: profile?.latest_tournament_name ?? null,
+        latest_tournament_date: profile?.latest_tournament_date ?? null,
+        latest_tournament_topdeck_tid: profile?.latest_tournament_topdeck_tid ?? null,
       };
     });
   } catch (error) {
@@ -337,7 +333,7 @@ async function fetchHomeLeaderboardProfiles(topdeckIds: string[]) {
 
   const { data, error } = await supabase
     .from("player_commander_profiles")
-    .select("topdeck_id, active_commander, latest_decklist_url")
+    .select("topdeck_id, active_commander, latest_decklist_url, latest_tournament_name, latest_tournament_date, latest_tournament_topdeck_tid")
     .in("topdeck_id", topdeckIds);
 
   if (error) {
@@ -350,88 +346,13 @@ async function fetchHomeLeaderboardProfiles(topdeckIds: string[]) {
       topdeck_id: string | null;
       active_commander: string | null;
       latest_decklist_url: string | null;
+      latest_tournament_name?: string | null;
+      latest_tournament_date?: string | null;
+      latest_tournament_topdeck_tid?: string | null;
     }>)
       .filter((row) => row.topdeck_id)
       .map((row) => [row.topdeck_id as string, row])
   );
-}
-
-async function fetchHomeLeaderboardLatestTournaments(playerIds: string[]) {
-  const uniquePlayerIds = Array.from(new Set(playerIds.filter(Boolean)));
-  const latestByPlayerId = new Map<
-    string,
-    {
-      name: string | null;
-      date: string | null;
-      topdeck_tid: string | null;
-      tournament_id: string | null;
-    }
-  >();
-  if (uniquePlayerIds.length === 0) return latestByPlayerId;
-
-  for (const table of ["global_elo_game_event_log", "regional_elo_game_event_log"]) {
-    const { data, error } = await supabase
-      .from(table)
-      .select("player_id, game_date, tournament_name, tournament_id")
-      .in("player_id", uniquePlayerIds)
-      .order("game_date", { ascending: false })
-      .limit(250);
-
-    if (error) continue;
-
-    for (const row of (data ?? []) as Array<{
-      player_id: string;
-      game_date: string | null;
-      tournament_name: string | null;
-      tournament_id: string | null;
-    }>) {
-      if (latestByPlayerId.has(row.player_id)) continue;
-      latestByPlayerId.set(row.player_id, {
-        name: row.tournament_name ?? null,
-        date: row.game_date ?? null,
-        topdeck_tid: null,
-        tournament_id: row.tournament_id ?? null,
-      });
-    }
-
-    if (latestByPlayerId.size > 0) break;
-  }
-
-  const tournamentIds = Array.from(
-    new Set(
-      Array.from(latestByPlayerId.values())
-        .map((row) => row.tournament_id)
-        .filter((value): value is string => Boolean(value))
-    )
-  );
-  if (tournamentIds.length === 0) return latestByPlayerId;
-
-  const { data, error } = await supabase
-    .from("tournaments")
-    .select("id, name, start_date, topdeck_tid")
-    .in("id", tournamentIds);
-
-  if (error) return latestByPlayerId;
-
-  const tournamentsById = new Map(
-    ((data ?? []) as Array<{
-      id: string;
-      name: string | null;
-      start_date: string | null;
-      topdeck_tid: string | null;
-    }>).map((row) => [row.id, row])
-  );
-
-  for (const latest of latestByPlayerId.values()) {
-    if (!latest.tournament_id) continue;
-    const tournament = tournamentsById.get(latest.tournament_id);
-    if (!tournament) continue;
-    latest.name = tournament.name ?? latest.name;
-    latest.date = tournament.start_date ?? latest.date;
-    latest.topdeck_tid = tournament.topdeck_tid ?? null;
-  }
-
-  return latestByPlayerId;
 }
 
 function formatDate(value: string | null) {

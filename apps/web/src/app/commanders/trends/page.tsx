@@ -40,7 +40,6 @@ type WeeklyTrendRow = {
   wins?: number | null;
   losses?: number | null;
   draws?: number | null;
-  total_players?: number | null;
 };
 
 type MonthlyTrendRow = {
@@ -50,7 +49,6 @@ type MonthlyTrendRow = {
   wins?: number | null;
   losses?: number | null;
   draws?: number | null;
-  total_players?: number | null;
 };
 
 type GlobalWeeklyTrendRow = {
@@ -96,12 +94,12 @@ async function getCommanderPeriodSnapshots(commanderIds: string[], sizeFilter: S
   const { weekly, monthly } = getTrendViews(sizeFilter);
   const weeklyPrimary = await supabase
     .from(weekly)
-    .select("commander_id, week_start_date, entries, wins, losses, draws, total_players")
+    .select("commander_id, week_start_date, entries, wins, losses, draws")
     .in("commander_id", commanderIds)
     .order("week_start_date", { ascending: true });
   const monthlyPrimary = await supabase
     .from(monthly)
-    .select("commander_id, month_key, entries, wins, losses, draws, total_players")
+    .select("commander_id, month_key, entries, wins, losses, draws")
     .in("commander_id", commanderIds)
     .order("month_key", { ascending: true });
 
@@ -166,12 +164,12 @@ async function getCommanderPeriodSnapshots(commanderIds: string[], sizeFilter: S
       weekEntries: week?.entries ?? null,
       weekWinRate: weekGames ? (weekWins / weekGames) * 100 : null,
       weekPointsPerGame: weekGames ? (weekWins * 5 + weekDraws) / weekGames : null,
-      weekPlayers: week?.total_players ?? null,
+      weekPlayers: null,
       monthKey: month?.month_key ?? null,
       monthEntries: month?.entries ?? null,
       monthWinRate: monthGames ? (monthWins / monthGames) * 100 : null,
       monthPointsPerGame: monthGames ? (monthWins * 5 + monthDraws) / monthGames : null,
-      monthPlayers: month?.total_players ?? null,
+      monthPlayers: null,
     };
   });
 

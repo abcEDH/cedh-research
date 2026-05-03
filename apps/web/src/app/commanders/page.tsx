@@ -318,7 +318,7 @@ const getCachedWeeklyEntries = unstable_cache(
 
 const getCachedGlobalTrendSeries = unstable_cache(
   getGlobalTrendSeries,
-  ["commander-global-trends-v2"],
+  ["commander-global-trends-v3"],
   { revalidate: COMMANDERS_CACHE_REVALIDATE_SECONDS }
 );
 

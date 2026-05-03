@@ -182,7 +182,7 @@ describe("Commanders page caching", () => {
     expect(source).toContain('["commander-weekly-entries-v1"]');
 
     expect(source).toContain('getCachedGlobalTrendSeries = unstable_cache(');
-    expect(source).toContain('["commander-global-trends-v2"]');
+    expect(source).toContain('["commander-global-trends-v3"]');
   });
 
   it("page module calls cached wrappers instead of raw functions", async () => {
