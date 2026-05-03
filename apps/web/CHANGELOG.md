@@ -1,3 +1,10 @@
+## [1.10.4](https://github.com/abcEDH/cedh-research/compare/v1.10.3...v1.10.4) (2026-05-03)
+
+
+### Bug Fixes
+
+* **backend:** harden ingestion against missing player lists and increase timeouts (closes [#153](https://github.com/abcEDH/cedh-research/issues/153)) ([#155](https://github.com/abcEDH/cedh-research/issues/155)) ([b46a87f](https://github.com/abcEDH/cedh-research/commit/b46a87f291d696ca576d80dd32c1986e560745ba))
+
 ## [1.10.3](https://github.com/abcEDH/cedh-research/compare/v1.10.2...v1.10.3) (2026-05-02)
 
 
