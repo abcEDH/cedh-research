@@ -12,7 +12,6 @@ import {
 } from "@/lib/meta-prep";
 import type { MetaShareRow, PlayerCommanderProfile } from "@/lib/meta-prep";
 import { extractTournamentSlug, fetchTournamentBySlug } from "@/lib/topdeck";
-import { fetchTopdeckEloMap } from "@/lib/topdeck-elo";
 import Link from "next/link";
 import { unstable_cache } from "next/cache";
 import { FieldShareList } from "./field-share-list";
@@ -127,28 +126,21 @@ function hasTournamentStarted(startDate: string | number | null | undefined) {
 async function fetchBestEloRows(topdeckIds: string[]): Promise<EloRow[]> {
   if (topdeckIds.length === 0) return [];
 
-  async function fetchRows(table: "global_elo_leaderboard" | "regional_elo_leaderboard") {
-    return supabase
-      .from(table)
-      .select("topdeck_id, player_name, rating, games_played, primary_region_key, region_key, rank")
-      .in("topdeck_id", topdeckIds)
-      .eq("region_type", "global")
-      .eq("region_key", "ALL");
+  // Query global_elo_active_leaderboard for player ratings
+  // The rating column contains our calculated Elo for each player
+  const { data, error } = await supabase
+    .from("global_elo_active_leaderboard")
+    .select("topdeck_id, player_name, rating, games_played, primary_region_key, region_key, rank")
+    .in("topdeck_id", topdeckIds)
+    .eq("region_type", "global")
+    .eq("region_key", "ALL");
+
+  if (error) {
+    throw new Error(`Error fetching Elo rows: ${error.message}`);
   }
 
-  const { data, error } = await fetchRows("global_elo_leaderboard");
-  const rows =
-    error
-      ? await fetchRows("regional_elo_leaderboard")
-      : { data, error };
-
-  if (rows.error) {
-    throw new Error(`Error fetching Elo rows: ${rows.error.message}`);
-  }
-
-  const topdeckEloById = await fetchTopdeckEloMap(topdeckIds);
   const rowsByTopdeckId = new Map(
-    ((rows.data ?? []) as RegionalLeaderboardQueryRow[])
+    ((data ?? []) as RegionalLeaderboardQueryRow[])
       .filter((row) => row.topdeck_id)
       .map((row) => [row.topdeck_id as string, row])
   );
@@ -156,13 +148,12 @@ async function fetchBestEloRows(topdeckIds: string[]): Promise<EloRow[]> {
   return Array.from(new Set(topdeckIds))
     .map((topdeckId) => {
       const row = rowsByTopdeckId.get(topdeckId);
-      const topdeckElo = topdeckEloById.get(topdeckId) ?? null;
       return {
         topdeck_id: topdeckId,
         player_name: row?.player_name ?? "",
-        rating: topdeckElo,
-        hidden_rating: row?.rating,
-        topdeck_elo: topdeckElo,
+        rating: row?.rating ?? null,
+        hidden_rating: null,
+        topdeck_elo: row?.rating ?? null,
         games_played: row?.games_played ?? 0,
         region_key: row?.primary_region_key ?? row?.region_key ?? "",
       };
