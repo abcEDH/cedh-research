@@ -3,6 +3,7 @@
 import React from 'react'
 import { usePostHog } from '@posthog/react'
 import { useEffect } from 'react'
+import posthog from 'posthog-js'
 
 interface ErrorBoundaryProps {
   children: React.ReactNode
@@ -24,15 +25,11 @@ export class AnalyticsErrorBoundary extends React.Component<ErrorBoundaryProps, 
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    // Capture exception to PostHog
-    if (typeof window !== 'undefined') {
-      const posthog = (window as unknown as { posthog?: typeof import('posthog-js').default }).posthog
-      if (posthog) {
-        posthog.captureException(error, {
-          component_stack: errorInfo.componentStack,
-          ...errorInfo,
-        })
-      }
+    if (typeof window !== 'undefined' && posthog.__loaded) {
+      posthog.captureException(error, {
+        component_stack: errorInfo.componentStack,
+        ...errorInfo,
+      })
     }
   }
 
