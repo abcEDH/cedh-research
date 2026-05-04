@@ -38,6 +38,8 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
       person_profiles: 'identified_only',
       defaults: '2026-01-30',
       capture_pageview: false, // turned off to avoid double-counting
+      capture_pageleave: true,
+      autocapture: true,
       capture_performance: true,
       debug,
       loaded: (ph) => {
