@@ -522,22 +522,21 @@ export default async function Home() {
                   <CardTitle className="text-base sm:text-lg truncate">Global Leaderboard</CardTitle>
                   <p className="text-[10px] sm:text-sm text-muted-foreground truncate">Active players ranked by TopDeck Elo</p>
                 </div>
-                <Button asChild variant="ghost" size="sm" className="border border-border/70">
-                  <Link href="/regional-elo">View Full Leaderboard</Link>
+                <Button asChild variant="ghost" size="xs" className="shrink-0 border border-border/70 text-[10px] h-8 px-2 ml-2">
+                  <Link href="/regional-elo">Full View</Link>
                 </Button>
               </CardHeader>
-              <CardContent>
-                <div className="overflow-auto">
+              <CardContent className="px-2 sm:px-6">
+                <div className="overflow-x-auto">
                   <Table>
                     <TableHeader>
-                      <TableRow className="border-border/60 text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                        <TableHead className="py-3 px-1 w-8">Rank</TableHead>
-                        <TableHead className="py-3 px-2">Player</TableHead>
-                        <TableHead className="py-3 px-2 text-right">TopDeck Elo</TableHead>
-                        <TableHead className="py-3 px-2 hidden sm:table-cell">Active Commander</TableHead>
-                        <TableHead className="py-3 px-2 hidden md:table-cell">Games</TableHead>
-                        <TableHead className="py-3 px-2 hidden md:table-cell">W-L-D</TableHead>
-                        <TableHead className="py-3 px-2 hidden lg:table-cell">Latest Tournament</TableHead>
+                      <TableRow className="border-border/60 text-[10px] uppercase tracking-wider text-muted-foreground">
+                        <TableHead className="py-2 px-1 w-8">#</TableHead>
+                        <TableHead className="py-2 px-2">Player</TableHead>
+                        <TableHead className="py-2 px-2 text-right">Elo</TableHead>
+                        <TableHead className="py-2 px-2 hidden sm:table-cell">Commander</TableHead>
+                        <TableHead className="py-2 px-2 hidden md:table-cell">Games</TableHead>
+                        <TableHead className="py-2 px-2 hidden md:table-cell">W-L-D</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -572,14 +571,6 @@ export default async function Home() {
                             </TableCell>
                             <TableCell className="py-3 px-2 font-mono text-[10px] text-muted-foreground hidden md:table-cell">
                               {player.wins}-{player.losses}-{player.draws}
-                            </TableCell>
-                            <TableCell className="min-w-[220px] text-xs text-muted-foreground hidden lg:table-cell">
-                              <div>
-                                {player.latest_tournament_date ? new Date(player.latest_tournament_date).toLocaleDateString() : (player.last_game_date ? new Date(player.last_game_date).toLocaleDateString() : "—")}
-                              </div>
-                              <div className="line-clamp-2 text-[11px]">
-                                {player.latest_tournament_name || "No tournament data"}
-                              </div>
                             </TableCell>
                           </TableRow>
                         );
