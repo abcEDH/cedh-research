@@ -225,14 +225,6 @@ export type PlayerEventOpponentRow = {
   game_result: string;
 };
 
-function chunkArray<T>(values: T[], chunkSize: number) {
-  const chunks: T[][] = [];
-  for (let index = 0; index < values.length; index += chunkSize) {
-    chunks.push(values.slice(index, index + chunkSize));
-  }
-  return chunks;
-}
-
 function activePlayerCutoffDate() {
   const cutoff = new Date();
   cutoff.setMonth(cutoff.getMonth() - ACTIVE_PLAYER_LOOKBACK_MONTHS);
@@ -243,25 +235,9 @@ function isActiveRank(row: LeaderboardRankRow | null) {
   return Boolean(row?.last_game_date && row.last_game_date >= activePlayerCutoffDate());
 }
 
-function describeSupabaseError(error: unknown) {
-  if (!error) return "unknown error";
-  if (error instanceof Error) return error.message;
-  if (typeof error === "object") {
-    const details = error as { message?: string; code?: string; details?: string; hint?: string };
-    return [details.message, details.code, details.details, details.hint].filter(Boolean).join(" | ") || JSON.stringify(error);
-  }
-  return String(error);
-}
-
 function toRoundLabel(game: GameRow) {
   if (game.round_name) return game.round_name;
   if (game.round_number !== null) return `Round ${game.round_number}`;
-  return "Bracket";
-}
-
-function toEventRoundLabel(row: PlayerEventLogRow) {
-  if (row.round_name) return row.round_name;
-  if (row.round_number !== null) return `Round ${row.round_number}`;
   return "Bracket";
 }
 
@@ -635,109 +611,6 @@ async function fetchCommandersById(commanderIds: string[]): Promise<Map<string, 
   }
 
   return new Map(rows.map((row) => [row.id, row]));
-}
-
-async function fetchPlayerEventLogs(playerId: string, regionFilter: string): Promise<PlayerGameLog[]> {
-  const eventLogTables = ["global_elo_game_event_log", "regional_elo_game_event_log"];
-  let eventRows: PlayerEventLogRow[] = [];
-  let eventLogTable = eventLogTables[0];
-  let lastEventError: unknown = null;
-
-  for (const table of eventLogTables) {
-    const collected: PlayerEventLogRow[] = [];
-    let queryFailed = false;
-    let queryError: unknown = null;
-
-    for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
-      let query = supabase
-        .from(table)
-        .select(
-          "game_id, game_date, tournament_name, state, round_number, round_name, table_number, seat_position, commander_name, game_result"
-        )
-        .eq("player_id", playerId)
-        .order("game_date", { ascending: false })
-        .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
-
-      if (regionFilter) {
-        query = query.ilike("state", regionFilter);
-      }
-
-      const { data, error } = await query;
-      if (error) {
-        queryFailed = true;
-        queryError = error;
-        break;
-      }
-
-      collected.push(...((data as PlayerEventLogRow[]) ?? []));
-      if (!data || data.length < SUPABASE_PAGE_SIZE) break;
-    }
-
-    if (!queryFailed) {
-      eventRows = collected;
-      eventLogTable = table;
-      break;
-    }
-    lastEventError = queryError;
-  }
-
-  if (lastEventError && eventRows.length === 0 && eventLogTable === eventLogTables[0]) {
-    console.error("Error fetching precomputed player event log:", describeSupabaseError(lastEventError));
-    return [];
-  }
-  if (eventRows.length === 0) return [];
-
-  const gameIds = Array.from(new Set(eventRows.map((row) => row.game_id)));
-  const opponentRows: PlayerEventOpponentRow[] = [];
-  for (const gameIdChunk of chunkArray(gameIds, 250)) {
-    for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
-      const { data: opponentData, error: opponentError } = await supabase
-        .from(eventLogTable)
-        .select("game_id, player_id, player_name, topdeck_id, seat_position, commander_name, game_result")
-        .in("game_id", gameIdChunk)
-        .neq("player_id", playerId)
-        .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
-
-      if (opponentError) {
-        console.error(
-          "Error fetching precomputed player event opponents:",
-          describeSupabaseError(opponentError)
-        );
-        break;
-      }
-      opponentRows.push(...((opponentData as PlayerEventOpponentRow[]) ?? []));
-      if (!opponentData || opponentData.length < SUPABASE_PAGE_SIZE) break;
-    }
-  }
-
-  const opponentsByGameId = new Map<string, PlayerGameLog["opponents"]>();
-  for (const row of opponentRows) {
-    const existing = opponentsByGameId.get(row.game_id) ?? [];
-    existing.push({
-      topdeckId: row.topdeck_id,
-      playerName: row.player_name ?? "Unknown",
-      commanderName: row.commander_name,
-      seat: (row.seat_position ?? 0) + 1,
-      result: row.game_result,
-    });
-    opponentsByGameId.set(row.game_id, existing);
-  }
-  for (const opponents of opponentsByGameId.values()) {
-    opponents.sort((a, b) => a.seat - b.seat);
-  }
-
-  return eventRows.map((row) => ({
-    gameId: row.game_id,
-    startDate: row.game_date ?? "",
-    tournamentName: row.tournament_name ?? "Unknown tournament",
-    state: row.state,
-    roundLabel: toEventRoundLabel(row),
-    tableLabel: row.table_number !== null ? `Table ${row.table_number}` : "Bracket",
-    seat: (row.seat_position ?? 0) + 1,
-    result: row.game_result,
-    commanderName: row.commander_name,
-    opponents: opponentsByGameId.get(row.game_id) ?? [],
-  }));
 }
 
 export default async function RegionalPlayerPage({
