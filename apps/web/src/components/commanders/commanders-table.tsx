@@ -167,7 +167,7 @@ export default function CommandersTable({
               </TableHead>
               <TableHead className="py-3 text-right">
                 <SortButton
-                  label="Entries"
+                  label="Ent."
                   active={sortKey === "entries"}
                   onClick={() => handleSort("entries")}
                   align="right"
@@ -175,7 +175,7 @@ export default function CommandersTable({
               </TableHead>
               <TableHead className="py-3 text-right hidden sm:table-cell">
                 <SortButton
-                  label="Tournaments"
+                  label="Tourn."
                   active={sortKey === "tournaments"}
                   onClick={() => handleSort("tournaments")}
                   align="right"
@@ -183,7 +183,7 @@ export default function CommandersTable({
               </TableHead>
               <TableHead className="py-3 text-right">
                 <SortButton
-                  label="Win Rate"
+                  label="WR"
                   active={sortKey === "winRate"}
                   onClick={() => handleSort("winRate")}
                   align="right"
@@ -191,7 +191,7 @@ export default function CommandersTable({
               </TableHead>
               <TableHead className="py-3 text-right hidden md:table-cell">
                 <SortButton
-                  label="Pts/Game"
+                  label="PPG"
                   active={sortKey === "pointsPerGame"}
                   onClick={() => handleSort("pointsPerGame")}
                   align="right"
@@ -199,7 +199,7 @@ export default function CommandersTable({
               </TableHead>
               <TableHead className="py-3 text-right hidden lg:table-cell">
                 <SortButton
-                  label="Top 16/10"
+                  label="Top 16"
                   active={sortKey === "top16"}
                   onClick={() => handleSort("top16")}
                   align="right"
@@ -207,7 +207,7 @@ export default function CommandersTable({
               </TableHead>
               <TableHead className="py-3 text-right">
                 <SortButton
-                  label="Top Cut"
+                  label="Cut"
                   active={sortKey === "topCut"}
                   onClick={() => handleSort("topCut")}
                   align="right"

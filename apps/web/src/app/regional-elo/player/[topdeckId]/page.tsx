@@ -941,7 +941,7 @@ export async function PlayerProfileBody({
                       <th className="px-2 py-3">Commander</th>
                       <th className="px-2 py-3">Last Played</th>
                       <th className="px-2 py-3 text-right">Games</th>
-                      <th className="px-2 py-3 text-right">W-L-D</th>
+                      <th className="px-2 py-3 text-right hidden sm:table-cell">W-L-D</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1004,7 +1004,7 @@ export async function PlayerProfileBody({
                           <td className="px-2 py-3 text-right font-mono text-muted-foreground">
                             {row.games}
                           </td>
-                          <td className="px-2 py-3 text-right font-mono text-muted-foreground">
+                          <td className="px-2 py-3 text-right font-mono text-muted-foreground hidden sm:table-cell">
                             {row.wins}-{row.losses}-{row.draws}
                           </td>
                         </tr>
@@ -1040,7 +1040,7 @@ export async function PlayerProfileBody({
                         <th className="px-2 py-3">Country</th>
                         <th className="px-2 py-3">State</th>
                         <th className="px-2 py-3 text-right">Games</th>
-                        <th className="px-2 py-3 text-right">W-L-D</th>
+                        <th className="px-2 py-3 text-right hidden sm:table-cell">W-L-D</th>
                       </tr>
                   </thead>
                   <tbody>
@@ -1071,7 +1071,7 @@ export async function PlayerProfileBody({
                           <td className="px-2 py-3 text-right font-mono text-muted-foreground">
                             {row.games_played}
                           </td>
-                          <td className="px-2 py-3 text-right font-mono text-muted-foreground">
+                          <td className="px-2 py-3 text-right font-mono text-muted-foreground hidden sm:table-cell">
                             {row.wins}-{row.losses}-{row.draws}
                           </td>
                         </tr>
@@ -1332,10 +1332,10 @@ export async function PlayerProfileBody({
                   <thead className="text-left text-xs uppercase tracking-[0.2em] text-muted-foreground">
                     <tr>
                       <th className="px-2 py-3">Tournament</th>
-                      <th className="px-2 py-3">Date</th>
+                      <th className="px-2 py-3 hidden sm:table-cell">Date</th>
                       <th className="px-2 py-3">Commander</th>
                       <th className="px-2 py-3 text-right">Finish</th>
-                      <th className="px-2 py-3 text-right">W-L-D</th>
+                      <th className="px-2 py-3 text-right hidden md:table-cell">W-L-D</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1350,15 +1350,15 @@ export async function PlayerProfileBody({
                               href={row.tournamentUrl}
                               target="_blank"
                               rel="noreferrer"
-                              className="text-foreground hover:text-primary"
+                              className="text-foreground hover:text-primary line-clamp-2 max-w-[140px] sm:max-w-none"
                             >
                               {row.tournamentName}
                             </a>
                           ) : (
-                            <span className="text-foreground">{row.tournamentName}</span>
+                            <span className="text-foreground line-clamp-2 max-w-[140px] sm:max-w-none">{row.tournamentName}</span>
                           )}
                         </td>
-                        <td className="px-2 py-3 text-muted-foreground">
+                        <td className="px-2 py-3 text-muted-foreground hidden sm:table-cell">
                           {formatShortDate(row.startDate)}
                         </td>
                         <td className="px-2 py-3 text-muted-foreground">
@@ -1367,18 +1367,18 @@ export async function PlayerProfileBody({
                               href={row.decklistUrl}
                               target="_blank"
                               rel="noreferrer"
-                              className="text-foreground hover:text-primary"
+                              className="text-foreground hover:text-primary line-clamp-1 max-w-[100px] sm:max-w-none"
                             >
                               {row.commanderName}
                             </a>
                           ) : (
-                            row.commanderName ?? "Unknown"
+                            <span className="line-clamp-1 max-w-[100px] sm:max-w-none">{row.commanderName ?? "Unknown"}</span>
                           )}
                         </td>
                         <td className="px-2 py-3 text-right font-mono text-muted-foreground">
                           {formatPlacementRatio(row.placement, row.playerCount)}
                         </td>
-                        <td className="px-2 py-3 text-right font-mono text-muted-foreground">
+                        <td className="px-2 py-3 text-right font-mono text-muted-foreground hidden md:table-cell">
                           {row.recordGames > 0 ? `${row.wins}-${row.losses}-${row.draws}` : "—"}
                         </td>
                       </tr>
