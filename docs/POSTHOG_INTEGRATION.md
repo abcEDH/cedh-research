@@ -5,6 +5,7 @@
  * the application. PostHog provides:
  * 
  * - Session Replays: Watch how users interact with pages
+ * - Page Leave: Track bounce rates and session durations accurately
  * - Event Tracking: Capture custom events like commander searches
  * - Performance Metrics: LCP, FID, CLS, TTFB out of the box
  * - Feature Flags: Gradual rollouts and A/B testing
