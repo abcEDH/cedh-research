@@ -534,10 +534,10 @@ export default async function Home() {
                         <TableHead className="py-3">Rank</TableHead>
                         <TableHead className="py-3">Player</TableHead>
                         <TableHead className="py-3">TopDeck Elo</TableHead>
-                        <TableHead className="py-3">Active Commander</TableHead>
-                        <TableHead className="py-3">Games</TableHead>
-                        <TableHead className="py-3">W-L-D</TableHead>
-                        <TableHead className="py-3">Latest Tournament</TableHead>
+                        <TableHead className="py-3 hidden md:table-cell">Active Commander</TableHead>
+                        <TableHead className="py-3 hidden sm:table-cell">Games</TableHead>
+                        <TableHead className="py-3 hidden md:table-cell">W-L-D</TableHead>
+                        <TableHead className="py-3 hidden lg:table-cell">Latest Tournament</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -561,7 +561,7 @@ export default async function Home() {
                             <TableCell className="font-mono text-sm font-semibold text-primary">
                               {player.topdeck_elo == null ? "—" : Math.round(player.topdeck_elo)}
                             </TableCell>
-                            <TableCell className="max-w-[260px] text-xs text-muted-foreground">
+                            <TableCell className="max-w-[260px] text-xs text-muted-foreground hidden md:table-cell">
                               {player.active_commander_decklist_url && player.active_commander ? (
                                 <a
                                   href={player.active_commander_decklist_url}
@@ -577,13 +577,13 @@ export default async function Home() {
                                 </span>
                               )}
                             </TableCell>
-                            <TableCell className="font-mono text-sm text-muted-foreground">
+                            <TableCell className="font-mono text-sm text-muted-foreground hidden sm:table-cell">
                               {player.games_played.toLocaleString()}
                             </TableCell>
-                            <TableCell className="font-mono text-sm text-muted-foreground">
+                            <TableCell className="font-mono text-sm text-muted-foreground hidden md:table-cell">
                               {player.wins}-{player.losses}-{player.draws}
                             </TableCell>
-                            <TableCell className="min-w-[220px] text-xs text-muted-foreground">
+                            <TableCell className="min-w-[220px] text-xs text-muted-foreground hidden lg:table-cell">
                               <div>
                                 {formatDate(player.latest_tournament_date ?? player.last_game_date)}
                               </div>
@@ -698,7 +698,7 @@ export default async function Home() {
                   <TableRow className="border-border/60 text-xs uppercase tracking-[0.2em] text-muted-foreground">
                     <TableHead className="py-3">Rank</TableHead>
                     <TableHead className="py-3">Commander</TableHead>
-                    <TableHead className="py-3">Entries</TableHead>
+                    <TableHead className="py-3 hidden sm:table-cell">Entries</TableHead>
                     <TableHead className="py-3">Win Rate</TableHead>
                     <TableHead className="py-3 text-right">Top Cut Conversion</TableHead>
                   </TableRow>
@@ -723,7 +723,7 @@ export default async function Home() {
                             </Link>
                           </div>
                         </TableCell>
-                        <TableCell className="font-mono text-sm text-muted-foreground">
+                        <TableCell className="font-mono text-sm text-muted-foreground hidden sm:table-cell">
                           {commander.total_entries}
                         </TableCell>
                         <TableCell className="font-mono text-sm">

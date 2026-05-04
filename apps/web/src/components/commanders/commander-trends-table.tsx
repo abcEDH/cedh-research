@@ -201,7 +201,7 @@ export default function CommanderTrendsTable({
             <TableRow className="border-border/60 text-muted-foreground">
               <TableHead className="py-3">Rank</TableHead>
               <TableHead className="py-3">Commander</TableHead>
-              <TableHead className="py-3 text-right">
+              <TableHead className="py-3 text-right hidden sm:table-cell">
                 <SortButton
                   label="Entries"
                   active={sortKey === "entries"}
@@ -210,9 +210,9 @@ export default function CommanderTrendsTable({
                   align="right"
                 />
               </TableHead>
-              <TableHead className="py-3 text-right">
+              <TableHead className="py-3 text-right hidden sm:table-cell">
                 <SortButton
-                  label="Win Rate"
+                  label="WR"
                   active={sortKey === "winRate"}
                   direction={sortDirection}
                   onClick={() => handleSort("winRate")}
@@ -222,9 +222,9 @@ export default function CommanderTrendsTable({
               {viewMode === "weekly" ? (
                 <>
                   <TableHead className="py-3 text-right">Week</TableHead>
-                  <TableHead className="py-3 text-right">
+                  <TableHead className="py-3 text-right hidden md:table-cell">
                     <SortButton
-                      label="Week Entries"
+                      label="Ent."
                       active={sortKey === "weekEntries"}
                       direction={sortDirection}
                       onClick={() => handleSort("weekEntries")}
@@ -233,16 +233,16 @@ export default function CommanderTrendsTable({
                   </TableHead>
                   <TableHead className="py-3 text-right">
                     <SortButton
-                      label="Week Win"
+                      label="Win"
                       active={sortKey === "weekWin"}
                       direction={sortDirection}
                       onClick={() => handleSort("weekWin")}
                       align="right"
                     />
                   </TableHead>
-                  <TableHead className="py-3 text-right">
+                  <TableHead className="py-3 text-right hidden lg:table-cell">
                     <SortButton
-                      label="Week Pts"
+                      label="Pts"
                       active={sortKey === "weekPts"}
                       direction={sortDirection}
                       onClick={() => handleSort("weekPts")}
@@ -253,9 +253,9 @@ export default function CommanderTrendsTable({
               ) : (
                 <>
                   <TableHead className="py-3 text-right">Month</TableHead>
-                  <TableHead className="py-3 text-right">
+                  <TableHead className="py-3 text-right hidden md:table-cell">
                     <SortButton
-                      label="Month Entries"
+                      label="Ent."
                       active={sortKey === "monthEntries"}
                       direction={sortDirection}
                       onClick={() => handleSort("monthEntries")}
@@ -264,16 +264,16 @@ export default function CommanderTrendsTable({
                   </TableHead>
                   <TableHead className="py-3 text-right">
                     <SortButton
-                      label="Month Win"
+                      label="Win"
                       active={sortKey === "monthWin"}
                       direction={sortDirection}
                       onClick={() => handleSort("monthWin")}
                       align="right"
                     />
                   </TableHead>
-                  <TableHead className="py-3 text-right">
+                  <TableHead className="py-3 text-right hidden lg:table-cell">
                     <SortButton
-                      label="Month Pts"
+                      label="Pts"
                       active={sortKey === "monthPts"}
                       direction={sortDirection}
                       onClick={() => handleSort("monthPts")}
@@ -282,7 +282,7 @@ export default function CommanderTrendsTable({
                   </TableHead>
                 </>
               )}
-              <TableHead className="py-3 text-right">Trend</TableHead>
+              <TableHead className="py-3 text-right hidden md:table-cell">Trend</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -301,15 +301,15 @@ export default function CommanderTrendsTable({
                       href={`/commanders/${commander.commander_id}`}
                       className="text-foreground hover:text-primary"
                     >
-                      <span className="font-medium">
+                      <span className="font-medium line-clamp-1 max-w-[120px] sm:max-w-none sm:line-clamp-none">
                         {normalizeDisplayString(commander.commander_name)}
                       </span>
                     </Link>
                   </TableCell>
-                  <TableCell className="text-right font-mono text-foreground">
+                  <TableCell className="text-right font-mono text-foreground hidden sm:table-cell">
                     {commander.total_entries.toLocaleString()}
                   </TableCell>
-                  <TableCell className="text-right font-mono text-muted-foreground">
+                  <TableCell className="text-right font-mono text-muted-foreground hidden sm:table-cell">
                     {winRate.toFixed(1)}%
                   </TableCell>
                   {viewMode === "weekly" ? (
@@ -317,13 +317,13 @@ export default function CommanderTrendsTable({
                       <TableCell className="text-right font-mono text-muted-foreground">
                         {formatDateLabel(snapshot?.weekStart ?? null)}
                       </TableCell>
-                      <TableCell className="text-right font-mono text-muted-foreground">
+                      <TableCell className="text-right font-mono text-muted-foreground hidden md:table-cell">
                         {snapshot?.weekEntries ?? "—"}
                       </TableCell>
                       <TableCell className="text-right font-mono text-muted-foreground">
                         {formatPercent(snapshot?.weekWinRate ?? null)}
                       </TableCell>
-                      <TableCell className="text-right font-mono text-muted-foreground">
+                      <TableCell className="text-right font-mono text-muted-foreground hidden lg:table-cell">
                         {formatPoints(snapshot?.weekPointsPerGame ?? null)}
                       </TableCell>
                     </>
@@ -332,18 +332,18 @@ export default function CommanderTrendsTable({
                       <TableCell className="text-right font-mono text-muted-foreground">
                         {snapshot?.monthKey ?? "—"}
                       </TableCell>
-                      <TableCell className="text-right font-mono text-muted-foreground">
+                      <TableCell className="text-right font-mono text-muted-foreground hidden md:table-cell">
                         {snapshot?.monthEntries ?? "—"}
                       </TableCell>
                       <TableCell className="text-right font-mono text-muted-foreground">
                         {formatPercent(snapshot?.monthWinRate ?? null)}
                       </TableCell>
-                      <TableCell className="text-right font-mono text-muted-foreground">
+                      <TableCell className="text-right font-mono text-muted-foreground hidden lg:table-cell">
                         {formatPoints(snapshot?.monthPointsPerGame ?? null)}
                       </TableCell>
                     </>
                   )}
-                  <TableCell className="text-right">
+                  <TableCell className="text-right hidden md:table-cell">
                     <Sparkline values={weeklyEntries} />
                   </TableCell>
                 </TableRow>
