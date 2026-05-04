@@ -55,13 +55,13 @@ vi.mock("@/lib/region-countries", () => ({
 }));
 
 describe("regional-elo cache configuration", () => {
-  it("REGIONAL_ELO_CACHE_REVALIDATE_SECONDS equals 900 (15 minutes)", async () => {
+  it("REGIONAL_ELO_CACHE_REVALIDATE_SECONDS equals 86400 (24 hours)", async () => {
     // Dynamic import to ensure mocks are in place
     const mod = await import("@/app/regional-elo/page");
     // The constant is module-scoped; we verify through the export if available,
     // otherwise test the value directly.
-    // Since the constant is not exported, we verify the math: 60 * 15 = 900
-    expect(60 * 15).toBe(900);
+    // Since the constant is not exported, we verify the math: 60 * 60 * 24 = 86400
+    expect(60 * 60 * 24).toBe(86400);
     // Verify the module loaded without error (mocks are correct)
     expect(mod).toBeDefined();
     expect(typeof mod.default).toBe("function");

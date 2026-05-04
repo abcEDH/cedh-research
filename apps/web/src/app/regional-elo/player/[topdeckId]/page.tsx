@@ -11,14 +11,14 @@ import { OpponentRecordsTable } from "./opponent-records-table";
 import { summarizePlayerLogs, type PlayerGameLog } from "./player-stats";
 import { unstable_cache } from "next/cache";
 
-export const revalidate = 3600;
+export const revalidate = 86400; // 24 hours
 export const dynamicParams = true;
 
 const SUPABASE_PAGE_SIZE = 1000;
 const SUPABASE_IN_CHUNK_SIZE = 100;
 const ACTIVE_PLAYER_LOOKBACK_MONTHS = 6;
 const ACHIEVEMENTS_PAGE_SIZE = 10;
-const PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS = 60 * 60;
+const PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS = 60 * 60 * 24; // 24 hours
 
 export async function generateStaticParams() {
   const { data } = await supabase
@@ -27,7 +27,7 @@ export async function generateStaticParams() {
     .eq("region_type", "global")
     .eq("region_key", "ALL")
     .order("rank", { ascending: true })
-    .limit(50);
+    .limit(500);
   return (data ?? [])
     .filter((row): row is { topdeck_id: string; rank: number } => Boolean(row?.topdeck_id))
     .map((row) => ({ topdeckId: String(row.topdeck_id) }));
@@ -482,7 +482,7 @@ const fetchGlobalSnapshot = unstable_cache(async (topdeckId: string): Promise<Gl
   } catch {
     return null;
   }
-}, ["regional-player-global-snapshot-v1"], { revalidate: 60 * 60 });
+}, ["regional-player-global-snapshot-v1"], { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS });
 
 function buildTopdeckDecklistUrl(tournamentSlug: string | null | undefined, topdeckId: string) {
   return tournamentSlug ? `https://topdeck.gg/deck/${tournamentSlug}/${topdeckId}` : null;
@@ -1025,6 +1025,12 @@ const fetchCachedPlayerEventLogs = unstable_cache(
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
+const fetchCachedPlayer = unstable_cache(
+  async (topdeckId: string) => fetchPlayer(topdeckId),
+  ["regional-player-v2"],
+  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
+);
+
 export default async function RegionalPlayerPage({
   params,
   searchParams,
@@ -1037,7 +1043,7 @@ export default async function RegionalPlayerPage({
   const resolvedParams = await Promise.resolve(params);
   const topdeckId = resolvedParams.topdeckId;
 
-  const player = await fetchPlayer(topdeckId);
+  const player = await fetchCachedPlayer(topdeckId);
   if (!player) {
     return (
       <main className="container mx-auto px-4 py-10">
@@ -1118,6 +1124,8 @@ export async function PlayerProfileBody({
     commanderProfile,
     commanderUsageRows,
     fetchedAchievementRows,
+    eventPlayerLogsResult,
+    rawEntries,
   ] = await Promise.all([
     fetchGlobalSnapshot(topdeckId),
     fetchCachedGlobalEloRank(player.id),
@@ -1126,6 +1134,10 @@ export async function PlayerProfileBody({
     fetchCachedPlayerCommanderProfile(topdeckId),
     fetchCachedPlayerCommanderUsageRows(player.id, topdeckId, player.name),
     fetchCachedPlayerAchievements(player.id, topdeckId),
+    Promise.resolve(fetchCachedPlayerEventLogs(player.id, ""))
+      .then((value) => ({ status: "fulfilled" as const, value }))
+      .catch((reason) => ({ status: "rejected" as const, reason })),
+    fetchEntries(player.id),
   ]);
 
   const activeCommander = commanderProfile?.active_commander ?? null;
@@ -1135,14 +1147,12 @@ export async function PlayerProfileBody({
     country_key: row.country_key ?? inferCountryForRegion(row.region_key) ?? "UNKNOWN",
   }));
 
-  const eventPlayerLogsResult = await Promise.resolve(fetchCachedPlayerEventLogs(player.id, ""))
-    .then((value) => ({ status: "fulfilled" as const, value }))
-    .catch((reason) => ({ status: "rejected" as const, reason }));
-  const eventPlayerLogs = eventPlayerLogsResult.status === "fulfilled" ? eventPlayerLogsResult.value : [];
+  const eventPlayerLogs =
+    eventPlayerLogsResult.status === "fulfilled" ? eventPlayerLogsResult.value : [];
   const playerLogs: PlayerGameLog[] =
     eventPlayerLogs.length > 0
       ? eventPlayerLogs
-      : await fetchEntries(player.id).then((entries) => buildPlayerLogsFromRawHistory(entries));
+      : await buildPlayerLogsFromRawHistory(rawEntries);
   const {
     totalGames,
     totalWins,
@@ -1529,7 +1539,7 @@ export async function PlayerProfileBody({
                       <th className="px-2 py-3">Commander</th>
                       <th className="px-2 py-3">Last Played</th>
                       <th className="px-2 py-3 text-right">Games</th>
-                      <th className="px-2 py-3 text-right hidden sm:table-cell">W-L-D</th>
+                      <th className="px-2 py-3 text-right">W-L-D</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1592,7 +1602,7 @@ export async function PlayerProfileBody({
                           <td className="px-2 py-3 text-right font-mono text-muted-foreground">
                             {row.games}
                           </td>
-                          <td className="px-2 py-3 text-right font-mono text-muted-foreground hidden sm:table-cell">
+                          <td className="px-2 py-3 text-right font-mono text-muted-foreground">
                             {row.wins}-{row.losses}-{row.draws}
                           </td>
                         </tr>
@@ -1628,7 +1638,7 @@ export async function PlayerProfileBody({
                         <th className="px-2 py-3">Country</th>
                         <th className="px-2 py-3">State</th>
                         <th className="px-2 py-3 text-right">Games</th>
-                        <th className="px-2 py-3 text-right hidden sm:table-cell">W-L-D</th>
+                        <th className="px-2 py-3 text-right">W-L-D</th>
                       </tr>
                   </thead>
                   <tbody>
@@ -1659,7 +1669,7 @@ export async function PlayerProfileBody({
                           <td className="px-2 py-3 text-right font-mono text-muted-foreground">
                             {row.games_played}
                           </td>
-                          <td className="px-2 py-3 text-right font-mono text-muted-foreground hidden sm:table-cell">
+                          <td className="px-2 py-3 text-right font-mono text-muted-foreground">
                             {row.wins}-{row.losses}-{row.draws}
                           </td>
                         </tr>
@@ -1920,10 +1930,10 @@ export async function PlayerProfileBody({
                   <thead className="text-left text-xs uppercase tracking-[0.2em] text-muted-foreground">
                     <tr>
                       <th className="px-2 py-3">Tournament</th>
-                      <th className="px-2 py-3 hidden sm:table-cell">Date</th>
+                      <th className="px-2 py-3">Date</th>
                       <th className="px-2 py-3">Commander</th>
                       <th className="px-2 py-3 text-right">Finish</th>
-                      <th className="px-2 py-3 text-right hidden md:table-cell">W-L-D</th>
+                      <th className="px-2 py-3 text-right">W-L-D</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1938,15 +1948,15 @@ export async function PlayerProfileBody({
                               href={row.tournamentUrl}
                               target="_blank"
                               rel="noreferrer"
-                              className="text-foreground hover:text-primary line-clamp-2 max-w-[140px] sm:max-w-none"
+                              className="text-foreground hover:text-primary"
                             >
                               {row.tournamentName}
                             </a>
                           ) : (
-                            <span className="text-foreground line-clamp-2 max-w-[140px] sm:max-w-none">{row.tournamentName}</span>
+                            <span className="text-foreground">{row.tournamentName}</span>
                           )}
                         </td>
-                        <td className="px-2 py-3 text-muted-foreground hidden sm:table-cell">
+                        <td className="px-2 py-3 text-muted-foreground">
                           {formatShortDate(row.startDate)}
                         </td>
                         <td className="px-2 py-3 text-muted-foreground">
@@ -1955,18 +1965,18 @@ export async function PlayerProfileBody({
                               href={row.decklistUrl}
                               target="_blank"
                               rel="noreferrer"
-                              className="text-foreground hover:text-primary line-clamp-1 max-w-[100px] sm:max-w-none"
+                              className="text-foreground hover:text-primary"
                             >
                               {row.commanderName}
                             </a>
                           ) : (
-                            <span className="line-clamp-1 max-w-[100px] sm:max-w-none">{row.commanderName ?? "Unknown"}</span>
+                            row.commanderName ?? "Unknown"
                           )}
                         </td>
                         <td className="px-2 py-3 text-right font-mono text-muted-foreground">
                           {formatPlacementRatio(row.placement, row.playerCount)}
                         </td>
-                        <td className="px-2 py-3 text-right font-mono text-muted-foreground hidden md:table-cell">
+                        <td className="px-2 py-3 text-right font-mono text-muted-foreground">
                           {row.recordGames > 0 ? `${row.wins}-${row.losses}-${row.draws}` : "—"}
                         </td>
                       </tr>
