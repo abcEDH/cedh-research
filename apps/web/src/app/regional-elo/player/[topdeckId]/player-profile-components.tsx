@@ -14,94 +14,56 @@ import {
   StateAssignmentRow,
   PlayerAchievementRow,
   PlayerCommanderUsageRow,
+  PlayerTournamentEntryRow,
   EntryRow,
 } from "./page";
 import { summarizePlayerLogs, type PlayerGameLog } from "./player-stats";
 
-// ... existing fetchers ...
+const PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS = 60 * 60 * 24;
 
-export const fetchCachedPlayerCommanderProfile = unstable_cache(
-  async (topdeckId: string) => {
-    const { data: profileRow, error: profileError } = await supabase
-      .from("player_commander_profiles")
-      .select("active_commander, latest_decklist_url, latest_tournament_name, latest_tournament_date, latest_tournament_topdeck_tid")
-      .eq("topdeck_id", topdeckId)
-      .maybeSingle();
+// --- HELPERS ---
 
-    if (profileError) return null;
-    return profileRow;
-  },
-  ["regional-player-commander-profile-v1"],
-  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
-);
-
-async function fetchPlayerEventLogs(playerId: string, regionFilter: string): Promise<PlayerGameLog[]> {
-  const { data, error } = await supabase
-    .from("global_elo_game_event_log")
-    .select(
-      "game_id, game_date, tournament_name, state, round_number, round_name, table_number, seat_position, commander_name, game_result"
-    )
-    .eq("player_id", playerId)
-    .order("game_date", { ascending: false });
-
-  if (error) return [];
-  // Note: This is simplified, real implementation has opponents fetch too.
-  // I'll stick to what was in page.tsx for now or just import it.
-  return []; // Placeholder
+export function isKnownCommanderName(value: string | null | undefined) {
+  const normalized = (value ?? "").trim().toLowerCase();
+  return normalized.length > 0 && normalized !== "unknown commander";
 }
 
-export const fetchCachedPlayerEventLogs = unstable_cache(
-  async (playerId: string, regionFilter: string) => fetchPlayerEventLogs(playerId, regionFilter),
-  ["regional-player-event-logs-v3"],
-  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
-);
+export function firstRelation<T>(value: T | T[] | null) {
+  return Array.isArray(value) ? value[0] ?? null : value;
+}
 
-// --- COMPONENTS ---
+export function sortAchievementsByFinish(rows: PlayerAchievementRow[]): PlayerAchievementRow[] {
+  return [...rows].sort((a, b) => {
+    if (a.finishRatio === null && b.finishRatio !== null) return 1;
+    if (b.finishRatio === null && a.finishRatio !== null) return -1;
+    if (a.finishRatio !== null && b.finishRatio !== null && a.finishRatio !== b.finishRatio) {
+      return a.finishRatio - b.finishRatio;
+    }
+    if ((b.playerCount ?? 0) !== (a.playerCount ?? 0)) {
+      return (b.playerCount ?? 0) - (a.playerCount ?? 0);
+    }
+    const dateCompare = (b.startDate ?? "").localeCompare(a.startDate ?? "");
+    if (dateCompare !== 0) return dateCompare;
+    return a.tournamentName.localeCompare(b.tournamentName);
+  });
+}
 
-export async function PlayerSummaryStats({
-  player,
-  topdeckId,
-}: {
-  player: PlayerRow;
-  topdeckId: string;
-}) {
-  const [profileSummary] = await Promise.all([
-    fetchCachedPlayerProfileSummary(player.id),
-  ]);
+// --- DATA FETCHERS ---
 
-  // For now, we'll just show the cards we can from profileSummary
-  // and we'll defer the unique opponents if needed.
-  
-  const canonicalGames = profileSummary?.games_played ?? 0;
-  const canonicalWins = profileSummary?.wins ?? 0;
-  const canonicalDraws = profileSummary?.draws ?? 0;
-  const canonicalLosses = profileSummary?.losses ?? 0;
-
-  return (
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      <Card className="knd-panel">
-        <CardHeader>
-          <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-            Games Played
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="text-2xl font-semibold text-foreground">
-          {canonicalGames}
-        </CardContent>
-      </Card>
-      <Card className="knd-panel">
-        <CardHeader>
-          <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-            Record
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="text-2xl font-semibold text-foreground">
-          {canonicalWins}-{canonicalLosses}-{canonicalDraws}
-        </CardContent>
-      </Card>
-      {/* Unique Opponents will go here once we have playerLogs */}
-    </div>
-  );
+export async function fetchEntries(playerId: string): Promise<EntryRow[]> {
+  const SUPABASE_PAGE_SIZE = 1000;
+  const rows: EntryRow[] = [];
+  for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("tournament_entries")
+      .select("id, tournament_id, player_id, commander_id")
+      .eq("player_id", playerId)
+      .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
+    if (error) throw new Error(`Error fetching player entries: ${error.message}`);
+    rows.push(...((data as EntryRow[]) ?? []));
+    if (!data || data.length < SUPABASE_PAGE_SIZE) break;
+  }
+  return rows;
 }
 
 export async function fetchPlayer(topdeckId: string) {
@@ -219,6 +181,112 @@ export const fetchCachedRegionalRank = unstable_cache(
 export const fetchCachedCountryRank = unstable_cache(
   async (playerId: string, countryKey: string) => fetchActiveRankRow("country", countryKey, playerId),
   ["regional-player-country-rank-v4"],
+  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
+);
+
+export const fetchCachedPlayerCommanderProfile = unstable_cache(
+  async (topdeckId: string) => {
+    const { data: profileRow, error: profileError } = await supabase
+      .from("player_commander_profiles")
+      .select("active_commander, latest_decklist_url, latest_tournament_name, latest_tournament_date, latest_tournament_topdeck_tid")
+      .eq("topdeck_id", topdeckId)
+      .maybeSingle();
+
+    if (profileError) return null;
+    return profileRow as PlayerCommanderProfileRow | null;
+  },
+  ["regional-player-commander-profile-v1"],
+  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
+);
+
+async function fetchPlayerTournamentEntries(playerId: string): Promise<PlayerTournamentEntryRow[]> {
+  const SUPABASE_PAGE_SIZE = 1000;
+  const rows: PlayerTournamentEntryRow[] = [];
+  for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("tournament_entries")
+      .select(
+        "final_standing, wins, draws, losses, decklist_url, commanders(name), tournaments(name, start_date, player_count, topdeck_tid)"
+      )
+      .eq("player_id", playerId)
+      .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
+    if (error) throw new Error(`Error fetching player tournament entries: ${error.message}`);
+    rows.push(...((data as PlayerTournamentEntryRow[]) ?? []));
+    if (!data || data.length < SUPABASE_PAGE_SIZE) break;
+  }
+  return rows;
+}
+
+export const fetchCachedPlayerAchievements = unstable_cache(
+  async (playerId: string, topdeckId: string) => {
+    const rows = await fetchPlayerTournamentEntries(playerId);
+    return rows.map((row) => {
+      const tournament = firstRelation(row.tournaments);
+      const commander = firstRelation(row.commanders);
+      return {
+        tournamentName: tournament?.name ?? "Unknown tournament",
+        tournamentUrl: tournament?.topdeck_tid ? `https://topdeck.gg/bracket/${tournament.topdeck_tid}` : null,
+        startDate: tournament?.start_date ?? null,
+        playerCount: tournament?.player_count ?? null,
+        placement: row.final_standing ?? null,
+        finishRatio: row.final_standing && tournament?.player_count ? row.final_standing / tournament.player_count : null,
+        commanderName: isKnownCommanderName(commander?.name) ? commander?.name ?? null : null,
+        decklistUrl: row.decklist_url || (tournament?.topdeck_tid ? `https://topdeck.gg/deck/${tournament.topdeck_tid}/${topdeckId}` : null),
+        wins: Number(row.wins ?? 0),
+        draws: Number(row.draws ?? 0),
+        losses: Number(row.losses ?? 0),
+        recordGames: Number(row.wins ?? 0) + Number(row.draws ?? 0) + Number(row.losses ?? 0),
+      };
+    }).sort((a, b) => (b.startDate ?? "").localeCompare(a.startDate ?? ""));
+  },
+  ["regional-player-achievements-v3"],
+  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
+);
+
+export const fetchCachedPlayerCommanderUsageRows = unstable_cache(
+  async (playerId: string, topdeckId: string, playerName: string) => {
+    const rows = await fetchPlayerTournamentEntries(playerId);
+    return rows.map((row) => {
+      const tournament = firstRelation(row.tournaments);
+      const commander = firstRelation(row.commanders);
+      return {
+        topdeck_id: topdeckId,
+        player_name: playerName,
+        commander_name: isKnownCommanderName(commander?.name) ? commander?.name ?? null : null,
+        wins: row.wins,
+        draws: row.draws,
+        losses: row.losses,
+        start_date: tournament?.start_date ?? null,
+        player_count: tournament?.player_count ?? null,
+        decklist_url: null,
+        topdeck_decklist_url: tournament?.topdeck_tid ? `https://topdeck.gg/deck/${tournament.topdeck_tid}/${topdeckId}` : null,
+        tournament_name: tournament?.name ?? null,
+        tournament_topdeck_tid: tournament?.topdeck_tid ?? null,
+      };
+    }).filter((row) => row.commander_name && row.start_date);
+  },
+  ["regional-player-commander-usage-v3"],
+  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
+);
+
+async function fetchPlayerEventLogs(playerId: string, regionFilter: string): Promise<PlayerGameLog[]> {
+  const { data, error } = await supabase
+    .from("global_elo_game_event_log")
+    .select(
+      "game_id, game_date, tournament_name, state, round_number, round_name, table_number, seat_position, commander_name, game_result"
+    )
+    .eq("player_id", playerId)
+    .order("game_date", { ascending: false });
+
+  if (error) return [];
+  // Simplified version, in page.tsx there is a fallback to build from raw history.
+  // We'll let PlayerProfileBody handle the complex logic if needed.
+  return []; 
+}
+
+export const fetchCachedPlayerEventLogs = unstable_cache(
+  async (playerId: string, regionFilter: string) => fetchPlayerEventLogs(playerId, regionFilter),
+  ["regional-player-event-logs-v3"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -541,4 +609,3 @@ export function PlayerProfileGridSkeleton() {
     </div>
   );
 }
-

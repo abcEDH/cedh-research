@@ -16,6 +16,20 @@ import {
   PlayerProfileGrid,
   PlayerProfileGridSkeleton,
   fetchCachedPlayer,
+  fetchCachedGlobalEloRank,
+  fetchCachedRegionalRanks,
+  fetchCachedPlayerProfileSummary,
+  fetchCachedGlobalSnapshot,
+  fetchCachedRegionalRank,
+  fetchCachedCountryRank,
+  fetchCachedPlayerCommanderProfile,
+  fetchCachedPlayerEventLogs,
+  fetchCachedPlayerAchievements,
+  fetchCachedPlayerCommanderUsageRows,
+  fetchEntries,
+  sortAchievementsByFinish,
+  isKnownCommanderName,
+  firstRelation,
 } from "./player-profile-components";
 
 export const revalidate = 86400; // 24 hours
@@ -251,15 +265,6 @@ function toEventRoundLabel(row: PlayerEventLogRow) {
   return "Bracket";
 }
 
-function isKnownCommanderName(value: string | null | undefined) {
-  const normalized = (value ?? "").trim().toLowerCase();
-  return normalized.length > 0 && normalized !== "unknown commander";
-}
-
-function firstRelation<T>(value: T | T[] | null) {
-  return Array.isArray(value) ? value[0] ?? null : value;
-}
-
 function chunkValues<T>(values: T[], size = SUPABASE_IN_CHUNK_SIZE) {
   const chunks: T[][] = [];
   for (let index = 0; index < values.length; index += size) {
@@ -346,88 +351,6 @@ function normalizeAchievementSort(value: string): AchievementSort {
   return value === "best" ? "best" : "recent";
 }
 
-async function fetchPlayer(topdeckId: string): Promise<PlayerRow | null> {
-  const { data } = await supabase
-    .from("players")
-    .select("id, name, topdeck_id")
-    .eq("topdeck_id", topdeckId)
-    .maybeSingle();
-
-  return (data as PlayerRow | null) ?? null;
-}
-
-async function fetchEntries(playerId: string): Promise<EntryRow[]> {
-  const rows: EntryRow[] = [];
-  for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
-    const { data, error } = await supabase
-      .from("tournament_entries")
-      .select("id, tournament_id, player_id, commander_id")
-      .eq("player_id", playerId)
-      .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
-
-    if (error) throw new Error(`Error fetching player entries: ${error.message}`);
-    rows.push(...((data as EntryRow[]) ?? []));
-    if (!data || data.length < SUPABASE_PAGE_SIZE) break;
-  }
-
-  return rows;
-}
-
-async function fetchActiveRankRow(
-  regionType: "global" | "country" | "state",
-  regionKey: string,
-  playerId: string
-): Promise<LeaderboardRankRow | null> {
-  const { data, error } = await supabase
-    .from("global_elo_active_leaderboard")
-    .select(
-      "country_key, primary_country_key, primary_region_key, region_key, rank, rating, games_played, wins, draws, losses, last_game_date, topdeck_elo, topdeck_elo_rank"
-    )
-    .eq("region_type", regionType)
-    .eq("region_key", regionKey)
-    .eq("player_id", playerId)
-    .maybeSingle();
-
-  if (error) return null;
-  const row = (data as LeaderboardRankRow | null) ?? null;
-  return row ? { ...row, rank: row.topdeck_elo_rank ?? row.rank } : null;
-}
-
-async function fetchGlobalEloRank(playerId: string): Promise<LeaderboardRankRow | null> {
-  return fetchActiveRankRow("global", "ALL", playerId);
-}
-
-async function fetchRegionalRank(playerId: string, regionKey: string): Promise<LeaderboardRankRow | null> {
-  if (!regionKey) return null;
-  return fetchActiveRankRow("state", regionKey, playerId);
-}
-
-async function fetchCountryRank(playerId: string, countryKey: string): Promise<LeaderboardRankRow | null> {
-  if (!countryKey || countryKey === "UNKNOWN") return null;
-  return fetchActiveRankRow("country", countryKey, playerId);
-}
-
-async function fetchRegionalRanks(playerId: string): Promise<LeaderboardRankRow[]> {
-  const { data, error } = await supabase
-    .from("global_elo_active_leaderboard")
-    .select("country_key, region_key, rank, rating, games_played, wins, draws, losses, last_game_date, topdeck_elo, topdeck_elo_rank")
-    .eq("region_type", "state")
-    .eq("player_id", playerId)
-    .order("topdeck_elo_rank", { ascending: true, nullsFirst: false })
-    .order("region_key", { ascending: true });
-
-  if (error) return [];
-
-  return ((data as LeaderboardRankRow[]) ?? []).sort((a, b) => {
-    if (a.topdeck_elo_rank != null && b.topdeck_elo_rank != null && a.topdeck_elo_rank !== b.topdeck_elo_rank) {
-      return a.topdeck_elo_rank - b.topdeck_elo_rank;
-    }
-    if (a.topdeck_elo_rank != null && b.topdeck_elo_rank == null) return -1;
-    if (a.topdeck_elo_rank == null && b.topdeck_elo_rank != null) return 1;
-    return (a.region_key ?? "").localeCompare(b.region_key ?? "");
-  });
-}
-
 function parseStateAssignments(value: unknown): StateAssignmentRow[] {
   if (!Array.isArray(value)) return [];
   return value
@@ -469,28 +392,6 @@ async function fetchPlayerProfileSummary(playerId: string): Promise<PlayerProfil
     : null;
 }
 
-const fetchGlobalSnapshot = unstable_cache(async (topdeckId: string): Promise<GlobalSnapshotRow | null> => {
-  try {
-    const [leaderboard, profileStats] = await Promise.all([
-      fetchChampionshipLeaderboard(),
-      fetchTopDeckProfileStats(topdeckId).catch(() => null),
-    ]);
-    const entry = leaderboard.find((row) => row.uid === topdeckId);
-    if (!entry && !profileStats) return null;
-    return {
-      rank: entry?.rank ?? 0,
-      points: entry?.points ?? 0,
-      tournaments: profileStats?.tournaments ?? null,
-      gamesPlayed: profileStats?.gamesPlayed ?? null,
-      wins: profileStats?.wins ?? null,
-      draws: profileStats?.draws ?? null,
-      losses: profileStats?.losses ?? null,
-    };
-  } catch {
-    return null;
-  }
-}, ["regional-player-global-snapshot-v1"], { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS });
-
 function buildTopdeckDecklistUrl(tournamentSlug: string | null | undefined, topdeckId: string) {
   return tournamentSlug ? `https://topdeck.gg/deck/${tournamentSlug}/${topdeckId}` : null;
 }
@@ -523,144 +424,6 @@ function achievementTournamentKey(tournamentName: string | null | undefined, sta
 
 function logPlayerReadSummary(event: string, details: Record<string, unknown>) {
   console.info(`[regional-player] ${event}`, details);
-}
-
-async function fetchPlayerTournamentEntries(playerId: string): Promise<PlayerTournamentEntryRow[]> {
-  const rows: PlayerTournamentEntryRow[] = [];
-  for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
-    const { data, error } = await supabase
-      .from("tournament_entries")
-      .select(
-        "final_standing, wins, draws, losses, decklist_url, commanders(name), tournaments(name, start_date, player_count, topdeck_tid)"
-      )
-      .eq("player_id", playerId)
-      .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
-
-    if (error) throw new Error(`Error fetching player tournament entries: ${error.message}`);
-    rows.push(...((data as PlayerTournamentEntryRow[]) ?? []));
-    if (!data || data.length < SUPABASE_PAGE_SIZE) break;
-  }
-
-  logPlayerReadSummary("tournament-entries-cache-miss", {
-    playerId,
-    rowsReturned: rows.length,
-    supabaseQueries: Math.max(1, Math.ceil(rows.length / SUPABASE_PAGE_SIZE)),
-  });
-
-  return rows;
-}
-
-function buildPlayerAchievements(
-  rows: PlayerTournamentEntryRow[],
-  topdeckId: string
-): PlayerAchievementRow[] {
-  return rows
-    .map((row) => {
-      const tournament = firstRelation(row.tournaments);
-      const commander = firstRelation(row.commanders);
-      const placement = row.final_standing ?? null;
-      const playerCount = tournament?.player_count ?? null;
-      const finishRatio =
-        placement && playerCount && playerCount > 0 ? placement / playerCount : null;
-
-      return {
-        tournamentName: tournament?.name ?? "Unknown tournament",
-        tournamentUrl: buildTopdeckTournamentUrl(tournament?.topdeck_tid),
-        startDate: tournament?.start_date ?? null,
-        playerCount,
-        placement,
-        finishRatio,
-        commanderName: isKnownCommanderName(commander?.name) ? commander?.name ?? null : null,
-        decklistUrl: row.decklist_url || buildTopdeckDecklistUrl(tournament?.topdeck_tid, topdeckId),
-        wins: Number(row.wins ?? 0),
-        draws: Number(row.draws ?? 0),
-        losses: Number(row.losses ?? 0),
-        recordGames: Number(row.wins ?? 0) + Number(row.draws ?? 0) + Number(row.losses ?? 0),
-      };
-    })
-    .sort((a, b) => (b.startDate ?? "").localeCompare(a.startDate ?? ""));
-}
-
-function sortAchievementsByFinish(rows: PlayerAchievementRow[]): PlayerAchievementRow[] {
-  return [...rows].sort((a, b) => {
-    if (a.finishRatio === null && b.finishRatio !== null) return 1;
-    if (b.finishRatio === null && a.finishRatio !== null) return -1;
-    if (a.finishRatio !== null && b.finishRatio !== null && a.finishRatio !== b.finishRatio) {
-      return a.finishRatio - b.finishRatio;
-    }
-    if ((b.playerCount ?? 0) !== (a.playerCount ?? 0)) {
-      return (b.playerCount ?? 0) - (a.playerCount ?? 0);
-    }
-    const dateCompare = (b.startDate ?? "").localeCompare(a.startDate ?? "");
-    if (dateCompare !== 0) return dateCompare;
-    return a.tournamentName.localeCompare(b.tournamentName);
-  });
-}
-
-async function fetchPlayerAchievements(playerId: string, topdeckId: string): Promise<PlayerAchievementRow[]> {
-  const rows = await fetchPlayerTournamentEntries(playerId);
-  return buildPlayerAchievements(rows, topdeckId);
-}
-
-function buildPlayerCommanderUsageRows(
-  rows: PlayerTournamentEntryRow[],
-  topdeckId: string,
-  playerName: string
-): PlayerCommanderUsageRow[] {
-  return rows
-    .map((row) => {
-      const tournament = firstRelation(row.tournaments);
-      const commander = firstRelation(row.commanders);
-      const commanderName = isKnownCommanderName(commander?.name) ? commander?.name ?? null : null;
-
-      return {
-        topdeck_id: topdeckId,
-        player_name: playerName,
-        commander_name: commanderName,
-        wins: row.wins,
-        draws: row.draws,
-        losses: row.losses,
-        start_date: tournament?.start_date ?? null,
-        player_count: tournament?.player_count ?? null,
-        decklist_url: null,
-        topdeck_decklist_url: buildTopdeckDecklistUrl(tournament?.topdeck_tid, topdeckId),
-        tournament_name: tournament?.name ?? null,
-        tournament_topdeck_tid: tournament?.topdeck_tid ?? null,
-      };
-    })
-    .filter((row) => row.commander_name && row.start_date);
-}
-
-async function fetchPlayerCommanderUsageRows(
-  playerId: string,
-  topdeckId: string,
-  playerName: string
-): Promise<PlayerCommanderUsageRow[]> {
-  const rows = await fetchPlayerTournamentEntries(playerId);
-  return buildPlayerCommanderUsageRows(rows, topdeckId, playerName);
-}
-
-async function fetchPlayerCommanderProfile(topdeckId: string): Promise<PlayerCommanderProfileRow | null> {
-  const { data: profileRow, error: profileError } = await supabase
-    .from("player_commander_profiles")
-    .select("active_commander, latest_decklist_url, latest_tournament_name, latest_tournament_date, latest_tournament_topdeck_tid")
-    .eq("topdeck_id", topdeckId)
-    .maybeSingle();
-
-  if (profileError) {
-    console.error("Error fetching player commander profile:", describeSupabaseError(profileError));
-    return null;
-  }
-
-  const profile = profileRow as PlayerCommanderProfileRow | null;
-  return profile
-    ? {
-        ...profile,
-        active_commander: isKnownCommanderName(profile.active_commander)
-          ? profile.active_commander
-          : null,
-      }
-    : null;
 }
 
 async function fetchGamesAndParticipants(entryIds: string[]) {
@@ -977,67 +740,6 @@ async function fetchPlayerEventLogs(playerId: string, regionFilter: string): Pro
   }));
 }
 
-const fetchCachedGlobalEloRank = unstable_cache(
-  async (playerId: string) => fetchGlobalEloRank(playerId),
-  ["regional-player-global-rank-v4"],
-  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
-);
-
-const fetchCachedRegionalRank = unstable_cache(
-  async (playerId: string, regionKey: string) => fetchRegionalRank(playerId, regionKey),
-  ["regional-player-local-rank-v4"],
-  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
-);
-
-const fetchCachedCountryRank = unstable_cache(
-  async (playerId: string, countryKey: string) => fetchCountryRank(playerId, countryKey),
-  ["regional-player-country-rank-v4"],
-  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
-);
-
-const fetchCachedRegionalRanks = unstable_cache(
-  async (playerId: string) => fetchRegionalRanks(playerId),
-  ["regional-player-regional-ranks-v3"],
-  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
-);
-
-const fetchCachedPlayerProfileSummary = unstable_cache(
-  async (playerId: string) => fetchPlayerProfileSummary(playerId),
-  ["regional-player-profile-summary-v4"],
-  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
-);
-
-const fetchCachedPlayerCommanderProfile = unstable_cache(
-  async (topdeckId: string) => fetchPlayerCommanderProfile(topdeckId),
-  ["regional-player-commander-profile-v1"],
-  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
-);
-
-const fetchCachedPlayerAchievements = unstable_cache(
-  async (playerId: string, topdeckId: string) => fetchPlayerAchievements(playerId, topdeckId),
-  ["regional-player-achievements-v3"],
-  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
-);
-
-const fetchCachedPlayerCommanderUsageRows = unstable_cache(
-  async (playerId: string, topdeckId: string, playerName: string) =>
-    fetchPlayerCommanderUsageRows(playerId, topdeckId, playerName),
-  ["regional-player-commander-usage-v3"],
-  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
-);
-
-const fetchCachedPlayerEventLogs = unstable_cache(
-  async (playerId: string, regionFilter: string) => fetchPlayerEventLogs(playerId, regionFilter),
-  ["regional-player-event-logs-v3"],
-  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
-);
-
-const fetchCachedPlayer = unstable_cache(
-  async (topdeckId: string) => fetchPlayer(topdeckId),
-  ["regional-player-v2"],
-  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
-);
-
 export default async function RegionalPlayerPage({
   params,
   searchParams,
@@ -1148,7 +850,7 @@ export async function PlayerProfileBody({
     eventPlayerLogsResult,
     rawEntries,
   ] = await Promise.all([
-    fetchGlobalSnapshot(topdeckId),
+    fetchCachedGlobalSnapshot(topdeckId),
     fetchCachedGlobalEloRank(player.id),
     fetchCachedRegionalRanks(player.id),
     fetchCachedPlayerProfileSummary(player.id),
