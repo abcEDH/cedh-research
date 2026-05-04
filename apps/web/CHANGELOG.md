@@ -1,3 +1,10 @@
+## [1.13.2](https://github.com/abcEDH/cedh-research/compare/v1.13.1...v1.13.2) (2026-05-04)
+
+
+### Bug Fixes
+
+* **analytics:** enable PostHog pageleave and autocapture ([#164](https://github.com/abcEDH/cedh-research/issues/164)) ([36b7b6b](https://github.com/abcEDH/cedh-research/commit/36b7b6b7cca18c94a0703c0635593d0f5cbe3d8d))
+
 ## [1.13.1](https://github.com/abcEDH/cedh-research/compare/v1.13.0...v1.13.1) (2026-05-03)
 
 
