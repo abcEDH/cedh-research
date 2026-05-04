@@ -10,6 +10,13 @@ import { inferCountryForRegion } from "@/lib/region-countries";
 import { OpponentRecordsTable } from "./opponent-records-table";
 import { summarizePlayerLogs, type PlayerGameLog } from "./player-stats";
 import { unstable_cache } from "next/cache";
+import {
+  PlayerHeader,
+  PlayerHeaderSkeleton,
+  PlayerProfileGrid,
+  PlayerProfileGridSkeleton,
+  fetchCachedPlayer,
+} from "./player-profile-components";
 
 export const revalidate = 86400; // 24 hours
 export const dynamicParams = true;
@@ -33,37 +40,37 @@ export async function generateStaticParams() {
     .map((row) => ({ topdeckId: String(row.topdeck_id) }));
 }
 
-type PlayerRow = {
+export type PlayerRow = {
   id: string;
   name: string;
   topdeck_id: string;
 };
 
-type PlayerCommanderUsageRow = CommanderUsageRow & {
+export type PlayerCommanderUsageRow = CommanderUsageRow & {
   tournament_name: string | null;
   tournament_topdeck_tid: string | null;
 };
 
-type EntryRow = {
+export type EntryRow = {
   id: string;
   tournament_id: string;
   player_id: string;
   commander_id: string | null;
 };
 
-type CommanderRow = {
+export type CommanderRow = {
   id: string;
   name: string;
 };
 
-type ParticipantRow = {
+export type ParticipantRow = {
   game_id: string;
   entry_id: string;
   seat_position: number;
   result: string;
 };
 
-type GameRow = {
+export type GameRow = {
   id: string;
   tournament_id: string;
   round_number: number | null;
@@ -73,14 +80,14 @@ type GameRow = {
   winner_id: string | null;
 };
 
-type TournamentRow = {
+export type TournamentRow = {
   id: string;
   name: string;
   start_date: string;
   state: string | null;
 };
 
-type LeaderboardRankRow = {
+export type LeaderboardRankRow = {
   player_id?: string;
   topdeck_id?: string | null;
   country_key?: string | null;
@@ -98,7 +105,7 @@ type LeaderboardRankRow = {
   topdeck_elo_rank?: number | null;
 };
 
-type StateAssignmentRow = {
+export type StateAssignmentRow = {
   country_key: string;
   region_key: string;
   games_played: number;
@@ -107,7 +114,7 @@ type StateAssignmentRow = {
   losses: number;
 };
 
-type PlayerProfileSummaryRow = {
+export type PlayerProfileSummaryRow = {
   games_played: number;
   wins: number;
   draws: number;
@@ -118,7 +125,7 @@ type PlayerProfileSummaryRow = {
   state_assignments: StateAssignmentRow[] | null;
 };
 
-type GlobalSnapshotRow = {
+export type GlobalSnapshotRow = {
   rank: number;
   points: number;
   tournaments: number | null;
@@ -128,7 +135,7 @@ type GlobalSnapshotRow = {
   losses: number | null;
 };
 
-type PlayerTournamentEntryRow = {
+export type PlayerTournamentEntryRow = {
   final_standing: number | null;
   wins: number | null;
   draws: number | null;
@@ -158,7 +165,7 @@ type PlayerTournamentEntryRow = {
     | null;
 };
 
-type PlayerAchievementRow = {
+export type PlayerAchievementRow = {
   tournamentName: string;
   tournamentUrl: string | null;
   startDate: string | null;
@@ -173,7 +180,7 @@ type PlayerAchievementRow = {
   recordGames: number;
 };
 
-type PlayerCommanderProfileRow = {
+export type PlayerCommanderProfileRow = {
   active_commander: string | null;
   latest_decklist_url: string | null;
   latest_tournament_name: string | null;
@@ -181,7 +188,7 @@ type PlayerCommanderProfileRow = {
   latest_tournament_topdeck_tid: string | null;
 };
 
-type PlayerEventLogRow = {
+export type PlayerEventLogRow = {
   game_id: string;
   game_date: string | null;
   tournament_name: string | null;
@@ -194,7 +201,7 @@ type PlayerEventLogRow = {
   game_result: string;
 };
 
-type PlayerEventOpponentRow = {
+export type PlayerEventOpponentRow = {
   game_id: string;
   player_id: string;
   player_name: string | null;
@@ -1043,44 +1050,17 @@ export default async function RegionalPlayerPage({
   const resolvedParams = await Promise.resolve(params);
   const topdeckId = resolvedParams.topdeckId;
 
-  const player = await fetchCachedPlayer(topdeckId);
-  if (!player) {
-    return (
-      <main className="container mx-auto px-4 py-10">
-        <p className="text-sm text-muted-foreground">No player found for TopDeck ID {topdeckId}.</p>
-      </main>
-    );
-  }
-
-  const topdeckProfileHref = buildTopdeckProfileHref(topdeckId);
-
   return (
     <div className="min-h-screen">
       <main className="container mx-auto px-4 pb-20 pt-10">
         <div className="space-y-8">
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-end justify-between gap-4">
-              <div>
-                <h1 className="text-3xl font-semibold text-foreground md:text-4xl">
-                  {player.name}
-                </h1>
-              </div>
-              {topdeckProfileHref ? (
-                <a
-                  href={topdeckProfileHref}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-sm text-primary hover:text-foreground"
-                >
-                  Open TopDeck profile
-                </a>
-              ) : null}
-            </div>
-          </div>
+          <Suspense fallback={<PlayerHeaderSkeleton />}>
+            <PlayerHeader topdeckId={topdeckId} />
+          </Suspense>
+
           <Suspense fallback={<PlayerProfileBodySkeleton />}>
-            <PlayerProfileBody
+            <PlayerProfileBodyWrapper
               topdeckId={topdeckId}
-              player={player}
               searchParams={searchParams}
             />
           </Suspense>
@@ -1089,6 +1069,47 @@ export default async function RegionalPlayerPage({
     </div>
   );
 }
+
+async function PlayerProfileBodyWrapper({
+  topdeckId,
+  searchParams,
+}: {
+  topdeckId: string;
+  searchParams?:
+    | Promise<Record<string, string | string[] | undefined>>
+    | Record<string, string | string[] | undefined>;
+}) {
+  const player = await fetchCachedPlayer(topdeckId);
+  if (!player) {
+    return (
+      <p className="text-sm text-muted-foreground">No player found for TopDeck ID {topdeckId}.</p>
+    );
+  }
+
+  const resolvedSearchParams = await Promise.resolve(searchParams);
+  const requestedRegion = decodeURIComponent(readRegionParam(resolvedSearchParams)).trim().toUpperCase();
+  const regionFilter = requestedRegion === "ALL" ? "" : requestedRegion;
+
+  return (
+    <>
+      <Suspense fallback={<PlayerProfileGridSkeleton />}>
+        <PlayerProfileGrid
+          topdeckId={topdeckId}
+          player={player}
+          regionFilter={regionFilter}
+        />
+      </Suspense>
+
+      <PlayerProfileBody
+        topdeckId={topdeckId}
+        player={player}
+        searchParams={searchParams}
+      />
+    </>
+  );
+}
+
+
 
 export async function PlayerProfileBody({
   topdeckId,
@@ -1363,170 +1384,12 @@ export async function PlayerProfileBody({
       <Link href={backHref} className="-mt-6 block text-sm text-muted-foreground hover:text-foreground">
         ← Back to region leaderboard
       </Link>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-9">
-            <Card className="knd-panel">
-              <CardHeader>
-                <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  State Rank
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1">
-                <div className="text-2xl font-semibold text-foreground">
-                  {stateLeaderboardHref && shouldShowLocalRank && activeRank ? (
-                    <Link href={stateLeaderboardHref} className="hover:text-primary">
-                      #{activeRank.rank}
-                    </Link>
-                  ) : (
-                    "--"
-                  )}
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  {stateLeaderboardHref ? (
-                    <Link href={stateLeaderboardHref} className="hover:text-primary">
-                      {homeRegion}
-                    </Link>
-                  ) : (
-                    "Unassigned"
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="knd-panel">
-              <CardHeader>
-                <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Country Rank
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1">
-                <div className="text-2xl font-semibold text-foreground">
-                  {countryLeaderboardHref && shouldShowCountryRank && countryRank ? (
-                    <Link href={countryLeaderboardHref} className="hover:text-primary">
-                      #{countryRank.rank}
-                    </Link>
-                  ) : (
-                    "--"
-                  )}
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  {countryLeaderboardHref && homeCountry ? (
-                    <Link href={countryLeaderboardHref} className="hover:text-primary">
-                      {homeCountry}
-                    </Link>
-                  ) : (
-                    "Unassigned"
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="knd-panel">
-              <CardHeader>
-                <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Global Rank
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1">
-                <div className="text-2xl font-semibold text-foreground">
-                  {shouldShowGlobalRank && globalEloRank ? (
-                    <Link href="/regional-elo" className="hover:text-primary">
-                      #{globalEloRank.rank}
-                    </Link>
-                  ) : (
-                    "--"
-                  )}
-                </div>
-                <div className="text-sm text-muted-foreground">EARTH</div>
-              </CardContent>
-            </Card>
-            <Card className="knd-panel">
-              <CardHeader>
-                <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  TopDeck Rank
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1">
-                {topdeckProfileHref ? (
-                  <a
-                    href={topdeckProfileHref}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="block hover:text-primary"
-                  >
-                    <div className="text-2xl font-semibold text-foreground">
-                      {globalSnapshot?.rank ? `#${globalSnapshot.rank}` : (globalEloRank?.topdeck_elo_rank ? `#${globalEloRank.topdeck_elo_rank}` : "—")}
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      {globalSnapshot?.points ? `${globalSnapshot.points} points` : (globalSnapshot ? "No points snapshot" : "Regional Rank")}
-                    </div>
-                  </a>
-                ) : (
-                  <>
-                    <div className="text-2xl font-semibold text-foreground">
-                      {globalSnapshot?.rank ? `#${globalSnapshot.rank}` : (globalEloRank?.topdeck_elo_rank ? `#${globalEloRank.topdeck_elo_rank}` : "—")}
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      {globalSnapshot?.points ? `${globalSnapshot.points} points` : (globalSnapshot ? "No points snapshot" : "Regional Rank")}
-                    </div>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-            <Card className="knd-panel">
-              <CardHeader>
-                <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  TopDeck Elo
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold text-foreground">
-                {displayedTopdeckElo === null ? "—" : Math.round(displayedTopdeckElo)}
-              </CardContent>
-            </Card>
-            <Card className="knd-panel">
-              <CardHeader>
-                <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Hidden Elo
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold text-foreground">
-                {globalEloRank ? Math.round(globalEloRank.rating) : "—"}
-              </CardContent>
-            </Card>
-            <Card className="knd-panel">
-              <CardHeader>
-                <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Games Played
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold text-foreground">
-                {canonicalGames}
-              </CardContent>
-            </Card>
-            <Card className="knd-panel">
-              <CardHeader>
-                <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Record
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold text-foreground">
-                {canonicalWins}-{canonicalLosses}-{canonicalDraws}
-              </CardContent>
-            </Card>
-            <Card className="knd-panel">
-              <CardHeader>
-                <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Unique Opponents
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold text-foreground">
-                {opponentRecords.length}
-              </CardContent>
-            </Card>
-          </div>
 
-          <Card className="knd-panel">
-            <CardHeader>
-              <CardTitle className="text-sm uppercase tracking-[0.2em] text-muted-foreground">
-                Played Commanders
-              </CardTitle>
+      <Card className="knd-panel">
+        <CardHeader>
+          <CardTitle className="text-sm uppercase tracking-[0.2em] text-muted-foreground">
+            Played Commanders
+          </CardTitle>
               <p className="text-xs text-muted-foreground">
                 Commanders from all stored games for this player, sorted by last played.
               </p>
