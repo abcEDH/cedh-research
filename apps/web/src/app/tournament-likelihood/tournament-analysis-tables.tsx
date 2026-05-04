@@ -366,23 +366,41 @@ export function TournamentAnalysisTables({
               <tr>
                 {showTournamentRecord && (
                   <SortHeader column="standing" direction={sortDirection} onSort={handleSort} sortKey={sortKey}>
-                    Standing
+                    Pos
                   </SortHeader>
                 )}
                 <SortHeader column="player" direction={sortDirection} onSort={handleSort} sortKey={sortKey}>
                   Player
                 </SortHeader>
                 {showTournamentRecord && (
-                  <SortHeader column="record" direction={sortDirection} onSort={handleSort} sortKey={sortKey}>
-                    Tournament Record
-                  </SortHeader>
+                  <th className="px-2 py-3 hidden md:table-cell">
+                    <button
+                      className={`text-left uppercase tracking-[0.3em] transition hover:text-foreground ${
+                        sortKey === "record" ? "text-foreground" : ""
+                      }`}
+                      onClick={() => handleSort("record")}
+                      type="button"
+                    >
+                      Record
+                      {sortKey === "record" && <span className="ml-1 text-[10px]">{sortDirection === "asc" ? "^" : "v"}</span>}
+                    </button>
+                  </th>
                 )}
                 <SortHeader column="elo" direction={sortDirection} onSort={handleSort} sortKey={sortKey}>
-                  TopDeck Elo
+                  Elo
                 </SortHeader>
-                <SortHeader column="homeRegion" direction={sortDirection} onSort={handleSort} sortKey={sortKey}>
-                  Region
-                </SortHeader>
+                <th className="px-2 py-3 hidden lg:table-cell">
+                  <button
+                    className={`text-left uppercase tracking-[0.3em] transition hover:text-foreground ${
+                      sortKey === "homeRegion" ? "text-foreground" : ""
+                    }`}
+                    onClick={() => handleSort("homeRegion")}
+                    type="button"
+                  >
+                    Region
+                    {sortKey === "homeRegion" && <span className="ml-1 text-[10px]">{sortDirection === "asc" ? "^" : "v"}</span>}
+                  </button>
+                </th>
                 {showActualDecks ? (
                   <SortHeader column="decklist" direction={sortDirection} onSort={handleSort} sortKey={sortKey}>
                     Decklist
@@ -390,11 +408,20 @@ export function TournamentAnalysisTables({
                 ) : (
                   <>
                     <SortHeader column="mostLikely" direction={sortDirection} onSort={handleSort} sortKey={sortKey}>
-                      Most Likely To Bring
+                      Most Likely
                     </SortHeader>
-                    <SortHeader column="alternatives" direction={sortDirection} onSort={handleSort} sortKey={sortKey}>
-                      Alternatives
-                    </SortHeader>
+                    <th className="px-2 py-3 hidden md:table-cell">
+                      <button
+                        className={`text-left uppercase tracking-[0.3em] transition hover:text-foreground ${
+                          sortKey === "alternatives" ? "text-foreground" : ""
+                        }`}
+                        onClick={() => handleSort("alternatives")}
+                        type="button"
+                      >
+                        Alternatives
+                        {sortKey === "alternatives" && <span className="ml-1 text-[10px]">{sortDirection === "asc" ? "^" : "v"}</span>}
+                      </button>
+                    </th>
                   </>
                 )}
               </tr>
@@ -409,12 +436,12 @@ export function TournamentAnalysisTables({
                 return (
                   <tr key={`${row.standing.id}-${row.standing.standing}`} className="border-t border-border/60">
                     {showTournamentRecord && (
-                      <td className="px-2 py-4 text-muted-foreground">#{row.standing.standing}</td>
+                      <td className="px-2 py-4 text-muted-foreground text-xs">#{row.standing.standing}</td>
                     )}
                     <td className="px-2 py-4">
                       <div className="space-y-1">
                         <Link
-                          className="block font-medium text-foreground hover:text-primary"
+                          className="block font-medium text-foreground hover:text-primary truncate max-w-[120px] sm:max-w-none"
                           href={regionalProfileHref}
                           target="_blank"
                         >
@@ -423,17 +450,17 @@ export function TournamentAnalysisTables({
                       </div>
                     </td>
                     {showTournamentRecord && (
-                      <td className="px-2 py-4 text-muted-foreground">{formatTournamentRecord(row.standing)}</td>
+                      <td className="px-2 py-4 text-muted-foreground hidden md:table-cell">{formatTournamentRecord(row.standing)}</td>
                     )}
                     <td className="px-2 py-4 font-semibold text-primary">
                       {row.rating === null ? "-" : Math.round(row.rating)}
                     </td>
-                    <td className="px-2 py-4 text-muted-foreground">{row.regionKey ?? "-"}</td>
+                    <td className="px-2 py-4 text-muted-foreground hidden lg:table-cell">{row.regionKey ?? "-"}</td>
                     {showActualDecks ? (
                       <td className="px-2 py-4">
                         {row.standing.actualDeckCommander && row.standing.actualDecklistUrl ? (
                           <a
-                            className="font-medium text-foreground hover:text-primary"
+                            className="font-medium text-foreground hover:text-primary line-clamp-1 sm:line-clamp-none"
                             href={row.standing.actualDecklistUrl}
                             rel="noreferrer"
                             target="_blank"
@@ -441,7 +468,7 @@ export function TournamentAnalysisTables({
                             {row.standing.actualDeckCommander}
                           </a>
                         ) : (
-                          <span className="text-xs text-muted-foreground">No decklist submitted</span>
+                          <span className="text-xs text-muted-foreground">No decklist</span>
                         )}
                       </td>
                     ) : (
@@ -451,7 +478,7 @@ export function TournamentAnalysisTables({
                             <div>
                               {primaryDecklistHref ? (
                                 <a
-                                  className="font-medium text-foreground hover:text-primary"
+                                  className="font-medium text-foreground hover:text-primary line-clamp-1 sm:line-clamp-none"
                                   href={primaryDecklistHref}
                                   rel="noreferrer"
                                   target="_blank"
@@ -461,15 +488,15 @@ export function TournamentAnalysisTables({
                               ) : (
                                 <div className="font-medium text-foreground">{primary.commander}</div>
                               )}
-                              <div className="text-xs text-muted-foreground">
-                                Forecast confidence {displayedPercents[0] ?? 0}%
+                              <div className="text-[10px] text-muted-foreground sm:text-xs">
+                                {displayedPercents[0] ?? 0}%
                               </div>
                             </div>
                           ) : (
-                            <span className="text-xs text-muted-foreground">No recent deck data</span>
+                            <span className="text-xs text-muted-foreground">No data</span>
                           )}
                         </td>
-                        <td className="px-2 py-4">
+                        <td className="px-2 py-4 hidden md:table-cell">
                           <div className="flex flex-wrap gap-2">
                             {alternatives.length ? (
                               alternatives.map((commander, index) => (
@@ -490,7 +517,7 @@ export function TournamentAnalysisTables({
                                 )
                               ))
                             ) : (
-                              <span className="text-xs text-muted-foreground">No strong alternatives</span>
+                              <span className="text-xs text-muted-foreground">None</span>
                             )}
                           </div>
                         </td>

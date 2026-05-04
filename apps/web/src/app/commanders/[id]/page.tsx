@@ -871,10 +871,10 @@ export default async function CommanderDetailPage({
                     <TableRow className="border-border/60 text-xs uppercase tracking-[0.2em] text-muted-foreground">
                       <TableHead>Card Name</TableHead>
                       <TableHead>Tier</TableHead>
-                      <TableHead className="text-right">Inclusion</TableHead>
-                      <TableHead className="text-right">Global Rate</TableHead>
-                      <TableHead className="text-right">Win Rate Delta</TableHead>
-                      <TableHead className="text-right">Decks</TableHead>
+                      <TableHead className="text-right">Inc.</TableHead>
+                      <TableHead className="text-right hidden md:table-cell">Global</TableHead>
+                      <TableHead className="text-right">Win Δ</TableHead>
+                      <TableHead className="text-right hidden sm:table-cell">Decks</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -901,7 +901,7 @@ export default async function CommanderDetailPage({
                           <TableCell className="text-right font-mono">
                             {(parseFloat(card.inclusion_rate) * 100).toFixed(1)}%
                           </TableCell>
-                          <TableCell className="text-right font-mono text-muted-foreground">
+                          <TableCell className="text-right font-mono text-muted-foreground hidden md:table-cell">
                             {(parseFloat(card.global_rate) * 100).toFixed(1)}%
                           </TableCell>
                           <TableCell className="text-right font-mono">
@@ -939,7 +939,7 @@ export default async function CommanderDetailPage({
                               <span className="text-muted-foreground">—</span>
                             )}
                           </TableCell>
-                          <TableCell className="text-right font-mono text-muted-foreground">
+                          <TableCell className="text-right font-mono text-muted-foreground hidden sm:table-cell">
                             {card.deck_count}/{card.total_decks}
                           </TableCell>
                         </TableRow>

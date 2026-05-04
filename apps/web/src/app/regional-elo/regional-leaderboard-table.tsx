@@ -93,11 +93,11 @@ export function RegionalLeaderboardTable({
             <tr>
               <th className="px-2 py-3">Rank</th>
               <th className="px-2 py-3">Player</th>
-              <th className="px-2 py-3">TopDeck Elo</th>
-              <th className="px-2 py-3">Active Commander</th>
-              <th className="px-2 py-3">Games</th>
-              <th className="px-2 py-3">W-L-D</th>
-              <th className="px-2 py-3">Latest Tournament</th>
+              <th className="px-2 py-3">Elo</th>
+              <th className="px-2 py-3 hidden md:table-cell">Active Commander</th>
+              <th className="px-2 py-3 hidden sm:table-cell">Games</th>
+              <th className="px-2 py-3 hidden md:table-cell">W-L-D</th>
+              <th className="px-2 py-3 hidden lg:table-cell">Latest Tournament</th>
             </tr>
           </thead>
           <tbody>
@@ -119,20 +119,20 @@ export function RegionalLeaderboardTable({
                     {row.topdeck_id ? (
                       <div className="space-y-1">
                         <Link
-                          className="font-medium text-foreground hover:text-primary"
+                          className="font-medium text-foreground hover:text-primary truncate max-w-[120px] sm:max-w-none block"
                           href={playerHref}
                         >
                           {row.player_name}
                         </Link>
                       </div>
                     ) : (
-                      <div className="font-medium text-foreground">{row.player_name}</div>
+                      <div className="font-medium text-foreground truncate max-w-[120px] sm:max-w-none block">{row.player_name}</div>
                     )}
                   </td>
                   <td className="px-2 py-3 font-semibold text-primary">
                     {row.topdeck_elo == null ? "-" : Math.round(row.topdeck_elo)}
                   </td>
-                  <td className="px-2 py-3 text-xs text-muted-foreground">
+                  <td className="px-2 py-3 text-xs text-muted-foreground hidden md:table-cell">
                     <div className="truncate">
                       {latestCommander?.active_commander_decklist_url && latestCommander?.active_commander ? (
                         <a
@@ -148,11 +148,11 @@ export function RegionalLeaderboardTable({
                       )}
                     </div>
                   </td>
-                  <td className="px-2 py-3 text-muted-foreground">{row.games_played}</td>
-                  <td className="px-2 py-3 text-muted-foreground">
+                  <td className="px-2 py-3 text-muted-foreground hidden sm:table-cell">{row.games_played}</td>
+                  <td className="px-2 py-3 text-muted-foreground hidden md:table-cell">
                     {row.wins}-{row.losses}-{row.draws}
                   </td>
-                  <td className="px-2 py-3 text-xs text-muted-foreground">
+                  <td className="px-2 py-3 text-xs text-muted-foreground hidden lg:table-cell">
                     <div>{formatDate(latestCommander?.latest_tournament_date ?? row.last_game_date)}</div>
                     <div className="truncate text-[11px]">
                       {latestTournamentHref && latestCommander?.latest_tournament_name ? (
