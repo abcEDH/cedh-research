@@ -517,10 +517,10 @@ export default async function Home() {
         {leaderboardPlayers.length > 0 && (
           <section className="mt-12">
             <Card className="border-primary/20 bg-primary/5">
-              <CardHeader className="flex flex-row items-center justify-between pb-4">
-                <div>
-                  <CardTitle className="text-lg">Global Leaderboard</CardTitle>
-                  <p className="text-sm text-muted-foreground">Active players ranked by TopDeck Elo</p>
+              <CardHeader className="flex flex-row items-center justify-between pb-3 sm:pb-4">
+                <div className="min-w-0 flex-1">
+                  <CardTitle className="text-base sm:text-lg truncate">Global Leaderboard</CardTitle>
+                  <p className="text-[10px] sm:text-sm text-muted-foreground truncate">Active players ranked by TopDeck Elo</p>
                 </div>
                 <Button asChild variant="ghost" size="sm" className="border border-border/70">
                   <Link href="/regional-elo">View Full Leaderboard</Link>
@@ -531,75 +531,54 @@ export default async function Home() {
                   <Table>
                     <TableHeader>
                       <TableRow className="border-border/60 text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                        <TableHead className="py-3">Rank</TableHead>
-                        <TableHead className="py-3">Player</TableHead>
-                        <TableHead className="py-3">TopDeck Elo</TableHead>
-                        <TableHead className="py-3 hidden md:table-cell">Active Commander</TableHead>
-                        <TableHead className="py-3 hidden sm:table-cell">Games</TableHead>
-                        <TableHead className="py-3 hidden md:table-cell">W-L-D</TableHead>
-                        <TableHead className="py-3 hidden lg:table-cell">Latest Tournament</TableHead>
+                        <TableHead className="py-3 px-1 w-8">Rank</TableHead>
+                        <TableHead className="py-3 px-2">Player</TableHead>
+                        <TableHead className="py-3 px-2 text-right">TopDeck Elo</TableHead>
+                        <TableHead className="py-3 px-2 hidden sm:table-cell">Active Commander</TableHead>
+                        <TableHead className="py-3 px-2 hidden md:table-cell">Games</TableHead>
+                        <TableHead className="py-3 px-2 hidden md:table-cell">W-L-D</TableHead>
+                        <TableHead className="py-3 px-2 hidden lg:table-cell">Latest Tournament</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {leaderboardPlayers.map((player) => {
-                        const tournamentHref = buildTopdeckTournamentUrl(
-                          player.latest_tournament_topdeck_tid
-                        );
                         return (
                           <TableRow key={player.player_id} className="border-border/60">
-                            <TableCell className="font-mono text-xs text-muted-foreground">
-                              #{player.rank}
+                            <TableCell className="py-3 px-1 font-mono text-[10px] text-muted-foreground">
+                              {player.rank}
                             </TableCell>
-                            <TableCell>
+                            <TableCell className="py-3 px-2">
                               <Link
                                 href={`/regional-elo/player/${player.topdeck_id}`}
-                                className="font-medium text-foreground hover:text-primary"
+                                className="font-medium text-foreground hover:text-primary text-xs sm:text-sm"
                               >
                                 {player.player_name}
                               </Link>
                             </TableCell>
-                            <TableCell className="font-mono text-sm font-semibold text-primary">
+                            <TableCell className="py-3 px-2 text-right font-mono text-xs sm:text-sm font-semibold text-primary">
                               {player.topdeck_elo == null ? "—" : Math.round(player.topdeck_elo)}
                             </TableCell>
-                            <TableCell className="max-w-[260px] text-xs text-muted-foreground hidden md:table-cell">
-                              {player.active_commander_decklist_url && player.active_commander ? (
-                                <a
-                                  href={player.active_commander_decklist_url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="line-clamp-2 hover:text-primary"
-                                >
+                            <TableCell className="py-3 px-2 max-w-[180px] text-[10px] text-muted-foreground hidden sm:table-cell">
+                              {player.active_commander ? (
+                                <span className="line-clamp-1">
                                   {player.active_commander}
-                                </a>
-                              ) : (
-                                <span className="line-clamp-2">
-                                  {player.active_commander || "No commander data"}
                                 </span>
+                              ) : (
+                                "—"
                               )}
                             </TableCell>
-                            <TableCell className="font-mono text-sm text-muted-foreground hidden sm:table-cell">
+                            <TableCell className="py-3 px-2 font-mono text-[10px] text-muted-foreground hidden md:table-cell">
                               {player.games_played.toLocaleString()}
                             </TableCell>
-                            <TableCell className="font-mono text-sm text-muted-foreground hidden md:table-cell">
+                            <TableCell className="py-3 px-2 font-mono text-[10px] text-muted-foreground hidden md:table-cell">
                               {player.wins}-{player.losses}-{player.draws}
                             </TableCell>
                             <TableCell className="min-w-[220px] text-xs text-muted-foreground hidden lg:table-cell">
                               <div>
-                                {formatDate(player.latest_tournament_date ?? player.last_game_date)}
+                                {player.latest_tournament_date ? new Date(player.latest_tournament_date).toLocaleDateString() : (player.last_game_date ? new Date(player.last_game_date).toLocaleDateString() : "—")}
                               </div>
                               <div className="line-clamp-2 text-[11px]">
-                                {tournamentHref && player.latest_tournament_name ? (
-                                  <a
-                                    href={tournamentHref}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="hover:text-primary"
-                                  >
-                                    {player.latest_tournament_name}
-                                  </a>
-                                ) : (
-                                  player.latest_tournament_name || "No tournament data"
-                                )}
+                                {player.latest_tournament_name || "No tournament data"}
                               </div>
                             </TableCell>
                           </TableRow>
@@ -614,7 +593,7 @@ export default async function Home() {
         )}
 
         {showTrendCards ? (
-          <section className="mt-12 grid gap-6 lg:grid-cols-2">
+          <section className="mt-12 grid gap-4 lg:grid-cols-2 lg:gap-6">
             {topThreePopular.length > 0 ? (
               <Card data-testid="top-popular-commanders" className="min-w-0">
                 <CardHeader className="knd-panel-header">
@@ -623,7 +602,7 @@ export default async function Home() {
                     Ranked by total entries in large events.
                   </p>
                 </CardHeader>
-                <CardContent className="flex flex-col gap-3">
+                <CardContent className="flex flex-col gap-2 p-2 sm:p-6 sm:gap-3">
                   {topThreePopular.map((commander, index) => (
                     <CommanderRow
                       key={commander.commander_id}
@@ -642,7 +621,7 @@ export default async function Home() {
                     Biggest popularity gains in the past 2 weeks.
                   </p>
                 </CardHeader>
-                <CardContent className="flex flex-col gap-3">
+                <CardContent className="flex flex-col gap-2 p-2 sm:p-6 sm:gap-3">
                   {topRisingCommanders.map((commander, index) => (
                     <RisingCommanderRow
                       key={commander.commander_id}
@@ -659,27 +638,27 @@ export default async function Home() {
         <section className="mt-12">
           <Card className="border-[hsl(var(--knd-amber))]/20 bg-[hsl(var(--knd-amber))]/5">
             <CardHeader className="flex flex-row items-center justify-between pb-4">
-              <div>
-                <CardTitle className="text-lg text-[hsl(var(--knd-amber))]">Tournament Prep</CardTitle>
-                <p className="text-sm text-muted-foreground">Estimate attendee likelihood and expected meta share for your next event</p>
+              <div className="min-w-0 flex-1">
+                <CardTitle className="text-lg text-[hsl(var(--knd-amber))] truncate">Tournament Prep</CardTitle>
+                <p className="text-[10px] sm:text-sm text-muted-foreground truncate">Estimate attendee likelihood and expected meta share for your next event</p>
               </div>
               <Button asChild variant="outline" size="sm" className="border-[hsl(var(--knd-amber))]/40 bg-card/60">
                 <Link href="/tournament-likelihood">Run Simulator</Link>
               </Button>
             </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <div className="rounded-lg border border-border/60 bg-card/40 p-4">
-                  <h4 className="text-sm font-semibold text-foreground mb-1">Meta Simulation</h4>
-                  <p className="text-xs text-muted-foreground">Simulate field compositions based on recent tournament attendance patterns.</p>
+            <CardContent className="px-3 sm:px-6">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3 sm:gap-4">
+                <div className="rounded-lg border border-border/60 bg-card/40 p-3 sm:p-4">
+                  <h4 className="text-xs font-semibold text-foreground mb-1">Meta Simulation</h4>
+                  <p className="text-[10px] text-muted-foreground">Simulate field compositions based on recent patterns.</p>
                 </div>
-                <div className="rounded-lg border border-border/60 bg-card/40 p-4">
-                  <h4 className="text-sm font-semibold text-foreground mb-1">Archetype Coverage</h4>
-                  <p className="text-xs text-muted-foreground">Identify which deck types are most likely to appear in your specific region.</p>
+                <div className="rounded-lg border border-border/60 bg-card/40 p-3 sm:p-4">
+                  <h4 className="text-xs font-semibold text-foreground mb-1">Archetype Coverage</h4>
+                  <p className="text-[10px] text-muted-foreground">Identify deck types likely to appear in your region.</p>
                 </div>
-                <div className="rounded-lg border border-border/60 bg-card/40 p-4">
-                  <h4 className="text-sm font-semibold text-foreground mb-1">Conversion Odds</h4>
-                  <p className="text-xs text-muted-foreground">Calculate the probability of different commanders reaching the top cut.</p>
+                <div className="rounded-lg border border-border/60 bg-card/40 p-3 sm:p-4">
+                  <h4 className="text-xs font-semibold text-foreground mb-1">Conversion Odds</h4>
+                  <p className="text-[10px] text-muted-foreground">Calculate probability of reaching the top cut.</p>
                 </div>
               </div>
             </CardContent>
