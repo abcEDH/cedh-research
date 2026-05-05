@@ -35,6 +35,9 @@ npm run web:test:ci
 echo "[verify-frontend] Building the web app..."
 npm run web:build
 
+echo "[verify-frontend] Installing Playwright browsers..."
+npx playwright install chromium
+
 echo "[verify-frontend] Running Playwright E2E tests..."
 npm run web:test:e2e
 
