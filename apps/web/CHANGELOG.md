@@ -1,3 +1,10 @@
+## [1.7.7](https://github.com/abcEDH/cedh-research/compare/v1.7.6...v1.7.7) (2026-04-29)
+
+
+### Bug Fixes
+
+* cache homepage and remove stale widgets ([#122](https://github.com/abcEDH/cedh-research/issues/122)) ([22722d9](https://github.com/abcEDH/cedh-research/commit/22722d999ccdca3fbfec9e2ec99523b30c704812))
+
 ## [1.7.6](https://github.com/abcEDH/cedh-research/compare/v1.7.5...v1.7.6) (2026-04-29)
 
 

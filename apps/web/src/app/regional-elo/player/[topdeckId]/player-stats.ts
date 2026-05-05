@@ -1,3 +1,5 @@
+import { buildPlayerVersusHref } from "./player-routes";
+
 export type PlayerGameLog = {
   gameId: string;
   startDate: string;
@@ -183,7 +185,7 @@ export function buildOpponentRecords(logs: PlayerGameLog[]): OpponentRecord[] {
   });
 }
 
-export function summarizePlayerLogs(logs: PlayerGameLog[]): PlayerLogSummary {
+export function summarizePlayerLogs(logs: PlayerGameLog[], playerTopdeckId?: string): PlayerLogSummary {
   const totalGames = logs.length;
   const totalWins = logs.filter((row) => row.result === "win").length;
   const totalDraws = logs.filter((row) => row.result === "draw").length;
@@ -210,7 +212,9 @@ export function summarizePlayerLogs(logs: PlayerGameLog[]): PlayerLogSummary {
       record.opponentName,
       "Opponent",
       OPPONENT_MATCHUP_PRIOR_GAMES,
-      record.opponentTopdeckId ? `/regional-elo/player/${record.opponentTopdeckId}` : undefined
+      record.opponentTopdeckId && playerTopdeckId
+        ? buildPlayerVersusHref(playerTopdeckId, record.opponentTopdeckId)
+        : undefined
     )
   );
   const commanderMatchups = commanderRecords.map((record) =>

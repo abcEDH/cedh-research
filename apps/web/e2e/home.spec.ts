@@ -43,11 +43,12 @@ test.describe("Home Page", () => {
     expect(n).toBeLessThanOrEqual(3);
   });
 
-  test("feature cards link to correct pages", async ({ page }) => {
-    const trapSpiceCard = page.getByRole("link", { name: /Trap & Spice Cards/i }).first();
-    await expect(trapSpiceCard).toBeVisible();
-    await trapSpiceCard.click();
-    await expect(page).toHaveURL(/\/trap-spice/);
+  test("feature cards link to supported tool pages", async ({ page }) => {
+    const featureCards = page.getByTestId("home-feature-cards");
+    const tournamentPrepCard = featureCards.getByRole("link", { name: /Tournament Prep/i });
+    await expect(tournamentPrepCard).toBeVisible();
+    await tournamentPrepCard.click();
+    await expect(page).toHaveURL(/\/tournament-likelihood/);
   });
 
   test("tool links on home are valid when present", async ({ page }) => {

@@ -385,4 +385,42 @@ describe("RegionalPlayerPage", () => {
     expect(html).toMatch(/Global Rank[\s\S]*?>--</);
     expect(html).toContain("1600");
   });
+
+  it("links opponent records to the head-to-head page", async () => {
+    const pageModule = await import("@/app/regional-elo/player/[topdeckId]/page");
+    const element = await pageModule.default({
+      params: { topdeckId: "CCIQroaCHHQi7EELyNXlHiHQiQy1" },
+      searchParams: {},
+    });
+
+    const html = renderToStaticMarkup(element);
+
+    expect(html).toContain('/regional-elo/player/CCIQroaCHHQi7EELyNXlHiHQiQy1/vs/opp-a');
+    expect(html).not.toContain('href="/regional-elo/player/opp-a"');
+  });
+});
+
+describe("RegionalPlayerVsPage", () => {
+  it("renders the shared record and chronological pod history", async () => {
+    const pageModule = await import("@/app/regional-elo/player/[topdeckId]/vs/[opponentTopdeckId]/page");
+    const element = await pageModule.default({
+      params: { topdeckId: "CCIQroaCHHQi7EELyNXlHiHQiQy1", opponentTopdeckId: "opp-a" },
+    });
+
+    const html = renderToStaticMarkup(element);
+
+    expect(html).toContain("Alex Lien vs Opponent A");
+    expect(html).toContain("Shared Games");
+    expect(html).toContain("California Open I");
+    expect(html).toContain("California Open II");
+    expect(html).toContain("Round 1");
+    expect(html).toContain("Round 2");
+    expect(html).toContain("Table 1");
+    expect(html).toContain("Table 2");
+    expect(html).toContain("Rograkh / Silas");
+    expect(html).toContain("Blue Farm");
+    expect(html).toContain("/regional-elo/player/CCIQroaCHHQi7EELyNXlHiHQiQy1");
+    expect(html).toContain("/regional-elo/player/opp-a");
+    expect(html).toContain("1-1-0");
+  });
 });
