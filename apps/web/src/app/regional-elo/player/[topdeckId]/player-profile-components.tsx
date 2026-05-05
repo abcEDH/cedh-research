@@ -14,6 +14,7 @@ import {
   StateAssignmentRow,
   PlayerAchievementRow,
   PlayerCommanderUsageRow,
+  PlayerCommanderProfileRow,
   PlayerTournamentEntryRow,
   PlayerEventLogRow,
   PlayerEventOpponentRow,
@@ -133,26 +134,32 @@ export const fetchCachedGlobalEloRank = unstable_cache(
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
-export const fetchCachedRegionalRanks = unstable_cache(
-  async (playerId: string) => {
-    const { data, error } = await supabase
-      .from("global_elo_active_leaderboard")
-      .select("country_key, region_key, rank, rating, games_played, wins, draws, losses, last_game_date, topdeck_elo, topdeck_elo_rank")
-      .eq("region_type", "state")
-      .eq("player_id", playerId)
-      .order("topdeck_elo_rank", { ascending: true, nullsFirst: false })
-      .order("region_key", { ascending: true });
+async function fetchCountryRank(playerId: string, countryKey: string): Promise<LeaderboardRankRow | null> {
+  return fetchActiveRankRow("country", countryKey, playerId);
+}
 
-    if (error) return [];
-    return ((data as LeaderboardRankRow[]) ?? []).sort((a, b) => {
-      if (a.topdeck_elo_rank != null && b.topdeck_elo_rank != null && a.topdeck_elo_rank !== b.topdeck_elo_rank) {
-        return a.topdeck_elo_rank - b.topdeck_elo_rank;
-      }
-      if (a.topdeck_elo_rank != null && b.topdeck_elo_rank == null) return -1;
-      if (a.topdeck_elo_rank == null && b.topdeck_elo_rank != null) return 1;
-      return (a.region_key ?? "").localeCompare(b.region_key ?? "");
-    });
-  },
+async function fetchRegionalRanks(playerId: string): Promise<LeaderboardRankRow[]> {
+  const { data, error } = await supabase
+    .from("global_elo_active_leaderboard")
+    .select("country_key, region_key, rank, rating, games_played, wins, draws, losses, last_game_date, topdeck_elo, topdeck_elo_rank")
+    .eq("region_type", "state")
+    .eq("player_id", playerId)
+    .order("topdeck_elo_rank", { ascending: true, nullsFirst: false })
+    .order("region_key", { ascending: true });
+
+  if (error) return [];
+  return ((data as LeaderboardRankRow[]) ?? []).sort((a, b) => {
+    if (a.topdeck_elo_rank != null && b.topdeck_elo_rank != null && a.topdeck_elo_rank !== b.topdeck_elo_rank) {
+      return a.topdeck_elo_rank - b.topdeck_elo_rank;
+    }
+    if (a.topdeck_elo_rank != null && b.topdeck_elo_rank == null) return -1;
+    if (a.topdeck_elo_rank == null && b.topdeck_elo_rank != null) return 1;
+    return (a.region_key ?? "").localeCompare(b.region_key ?? "");
+  });
+}
+
+export const fetchCachedRegionalRanks = unstable_cache(
+  async (playerId: string) => fetchRegionalRanks(playerId),
   ["regional-player-regional-ranks-v3"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
@@ -205,27 +212,34 @@ export const fetchCachedRegionalRank = unstable_cache(
 );
 
 export const fetchCachedCountryRank = unstable_cache(
-  async (playerId: string, countryKey: string) => fetchActiveRankRow("country", countryKey, playerId),
+  async (playerId: string, countryKey: string) => fetchCountryRank(playerId, countryKey),
   ["regional-player-country-rank-v4"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
-export const fetchCachedPlayerCommanderProfile = unstable_cache(
-  async (topdeckId: string) => {
-    const { data: profileRow, error: profileError } = await supabase
-      .from("player_commander_profiles")
-      .select("active_commander, latest_decklist_url, latest_tournament_name, latest_tournament_date, latest_tournament_topdeck_tid")
-      .eq("topdeck_id", topdeckId)
-      .maybeSingle();
+async function fetchPlayerCommanderProfile(topdeckId: string): Promise<PlayerCommanderProfileRow | null> {
+  const { data: profileRow, error: profileError } = await supabase
+    .from("player_commander_profiles")
+    .select("active_commander, latest_decklist_url, latest_tournament_name, latest_tournament_date, latest_tournament_topdeck_tid")
+    .eq("topdeck_id", topdeckId)
+    .maybeSingle();
 
-    if (profileError) return null;
-    return profileRow as PlayerCommanderProfileRow | null;
-  },
+  if (profileError) return null;
+  return profileRow as PlayerCommanderProfileRow | null;
+}
+
+export const fetchCachedPlayerCommanderProfile = unstable_cache(
+  async (topdeckId: string) => fetchPlayerCommanderProfile(topdeckId),
   ["regional-player-commander-profile-v1"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
+function logPlayerReadSummary(event: string, details: Record<string, unknown>) {
+  console.info(`[regional-player] ${event}`, details);
+}
+
 async function fetchPlayerTournamentEntries(playerId: string): Promise<PlayerTournamentEntryRow[]> {
+  logPlayerReadSummary("tournament-entries-cache-miss", { playerId });
   const SUPABASE_PAGE_SIZE = 1000;
   const rows: PlayerTournamentEntryRow[] = [];
   for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
@@ -243,53 +257,61 @@ async function fetchPlayerTournamentEntries(playerId: string): Promise<PlayerTou
   return rows;
 }
 
+function buildPlayerAchievements(rows: PlayerTournamentEntryRow[], topdeckId: string): PlayerAchievementRow[] {
+  return rows.map((row) => {
+    const tournament = firstRelation(row.tournaments);
+    const commander = firstRelation(row.commanders);
+    return {
+      tournamentName: tournament?.name ?? "Unknown tournament",
+      tournamentUrl: tournament?.topdeck_tid ? `https://topdeck.gg/bracket/${tournament.topdeck_tid}` : null,
+      startDate: tournament?.start_date ?? null,
+      playerCount: tournament?.player_count ?? null,
+      placement: row.final_standing ?? null,
+      finishRatio: row.final_standing && tournament?.player_count ? row.final_standing / tournament.player_count : null,
+      commanderName: isKnownCommanderName(commander?.name) ? commander?.name ?? null : null,
+      decklistUrl: row.decklist_url || (tournament?.topdeck_tid ? `https://topdeck.gg/deck/${tournament.topdeck_tid}/${topdeckId}` : null),
+      wins: Number(row.wins ?? 0),
+      draws: Number(row.draws ?? 0),
+      losses: Number(row.losses ?? 0),
+      recordGames: Number(row.wins ?? 0) + Number(row.draws ?? 0) + Number(row.losses ?? 0),
+    };
+  }).sort((a, b) => (b.startDate ?? "").localeCompare(a.startDate ?? ""));
+}
+
 export const fetchCachedPlayerAchievements = unstable_cache(
   async (playerId: string, topdeckId: string) => {
     const rows = await fetchPlayerTournamentEntries(playerId);
-    return rows.map((row) => {
-      const tournament = firstRelation(row.tournaments);
-      const commander = firstRelation(row.commanders);
-      return {
-        tournamentName: tournament?.name ?? "Unknown tournament",
-        tournamentUrl: tournament?.topdeck_tid ? `https://topdeck.gg/bracket/${tournament.topdeck_tid}` : null,
-        startDate: tournament?.start_date ?? null,
-        playerCount: tournament?.player_count ?? null,
-        placement: row.final_standing ?? null,
-        finishRatio: row.final_standing && tournament?.player_count ? row.final_standing / tournament.player_count : null,
-        commanderName: isKnownCommanderName(commander?.name) ? commander?.name ?? null : null,
-        decklistUrl: row.decklist_url || (tournament?.topdeck_tid ? `https://topdeck.gg/deck/${tournament.topdeck_tid}/${topdeckId}` : null),
-        wins: Number(row.wins ?? 0),
-        draws: Number(row.draws ?? 0),
-        losses: Number(row.losses ?? 0),
-        recordGames: Number(row.wins ?? 0) + Number(row.draws ?? 0) + Number(row.losses ?? 0),
-      };
-    }).sort((a, b) => (b.startDate ?? "").localeCompare(a.startDate ?? ""));
+    return buildPlayerAchievements(rows, topdeckId);
   },
   ["regional-player-achievements-v3"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
+function buildPlayerCommanderUsageRows(rows: PlayerTournamentEntryRow[], topdeckId: string, playerName: string): PlayerCommanderUsageRow[] {
+  return rows.map((row) => {
+    const tournament = firstRelation(row.tournaments);
+    const commander = firstRelation(row.commanders);
+    return {
+      topdeck_id: topdeckId,
+      player_name: playerName,
+      commander_name: isKnownCommanderName(commander?.name) ? commander?.name ?? null : null,
+      wins: row.wins,
+      draws: row.draws,
+      losses: row.losses,
+      start_date: tournament?.start_date ?? null,
+      player_count: tournament?.player_count ?? null,
+      decklist_url: null,
+      topdeck_decklist_url: tournament?.topdeck_tid ? `https://topdeck.gg/deck/${tournament.topdeck_tid}/${topdeckId}` : null,
+      tournament_name: tournament?.name ?? null,
+      tournament_topdeck_tid: tournament?.topdeck_tid ?? null,
+    };
+  }).filter((row) => row.commander_name && row.start_date);
+}
+
 export const fetchCachedPlayerCommanderUsageRows = unstable_cache(
   async (playerId: string, topdeckId: string, playerName: string) => {
     const rows = await fetchPlayerTournamentEntries(playerId);
-    return rows.map((row) => {
-      const tournament = firstRelation(row.tournaments);
-      const commander = firstRelation(row.commanders);
-      return {
-        topdeck_id: topdeckId,
-        player_name: playerName,
-        commander_name: isKnownCommanderName(commander?.name) ? commander?.name ?? null : null,
-        wins: row.wins,
-        draws: row.draws,
-        losses: row.losses,
-        start_date: tournament?.start_date ?? null,
-        player_count: tournament?.player_count ?? null,
-        decklist_url: null,
-        topdeck_decklist_url: tournament?.topdeck_tid ? `https://topdeck.gg/deck/${tournament.topdeck_tid}/${topdeckId}` : null,
-        tournament_name: tournament?.name ?? null,
-        tournament_topdeck_tid: tournament?.topdeck_tid ?? null,
-      };
-    }).filter((row) => row.commander_name && row.start_date);
+    return buildPlayerCommanderUsageRows(rows, topdeckId, playerName);
   },
   ["regional-player-commander-usage-v3"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
