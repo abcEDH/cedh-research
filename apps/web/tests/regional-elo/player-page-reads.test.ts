@@ -14,7 +14,7 @@ describe("regional player read path", () => {
     );
 
     expect(componentsSource).toContain("async function fetchPlayerTournamentEntries");
-    expect(componentsSource).not.toContain('console.info(`[regional-player] ${event}`, details);');
+    expect(componentsSource).toContain('console.info(`[regional-player] ${event}`, details);');
     expect(pageSource).toContain('console.info(`[regional-player] ${event}`, details);');
     expect(pageSource).toContain("function logPlayerReadSummary(");
     expect(componentsSource).toContain("async function fetchPlayerTournamentEntries");
