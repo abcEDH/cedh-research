@@ -135,21 +135,25 @@ async function fetchEntries(playerId: string): Promise<EntryRow[]> {
 }
 
 async function fetchGamesAndParticipants(entryIds: string[]) {
-  const participants: ParticipantRow[] = [];
-  for (const entryIdChunk of chunkValues(entryIds)) {
-    for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
-      const { data, error } = await supabase
-        .from("game_participants")
-        .select("game_id, entry_id, seat_position, result")
-        .in("entry_id", entryIdChunk)
-        .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
+  const participantChunks = await Promise.all(
+    chunkValues(entryIds).map(async (entryIdChunk) => {
+      const chunkRows: ParticipantRow[] = [];
+      for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
+        const { data, error } = await supabase
+          .from("game_participants")
+          .select("game_id, entry_id, seat_position, result")
+          .in("entry_id", entryIdChunk)
+          .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
 
-      if (error) throw new Error(`Error fetching player game participants: ${error.message}`);
-      participants.push(...((data as ParticipantRow[]) ?? []));
-      if (!data || data.length < SUPABASE_PAGE_SIZE) break;
-    }
-  }
+        if (error) throw new Error(`Error fetching player game participants: ${error.message}`);
+        chunkRows.push(...((data as ParticipantRow[]) ?? []));
+        if (!data || data.length < SUPABASE_PAGE_SIZE) break;
+      }
+      return chunkRows;
+    })
+  );
 
+  const participants = participantChunks.flat();
   const gameIds = Array.from(new Set(participants.map((row) => row.game_id)));
   if (gameIds.length === 0) {
     return {
@@ -159,41 +163,47 @@ async function fetchGamesAndParticipants(entryIds: string[]) {
     };
   }
 
-  const games: GameRow[] = [];
-  const allParticipants: ParticipantRow[] = [];
+  const [gameChunks, allParticipantChunks] = await Promise.all([
+    Promise.all(
+      chunkValues(gameIds).map(async (gameIdChunk) => {
+        const chunkRows: GameRow[] = [];
+        for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
+          const { data, error } = await supabase
+            .from("games")
+            .select("id, tournament_id, round_number, round_name, table_number, is_draw, winner_id")
+            .in("id", gameIdChunk)
+            .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
 
-  for (const gameIdChunk of chunkValues(gameIds)) {
-    for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
-      const { data, error } = await supabase
-        .from("games")
-        .select("id, tournament_id, round_number, round_name, table_number, is_draw, winner_id")
-        .in("id", gameIdChunk)
-        .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
+          if (error) throw new Error(`Error fetching player games: ${error.message}`);
+          chunkRows.push(...((data as GameRow[]) ?? []));
+          if (!data || data.length < SUPABASE_PAGE_SIZE) break;
+        }
+        return chunkRows;
+      })
+    ),
+    Promise.all(
+      chunkValues(gameIds).map(async (gameIdChunk) => {
+        const chunkRows: ParticipantRow[] = [];
+        for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
+          const { data, error } = await supabase
+            .from("game_participants")
+            .select("game_id, entry_id, seat_position, result")
+            .in("game_id", gameIdChunk)
+            .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
 
-      if (error) throw new Error(`Error fetching player games: ${error.message}`);
-      games.push(...((data as GameRow[]) ?? []));
-      if (!data || data.length < SUPABASE_PAGE_SIZE) break;
-    }
-  }
-
-  for (const gameIdChunk of chunkValues(gameIds)) {
-    for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
-      const { data, error } = await supabase
-        .from("game_participants")
-        .select("game_id, entry_id, seat_position, result")
-        .in("game_id", gameIdChunk)
-        .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
-
-      if (error) throw new Error(`Error fetching pod participants: ${error.message}`);
-      allParticipants.push(...((data as ParticipantRow[]) ?? []));
-      if (!data || data.length < SUPABASE_PAGE_SIZE) break;
-    }
-  }
+          if (error) throw new Error(`Error fetching pod participants: ${error.message}`);
+          chunkRows.push(...((data as ParticipantRow[]) ?? []));
+          if (!data || data.length < SUPABASE_PAGE_SIZE) break;
+        }
+        return chunkRows;
+      })
+    ),
+  ]);
 
   return {
     participants,
-    games,
-    allParticipants,
+    games: gameChunks.flat(),
+    allParticipants: allParticipantChunks.flat(),
   };
 }
 
@@ -276,7 +286,6 @@ async function buildPlayerLogsFromRawHistory(entries: EntryRow[]): Promise<Playe
   const gamesById = new Map(games.map((row) => [row.id, row]));
   const entryById = new Map(entries.map((row) => [row.id, row]));
   const tournamentIds = Array.from(new Set(games.map((row) => row.tournament_id)));
-  const tournamentsById = await fetchTournaments(tournamentIds);
 
   const playerParticipants = participants.filter((participant) => {
     if (!gamesById.has(participant.game_id)) return false;
@@ -285,7 +294,12 @@ async function buildPlayerLogsFromRawHistory(entries: EntryRow[]): Promise<Playe
   const playerGameIds = Array.from(new Set(playerParticipants.map((row) => row.game_id)));
   const relatedParticipants = allParticipants.filter((row) => playerGameIds.includes(row.game_id));
   const relatedEntryIds = Array.from(new Set(relatedParticipants.map((row) => row.entry_id)));
-  const relatedEntriesById = await fetchEntriesById(relatedEntryIds);
+
+  const [tournamentsById, relatedEntriesById] = await Promise.all([
+    fetchTournaments(tournamentIds),
+    fetchEntriesById(relatedEntryIds),
+  ]);
+
   const relatedPlayerIds = Array.from(
     new Set(Array.from(relatedEntriesById.values()).map((row) => row.player_id))
   );
@@ -296,8 +310,11 @@ async function buildPlayerLogsFromRawHistory(entries: EntryRow[]): Promise<Playe
         .filter((value): value is string => Boolean(value))
     )
   );
-  const playersById = await fetchPlayersById(relatedPlayerIds);
-  const commandersById = await fetchCommandersById(relatedCommanderIds);
+
+  const [playersById, commandersById] = await Promise.all([
+    fetchPlayersById(relatedPlayerIds),
+    fetchCommandersById(relatedCommanderIds),
+  ]);
 
   return playerParticipants
     .map((participant) => {
@@ -397,25 +414,33 @@ async function fetchPlayerEventLogs(playerId: string, regionFilter: string): Pro
 
   const gameIds = Array.from(new Set(eventRows.map((row) => row.game_id)));
   const opponentRows: PlayerEventOpponentRow[] = [];
-  for (const gameIdChunk of chunkArray(gameIds, 250)) {
-    for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
-      const { data: opponentData, error: opponentError } = await supabase
-        .from(eventLogTable)
-        .select("game_id, player_id, player_name, topdeck_id, seat_position, commander_name, game_result")
-        .in("game_id", gameIdChunk)
-        .neq("player_id", playerId)
-        .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
+  const opponentChunks = await Promise.all(
+    chunkArray(gameIds, 250).map(async (gameIdChunk) => {
+      const chunkRows: PlayerEventOpponentRow[] = [];
+      for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
+        const { data: opponentData, error: opponentError } = await supabase
+          .from(eventLogTable)
+          .select("game_id, player_id, player_name, topdeck_id, seat_position, commander_name, game_result")
+          .in("game_id", gameIdChunk)
+          .neq("player_id", playerId)
+          .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
 
-      if (opponentError) {
-        console.error(
-          "Error fetching precomputed player event opponents:",
-          describeSupabaseError(opponentError)
-        );
-        break;
+        if (opponentError) {
+          console.error(
+            "Error fetching precomputed player event opponents:",
+            describeSupabaseError(opponentError)
+          );
+          break;
+        }
+        chunkRows.push(...((opponentData as PlayerEventOpponentRow[]) ?? []));
+        if (!opponentData || opponentData.length < SUPABASE_PAGE_SIZE) break;
       }
-      opponentRows.push(...((opponentData as PlayerEventOpponentRow[]) ?? []));
-      if (!opponentData || opponentData.length < SUPABASE_PAGE_SIZE) break;
-    }
+      return chunkRows;
+    })
+  );
+
+  for (const chunk of opponentChunks) {
+    opponentRows.push(...chunk);
   }
 
   const opponentsByGameId = new Map<string, PlayerGameLog["opponents"]>();

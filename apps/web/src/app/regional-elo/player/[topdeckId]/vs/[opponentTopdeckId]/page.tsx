@@ -9,7 +9,7 @@ import {
 } from "../../player-log-data";
 import { buildPlayerVersusHref } from "../../player-routes";
 
-const PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS = 60 * 15;
+const PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS = 60 * 60 * 24; // 24 hours
 
 const fetchCachedCanonicalPlayerLogs = unstable_cache(
   async (playerId: string) => fetchCanonicalPlayerLogs(playerId),

@@ -434,19 +434,6 @@ async function fetchHomeLeaderboardLatestTournaments(playerIds: string[]) {
   return latestByPlayerId;
 }
 
-function formatDate(value: string | null) {
-  if (!value) return "—";
-  return new Date(value).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function buildTopdeckTournamentUrl(tournamentSlug: string | null | undefined) {
-  return tournamentSlug ? `https://topdeck.gg/bracket/${tournamentSlug}` : null;
-}
-
 const getCachedHomeCoreStats = unstable_cache(
   getCoreStats,
   ["home-core-stats-v7"], // Updated cache key
@@ -516,91 +503,61 @@ export default async function Home() {
 
         {leaderboardPlayers.length > 0 && (
           <section className="mt-12">
-            <Card className="border-primary/20 bg-primary/5">
-              <CardHeader className="flex flex-row items-center justify-between pb-4">
-                <div>
-                  <CardTitle className="text-lg">Global Leaderboard</CardTitle>
-                  <p className="text-sm text-muted-foreground">Active players ranked by TopDeck Elo</p>
+            <Card data-testid="global-leaderboard-card" className="border-primary/20 bg-primary/5">
+              <CardHeader className="flex flex-row items-center justify-between pb-3 sm:pb-4">
+                <div className="min-w-0 flex-1">
+                  <CardTitle className="text-base sm:text-lg truncate">Global Leaderboard</CardTitle>
+                  <p className="text-[10px] sm:text-sm text-muted-foreground truncate">Active players ranked by TopDeck Elo</p>
                 </div>
-                <Button asChild variant="ghost" size="sm" className="border border-border/70">
-                  <Link href="/regional-elo">View Full Leaderboard</Link>
+                <Button asChild variant="ghost" size="xs" className="shrink-0 border border-border/70 text-[10px] h-8 px-2 ml-2">
+                  <Link href="/regional-elo">Full View</Link>
                 </Button>
               </CardHeader>
-              <CardContent>
-                <div className="overflow-auto">
-                  <Table>
+              <CardContent className="px-2 sm:px-6">
+                <div className="overflow-x-auto">
+                  <Table data-testid="global-leaderboard-table">
                     <TableHeader>
-                      <TableRow className="border-border/60 text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                        <TableHead className="py-3">Rank</TableHead>
-                        <TableHead className="py-3">Player</TableHead>
-                        <TableHead className="py-3">TopDeck Elo</TableHead>
-                        <TableHead className="py-3">Active Commander</TableHead>
-                        <TableHead className="py-3">Games</TableHead>
-                        <TableHead className="py-3">W-L-D</TableHead>
-                        <TableHead className="py-3">Latest Tournament</TableHead>
+                      <TableRow className="border-border/60 text-[10px] uppercase tracking-wider text-muted-foreground">
+                        <TableHead className="py-2 px-1 w-8">#</TableHead>
+                        <TableHead className="py-2 px-2">Player</TableHead>
+                        <TableHead className="py-2 px-2 text-right">Elo</TableHead>
+                        <TableHead className="py-2 px-2 hidden sm:table-cell">Commander</TableHead>
+                        <TableHead className="py-2 px-2 hidden md:table-cell">Games</TableHead>
+                        <TableHead className="py-2 px-2 hidden md:table-cell">W-L-D</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {leaderboardPlayers.map((player) => {
-                        const tournamentHref = buildTopdeckTournamentUrl(
-                          player.latest_tournament_topdeck_tid
-                        );
                         return (
                           <TableRow key={player.player_id} className="border-border/60">
-                            <TableCell className="font-mono text-xs text-muted-foreground">
-                              #{player.rank}
+                            <TableCell className="py-3 px-1 font-mono text-[10px] text-muted-foreground">
+                              {player.rank}
                             </TableCell>
-                            <TableCell>
+                            <TableCell className="py-3 px-2">
                               <Link
                                 href={`/regional-elo/player/${player.topdeck_id}`}
-                                className="font-medium text-foreground hover:text-primary"
+                                className="font-medium text-foreground hover:text-primary text-xs sm:text-sm"
                               >
                                 {player.player_name}
                               </Link>
                             </TableCell>
-                            <TableCell className="font-mono text-sm font-semibold text-primary">
+                            <TableCell className="py-3 px-2 text-right font-mono text-xs sm:text-sm font-semibold text-primary">
                               {player.topdeck_elo == null ? "—" : Math.round(player.topdeck_elo)}
                             </TableCell>
-                            <TableCell className="max-w-[260px] text-xs text-muted-foreground">
-                              {player.active_commander_decklist_url && player.active_commander ? (
-                                <a
-                                  href={player.active_commander_decklist_url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="line-clamp-2 hover:text-primary"
-                                >
+                            <TableCell className="py-3 px-2 max-w-[180px] text-[10px] text-muted-foreground hidden sm:table-cell">
+                              {player.active_commander ? (
+                                <span className="line-clamp-1">
                                   {player.active_commander}
-                                </a>
-                              ) : (
-                                <span className="line-clamp-2">
-                                  {player.active_commander || "No commander data"}
                                 </span>
+                              ) : (
+                                "—"
                               )}
                             </TableCell>
-                            <TableCell className="font-mono text-sm text-muted-foreground">
+                            <TableCell className="py-3 px-2 font-mono text-[10px] text-muted-foreground hidden md:table-cell">
                               {player.games_played.toLocaleString()}
                             </TableCell>
-                            <TableCell className="font-mono text-sm text-muted-foreground">
+                            <TableCell className="py-3 px-2 font-mono text-[10px] text-muted-foreground hidden md:table-cell">
                               {player.wins}-{player.losses}-{player.draws}
-                            </TableCell>
-                            <TableCell className="min-w-[220px] text-xs text-muted-foreground">
-                              <div>
-                                {formatDate(player.latest_tournament_date ?? player.last_game_date)}
-                              </div>
-                              <div className="line-clamp-2 text-[11px]">
-                                {tournamentHref && player.latest_tournament_name ? (
-                                  <a
-                                    href={tournamentHref}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="hover:text-primary"
-                                  >
-                                    {player.latest_tournament_name}
-                                  </a>
-                                ) : (
-                                  player.latest_tournament_name || "No tournament data"
-                                )}
-                              </div>
                             </TableCell>
                           </TableRow>
                         );
@@ -614,7 +571,7 @@ export default async function Home() {
         )}
 
         {showTrendCards ? (
-          <section className="mt-12 grid gap-6 lg:grid-cols-2">
+          <section className="mt-12 grid gap-4 lg:grid-cols-2 lg:gap-6">
             {topThreePopular.length > 0 ? (
               <Card data-testid="top-popular-commanders" className="min-w-0">
                 <CardHeader className="knd-panel-header">
@@ -623,7 +580,7 @@ export default async function Home() {
                     Ranked by total entries in large events.
                   </p>
                 </CardHeader>
-                <CardContent className="flex flex-col gap-3">
+                <CardContent className="flex flex-col gap-2 p-2 sm:p-6 sm:gap-3">
                   {topThreePopular.map((commander, index) => (
                     <CommanderRow
                       key={commander.commander_id}
@@ -642,7 +599,7 @@ export default async function Home() {
                     Biggest popularity gains in the past 2 weeks.
                   </p>
                 </CardHeader>
-                <CardContent className="flex flex-col gap-3">
+                <CardContent className="flex flex-col gap-2 p-2 sm:p-6 sm:gap-3">
                   {topRisingCommanders.map((commander, index) => (
                     <RisingCommanderRow
                       key={commander.commander_id}
@@ -659,27 +616,27 @@ export default async function Home() {
         <section className="mt-12">
           <Card className="border-[hsl(var(--knd-amber))]/20 bg-[hsl(var(--knd-amber))]/5">
             <CardHeader className="flex flex-row items-center justify-between pb-4">
-              <div>
-                <CardTitle className="text-lg text-[hsl(var(--knd-amber))]">Tournament Prep</CardTitle>
-                <p className="text-sm text-muted-foreground">Estimate attendee likelihood and expected meta share for your next event</p>
+              <div className="min-w-0 flex-1">
+                <CardTitle className="text-lg text-[hsl(var(--knd-amber))] truncate">Tournament Prep</CardTitle>
+                <p className="text-[10px] sm:text-sm text-muted-foreground truncate">Estimate attendee likelihood and expected meta share for your next event</p>
               </div>
               <Button asChild variant="outline" size="sm" className="border-[hsl(var(--knd-amber))]/40 bg-card/60">
                 <Link href="/tournament-likelihood">Run Simulator</Link>
               </Button>
             </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <div className="rounded-lg border border-border/60 bg-card/40 p-4">
-                  <h4 className="text-sm font-semibold text-foreground mb-1">Meta Simulation</h4>
-                  <p className="text-xs text-muted-foreground">Simulate field compositions based on recent tournament attendance patterns.</p>
+            <CardContent className="px-3 sm:px-6">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3 sm:gap-4">
+                <div className="rounded-lg border border-border/60 bg-card/40 p-3 sm:p-4">
+                  <h4 className="text-xs font-semibold text-foreground mb-1">Meta Simulation</h4>
+                  <p className="text-[10px] text-muted-foreground">Simulate field compositions based on recent patterns.</p>
                 </div>
-                <div className="rounded-lg border border-border/60 bg-card/40 p-4">
-                  <h4 className="text-sm font-semibold text-foreground mb-1">Archetype Coverage</h4>
-                  <p className="text-xs text-muted-foreground">Identify which deck types are most likely to appear in your specific region.</p>
+                <div className="rounded-lg border border-border/60 bg-card/40 p-3 sm:p-4">
+                  <h4 className="text-xs font-semibold text-foreground mb-1">Archetype Coverage</h4>
+                  <p className="text-[10px] text-muted-foreground">Identify deck types likely to appear in your region.</p>
                 </div>
-                <div className="rounded-lg border border-border/60 bg-card/40 p-4">
-                  <h4 className="text-sm font-semibold text-foreground mb-1">Conversion Odds</h4>
-                  <p className="text-xs text-muted-foreground">Calculate the probability of different commanders reaching the top cut.</p>
+                <div className="rounded-lg border border-border/60 bg-card/40 p-3 sm:p-4">
+                  <h4 className="text-xs font-semibold text-foreground mb-1">Conversion Odds</h4>
+                  <p className="text-[10px] text-muted-foreground">Calculate probability of reaching the top cut.</p>
                 </div>
               </div>
             </CardContent>
@@ -692,63 +649,65 @@ export default async function Home() {
               <CardTitle className="text-lg">Field Performance</CardTitle>
               <p className="text-sm text-muted-foreground">Comprehensive statistics for top commanders</p>
             </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-border/60 text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                    <TableHead className="py-3">Rank</TableHead>
-                    <TableHead className="py-3">Commander</TableHead>
-                    <TableHead className="py-3">Entries</TableHead>
-                    <TableHead className="py-3">Win Rate</TableHead>
-                    <TableHead className="py-3 text-right">Top Cut Conversion</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {topCommanders.length > 0 ? (
-                    topCommanders.map((commander, index) => (
-                      <TableRow key={commander.commander_id} className="border-border/60">
-                        <TableCell className="font-mono text-xs text-muted-foreground">#{index + 1}</TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-3">
-                            <div className="flex gap-1 shrink-0">
-                              {commander.color_identity?.filter(Boolean).map((color: string) => (
-                                <ColorBadge key={color} color={color} />
-                              ))}
+            <CardContent className="px-2 sm:px-6">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-border/60 text-[10px] uppercase tracking-wider text-muted-foreground">
+                      <TableHead className="py-2 px-1 w-8">#</TableHead>
+                      <TableHead className="py-2 px-2">Commander</TableHead>
+                      <TableHead className="py-2 px-2 text-right hidden sm:table-cell">Entries</TableHead>
+                      <TableHead className="py-2 px-2 text-right">Win%</TableHead>
+                      <TableHead className="py-2 px-2 text-right">Cut%</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {topCommanders.length > 0 ? (
+                      topCommanders.map((commander, index) => (
+                        <TableRow key={commander.commander_id} className="border-border/60">
+                          <TableCell className="py-3 px-1 font-mono text-[10px] text-muted-foreground">#{index + 1}</TableCell>
+                          <TableCell className="py-3 px-2">
+                            <div className="flex items-center gap-2">
+                              <div className="flex gap-0.5 shrink-0">
+                                {commander.color_identity?.filter(Boolean).map((color: string) => (
+                                  <ColorBadge key={color} color={color} isSmall />
+                                ))}
+                              </div>
+                              <Link
+                                className="max-w-[140px] sm:max-w-[220px] truncate text-xs sm:text-sm font-medium text-foreground hover:text-primary"
+                                href={`/commanders/${commander.commander_id}`}
+                              >
+                                {normalizeDisplayString(commander.commander_name)}
+                              </Link>
                             </div>
-                            <Link
-                              className="max-w-[220px] truncate text-sm font-medium text-foreground hover:text-primary"
-                              href={`/commanders/${commander.commander_id}`}
-                            >
-                              {normalizeDisplayString(commander.commander_name)}
-                            </Link>
-                          </div>
-                        </TableCell>
-                        <TableCell className="font-mono text-sm text-muted-foreground">
-                          {commander.total_entries}
-                        </TableCell>
-                        <TableCell className="font-mono text-sm">
-                          {(() => {
-                            const wr = typeof commander.avg_win_rate === "number" ? commander.avg_win_rate : parseFloat(commander.avg_win_rate || "0");
-                            return (Number.isFinite(wr) ? wr * 100 : 0).toFixed(1);
-                          })()}%
-                        </TableCell>
-                        <TableCell className="font-mono text-sm text-right text-primary">
-                          {(() => {
-                            const conversion = typeof commander.conversion_rate_top_cut === "number" ? commander.conversion_rate_top_cut : parseFloat(commander.conversion_rate_top_cut || "0");
-                            return (Number.isFinite(conversion) ? conversion * 100 : 0).toFixed(1);
-                          })()}%
+                          </TableCell>
+                          <TableCell className="py-3 px-2 font-mono text-[10px] text-muted-foreground text-right hidden sm:table-cell">
+                            {commander.total_entries}
+                          </TableCell>
+                          <TableCell className="py-3 px-2 font-mono text-xs sm:text-sm text-right">
+                            {(() => {
+                              const wr = typeof commander.avg_win_rate === "number" ? commander.avg_win_rate : parseFloat(commander.avg_win_rate || "0");
+                              return (Number.isFinite(wr) ? wr * 100 : 0).toFixed(1);
+                            })()}%
+                          </TableCell>
+                          <TableCell className="py-3 px-2 font-mono text-xs sm:text-sm text-right text-primary">
+                            {(() => {
+                              const conversion = typeof commander.conversion_rate_top_cut === "number" ? commander.conversion_rate_top_cut : parseFloat(commander.conversion_rate_top_cut || "0");
+                              return (Number.isFinite(conversion) ? conversion * 100 : 0).toFixed(1);
+                            })()}%
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    ) : (
+                      <TableRow className="border-border/60">
+                        <TableCell className="py-6 text-sm text-muted-foreground text-center" colSpan={5}>
+                          No commander data available right now.
                         </TableCell>
                       </TableRow>
-                    ))
-                  ) : (
-                    <TableRow className="border-border/60">
-                      <TableCell className="py-6 text-sm text-muted-foreground" colSpan={5}>
-                        No commander data available right now.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
             </CardContent>
           </Card>
 
@@ -757,15 +716,15 @@ export default async function Home() {
               <CardTitle className="text-lg">Win Rate Leaders</CardTitle>
               <p className="text-sm text-muted-foreground">Active last 12mo · 60+ entries</p>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-2 p-2 sm:p-6 sm:space-y-3">
               {topWinRate.length > 0 ? (
                 topWinRate.map((commander, index) => (
                   <CommanderRow key={commander.commander_id} commander={commander} rank={index + 1} />
                 ))
               ) : (
-                <p className="text-sm text-muted-foreground">No win-rate data available right now.</p>
+                <p className="text-sm text-muted-foreground text-center py-4">No win-rate data available right now.</p>
               )}
-              <Button asChild variant="ghost" className="w-full border border-border/70 mt-4">
+              <Button asChild variant="ghost" className="w-full border border-border/70 mt-2 text-xs h-9">
                 <Link href="/commanders">View All Commanders</Link>
               </Button>
             </CardContent>
@@ -791,26 +750,25 @@ function RisingCommanderRow({
   return (
     <Link
       href={`/commanders/${commander.commander_id}`}
-      className="flex w-full min-w-0 items-start gap-3 rounded-lg border border-border/60 bg-muted/30 px-3 py-3 transition hover:border-primary/40 hover:bg-muted/50"
+      className="flex w-full min-w-0 items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-2 py-2 sm:px-3 sm:py-3 transition hover:border-primary/40 hover:bg-muted/50"
     >
-      <span className="shrink-0 pt-0.5 font-mono text-xs text-muted-foreground">#{rank}</span>
-      <div className="flex shrink-0 flex-wrap gap-1 pt-0.5">
+      <span className="shrink-0 font-mono text-[10px] text-muted-foreground w-4">#{rank}</span>
+      <div className="flex shrink-0 flex-wrap gap-0.5 sm:gap-1">
         {commander.color_identity?.filter(Boolean).map((color: string) => (
-          <ColorBadge key={color} color={color} />
+          <ColorBadge key={color} color={color} isSmall />
         ))}
       </div>
-      <div className="min-w-0 flex-1">
-        <p className="break-words text-sm font-medium text-foreground">
+      <div className="min-w-0 flex-1 ml-1">
+        <p className="truncate text-xs sm:text-sm font-medium text-foreground">
           {normalizeDisplayString(commander.commander_name)}
         </p>
-        <p className="break-words text-xs text-muted-foreground">
-          {commander.recent_entries} latest stretch · prior {commander.prior_entries} ·{" "}
-          <span className={isAboveExpected ? "text-primary" : undefined}>{winRate}%</span> win
+        <p className="truncate text-[10px] text-muted-foreground">
+          {commander.recent_entries} entries · <span className={isAboveExpected ? "text-primary" : undefined}>{winRate}%</span> win
         </p>
       </div>
-      <div className="shrink-0 self-start text-right">
-        <p className="font-mono text-sm text-primary">+{(commander.meta_share_delta * 100).toFixed(2)}%</p>
-        <p className="text-xs text-muted-foreground">meta share</p>
+      <div className="shrink-0 text-right">
+        <p className="font-mono text-xs sm:text-sm text-primary">+{(commander.meta_share_delta * 100).toFixed(1)}%</p>
+        <p className="text-[9px] text-muted-foreground">meta Δ</p>
       </div>
     </Link>
   );
@@ -829,31 +787,31 @@ function CommanderRow({
   return (
     <Link
       href={`/commanders/${commander.commander_id}`}
-      className="flex w-full min-w-0 items-start gap-3 rounded-lg border border-border/60 bg-muted/30 px-3 py-3 transition hover:border-primary/40 hover:bg-muted/50"
+      className="flex w-full min-w-0 items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-2 py-2 sm:px-3 sm:py-3 transition hover:border-primary/40 hover:bg-muted/50"
     >
-      <span className="shrink-0 pt-0.5 font-mono text-xs text-muted-foreground">#{rank}</span>
-      <div className="flex shrink-0 flex-wrap gap-1 pt-0.5">
+      <span className="shrink-0 font-mono text-[10px] text-muted-foreground w-4">#{rank}</span>
+      <div className="flex shrink-0 flex-wrap gap-0.5 sm:gap-1">
         {commander.color_identity?.filter(Boolean).map((color: string) => (
-          <ColorBadge key={color} color={color} />
+          <ColorBadge key={color} color={color} isSmall />
         ))}
       </div>
-      <div className="min-w-0 flex-1">
-        <p className="break-words text-sm font-medium text-foreground">
+      <div className="min-w-0 flex-1 ml-1">
+        <p className="truncate text-xs sm:text-sm font-medium text-foreground">
           {normalizeDisplayString(commander.commander_name)}
         </p>
-        <p className="break-words text-xs text-muted-foreground">{commander.total_entries} entries</p>
+        <p className="truncate text-[10px] text-muted-foreground">{commander.total_entries} entries</p>
       </div>
-      <div className="shrink-0 self-start text-right">
-        <p className={`font-mono text-sm ${isAboveExpected ? "text-primary" : "text-muted-foreground"}`}>
+      <div className="shrink-0 text-right">
+        <p className={`font-mono text-xs sm:text-sm ${isAboveExpected ? "text-primary" : "text-muted-foreground"}`}>
           {winRate}%
         </p>
-        <p className="text-xs text-muted-foreground">win rate</p>
+        <p className="text-[9px] text-muted-foreground">win rate</p>
       </div>
     </Link>
   );
 }
 
-function ColorBadge({ color }: { color: string }) {
+function ColorBadge({ color, isSmall }: { color: string; isSmall?: boolean }) {
   const colors: Record<string, string> = {
     W: "bg-amber-200/80 text-amber-950",
     U: "bg-sky-500/90 text-white",
@@ -864,9 +822,9 @@ function ColorBadge({ color }: { color: string }) {
 
   return (
     <span
-      className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold ${
-        colors[color] || "bg-slate-500 text-white"
-      }`}
+      className={`flex items-center justify-center rounded-full font-semibold ${
+        isSmall ? "h-3.5 w-3.5 text-[8px]" : "h-5 w-5 text-[10px]"
+      } ${colors[color] || "bg-slate-500 text-white"}`}
     >
       {color}
     </span>

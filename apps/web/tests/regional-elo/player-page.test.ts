@@ -470,6 +470,10 @@ async function renderPlayerPage(
   searchParams: Record<string, string | string[] | undefined> = {}
 ) {
   const pageModule = await import("@/app/regional-elo/player/[topdeckId]/page");
+  const componentsModule = await import(
+    "@/app/regional-elo/player/[topdeckId]/player-profile-components"
+  );
+
   const wrapperElement = await pageModule.default({
     params: { topdeckId },
     searchParams,
@@ -481,13 +485,20 @@ async function renderPlayerPage(
   ) as { id: string; name: string; topdeck_id: string } | undefined;
   if (!player) return wrapperHtml;
 
-  const bodyElement = await pageModule.PlayerProfileBody({
-    topdeckId,
-    player,
-    searchParams,
-  });
+  const rawRegion = searchParams.region;
+  const regionParam = Array.isArray(rawRegion) ? (rawRegion[0] ?? "") : (rawRegion ?? "");
+  const regionFilter = regionParam.toUpperCase() === "ALL" ? "" : regionParam.toUpperCase();
+
+  const [headerElement, gridElement, bodyElement] = await Promise.all([
+    componentsModule.PlayerHeader({ topdeckId }),
+    componentsModule.PlayerProfileGrid({ topdeckId, player, regionFilter }),
+    pageModule.PlayerProfileBody({ topdeckId, player, searchParams }),
+  ]);
+
+  const headerHtml = headerElement ? renderToStaticMarkup(headerElement) : "";
+  const gridHtml = renderToStaticMarkup(gridElement);
   const bodyHtml = renderToStaticMarkup(bodyElement);
-  return wrapperHtml + bodyHtml;
+  return wrapperHtml + headerHtml + gridHtml + bodyHtml;
 }
 
 describe("RegionalPlayerPage", () => {

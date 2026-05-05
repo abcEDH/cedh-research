@@ -5,20 +5,40 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { CommanderUsageRow } from "@/lib/meta-prep";
 import { supabase } from "@/lib/supabase";
 import { fetchChampionshipLeaderboard, fetchTopDeckProfileStats } from "@/lib/topdeck";
-import { buildTopdeckProfileHref } from "@/lib/topdeck-profile";
 import { inferCountryForRegion } from "@/lib/region-countries";
 import { OpponentRecordsTable } from "./opponent-records-table";
 import { summarizePlayerLogs, type PlayerGameLog } from "./player-stats";
 import { unstable_cache } from "next/cache";
+import {
+  PlayerHeader,
+  PlayerHeaderSkeleton,
+  PlayerProfileGrid,
+  PlayerProfileGridSkeleton,
+  fetchCachedPlayer,
+  fetchCachedGlobalEloRank,
+  fetchCachedRegionalRanks,
+  fetchCachedPlayerProfileSummary,
+  fetchCachedGlobalSnapshot,
+  fetchCachedRegionalRank,
+  fetchCachedCountryRank,
+  fetchCachedPlayerCommanderProfile,
+  fetchCachedPlayerEventLogs,
+  fetchCachedPlayerAchievements,
+  fetchCachedPlayerCommanderUsageRows,
+  fetchEntries,
+  sortAchievementsByFinish,
+  isKnownCommanderName,
+  firstRelation,
+} from "./player-profile-components";
 
-export const revalidate = 3600;
+export const revalidate = 86400; // 24 hours
 export const dynamicParams = true;
 
 const SUPABASE_PAGE_SIZE = 1000;
 const SUPABASE_IN_CHUNK_SIZE = 100;
 const ACTIVE_PLAYER_LOOKBACK_MONTHS = 6;
 const ACHIEVEMENTS_PAGE_SIZE = 10;
-const PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS = 60 * 60;
+const PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS = 60 * 60 * 24; // 24 hours
 
 export async function generateStaticParams() {
   const { data } = await supabase
@@ -27,43 +47,43 @@ export async function generateStaticParams() {
     .eq("region_type", "global")
     .eq("region_key", "ALL")
     .order("rank", { ascending: true })
-    .limit(50);
+    .limit(500);
   return (data ?? [])
     .filter((row): row is { topdeck_id: string; rank: number } => Boolean(row?.topdeck_id))
     .map((row) => ({ topdeckId: String(row.topdeck_id) }));
 }
 
-type PlayerRow = {
+export type PlayerRow = {
   id: string;
   name: string;
   topdeck_id: string;
 };
 
-type PlayerCommanderUsageRow = CommanderUsageRow & {
+export type PlayerCommanderUsageRow = CommanderUsageRow & {
   tournament_name: string | null;
   tournament_topdeck_tid: string | null;
 };
 
-type EntryRow = {
+export type EntryRow = {
   id: string;
   tournament_id: string;
   player_id: string;
   commander_id: string | null;
 };
 
-type CommanderRow = {
+export type CommanderRow = {
   id: string;
   name: string;
 };
 
-type ParticipantRow = {
+export type ParticipantRow = {
   game_id: string;
   entry_id: string;
   seat_position: number;
   result: string;
 };
 
-type GameRow = {
+export type GameRow = {
   id: string;
   tournament_id: string;
   round_number: number | null;
@@ -73,14 +93,14 @@ type GameRow = {
   winner_id: string | null;
 };
 
-type TournamentRow = {
+export type TournamentRow = {
   id: string;
   name: string;
   start_date: string;
   state: string | null;
 };
 
-type LeaderboardRankRow = {
+export type LeaderboardRankRow = {
   player_id?: string;
   topdeck_id?: string | null;
   country_key?: string | null;
@@ -98,7 +118,7 @@ type LeaderboardRankRow = {
   topdeck_elo_rank?: number | null;
 };
 
-type StateAssignmentRow = {
+export type StateAssignmentRow = {
   country_key: string;
   region_key: string;
   games_played: number;
@@ -107,7 +127,7 @@ type StateAssignmentRow = {
   losses: number;
 };
 
-type PlayerProfileSummaryRow = {
+export type PlayerProfileSummaryRow = {
   games_played: number;
   wins: number;
   draws: number;
@@ -118,7 +138,7 @@ type PlayerProfileSummaryRow = {
   state_assignments: StateAssignmentRow[] | null;
 };
 
-type GlobalSnapshotRow = {
+export type GlobalSnapshotRow = {
   rank: number;
   points: number;
   tournaments: number | null;
@@ -128,7 +148,7 @@ type GlobalSnapshotRow = {
   losses: number | null;
 };
 
-type PlayerTournamentEntryRow = {
+export type PlayerTournamentEntryRow = {
   final_standing: number | null;
   wins: number | null;
   draws: number | null;
@@ -158,7 +178,7 @@ type PlayerTournamentEntryRow = {
     | null;
 };
 
-type PlayerAchievementRow = {
+export type PlayerAchievementRow = {
   tournamentName: string;
   tournamentUrl: string | null;
   startDate: string | null;
@@ -173,7 +193,7 @@ type PlayerAchievementRow = {
   recordGames: number;
 };
 
-type PlayerCommanderProfileRow = {
+export type PlayerCommanderProfileRow = {
   active_commander: string | null;
   latest_decklist_url: string | null;
   latest_tournament_name: string | null;
@@ -181,7 +201,7 @@ type PlayerCommanderProfileRow = {
   latest_tournament_topdeck_tid: string | null;
 };
 
-type PlayerEventLogRow = {
+export type PlayerEventLogRow = {
   game_id: string;
   game_date: string | null;
   tournament_name: string | null;
@@ -194,7 +214,7 @@ type PlayerEventLogRow = {
   game_result: string;
 };
 
-type PlayerEventOpponentRow = {
+export type PlayerEventOpponentRow = {
   game_id: string;
   player_id: string;
   player_name: string | null;
@@ -203,14 +223,6 @@ type PlayerEventOpponentRow = {
   commander_name: string | null;
   game_result: string;
 };
-
-function chunkArray<T>(values: T[], chunkSize: number) {
-  const chunks: T[][] = [];
-  for (let index = 0; index < values.length; index += chunkSize) {
-    chunks.push(values.slice(index, index + chunkSize));
-  }
-  return chunks;
-}
 
 function activePlayerCutoffDate() {
   const cutoff = new Date();
@@ -222,35 +234,10 @@ function isActiveRank(row: LeaderboardRankRow | null) {
   return Boolean(row?.last_game_date && row.last_game_date >= activePlayerCutoffDate());
 }
 
-function describeSupabaseError(error: unknown) {
-  if (!error) return "unknown error";
-  if (error instanceof Error) return error.message;
-  if (typeof error === "object") {
-    const details = error as { message?: string; code?: string; details?: string; hint?: string };
-    return [details.message, details.code, details.details, details.hint].filter(Boolean).join(" | ") || JSON.stringify(error);
-  }
-  return String(error);
-}
-
 function toRoundLabel(game: GameRow) {
   if (game.round_name) return game.round_name;
   if (game.round_number !== null) return `Round ${game.round_number}`;
   return "Bracket";
-}
-
-function toEventRoundLabel(row: PlayerEventLogRow) {
-  if (row.round_name) return row.round_name;
-  if (row.round_number !== null) return `Round ${row.round_number}`;
-  return "Bracket";
-}
-
-function isKnownCommanderName(value: string | null | undefined) {
-  const normalized = (value ?? "").trim().toLowerCase();
-  return normalized.length > 0 && normalized !== "unknown commander";
-}
-
-function firstRelation<T>(value: T | T[] | null) {
-  return Array.isArray(value) ? value[0] ?? null : value;
 }
 
 function chunkValues<T>(values: T[], size = SUPABASE_IN_CHUNK_SIZE) {
@@ -339,151 +326,6 @@ function normalizeAchievementSort(value: string): AchievementSort {
   return value === "best" ? "best" : "recent";
 }
 
-async function fetchPlayer(topdeckId: string): Promise<PlayerRow | null> {
-  const { data } = await supabase
-    .from("players")
-    .select("id, name, topdeck_id")
-    .eq("topdeck_id", topdeckId)
-    .maybeSingle();
-
-  return (data as PlayerRow | null) ?? null;
-}
-
-async function fetchEntries(playerId: string): Promise<EntryRow[]> {
-  const rows: EntryRow[] = [];
-  for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
-    const { data, error } = await supabase
-      .from("tournament_entries")
-      .select("id, tournament_id, player_id, commander_id")
-      .eq("player_id", playerId)
-      .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
-
-    if (error) throw new Error(`Error fetching player entries: ${error.message}`);
-    rows.push(...((data as EntryRow[]) ?? []));
-    if (!data || data.length < SUPABASE_PAGE_SIZE) break;
-  }
-
-  return rows;
-}
-
-async function fetchActiveRankRow(
-  regionType: "global" | "country" | "state",
-  regionKey: string,
-  playerId: string
-): Promise<LeaderboardRankRow | null> {
-  const { data, error } = await supabase
-    .from("global_elo_active_leaderboard")
-    .select(
-      "country_key, primary_country_key, primary_region_key, region_key, rank, rating, games_played, wins, draws, losses, last_game_date, topdeck_elo, topdeck_elo_rank"
-    )
-    .eq("region_type", regionType)
-    .eq("region_key", regionKey)
-    .eq("player_id", playerId)
-    .maybeSingle();
-
-  if (error) return null;
-  const row = (data as LeaderboardRankRow | null) ?? null;
-  return row ? { ...row, rank: row.topdeck_elo_rank ?? row.rank } : null;
-}
-
-async function fetchGlobalEloRank(playerId: string): Promise<LeaderboardRankRow | null> {
-  return fetchActiveRankRow("global", "ALL", playerId);
-}
-
-async function fetchRegionalRank(playerId: string, regionKey: string): Promise<LeaderboardRankRow | null> {
-  if (!regionKey) return null;
-  return fetchActiveRankRow("state", regionKey, playerId);
-}
-
-async function fetchCountryRank(playerId: string, countryKey: string): Promise<LeaderboardRankRow | null> {
-  if (!countryKey || countryKey === "UNKNOWN") return null;
-  return fetchActiveRankRow("country", countryKey, playerId);
-}
-
-async function fetchRegionalRanks(playerId: string): Promise<LeaderboardRankRow[]> {
-  const { data, error } = await supabase
-    .from("global_elo_active_leaderboard")
-    .select("country_key, region_key, rank, rating, games_played, wins, draws, losses, last_game_date, topdeck_elo, topdeck_elo_rank")
-    .eq("region_type", "state")
-    .eq("player_id", playerId)
-    .order("topdeck_elo_rank", { ascending: true, nullsFirst: false })
-    .order("region_key", { ascending: true });
-
-  if (error) return [];
-
-  return ((data as LeaderboardRankRow[]) ?? []).sort((a, b) => {
-    if (a.topdeck_elo_rank != null && b.topdeck_elo_rank != null && a.topdeck_elo_rank !== b.topdeck_elo_rank) {
-      return a.topdeck_elo_rank - b.topdeck_elo_rank;
-    }
-    if (a.topdeck_elo_rank != null && b.topdeck_elo_rank == null) return -1;
-    if (a.topdeck_elo_rank == null && b.topdeck_elo_rank != null) return 1;
-    return (a.region_key ?? "").localeCompare(b.region_key ?? "");
-  });
-}
-
-function parseStateAssignments(value: unknown): StateAssignmentRow[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((row) => {
-      if (!row || typeof row !== "object") return null;
-      const record = row as Partial<StateAssignmentRow>;
-      const regionKey = String(record.region_key ?? "").trim();
-      if (!regionKey) return null;
-      return {
-        country_key: String(record.country_key ?? inferCountryForRegion(regionKey) ?? "UNKNOWN"),
-        region_key: regionKey,
-        games_played: Number(record.games_played ?? 0),
-        wins: Number(record.wins ?? 0),
-        draws: Number(record.draws ?? 0),
-        losses: Number(record.losses ?? 0),
-      };
-    })
-    .filter((row): row is StateAssignmentRow => Boolean(row));
-}
-
-async function fetchPlayerProfileSummary(playerId: string): Promise<PlayerProfileSummaryRow | null> {
-  const { data, error } = await supabase
-    .from("global_elo_player_profile_summaries")
-    .select("games_played, wins, draws, losses, last_game_date, home_country_key, home_region_key, state_assignments")
-    .eq("player_id", playerId)
-    .maybeSingle();
-
-  if (error) {
-    console.error("Error fetching player profile summary:", describeSupabaseError(error));
-    return null;
-  }
-
-  const row = data as Omit<PlayerProfileSummaryRow, "state_assignments"> & { state_assignments: unknown } | null;
-  return row
-    ? {
-        ...row,
-        state_assignments: parseStateAssignments(row.state_assignments),
-      }
-    : null;
-}
-
-const fetchGlobalSnapshot = unstable_cache(async (topdeckId: string): Promise<GlobalSnapshotRow | null> => {
-  try {
-    const [leaderboard, profileStats] = await Promise.all([
-      fetchChampionshipLeaderboard(),
-      fetchTopDeckProfileStats(topdeckId).catch(() => null),
-    ]);
-    const entry = leaderboard.find((row) => row.uid === topdeckId);
-    if (!entry && !profileStats) return null;
-    return {
-      rank: entry?.rank ?? 0,
-      points: entry?.points ?? 0,
-      tournaments: profileStats?.tournaments ?? null,
-      gamesPlayed: profileStats?.gamesPlayed ?? null,
-      wins: profileStats?.wins ?? null,
-      draws: profileStats?.draws ?? null,
-      losses: profileStats?.losses ?? null,
-    };
-  } catch {
-    return null;
-  }
-}, ["regional-player-global-snapshot-v1"], { revalidate: 60 * 60 });
-
 function buildTopdeckDecklistUrl(tournamentSlug: string | null | undefined, topdeckId: string) {
   return tournamentSlug ? `https://topdeck.gg/deck/${tournamentSlug}/${topdeckId}` : null;
 }
@@ -516,144 +358,6 @@ function achievementTournamentKey(tournamentName: string | null | undefined, sta
 
 function logPlayerReadSummary(event: string, details: Record<string, unknown>) {
   console.info(`[regional-player] ${event}`, details);
-}
-
-async function fetchPlayerTournamentEntries(playerId: string): Promise<PlayerTournamentEntryRow[]> {
-  const rows: PlayerTournamentEntryRow[] = [];
-  for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
-    const { data, error } = await supabase
-      .from("tournament_entries")
-      .select(
-        "final_standing, wins, draws, losses, decklist_url, commanders(name), tournaments(name, start_date, player_count, topdeck_tid)"
-      )
-      .eq("player_id", playerId)
-      .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
-
-    if (error) throw new Error(`Error fetching player tournament entries: ${error.message}`);
-    rows.push(...((data as PlayerTournamentEntryRow[]) ?? []));
-    if (!data || data.length < SUPABASE_PAGE_SIZE) break;
-  }
-
-  logPlayerReadSummary("tournament-entries-cache-miss", {
-    playerId,
-    rowsReturned: rows.length,
-    supabaseQueries: Math.max(1, Math.ceil(rows.length / SUPABASE_PAGE_SIZE)),
-  });
-
-  return rows;
-}
-
-function buildPlayerAchievements(
-  rows: PlayerTournamentEntryRow[],
-  topdeckId: string
-): PlayerAchievementRow[] {
-  return rows
-    .map((row) => {
-      const tournament = firstRelation(row.tournaments);
-      const commander = firstRelation(row.commanders);
-      const placement = row.final_standing ?? null;
-      const playerCount = tournament?.player_count ?? null;
-      const finishRatio =
-        placement && playerCount && playerCount > 0 ? placement / playerCount : null;
-
-      return {
-        tournamentName: tournament?.name ?? "Unknown tournament",
-        tournamentUrl: buildTopdeckTournamentUrl(tournament?.topdeck_tid),
-        startDate: tournament?.start_date ?? null,
-        playerCount,
-        placement,
-        finishRatio,
-        commanderName: isKnownCommanderName(commander?.name) ? commander?.name ?? null : null,
-        decklistUrl: row.decklist_url || buildTopdeckDecklistUrl(tournament?.topdeck_tid, topdeckId),
-        wins: Number(row.wins ?? 0),
-        draws: Number(row.draws ?? 0),
-        losses: Number(row.losses ?? 0),
-        recordGames: Number(row.wins ?? 0) + Number(row.draws ?? 0) + Number(row.losses ?? 0),
-      };
-    })
-    .sort((a, b) => (b.startDate ?? "").localeCompare(a.startDate ?? ""));
-}
-
-function sortAchievementsByFinish(rows: PlayerAchievementRow[]): PlayerAchievementRow[] {
-  return [...rows].sort((a, b) => {
-    if (a.finishRatio === null && b.finishRatio !== null) return 1;
-    if (b.finishRatio === null && a.finishRatio !== null) return -1;
-    if (a.finishRatio !== null && b.finishRatio !== null && a.finishRatio !== b.finishRatio) {
-      return a.finishRatio - b.finishRatio;
-    }
-    if ((b.playerCount ?? 0) !== (a.playerCount ?? 0)) {
-      return (b.playerCount ?? 0) - (a.playerCount ?? 0);
-    }
-    const dateCompare = (b.startDate ?? "").localeCompare(a.startDate ?? "");
-    if (dateCompare !== 0) return dateCompare;
-    return a.tournamentName.localeCompare(b.tournamentName);
-  });
-}
-
-async function fetchPlayerAchievements(playerId: string, topdeckId: string): Promise<PlayerAchievementRow[]> {
-  const rows = await fetchPlayerTournamentEntries(playerId);
-  return buildPlayerAchievements(rows, topdeckId);
-}
-
-function buildPlayerCommanderUsageRows(
-  rows: PlayerTournamentEntryRow[],
-  topdeckId: string,
-  playerName: string
-): PlayerCommanderUsageRow[] {
-  return rows
-    .map((row) => {
-      const tournament = firstRelation(row.tournaments);
-      const commander = firstRelation(row.commanders);
-      const commanderName = isKnownCommanderName(commander?.name) ? commander?.name ?? null : null;
-
-      return {
-        topdeck_id: topdeckId,
-        player_name: playerName,
-        commander_name: commanderName,
-        wins: row.wins,
-        draws: row.draws,
-        losses: row.losses,
-        start_date: tournament?.start_date ?? null,
-        player_count: tournament?.player_count ?? null,
-        decklist_url: null,
-        topdeck_decklist_url: buildTopdeckDecklistUrl(tournament?.topdeck_tid, topdeckId),
-        tournament_name: tournament?.name ?? null,
-        tournament_topdeck_tid: tournament?.topdeck_tid ?? null,
-      };
-    })
-    .filter((row) => row.commander_name && row.start_date);
-}
-
-async function fetchPlayerCommanderUsageRows(
-  playerId: string,
-  topdeckId: string,
-  playerName: string
-): Promise<PlayerCommanderUsageRow[]> {
-  const rows = await fetchPlayerTournamentEntries(playerId);
-  return buildPlayerCommanderUsageRows(rows, topdeckId, playerName);
-}
-
-async function fetchPlayerCommanderProfile(topdeckId: string): Promise<PlayerCommanderProfileRow | null> {
-  const { data: profileRow, error: profileError } = await supabase
-    .from("player_commander_profiles")
-    .select("active_commander, latest_decklist_url, latest_tournament_name, latest_tournament_date, latest_tournament_topdeck_tid")
-    .eq("topdeck_id", topdeckId)
-    .maybeSingle();
-
-  if (profileError) {
-    console.error("Error fetching player commander profile:", describeSupabaseError(profileError));
-    return null;
-  }
-
-  const profile = profileRow as PlayerCommanderProfileRow | null;
-  return profile
-    ? {
-        ...profile,
-        active_commander: isKnownCommanderName(profile.active_commander)
-          ? profile.active_commander
-          : null,
-      }
-    : null;
 }
 
 async function fetchGamesAndParticipants(entryIds: string[]) {
@@ -867,164 +571,6 @@ async function fetchCommandersById(commanderIds: string[]): Promise<Map<string, 
   return new Map(rows.map((row) => [row.id, row]));
 }
 
-async function fetchPlayerEventLogs(playerId: string, regionFilter: string): Promise<PlayerGameLog[]> {
-  const eventLogTables = ["global_elo_game_event_log", "regional_elo_game_event_log"];
-  let eventRows: PlayerEventLogRow[] = [];
-  let eventLogTable = eventLogTables[0];
-  let lastEventError: unknown = null;
-
-  for (const table of eventLogTables) {
-    const collected: PlayerEventLogRow[] = [];
-    let queryFailed = false;
-    let queryError: unknown = null;
-
-    for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
-      let query = supabase
-        .from(table)
-        .select(
-          "game_id, game_date, tournament_name, state, round_number, round_name, table_number, seat_position, commander_name, game_result"
-        )
-        .eq("player_id", playerId)
-        .order("game_date", { ascending: false })
-        .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
-
-      if (regionFilter) {
-        query = query.ilike("state", regionFilter);
-      }
-
-      const { data, error } = await query;
-      if (error) {
-        queryFailed = true;
-        queryError = error;
-        break;
-      }
-
-      collected.push(...((data as PlayerEventLogRow[]) ?? []));
-      if (!data || data.length < SUPABASE_PAGE_SIZE) break;
-    }
-
-    if (!queryFailed) {
-      eventRows = collected;
-      eventLogTable = table;
-      break;
-    }
-    lastEventError = queryError;
-  }
-
-  if (lastEventError && eventRows.length === 0 && eventLogTable === eventLogTables[0]) {
-    console.error("Error fetching precomputed player event log:", describeSupabaseError(lastEventError));
-    return [];
-  }
-  if (eventRows.length === 0) return [];
-
-  const gameIds = Array.from(new Set(eventRows.map((row) => row.game_id)));
-  const opponentRows: PlayerEventOpponentRow[] = [];
-  for (const gameIdChunk of chunkArray(gameIds, 250)) {
-    for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
-      const { data: opponentData, error: opponentError } = await supabase
-        .from(eventLogTable)
-        .select("game_id, player_id, player_name, topdeck_id, seat_position, commander_name, game_result")
-        .in("game_id", gameIdChunk)
-        .neq("player_id", playerId)
-        .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
-
-      if (opponentError) {
-        console.error(
-          "Error fetching precomputed player event opponents:",
-          describeSupabaseError(opponentError)
-        );
-        break;
-      }
-      opponentRows.push(...((opponentData as PlayerEventOpponentRow[]) ?? []));
-      if (!opponentData || opponentData.length < SUPABASE_PAGE_SIZE) break;
-    }
-  }
-
-  const opponentsByGameId = new Map<string, PlayerGameLog["opponents"]>();
-  for (const row of opponentRows) {
-    const existing = opponentsByGameId.get(row.game_id) ?? [];
-    existing.push({
-      topdeckId: row.topdeck_id,
-      playerName: row.player_name ?? "Unknown",
-      commanderName: row.commander_name,
-      seat: (row.seat_position ?? 0) + 1,
-      result: row.game_result,
-    });
-    opponentsByGameId.set(row.game_id, existing);
-  }
-  for (const opponents of opponentsByGameId.values()) {
-    opponents.sort((a, b) => a.seat - b.seat);
-  }
-
-  return eventRows.map((row) => ({
-    gameId: row.game_id,
-    startDate: row.game_date ?? "",
-    tournamentName: row.tournament_name ?? "Unknown tournament",
-    state: row.state,
-    roundLabel: toEventRoundLabel(row),
-    tableLabel: row.table_number !== null ? `Table ${row.table_number}` : "Bracket",
-    seat: (row.seat_position ?? 0) + 1,
-    result: row.game_result,
-    commanderName: row.commander_name,
-    opponents: opponentsByGameId.get(row.game_id) ?? [],
-  }));
-}
-
-const fetchCachedGlobalEloRank = unstable_cache(
-  async (playerId: string) => fetchGlobalEloRank(playerId),
-  ["regional-player-global-rank-v4"],
-  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
-);
-
-const fetchCachedRegionalRank = unstable_cache(
-  async (playerId: string, regionKey: string) => fetchRegionalRank(playerId, regionKey),
-  ["regional-player-local-rank-v4"],
-  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
-);
-
-const fetchCachedCountryRank = unstable_cache(
-  async (playerId: string, countryKey: string) => fetchCountryRank(playerId, countryKey),
-  ["regional-player-country-rank-v4"],
-  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
-);
-
-const fetchCachedRegionalRanks = unstable_cache(
-  async (playerId: string) => fetchRegionalRanks(playerId),
-  ["regional-player-regional-ranks-v3"],
-  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
-);
-
-const fetchCachedPlayerProfileSummary = unstable_cache(
-  async (playerId: string) => fetchPlayerProfileSummary(playerId),
-  ["regional-player-profile-summary-v4"],
-  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
-);
-
-const fetchCachedPlayerCommanderProfile = unstable_cache(
-  async (topdeckId: string) => fetchPlayerCommanderProfile(topdeckId),
-  ["regional-player-commander-profile-v1"],
-  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
-);
-
-const fetchCachedPlayerAchievements = unstable_cache(
-  async (playerId: string, topdeckId: string) => fetchPlayerAchievements(playerId, topdeckId),
-  ["regional-player-achievements-v3"],
-  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
-);
-
-const fetchCachedPlayerCommanderUsageRows = unstable_cache(
-  async (playerId: string, topdeckId: string, playerName: string) =>
-    fetchPlayerCommanderUsageRows(playerId, topdeckId, playerName),
-  ["regional-player-commander-usage-v3"],
-  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
-);
-
-const fetchCachedPlayerEventLogs = unstable_cache(
-  async (playerId: string, regionFilter: string) => fetchPlayerEventLogs(playerId, regionFilter),
-  ["regional-player-event-logs-v3"],
-  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
-);
-
 export default async function RegionalPlayerPage({
   params,
   searchParams,
@@ -1037,44 +583,17 @@ export default async function RegionalPlayerPage({
   const resolvedParams = await Promise.resolve(params);
   const topdeckId = resolvedParams.topdeckId;
 
-  const player = await fetchPlayer(topdeckId);
-  if (!player) {
-    return (
-      <main className="container mx-auto px-4 py-10">
-        <p className="text-sm text-muted-foreground">No player found for TopDeck ID {topdeckId}.</p>
-      </main>
-    );
-  }
-
-  const topdeckProfileHref = buildTopdeckProfileHref(topdeckId);
-
   return (
     <div className="min-h-screen">
       <main className="container mx-auto px-4 pb-20 pt-10">
         <div className="space-y-8">
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-end justify-between gap-4">
-              <div>
-                <h1 className="text-3xl font-semibold text-foreground md:text-4xl">
-                  {player.name}
-                </h1>
-              </div>
-              {topdeckProfileHref ? (
-                <a
-                  href={topdeckProfileHref}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-sm text-primary hover:text-foreground"
-                >
-                  Open TopDeck profile
-                </a>
-              ) : null}
-            </div>
-          </div>
+          <Suspense fallback={<PlayerHeaderSkeleton />}>
+            <PlayerHeader topdeckId={topdeckId} />
+          </Suspense>
+
           <Suspense fallback={<PlayerProfileBodySkeleton />}>
-            <PlayerProfileBody
+            <PlayerProfileBodyWrapper
               topdeckId={topdeckId}
-              player={player}
               searchParams={searchParams}
             />
           </Suspense>
@@ -1083,6 +602,47 @@ export default async function RegionalPlayerPage({
     </div>
   );
 }
+
+async function PlayerProfileBodyWrapper({
+  topdeckId,
+  searchParams,
+}: {
+  topdeckId: string;
+  searchParams?:
+    | Promise<Record<string, string | string[] | undefined>>
+    | Record<string, string | string[] | undefined>;
+}) {
+  const player = await fetchCachedPlayer(topdeckId);
+  if (!player) {
+    return (
+      <p className="text-sm text-muted-foreground">No player found for TopDeck ID {topdeckId}.</p>
+    );
+  }
+
+  const resolvedSearchParams = await Promise.resolve(searchParams);
+  const requestedRegion = decodeURIComponent(readRegionParam(resolvedSearchParams)).trim().toUpperCase();
+  const regionFilter = requestedRegion === "ALL" ? "" : requestedRegion;
+
+  return (
+    <>
+      <Suspense fallback={<PlayerProfileGridSkeleton />}>
+        <PlayerProfileGrid
+          topdeckId={topdeckId}
+          player={player}
+          regionFilter={regionFilter}
+        />
+      </Suspense>
+
+      <PlayerProfileBody
+        topdeckId={topdeckId}
+        player={player}
+        searchParams={searchParams}
+      />
+    </>
+  );
+}
+
+
 
 export async function PlayerProfileBody({
   topdeckId,
@@ -1118,31 +678,35 @@ export async function PlayerProfileBody({
     commanderProfile,
     commanderUsageRows,
     fetchedAchievementRows,
+    eventPlayerLogsResult,
+    rawEntries,
   ] = await Promise.all([
-    fetchGlobalSnapshot(topdeckId),
+    fetchCachedGlobalSnapshot(topdeckId),
     fetchCachedGlobalEloRank(player.id),
     fetchCachedRegionalRanks(player.id),
     fetchCachedPlayerProfileSummary(player.id),
     fetchCachedPlayerCommanderProfile(topdeckId),
     fetchCachedPlayerCommanderUsageRows(player.id, topdeckId, player.name),
     fetchCachedPlayerAchievements(player.id, topdeckId),
+    Promise.resolve(fetchCachedPlayerEventLogs(player.id, ""))
+      .then((value) => ({ status: "fulfilled" as const, value }))
+      .catch((reason) => ({ status: "rejected" as const, reason })),
+    fetchEntries(player.id),
   ]);
 
   const activeCommander = commanderProfile?.active_commander ?? null;
 
-  const regionalRankRows = regionalRanks.map((row) => ({
+  const regionalRankRows = regionalRanks.map((row: LeaderboardRankRow) => ({
     ...row,
     country_key: row.country_key ?? inferCountryForRegion(row.region_key) ?? "UNKNOWN",
   }));
 
-  const eventPlayerLogsResult = await Promise.resolve(fetchCachedPlayerEventLogs(player.id, ""))
-    .then((value) => ({ status: "fulfilled" as const, value }))
-    .catch((reason) => ({ status: "rejected" as const, reason }));
-  const eventPlayerLogs = eventPlayerLogsResult.status === "fulfilled" ? eventPlayerLogsResult.value : [];
+  const eventPlayerLogs =
+    eventPlayerLogsResult.status === "fulfilled" ? eventPlayerLogsResult.value : [];
   const playerLogs: PlayerGameLog[] =
     eventPlayerLogs.length > 0
       ? eventPlayerLogs
-      : await fetchEntries(player.id).then((entries) => buildPlayerLogsFromRawHistory(entries));
+      : await buildPlayerLogsFromRawHistory(rawEntries);
   const {
     totalGames,
     totalWins,
@@ -1178,7 +742,7 @@ export async function PlayerProfileBody({
     new Map<string, { wins: number; draws: number; losses: number; games: number }>()
   );
   const allAchievementRows = fetchedAchievementRows
-    .map((row) => {
+    .map((row: PlayerAchievementRow) => {
       const gameResults = achievementResultByTournament.get(
         achievementTournamentKey(row.tournamentName, row.startDate)
       );
@@ -1191,10 +755,11 @@ export async function PlayerProfileBody({
         recordGames: gameResults.games,
       };
     })
-    .filter((row) => row.recordGames > 0);
+    .filter((row: PlayerAchievementRow) => row.recordGames > 0);
+
   const normalizedAchievementTournamentSearch = achievementTournamentSearch.toLocaleLowerCase();
   const normalizedAchievementCommanderSearch = achievementCommanderSearch.toLocaleLowerCase();
-  const filteredAchievementRows = allAchievementRows.filter((row) => {
+  const filteredAchievementRows = allAchievementRows.filter((row: PlayerAchievementRow) => {
     const matchesTournament =
       !normalizedAchievementTournamentSearch ||
       row.tournamentName.toLocaleLowerCase().includes(normalizedAchievementTournamentSearch);
@@ -1206,6 +771,7 @@ export async function PlayerProfileBody({
     const matchesTo = !achievementDateTo || (rowDate && rowDate <= achievementDateTo);
     return matchesTournament && matchesCommander && matchesFrom && matchesTo;
   });
+
   const achievementRows =
     achievementSort === "best"
       ? sortAchievementsByFinish(filteredAchievementRows)
@@ -1244,16 +810,21 @@ export async function PlayerProfileBody({
   const shouldShowGlobalRank = isActiveRank(globalEloRank);
   const shouldShowLocalRank = isActiveRank(activeRank);
   const shouldShowCountryRank = isActiveRank(countryRank);
-  const stateAssignmentRows = Array.from(assignmentRowsByRegion.values()).sort((a, b) => {
-    if (a.region_key === homeRegion) return -1;
-    if (b.region_key === homeRegion) return 1;
-    if (a.country_key === "UNKNOWN" && b.country_key !== "UNKNOWN") return 1;
-    if (b.country_key === "UNKNOWN" && a.country_key !== "UNKNOWN") return -1;
-    if (a.country_key !== b.country_key) return a.country_key.localeCompare(b.country_key);
-    if (a.region_key === "UNKNOWN" && b.region_key !== "UNKNOWN") return 1;
-    if (b.region_key === "UNKNOWN" && a.region_key !== "UNKNOWN") return -1;
+  const stateAssignmentRows = Array.from(assignmentRowsByRegion.values()).sort((a: StateAssignmentRow, b: StateAssignmentRow) => {
+    const aCountry = a.country_key ?? "UNKNOWN";
+    const bCountry = b.country_key ?? "UNKNOWN";
+    const aRegion = a.region_key ?? "UNKNOWN";
+    const bRegion = b.region_key ?? "UNKNOWN";
+
+    if (aRegion === homeRegion) return -1;
+    if (bRegion === homeRegion) return 1;
+    if (aCountry === "UNKNOWN" && bCountry !== "UNKNOWN") return 1;
+    if (bCountry === "UNKNOWN" && aCountry !== "UNKNOWN") return -1;
+    if (aCountry !== bCountry) return aCountry.localeCompare(bCountry);
+    if (aRegion === "UNKNOWN" && bRegion !== "UNKNOWN") return 1;
+    if (bRegion === "UNKNOWN" && aRegion !== "UNKNOWN") return -1;
     if (b.games_played !== a.games_played) return b.games_played - a.games_played;
-    return a.region_key.localeCompare(b.region_key);
+    return aRegion.localeCompare(bRegion);
   });
   const commanderRows = Array.from(
     playerLogs.reduce(
@@ -1338,7 +909,6 @@ export async function PlayerProfileBody({
       });
     }
   }
-  const topdeckProfileHref = buildTopdeckProfileHref(topdeckId);
   const stateLeaderboardHref = homeRegion
     ? `/regional-elo?scope=country&country=${encodeURIComponent(
         inferCountryForRegion(homeRegion) ?? "UNITED STATES"
@@ -1353,170 +923,12 @@ export async function PlayerProfileBody({
       <Link href={backHref} className="-mt-6 block text-sm text-muted-foreground hover:text-foreground">
         ← Back to region leaderboard
       </Link>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-9">
-            <Card className="knd-panel">
-              <CardHeader>
-                <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  State Rank
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1">
-                <div className="text-2xl font-semibold text-foreground">
-                  {stateLeaderboardHref && shouldShowLocalRank && activeRank ? (
-                    <Link href={stateLeaderboardHref} className="hover:text-primary">
-                      #{activeRank.rank}
-                    </Link>
-                  ) : (
-                    "--"
-                  )}
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  {stateLeaderboardHref ? (
-                    <Link href={stateLeaderboardHref} className="hover:text-primary">
-                      {homeRegion}
-                    </Link>
-                  ) : (
-                    "Unassigned"
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="knd-panel">
-              <CardHeader>
-                <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Country Rank
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1">
-                <div className="text-2xl font-semibold text-foreground">
-                  {countryLeaderboardHref && shouldShowCountryRank && countryRank ? (
-                    <Link href={countryLeaderboardHref} className="hover:text-primary">
-                      #{countryRank.rank}
-                    </Link>
-                  ) : (
-                    "--"
-                  )}
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  {countryLeaderboardHref && homeCountry ? (
-                    <Link href={countryLeaderboardHref} className="hover:text-primary">
-                      {homeCountry}
-                    </Link>
-                  ) : (
-                    "Unassigned"
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="knd-panel">
-              <CardHeader>
-                <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Global Rank
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1">
-                <div className="text-2xl font-semibold text-foreground">
-                  {shouldShowGlobalRank && globalEloRank ? (
-                    <Link href="/regional-elo" className="hover:text-primary">
-                      #{globalEloRank.rank}
-                    </Link>
-                  ) : (
-                    "--"
-                  )}
-                </div>
-                <div className="text-sm text-muted-foreground">EARTH</div>
-              </CardContent>
-            </Card>
-            <Card className="knd-panel">
-              <CardHeader>
-                <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  TopDeck Rank
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-1">
-                {topdeckProfileHref ? (
-                  <a
-                    href={topdeckProfileHref}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="block hover:text-primary"
-                  >
-                    <div className="text-2xl font-semibold text-foreground">
-                      {globalSnapshot?.rank ? `#${globalSnapshot.rank}` : (globalEloRank?.topdeck_elo_rank ? `#${globalEloRank.topdeck_elo_rank}` : "—")}
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      {globalSnapshot?.points ? `${globalSnapshot.points} points` : (globalSnapshot ? "No points snapshot" : "Regional Rank")}
-                    </div>
-                  </a>
-                ) : (
-                  <>
-                    <div className="text-2xl font-semibold text-foreground">
-                      {globalSnapshot?.rank ? `#${globalSnapshot.rank}` : (globalEloRank?.topdeck_elo_rank ? `#${globalEloRank.topdeck_elo_rank}` : "—")}
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      {globalSnapshot?.points ? `${globalSnapshot.points} points` : (globalSnapshot ? "No points snapshot" : "Regional Rank")}
-                    </div>
-                  </>
-                )}
-              </CardContent>
-            </Card>
-            <Card className="knd-panel">
-              <CardHeader>
-                <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  TopDeck Elo
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold text-foreground">
-                {displayedTopdeckElo === null ? "—" : Math.round(displayedTopdeckElo)}
-              </CardContent>
-            </Card>
-            <Card className="knd-panel">
-              <CardHeader>
-                <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Hidden Elo
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold text-foreground">
-                {globalEloRank ? Math.round(globalEloRank.rating) : "—"}
-              </CardContent>
-            </Card>
-            <Card className="knd-panel">
-              <CardHeader>
-                <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Games Played
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold text-foreground">
-                {canonicalGames}
-              </CardContent>
-            </Card>
-            <Card className="knd-panel">
-              <CardHeader>
-                <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Record
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold text-foreground">
-                {canonicalWins}-{canonicalLosses}-{canonicalDraws}
-              </CardContent>
-            </Card>
-            <Card className="knd-panel">
-              <CardHeader>
-                <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Unique Opponents
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold text-foreground">
-                {opponentRecords.length}
-              </CardContent>
-            </Card>
-          </div>
 
-          <Card className="knd-panel">
-            <CardHeader>
-              <CardTitle className="text-sm uppercase tracking-[0.2em] text-muted-foreground">
-                Played Commanders
-              </CardTitle>
+      <Card className="knd-panel">
+        <CardHeader>
+          <CardTitle className="text-sm uppercase tracking-[0.2em] text-muted-foreground">
+            Played Commanders
+          </CardTitle>
               <p className="text-xs text-muted-foreground">
                 Commanders from all stored games for this player, sorted by last played.
               </p>
@@ -1927,7 +1339,7 @@ export async function PlayerProfileBody({
                     </tr>
                   </thead>
                   <tbody>
-                    {visibleAchievementRows.map((row, index) => (
+                    {visibleAchievementRows.map((row: PlayerAchievementRow, index: number) => (
                       <tr
                         key={`${row.tournamentUrl ?? row.tournamentName}:${row.startDate ?? index}`}
                         className="border-t border-border/60"

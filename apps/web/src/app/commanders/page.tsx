@@ -15,7 +15,7 @@ import TrendMetricCharts, {
 import { aggregateTrendPoint, formatPercent, mean } from "@/lib/commander-stats";
 
 export const dynamic = "force-dynamic";
-const COMMANDERS_CACHE_REVALIDATE_SECONDS = 60 * 30; // 30 minutes
+const COMMANDERS_CACHE_REVALIDATE_SECONDS = 60 * 60 * 24; // 24 hours
 const SUPABASE_TREND_PAGE_SIZE = 1000;
 
 interface CommanderStat {

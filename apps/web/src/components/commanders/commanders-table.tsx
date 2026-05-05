@@ -149,12 +149,12 @@ export default function CommandersTable({
   }
 
   return (
-    <Card>
+    <Card data-testid="all-commanders-card">
       <CardHeader className="knd-panel-header">
         <CardTitle className="text-lg">All Commanders</CardTitle>
       </CardHeader>
       <CardContent>
-        <Table>
+        <Table data-testid="all-commanders-table">
           <TableHeader>
             <TableRow className="border-border/60 text-muted-foreground">
               <TableHead className="py-3">Rank</TableHead>
@@ -173,7 +173,7 @@ export default function CommandersTable({
                   align="right"
                 />
               </TableHead>
-              <TableHead className="py-3 text-right">
+              <TableHead className="py-3 text-right hidden sm:table-cell">
                 <SortButton
                   label="Tournaments"
                   active={sortKey === "tournaments"}
@@ -189,7 +189,7 @@ export default function CommandersTable({
                   align="right"
                 />
               </TableHead>
-              <TableHead className="py-3 text-right">
+              <TableHead className="py-3 text-right hidden md:table-cell">
                 <SortButton
                   label="Pts/Game"
                   active={sortKey === "pointsPerGame"}
@@ -197,7 +197,7 @@ export default function CommandersTable({
                   align="right"
                 />
               </TableHead>
-              <TableHead className="py-3 text-right">
+              <TableHead className="py-3 text-right hidden lg:table-cell">
                 <SortButton
                   label="Top 16/10"
                   active={sortKey === "top16"}
@@ -233,11 +233,11 @@ export default function CommandersTable({
                       href={`/commanders/${commander.commander_id}`}
                       className="text-foreground hover:text-primary"
                     >
-                      <span className="font-medium">
+                      <span className="font-medium line-clamp-1 max-w-[120px] sm:max-w-none sm:line-clamp-none">
                         {normalizeDisplayString(commander.commander_name)}
                       </span>
                       {commander.archetype && (
-                        <span className="ml-2 inline-flex items-center gap-2 text-sm text-muted-foreground">
+                        <span className="ml-2 hidden sm:inline-flex items-center gap-2 text-sm text-muted-foreground">
                           {archetypeIcon && (
                             <Image src={archetypeIcon} alt="" width={16} height={16} />
                           )}
@@ -249,7 +249,7 @@ export default function CommandersTable({
                   <TableCell className="text-right font-mono text-foreground">
                     {commander.total_entries.toLocaleString()}
                   </TableCell>
-                  <TableCell className="text-right font-mono text-muted-foreground">
+                  <TableCell className="text-right font-mono text-muted-foreground hidden sm:table-cell">
                     {commander.tournaments_played}
                   </TableCell>
                   <TableCell className="text-right font-mono">
@@ -257,10 +257,10 @@ export default function CommandersTable({
                       {formatPercent(winRate)}
                     </span>
                   </TableCell>
-                  <TableCell className="text-right font-mono text-muted-foreground">
+                  <TableCell className="text-right font-mono text-muted-foreground hidden md:table-cell">
                     {pointsPerGame.toFixed(2)}
                   </TableCell>
-                  <TableCell className="text-right font-mono text-muted-foreground">
+                  <TableCell className="text-right font-mono text-muted-foreground hidden lg:table-cell">
                     {formatPercent(parseFloat(commander.conversion_rate_top_16))}
                   </TableCell>
                   <TableCell className="text-right font-mono text-muted-foreground">
