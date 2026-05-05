@@ -5,7 +5,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { CommanderUsageRow } from "@/lib/meta-prep";
 import { supabase } from "@/lib/supabase";
 import { fetchChampionshipLeaderboard, fetchTopDeckProfileStats } from "@/lib/topdeck";
-import { buildTopdeckProfileHref } from "@/lib/topdeck-profile";
 import { inferCountryForRegion } from "@/lib/region-countries";
 import { OpponentRecordsTable } from "./opponent-records-table";
 import { summarizePlayerLogs, type PlayerGameLog } from "./player-stats";
@@ -905,7 +904,6 @@ export async function PlayerProfileBody({
       });
     }
   }
-  const topdeckProfileHref = buildTopdeckProfileHref(topdeckId);
   const stateLeaderboardHref = homeRegion
     ? `/regional-elo?scope=country&country=${encodeURIComponent(
         inferCountryForRegion(homeRegion) ?? "UNITED STATES"
@@ -1336,7 +1334,7 @@ export async function PlayerProfileBody({
                     </tr>
                   </thead>
                   <tbody>
-                    {visibleAchievementRows.map((row: PlayerAchievementRow, index) => (
+                    {visibleAchievementRows.map((row: PlayerAchievementRow, index: number) => (
                       <tr
                         key={`${row.tournamentUrl ?? row.tournamentName}:${row.startDate ?? index}`}
                         className="border-t border-border/60"

@@ -4,16 +4,21 @@ describe("regional player read path", () => {
   it("reuses one cached tournament_entries read for achievements and commander usage", async () => {
     const fs = await import("fs");
     const path = await import("path");
-    const source = fs.readFileSync(
+    const componentsSource = fs.readFileSync(
       path.resolve(__dirname, "../../src/app/regional-elo/player/[topdeckId]/player-profile-components.tsx"),
       "utf-8"
     );
+    const pageSource = fs.readFileSync(
+      path.resolve(__dirname, "../../src/app/regional-elo/player/[topdeckId]/page.tsx"),
+      "utf-8"
+    );
 
-    expect(source).toContain("async function fetchPlayerTournamentEntries");
-    expect(source).toContain('console.info(`[regional-player] ${event}`, details);');
-    expect(source).toContain('logPlayerReadSummary("tournament-entries-cache-miss"');
-    expect(source).toContain("return buildPlayerAchievements(rows, topdeckId);");
-    expect(source).toContain("return buildPlayerCommanderUsageRows(rows, topdeckId, playerName);");
+    expect(componentsSource).toContain("async function fetchPlayerTournamentEntries");
+    expect(componentsSource).not.toContain('console.info(`[regional-player] ${event}`, details);');
+    expect(pageSource).toContain('console.info(`[regional-player] ${event}`, details);');
+    expect(pageSource).toContain("function logPlayerReadSummary(");
+    expect(componentsSource).toContain("async function fetchPlayerTournamentEntries");
+    expect(componentsSource.match(/fetchPlayerTournamentEntries\(playerId\)/g)).toHaveLength(2);
   });
 
   it("uses materialized active leaderboard Elo fields for displayed ranks and TopDeck Elo", async () => {
@@ -29,7 +34,7 @@ describe("regional player read path", () => {
     expect(source).toContain("const displayedTopdeckElo");
     expect(source).toContain('.from("global_elo_active_leaderboard")');
     expect(source).toContain('.from("global_elo_player_profile_summaries")');
-    expect(source).toContain("fetchPlayerCommanderProfile");
+    expect(source).toContain("fetchCachedPlayerCommanderProfile");
     expect(source).not.toContain("fetchActiveDisplayedRank");
     expect(source).not.toContain('.from("topdeck_player_elos")');
     expect(source).not.toContain('.from("global_elo_leaderboard")');

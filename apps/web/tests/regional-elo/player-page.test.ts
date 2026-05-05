@@ -470,7 +470,10 @@ async function renderPlayerPage(
   searchParams: Record<string, string | string[] | undefined> = {}
 ) {
   const pageModule = await import("@/app/regional-elo/player/[topdeckId]/page");
-  const componentsModule = await import("@/app/regional-elo/player/[topdeckId]/player-profile-components");
+  const componentsModule = await import(
+    "@/app/regional-elo/player/[topdeckId]/player-profile-components"
+  );
+
   const wrapperElement = await pageModule.default({
     params: { topdeckId },
     searchParams,

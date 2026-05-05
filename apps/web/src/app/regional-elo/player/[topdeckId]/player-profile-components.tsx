@@ -11,6 +11,7 @@ import {
   LeaderboardRankRow,
   PlayerProfileSummaryRow,
   PlayerRow,
+  PlayerCommanderProfileRow,
   StateAssignmentRow,
   PlayerAchievementRow,
   PlayerCommanderUsageRow,
@@ -533,6 +534,7 @@ export async function PlayerProfileGrid({
 
   const displayedTopdeckElo =
     globalEloRank?.topdeck_elo ?? regionalRank?.topdeck_elo ?? countryRank?.topdeck_elo ?? null;
+  const topdeckProfileHref = buildTopdeckProfileHref(topdeckId);
 
   const stateLeaderboardHref = homeRegion
     ? `/regional-elo?scope=country&country=${encodeURIComponent(
@@ -637,27 +639,46 @@ export async function PlayerProfileGrid({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-1">
-          <a
-            href={buildTopdeckProfileHref(topdeckId)}
-            target="_blank"
-            rel="noreferrer"
-            className="block hover:text-primary"
-          >
-            <div className="text-2xl font-semibold text-foreground">
-              {globalSnapshot?.rank
-                ? `#${globalSnapshot.rank}`
-                : globalEloRank?.topdeck_elo_rank
-                ? `#${globalEloRank.topdeck_elo_rank}`
-                : "—"}
+          {topdeckProfileHref ? (
+            <a
+              href={topdeckProfileHref}
+              target="_blank"
+              rel="noreferrer"
+              className="block hover:text-primary"
+            >
+              <div className="text-2xl font-semibold text-foreground">
+                {globalSnapshot?.rank
+                  ? `#${globalSnapshot.rank}`
+                  : globalEloRank?.topdeck_elo_rank
+                  ? `#${globalEloRank.topdeck_elo_rank}`
+                  : "—"}
+              </div>
+              <div className="text-sm text-muted-foreground">
+                {globalSnapshot?.points
+                  ? `${globalSnapshot.points} points`
+                  : globalSnapshot
+                  ? "No points snapshot"
+                  : "Regional Rank"}
+              </div>
+            </a>
+          ) : (
+            <div className="block">
+              <div className="text-2xl font-semibold text-foreground">
+                {globalSnapshot?.rank
+                  ? `#${globalSnapshot.rank}`
+                  : globalEloRank?.topdeck_elo_rank
+                  ? `#${globalEloRank.topdeck_elo_rank}`
+                  : "—"}
+              </div>
+              <div className="text-sm text-muted-foreground">
+                {globalSnapshot?.points
+                  ? `${globalSnapshot.points} points`
+                  : globalSnapshot
+                  ? "No points snapshot"
+                  : "Regional Rank"}
+              </div>
             </div>
-            <div className="text-sm text-muted-foreground">
-              {globalSnapshot?.points
-                ? `${globalSnapshot.points} points`
-                : globalSnapshot
-                ? "No points snapshot"
-                : "Regional Rank"}
-            </div>
-          </a>
+          )}
         </CardContent>
       </Card>
       <Card className="knd-panel">

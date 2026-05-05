@@ -20,11 +20,11 @@ permissions:
 env:
   NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
   NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  TARGET_NODE_MAJOR: "22"
 
 jobs:
   quality-and-unit:
-    name: Frontend quality and unit tests
+    name: Frontend verification
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -33,70 +33,48 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          node-version: "22"
           cache: "npm"
           cache-dependency-path: package-lock.json
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Run frontend verification harness
+        run: ./scripts/verify-frontend.sh
 
-      - name: Run ESLint
-        run: npm --workspace apps/web run lint
-
-      - name: Run Unit Tests
-        run: npm --workspace apps/web run test:ci
-
-  e2e:
-    name: Playwright E2E Tests
+  preview-deploy:
+    name: Frontend preview deploy
     runs-on: ubuntu-latest
     needs: quality-and-unit
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     timeout-minutes: 20
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN || secrets.VERCEL_API_TOKEN }}
+      VERCEL_SCOPE: ${{ vars.VERCEL_SCOPE || 'vem-3506s-projects' }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID || 'prj_XEEZuAvFCh7RFPafgWfAN0InbeGg' }}
+      TARGET_NODE_MAJOR: "22"
     steps:
-      - name: Check required secrets
-        working-directory: .
-        run: |
-          if [ -z "${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}" ] || [ -z "${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}" ]; then
-            echo "::error::Missing required secrets. Please add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to repository secrets."
-            exit 1
-          fi
-
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          node-version: "22"
           cache: "npm"
           cache-dependency-path: package-lock.json
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Install Vercel CLI
+        run: npm install -g vercel
 
-      - name: Install Playwright browsers
-        run: npx playwright install chromium
+      - name: Run preview deployment harness
+        id: preview
+        run: ./scripts/deploy-frontend-preview.sh
 
-      - name: Build application
-        run: npm --workspace apps/web run build
-
-      - name: Run E2E tests
-        run: npm --workspace apps/web run test:e2e
-
-      - name: Upload test results
-        uses: actions/upload-artifact@v4
+      - name: Summarize preview deployment
         if: always()
-        with:
-          name: playwright-report
-          path: apps/web/playwright-report/
-          retention-days: 7
-
-      - name: Upload test screenshots
-        uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: test-screenshots
-          path: apps/web/test-results/
-          retention-days: 7
+        run: |
+          if [ -n "${{ steps.preview.outputs.preview_url }}" ]; then
+            echo "Preview deployment: ${{ steps.preview.outputs.preview_url }}" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   release:
     name: Semantic Release
@@ -111,7 +89,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          node-version: "22"
           cache: "npm"
           cache-dependency-path: package-lock.json
 
