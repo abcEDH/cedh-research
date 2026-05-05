@@ -811,15 +811,20 @@ export async function PlayerProfileBody({
   const shouldShowLocalRank = isActiveRank(activeRank);
   const shouldShowCountryRank = isActiveRank(countryRank);
   const stateAssignmentRows = Array.from(assignmentRowsByRegion.values()).sort((a: StateAssignmentRow, b: StateAssignmentRow) => {
-    if (a.region_key === homeRegion) return -1;
-    if (b.region_key === homeRegion) return 1;
-    if (a.country_key === "UNKNOWN" && b.country_key !== "UNKNOWN") return 1;
-    if (b.country_key === "UNKNOWN" && a.country_key !== "UNKNOWN") return -1;
-    if (a.country_key !== b.country_key) return a.country_key.localeCompare(b.country_key);
-    if (a.region_key === "UNKNOWN" && b.region_key !== "UNKNOWN") return 1;
-    if (b.region_key === "UNKNOWN" && a.region_key !== "UNKNOWN") return -1;
+    const aCountry = a.country_key ?? "UNKNOWN";
+    const bCountry = b.country_key ?? "UNKNOWN";
+    const aRegion = a.region_key ?? "UNKNOWN";
+    const bRegion = b.region_key ?? "UNKNOWN";
+
+    if (aRegion === homeRegion) return -1;
+    if (bRegion === homeRegion) return 1;
+    if (aCountry === "UNKNOWN" && bCountry !== "UNKNOWN") return 1;
+    if (bCountry === "UNKNOWN" && aCountry !== "UNKNOWN") return -1;
+    if (aCountry !== bCountry) return aCountry.localeCompare(bCountry);
+    if (aRegion === "UNKNOWN" && bRegion !== "UNKNOWN") return 1;
+    if (bRegion === "UNKNOWN" && aRegion !== "UNKNOWN") return -1;
     if (b.games_played !== a.games_played) return b.games_played - a.games_played;
-    return a.region_key.localeCompare(b.region_key);
+    return aRegion.localeCompare(bRegion);
   });
   const commanderRows = Array.from(
     playerLogs.reduce(
