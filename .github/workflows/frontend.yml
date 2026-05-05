@@ -49,7 +49,8 @@ jobs:
     timeout-minutes: 20
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN || secrets.VERCEL_API_TOKEN }}
-      VERCEL_SCOPE: ${{ vars.VERCEL_SCOPE || 'vem-3506s-projects' }}
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID || 'team_WHTSdbMyJgw0eLjd0OhVGlHf' }}
+      VERCEL_SCOPE: ${{ vars.VERCEL_SCOPE || 'team_WHTSdbMyJgw0eLjd0OhVGlHf' }}
       VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID || 'prj_XEEZuAvFCh7RFPafgWfAN0InbeGg' }}
       TARGET_NODE_MAJOR: "22"
     steps:

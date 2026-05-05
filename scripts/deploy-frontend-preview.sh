@@ -16,8 +16,22 @@ require_cmd() {
 ensure_node_major_path
 
 : "${VERCEL_TOKEN:?VERCEL_TOKEN is required for preview deployment.}"
-: "${VERCEL_SCOPE:?VERCEL_SCOPE is required for preview deployment.}"
+
+if [ -z "${VERCEL_ORG_ID:-}" ] || [ -z "${VERCEL_PROJECT_ID:-}" ] || [ -z "${VERCEL_SCOPE:-}" ]; then
+  if [ -f "$ROOT_DIR/.vercel/project.json" ]; then
+    VERCEL_ORG_ID="${VERCEL_ORG_ID:-$(node -e 'process.stdout.write(require("./.vercel/project.json").orgId || "")')}"
+    VERCEL_PROJECT_ID="${VERCEL_PROJECT_ID:-$(node -e 'process.stdout.write(require("./.vercel/project.json").projectId || "")')}"
+    VERCEL_SCOPE="${VERCEL_SCOPE:-$VERCEL_ORG_ID}"
+  fi
+fi
+
+: "${VERCEL_ORG_ID:?VERCEL_ORG_ID is required for preview deployment.}"
 : "${VERCEL_PROJECT_ID:?VERCEL_PROJECT_ID is required for preview deployment.}"
+: "${VERCEL_SCOPE:?VERCEL_SCOPE is required for preview deployment.}"
+
+export VERCEL_ORG_ID
+export VERCEL_PROJECT_ID
+export VERCEL_SCOPE
 
 require_cmd node
 require_cmd npm
