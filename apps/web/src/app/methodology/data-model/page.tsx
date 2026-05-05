@@ -2,8 +2,8 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const metadata = {
-  title: "Data Model | cEDH Analytics",
-  description: "Supabase schema and curated views powering cEDH Analytics.",
+  title: "Data Model | tedh.gg",
+  description: "Supabase schema and curated views powering tedh.gg.",
 };
 
 const sections = [
@@ -62,7 +62,7 @@ export default function DataModelPage() {
               Data Model
             </h1>
             <p className="mt-2 text-sm text-muted-foreground">
-              Supabase schema and curated views that power the analytics UI.
+              Supabase schema and curated views that power tedh.gg.
             </p>
           </div>
         </div>

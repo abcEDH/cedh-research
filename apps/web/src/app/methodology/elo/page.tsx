@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export const metadata = {
-  title: "Elo Methodology | cEDH Analytics",
+  title: "Elo Methodology | tedh.gg",
   description: "How our 4-player cEDH Elo model is derived and how state assignment is computed.",
 };
 

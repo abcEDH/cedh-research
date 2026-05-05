@@ -17,11 +17,12 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
     environment:
       name: production
-      url: https://cedh-research.vercel.app
+      url: https://tedh.gg
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN || secrets.VERCEL_API_TOKEN }}
       VERCEL_SCOPE: ${{ vars.VERCEL_SCOPE || 'vem-3506s-projects' }}
       VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID || 'prj_XEEZuAvFCh7RFPafgWfAN0InbeGg' }}
+      TARGET_ALIAS: ${{ vars.PRODUCTION_DOMAIN || 'tedh.gg' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4

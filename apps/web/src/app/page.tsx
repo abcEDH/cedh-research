@@ -305,7 +305,7 @@ export default async function Home() {
         <header className="flex flex-col gap-6 border-b border-border/60 pb-8">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <h1 className="text-3xl font-semibold text-foreground md:text-4xl">cEDH Analytics</h1>
+              <h1 className="text-3xl font-semibold text-foreground md:text-4xl">tedh.gg</h1>
             </div>
             <nav className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
               <Link className="transition hover:text-foreground" href="/commanders">
@@ -335,10 +335,10 @@ export default async function Home() {
         <section className="mt-16 flex flex-col items-center gap-8 py-8 text-center">
           <div className="space-y-3">
             <h2 className="text-3xl font-semibold leading-tight text-foreground md:text-4xl">
-              Competitive Commander analytics
+              Competitive Commander, simplified
             </h2>
             <p className="text-base text-muted-foreground">
-              Your finger on the pulse of the cEDH meta.
+              tedh.gg keeps the cEDH field, leaders, and trends in one place.
             </p>
           </div>
           <HomeSearchBar />

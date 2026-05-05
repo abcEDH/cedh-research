@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { unstable_cache } from "next/cache";
 import { supabase } from "@/lib/supabase";
 import { normalizeDateKey } from "@/lib/format-utils";
 import { BackLink } from "@/components/ui/back-link";
@@ -14,6 +15,7 @@ import TrendMetricCharts, {
 } from "@/components/commanders/trend-metric-charts";
 
 export const dynamic = "force-dynamic";
+const COMMANDERS_CACHE_REVALIDATE_SECONDS = 60 * 30; // 30 minutes
 
 
 type WeeklyTrendRow = {
@@ -47,7 +49,7 @@ async function getCommanders() {
 
   if (error) {
     console.error("Error fetching commanders:", error);
-    return [];
+    throw error;
   }
   return data as CommanderStat[];
 }
@@ -76,6 +78,10 @@ async function getCommanderPeriodSnapshots(commanderIds: string[]) {
       .select("commander_id, week_start_date, entries, wins, losses, draws")
       .in("commander_id", commanderIds)
       .order("week_start_date", { ascending: true });
+    if (weeklyFallback.error) {
+      console.error("Error fetching weekly trends fallback:", weeklyFallback.error);
+      throw weeklyFallback.error;
+    }
     weeklyData = weeklyFallback.data ?? [];
   }
 
@@ -86,14 +92,11 @@ async function getCommanderPeriodSnapshots(commanderIds: string[]) {
       .select("commander_id, month_key, entries, wins, losses, draws")
       .in("commander_id", commanderIds)
       .order("month_key", { ascending: true });
+    if (monthlyFallback.error) {
+      console.error("Error fetching monthly trends fallback:", monthlyFallback.error);
+      throw monthlyFallback.error;
+    }
     monthlyData = monthlyFallback.data ?? [];
-  }
-
-  if (weeklyPrimary.error) {
-    console.error("Error fetching weekly trends:", weeklyPrimary.error);
-  }
-  if (monthlyPrimary.error) {
-    console.error("Error fetching monthly trends:", monthlyPrimary.error);
   }
 
   const weeklyRows = weeklyData;
@@ -150,7 +153,7 @@ async function getWeeklyEntries(commanderIds: string[], weeks = 12) {
 
   if (error) {
     console.error("Error fetching weekly trends:", error);
-    return {};
+    throw error;
   }
 
   const rows = (data || []) as WeeklyTrendRow[];
@@ -189,9 +192,11 @@ async function getGlobalTrendSeries() {
 
   if (weeklyResult.error) {
     console.error("Error fetching global weekly trends:", weeklyResult.error);
+    throw weeklyResult.error;
   }
   if (monthlyResult.error) {
     console.error("Error fetching global monthly trends:", monthlyResult.error);
+    throw monthlyResult.error;
   }
 
   const weeklyRows = (weeklyResult.data || []) as {
@@ -255,17 +260,44 @@ async function getGlobalTrendSeries() {
   return { weekly, monthly } satisfies TrendMetricSeries;
 }
 
+const getCachedCommanders = unstable_cache(
+  getCommanders,
+  ["commanders-list-v1"],
+  { revalidate: COMMANDERS_CACHE_REVALIDATE_SECONDS }
+);
+
+const getCachedCommanderPeriodSnapshots = unstable_cache(
+  async (commanderIds: string[]) => getCommanderPeriodSnapshots(commanderIds),
+  ["commander-period-snapshots-v1"],
+  { revalidate: COMMANDERS_CACHE_REVALIDATE_SECONDS }
+);
+
+const getCachedWeeklyEntries = unstable_cache(
+  async (commanderIds: string[], weeks: number) => getWeeklyEntries(commanderIds, weeks),
+  ["commander-weekly-entries-v1"],
+  { revalidate: COMMANDERS_CACHE_REVALIDATE_SECONDS }
+);
+
+const getCachedGlobalTrendSeries = unstable_cache(
+  getGlobalTrendSeries,
+  ["commander-global-trends-v1"],
+  { revalidate: COMMANDERS_CACHE_REVALIDATE_SECONDS }
+);
+
 export default async function CommandersPage() {
-  const commanders = await getCommanders();
+  const commanders = await getCachedCommanders();
   const topCommanders = [...commanders].sort((a, b) => b.total_entries - a.total_entries).slice(0, 30);
-  const snapshotsByCommanderId = await getCommanderPeriodSnapshots(
-    topCommanders.map((commander) => commander.commander_id)
+  const topCommanderIds = topCommanders
+    .map((commander) => commander.commander_id)
+    .sort((a, b) => a.localeCompare(b));
+  const snapshotsByCommanderId = await getCachedCommanderPeriodSnapshots(
+    topCommanderIds
   );
-  const weeklyEntriesByCommanderId = await getWeeklyEntries(
-    topCommanders.map((commander) => commander.commander_id),
+  const weeklyEntriesByCommanderId = await getCachedWeeklyEntries(
+    topCommanderIds,
     12
   );
-  const globalSeries = await getGlobalTrendSeries();
+  const globalSeries = await getCachedGlobalTrendSeries();
 
   const totalEntries = commanders.reduce((sum, c) => sum + c.total_entries, 0);
   const avgWinRate =

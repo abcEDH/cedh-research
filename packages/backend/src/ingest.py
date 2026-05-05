@@ -1126,6 +1126,101 @@ class SupabaseClient:
         # This is a safety net; the loop above either returns or raises
         return []
 
+    def update(
+        self,
+        table: str,
+        data: dict[str, Any],
+        filters: dict[str, str] | None = None,
+        max_retries: int = 3,
+    ) -> list[dict[str, Any]]:
+        """Update rows in a table matching filters. Uses PATCH (PostgREST convention)."""
+        if max_retries <= 0:
+            return []
+        endpoint = f"{self.url}/rest/v1/{table}"
+        params = filters or {}
+
+        for attempt in range(max_retries):
+            try:
+                response = requests.patch(
+                    endpoint, json=data, headers=self.headers, params=params, timeout=30
+                )
+                if response.status_code >= 400:
+                    logger.error(f"Supabase update error: {response.text}")
+                    response.raise_for_status()
+                return response.json()
+            except requests.exceptions.HTTPError as e:
+                status_code = getattr(getattr(e, "response", None), "status_code", None)
+                if status_code is None:
+                    status_code = getattr(response, "status_code", None)
+
+                if status_code is not None and status_code >= 500 and attempt < max_retries - 1:
+                    wait_time = 2**attempt
+                    logger.warning(
+                        f"Update HTTP {status_code}, retrying in {wait_time}s... ({attempt + 1}/{max_retries})"
+                    )
+                    time.sleep(wait_time)
+                    continue
+
+                logger.error(f"Update failed after HTTP error: {e}")
+                raise
+            except (
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+                requests.exceptions.ReadTimeout,
+            ) as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2**attempt
+                    logger.warning(
+                        f"Update connection error, retrying in {wait_time}s... ({attempt + 1}/{max_retries})"
+                    )
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"Update failed after {max_retries} retries: {e}")
+                    raise
+        return []
+
+    def rpc(
+        self,
+        function_name: str,
+        payload: dict[str, Any] | None = None,
+        max_retries: int = 3,
+        timeout: int = 120,
+    ) -> Any:
+        """Call a Supabase stored procedure via POST /rest/v1/rpc/{function_name}."""
+        if max_retries <= 0:
+            return None
+        endpoint = f"{self.url}/rest/v1/rpc/{function_name}"
+
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(
+                    endpoint,
+                    json=payload or {},
+                    headers=self.headers,
+                    timeout=timeout,
+                )
+                if response.status_code >= 400:
+                    logger.error(f"Supabase RPC error ({function_name}): {response.text}")
+                    response.raise_for_status()
+                if response.status_code == 204:
+                    return None
+                return response.json()
+            except (
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+                requests.exceptions.ReadTimeout,
+            ) as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2**attempt
+                    logger.warning(
+                        f"RPC {function_name} failed, retrying in {wait_time}s... ({attempt + 1}/{max_retries})"
+                    )
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"RPC {function_name} failed after {max_retries} retries: {e}")
+                    raise
+        return None
+
 
 class DirectPostgresClient:
     """Client for direct Postgres connection using psycopg2 (faster for large batches)."""
@@ -1864,6 +1959,71 @@ def extract_name_and_tid(tournament: dict[str, Any]) -> tuple[str | None, str | 
     return (normalize_tournament_name(name) if name else None, tid)
 
 
+INGESTION_JOBS_TABLE = "ingestion_jobs"
+INGESTION_JOB_ALREADY_CLAIMED_EXIT_CODE = 20
+
+
+def claim_ingestion_job(client: SupabaseClient, job_id: str, github_run_id: int) -> bool:
+    """Atomically claim an ingestion job by transitioning it to 'running'.
+
+    Returns True if the job was claimed, False if it was already claimed by
+    another runner (empty update result).  Raises on operational errors so the
+    caller can distinguish conflicts from failures.
+    """
+    now = datetime.now().astimezone().isoformat()
+    updated = client.update(
+        INGESTION_JOBS_TABLE,
+        {
+            "status": "running",
+            "github_run_id": github_run_id,
+            "started_at": now,
+            "heartbeat_at": now,
+        },
+        {"id": f"eq.{job_id}", "status": "in.(pending,dispatched)"},
+    )
+    return bool(updated)
+
+
+def update_ingestion_heartbeat(client: SupabaseClient, job_id: str) -> None:
+    """Best-effort heartbeat for ingestion job."""
+    if not job_id:
+        return
+    try:
+        client.update(
+            INGESTION_JOBS_TABLE,
+            {"heartbeat_at": datetime.now().astimezone().isoformat()},
+            {"id": f"eq.{job_id}", "status": "eq.running"},
+        )
+    except Exception as exc:
+        logger.warning(f"Ingestion heartbeat failed for {job_id} (safe to continue): {exc}")
+
+
+def complete_ingestion_job(client: SupabaseClient, job_id: str, metrics: dict) -> None:
+    """Mark ingestion job as completed with metrics."""
+    now = datetime.now().astimezone().isoformat()
+    client.update(
+        INGESTION_JOBS_TABLE,
+        {"status": "completed", "completed_at": now, "heartbeat_at": now, **metrics},
+        {"id": f"eq.{job_id}", "status": "eq.running"},
+    )
+
+
+def fail_ingestion_job(client: SupabaseClient, job_id: str, error: str) -> None:
+    """Mark ingestion job as failed."""
+    try:
+        client.update(
+            INGESTION_JOBS_TABLE,
+            {
+                "status": "failed",
+                "completed_at": datetime.now().astimezone().isoformat(),
+                "error_text": error[:2000],
+            },
+            {"id": f"eq.{job_id}", "status": "in.(pending,dispatched,running)"},
+        )
+    except Exception as exc:
+        logger.error(f"Failed to record ingestion failure for {job_id}: {exc}")
+
+
 def main():
     """Main entry point for ingestion."""
     parser = argparse.ArgumentParser(description="cEDH Analytics Data Ingestion")
@@ -1920,6 +2080,18 @@ def main():
         action="store_true",
         help="Skip tournaments whose topdeck_tid already exists in Supabase",
     )
+    parser.add_argument(
+        "--job-id",
+        type=str,
+        default="",
+        help="ingestion_jobs UUID for cron-dispatched runs",
+    )
+    parser.add_argument(
+        "--min-players",
+        type=int,
+        default=0,
+        help="Minimum number of players required to process a tournament",
+    )
 
     args = parser.parse_args()
 
@@ -1939,6 +2111,48 @@ def main():
     # Initialize ingester
     ingester = DataIngester(topdeck, supabase)
 
+    # Job lifecycle management
+    job_id = getattr(args, 'job_id', '') or ''
+    github_run_id = int(os.environ.get("GITHUB_RUN_ID", 0))
+    start_time = time.time()
+
+    if job_id:
+        try:
+            claimed = claim_ingestion_job(supabase, job_id, github_run_id)
+        except Exception as exc:
+            logger.error(f"Operational error claiming ingestion job {job_id}: {exc}")
+            sys.exit(1)
+        if not claimed:
+            logger.info(f"No active ingestion job found for ID {job_id} - may already be claimed")
+            sys.exit(INGESTION_JOB_ALREADY_CLAIMED_EXIT_CODE)
+        update_ingestion_heartbeat(supabase, job_id)
+
+    try:
+        _run_ingestion(args, topdeck, supabase, ingester, job_id)
+    except Exception as exc:
+        if job_id:
+            fail_ingestion_job(supabase, job_id, str(exc))
+        raise
+
+    duration = round(time.time() - start_time, 2)
+    if job_id:
+        complete_ingestion_job(supabase, job_id, {
+            "duration_seconds": duration,
+        })
+
+    # Cleanup direct Postgres connection
+    db_client = None
+    if args.direct and db_client:
+        db_client.close()
+        logger.info("Closed direct Postgres connection")
+
+    logger.info("Ingestion complete")
+
+
+def _run_ingestion(args, topdeck, supabase, ingester, job_id):
+    """Core ingestion logic, extracted for job lifecycle wrapping."""
+    min_players = getattr(args, 'min_players', 0) or 0
+
     if args.tournament_id:
         # Ingest single tournament
         if args.skip_existing_tournaments:
@@ -1955,6 +2169,7 @@ def main():
         if ingester:
             result = ingester.process_tournament(tournament)
             logger.info(f"Result: {result}")
+            update_ingestion_heartbeat(supabase, job_id)
     elif getattr(args, "tids_file", None):
         tids_path = Path(args.tids_file)
         if not tids_path.exists():
@@ -2319,6 +2534,7 @@ def main():
                             break
                 else:
                     logger.info(f"Would process: {tournament.get('tournamentName')} ({len(tournament.get('standings', []))} players)")
+                update_ingestion_heartbeat(supabase, job_id)
 
             if args.record_backfill and run_row:
                 append_backfill_event(
@@ -2385,6 +2601,17 @@ def main():
         )
         logger.info(f"Found {len(tournaments)} tournaments to process")
 
+        if min_players > 0:
+            original_count = len(tournaments)
+            tournaments = [
+                t for t in tournaments
+                if len(t.get("standings", [])) >= min_players
+            ]
+            logger.info(
+                f"Filtered to {len(tournaments)} tournaments with >= {min_players} players "
+                f"(from {original_count})"
+            )
+
         if args.skip_existing_tournaments:
             search_tids = [tid for t in tournaments if (tid := t.get("id") or t.get("TID"))]
             existing_tids = fetch_existing_tids(ingester.supabase, search_tids)
@@ -2427,13 +2654,7 @@ def main():
                     logger.error(f"Failed to process {tournament.get('name') or t.get('tournamentName')}: {e}")
             else:
                 logger.info(f"Would process: {tournament.get('name')} ({len(tournament.get('standings', []))} players)")
-
-    # Cleanup direct Postgres connection
-    if args.direct and db_client:
-        db_client.close()
-        logger.info("Closed direct Postgres connection")
-
-    logger.info("Ingestion complete")
+            update_ingestion_heartbeat(supabase, job_id)
 
 
 if __name__ == "__main__":

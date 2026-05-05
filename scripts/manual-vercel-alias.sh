@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-TARGET_ALIAS="${TARGET_ALIAS:-cedh-research.vercel.app}"
+TARGET_ALIAS="${TARGET_ALIAS:-tedh.gg}"
 DEPLOYMENT_URL="${1:-${DEPLOYMENT_URL:-}}"
 VERCEL_SCOPE="${VERCEL_SCOPE:-vem-3506s-projects}"
 VERCEL_PROJECT_ID="${VERCEL_PROJECT_ID:-prj_XEEZuAvFCh7RFPafgWfAN0InbeGg}"
