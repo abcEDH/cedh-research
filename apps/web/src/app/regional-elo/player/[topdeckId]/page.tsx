@@ -1336,7 +1336,7 @@ export async function PlayerProfileBody({
                     </tr>
                   </thead>
                   <tbody>
-                    {visibleAchievementRows.map((row, index) => (
+                    {visibleAchievementRows.map((row: PlayerAchievementRow, index) => (
                       <tr
                         key={`${row.tournamentUrl ?? row.tournamentName}:${row.startDate ?? index}`}
                         className="border-t border-border/60"
