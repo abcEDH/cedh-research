@@ -327,47 +327,6 @@ function normalizeAchievementSort(value: string): AchievementSort {
   return value === "best" ? "best" : "recent";
 }
 
-function parseStateAssignments(value: unknown): StateAssignmentRow[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((row) => {
-      if (!row || typeof row !== "object") return null;
-      const record = row as Partial<StateAssignmentRow>;
-      const regionKey = String(record.region_key ?? "").trim();
-      if (!regionKey) return null;
-      return {
-        country_key: String(record.country_key ?? inferCountryForRegion(regionKey) ?? "UNKNOWN"),
-        region_key: regionKey,
-        games_played: Number(record.games_played ?? 0),
-        wins: Number(record.wins ?? 0),
-        draws: Number(record.draws ?? 0),
-        losses: Number(record.losses ?? 0),
-      };
-    })
-    .filter((row): row is StateAssignmentRow => Boolean(row));
-}
-
-async function fetchPlayerProfileSummary(playerId: string): Promise<PlayerProfileSummaryRow | null> {
-  const { data, error } = await supabase
-    .from("global_elo_player_profile_summaries")
-    .select("games_played, wins, draws, losses, last_game_date, home_country_key, home_region_key, state_assignments")
-    .eq("player_id", playerId)
-    .maybeSingle();
-
-  if (error) {
-    console.error("Error fetching player profile summary:", describeSupabaseError(error));
-    return null;
-  }
-
-  const row = data as Omit<PlayerProfileSummaryRow, "state_assignments"> & { state_assignments: unknown } | null;
-  return row
-    ? {
-        ...row,
-        state_assignments: parseStateAssignments(row.state_assignments),
-      }
-    : null;
-}
-
 function buildTopdeckDecklistUrl(tournamentSlug: string | null | undefined, topdeckId: string) {
   return tournamentSlug ? `https://topdeck.gg/deck/${tournamentSlug}/${topdeckId}` : null;
 }
