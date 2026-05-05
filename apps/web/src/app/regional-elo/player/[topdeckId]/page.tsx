@@ -697,7 +697,7 @@ export async function PlayerProfileBody({
 
   const activeCommander = commanderProfile?.active_commander ?? null;
 
-  const regionalRankRows = regionalRanks.map((row) => ({
+  const regionalRankRows = regionalRanks.map((row: LeaderboardRankRow) => ({
     ...row,
     country_key: row.country_key ?? inferCountryForRegion(row.region_key) ?? "UNKNOWN",
   }));
@@ -743,7 +743,7 @@ export async function PlayerProfileBody({
     new Map<string, { wins: number; draws: number; losses: number; games: number }>()
   );
   const allAchievementRows = fetchedAchievementRows
-    .map((row) => {
+    .map((row: PlayerAchievementRow) => {
       const gameResults = achievementResultByTournament.get(
         achievementTournamentKey(row.tournamentName, row.startDate)
       );
@@ -756,10 +756,11 @@ export async function PlayerProfileBody({
         recordGames: gameResults.games,
       };
     })
-    .filter((row) => row.recordGames > 0);
+    .filter((row: PlayerAchievementRow) => row.recordGames > 0);
+
   const normalizedAchievementTournamentSearch = achievementTournamentSearch.toLocaleLowerCase();
   const normalizedAchievementCommanderSearch = achievementCommanderSearch.toLocaleLowerCase();
-  const filteredAchievementRows = allAchievementRows.filter((row) => {
+  const filteredAchievementRows = allAchievementRows.filter((row: PlayerAchievementRow) => {
     const matchesTournament =
       !normalizedAchievementTournamentSearch ||
       row.tournamentName.toLocaleLowerCase().includes(normalizedAchievementTournamentSearch);
@@ -771,6 +772,7 @@ export async function PlayerProfileBody({
     const matchesTo = !achievementDateTo || (rowDate && rowDate <= achievementDateTo);
     return matchesTournament && matchesCommander && matchesFrom && matchesTo;
   });
+
   const achievementRows =
     achievementSort === "best"
       ? sortAchievementsByFinish(filteredAchievementRows)
@@ -809,7 +811,7 @@ export async function PlayerProfileBody({
   const shouldShowGlobalRank = isActiveRank(globalEloRank);
   const shouldShowLocalRank = isActiveRank(activeRank);
   const shouldShowCountryRank = isActiveRank(countryRank);
-  const stateAssignmentRows = Array.from(assignmentRowsByRegion.values()).sort((a, b) => {
+  const stateAssignmentRows = Array.from(assignmentRowsByRegion.values()).sort((a: StateAssignmentRow, b: StateAssignmentRow) => {
     if (a.region_key === homeRegion) return -1;
     if (b.region_key === homeRegion) return 1;
     if (a.country_key === "UNKNOWN" && b.country_key !== "UNKNOWN") return 1;
