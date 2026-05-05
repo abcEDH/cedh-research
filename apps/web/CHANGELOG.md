@@ -1,3 +1,10 @@
+## [1.13.3](https://github.com/abcEDH/cedh-research/compare/v1.13.2...v1.13.3) (2026-05-05)
+
+
+### Performance Improvements
+
+* optimize player page performance and caching ([#165](https://github.com/abcEDH/cedh-research/issues/165)) ([157c9c6](https://github.com/abcEDH/cedh-research/commit/157c9c66e1ff13804420cef4dc69ef77dbeda578)), closes [hi#level](https://github.com/hi/issues/level)
+
 ## [1.13.2](https://github.com/abcEDH/cedh-research/compare/v1.13.1...v1.13.2) (2026-05-04)
 
 
