@@ -12,14 +12,17 @@ test.describe("Home Page", () => {
 
   test("displays global leaderboard table with internal links", async ({ page }) => {
     await expect(page.getByText("Global Leaderboard")).toBeVisible();
-    await expect(page.getByRole("link", { name: "View Full Leaderboard" })).toHaveAttribute(
+    await expect(page.getByRole("link", { name: "Full View" })).toHaveAttribute(
       "href",
       "/regional-elo"
     );
-    await expect(page.getByRole("columnheader", { name: "TopDeck Elo" })).toBeVisible();
-    await expect(page.getByRole("columnheader", { name: "Latest Tournament" })).toBeVisible();
 
-    const playerLinks = page.locator('a[href^="/regional-elo/player/"]');
+    const leaderboardTable = page.getByTestId("global-leaderboard-table");
+    await expect(leaderboardTable).toBeVisible();
+    await expect(leaderboardTable.getByRole("columnheader", { name: "Elo" }).first()).toBeVisible();
+    await expect(leaderboardTable.getByRole("columnheader", { name: "Commander" }).first()).toBeVisible();
+
+    const playerLinks = leaderboardTable.locator('a[href^="/regional-elo/player/"]');
     await expect(playerLinks.first()).toBeVisible();
     expect(await playerLinks.count()).toBeGreaterThan(0);
     await expect(page.locator('a[href="https://topdeck.gg/elo/magic-the-gathering/edh"]')).toHaveCount(0);

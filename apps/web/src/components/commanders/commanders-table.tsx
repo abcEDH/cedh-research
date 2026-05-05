@@ -149,12 +149,12 @@ export default function CommandersTable({
   }
 
   return (
-    <Card>
+    <Card data-testid="all-commanders-card">
       <CardHeader className="knd-panel-header">
         <CardTitle className="text-lg">All Commanders</CardTitle>
       </CardHeader>
       <CardContent>
-        <Table>
+        <Table data-testid="all-commanders-table">
           <TableHeader>
             <TableRow className="border-border/60 text-muted-foreground">
               <TableHead className="py-3">Rank</TableHead>

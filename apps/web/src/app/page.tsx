@@ -434,19 +434,6 @@ async function fetchHomeLeaderboardLatestTournaments(playerIds: string[]) {
   return latestByPlayerId;
 }
 
-function formatDate(value: string | null) {
-  if (!value) return "—";
-  return new Date(value).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
-
-function buildTopdeckTournamentUrl(tournamentSlug: string | null | undefined) {
-  return tournamentSlug ? `https://topdeck.gg/bracket/${tournamentSlug}` : null;
-}
-
 const getCachedHomeCoreStats = unstable_cache(
   getCoreStats,
   ["home-core-stats-v7"], // Updated cache key
@@ -516,7 +503,7 @@ export default async function Home() {
 
         {leaderboardPlayers.length > 0 && (
           <section className="mt-12">
-            <Card className="border-primary/20 bg-primary/5">
+            <Card data-testid="global-leaderboard-card" className="border-primary/20 bg-primary/5">
               <CardHeader className="flex flex-row items-center justify-between pb-3 sm:pb-4">
                 <div className="min-w-0 flex-1">
                   <CardTitle className="text-base sm:text-lg truncate">Global Leaderboard</CardTitle>
@@ -528,7 +515,7 @@ export default async function Home() {
               </CardHeader>
               <CardContent className="px-2 sm:px-6">
                 <div className="overflow-x-auto">
-                  <Table>
+                  <Table data-testid="global-leaderboard-table">
                     <TableHeader>
                       <TableRow className="border-border/60 text-[10px] uppercase tracking-wider text-muted-foreground">
                         <TableHead className="py-2 px-1 w-8">#</TableHead>
