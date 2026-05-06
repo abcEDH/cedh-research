@@ -16,6 +16,7 @@ env:
   TOPDECK_API_KEY: ${{ secrets.TOPDECK_API_KEY }}
   SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
   SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 # Required secrets:
 #   GitHub Actions:

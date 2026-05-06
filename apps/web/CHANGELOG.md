@@ -1,3 +1,94 @@
+## [1.13.3](https://github.com/abcEDH/cedh-research/compare/v1.13.2...v1.13.3) (2026-05-05)
+
+
+### Performance Improvements
+
+* optimize player page performance and caching ([#165](https://github.com/abcEDH/cedh-research/issues/165)) ([157c9c6](https://github.com/abcEDH/cedh-research/commit/157c9c66e1ff13804420cef4dc69ef77dbeda578)), closes [hi#level](https://github.com/hi/issues/level)
+
+## [1.13.2](https://github.com/abcEDH/cedh-research/compare/v1.13.1...v1.13.2) (2026-05-04)
+
+
+### Bug Fixes
+
+* **analytics:** enable PostHog pageleave and autocapture ([#164](https://github.com/abcEDH/cedh-research/issues/164)) ([36b7b6b](https://github.com/abcEDH/cedh-research/commit/36b7b6b7cca18c94a0703c0635593d0f5cbe3d8d))
+
+## [1.13.1](https://github.com/abcEDH/cedh-research/compare/v1.13.0...v1.13.1) (2026-05-03)
+
+
+### Bug Fixes
+
+* **regional-elo:** complete issue [#128](https://github.com/abcEDH/cedh-research/issues/128) gaps and documentation ([#162](https://github.com/abcEDH/cedh-research/issues/162)) ([0555f87](https://github.com/abcEDH/cedh-research/commit/0555f87f15b9548666c850553ac33741fb3a51e8))
+
+# [1.13.0](https://github.com/abcEDH/cedh-research/compare/v1.12.1...v1.13.0) (2026-05-03)
+
+
+### Features
+
+* configure PostHog reverse proxy and secure project token ([#160](https://github.com/abcEDH/cedh-research/issues/160)) ([0e83a92](https://github.com/abcEDH/cedh-research/commit/0e83a922581868ad7488f8f36ea21278b8b4a20e))
+
+## [1.12.1](https://github.com/abcEDH/cedh-research/compare/v1.12.0...v1.12.1) (2026-05-03)
+
+
+### Performance Improvements
+
+* **regional-elo:** bump cache TTLs, add loading state, achievements sort+filter ([#158](https://github.com/abcEDH/cedh-research/issues/158)) ([2941e7a](https://github.com/abcEDH/cedh-research/commit/2941e7a770eeb0a3d6671f162f24b19d80eea1cb))
+
+# [1.12.0](https://github.com/abcEDH/cedh-research/compare/v1.11.0...v1.12.0) (2026-05-03)
+
+
+### Features
+
+* [Analytics] PostHog integration for user analytics ([#156](https://github.com/abcEDH/cedh-research/issues/156)) ([8956a79](https://github.com/abcEDH/cedh-research/commit/8956a7929e6718a2cf92a1dbda5f1c6e11e881d7)), closes [#74](https://github.com/abcEDH/cedh-research/issues/74) [#75](https://github.com/abcEDH/cedh-research/issues/75) [#76](https://github.com/abcEDH/cedh-research/issues/76) [#77](https://github.com/abcEDH/cedh-research/issues/77)
+
+# [1.11.0](https://github.com/abcEDH/cedh-research/compare/v1.10.4...v1.11.0) (2026-05-03)
+
+
+### Features
+
+* **web:** move Region selector into header ([#157](https://github.com/abcEDH/cedh-research/issues/157)) ([d559b2a](https://github.com/abcEDH/cedh-research/commit/d559b2ab0170af64b3b5545d98a1920da50182db))
+
+## [1.10.4](https://github.com/abcEDH/cedh-research/compare/v1.10.3...v1.10.4) (2026-05-03)
+
+
+### Bug Fixes
+
+* **backend:** harden ingestion against missing player lists and increase timeouts (closes [#153](https://github.com/abcEDH/cedh-research/issues/153)) ([#155](https://github.com/abcEDH/cedh-research/issues/155)) ([b46a87f](https://github.com/abcEDH/cedh-research/commit/b46a87f291d696ca576d80dd32c1986e560745ba))
+
+## [1.10.3](https://github.com/abcEDH/cedh-research/compare/v1.10.2...v1.10.3) (2026-05-02)
+
+
+### Bug Fixes
+
+* resolve commander performance truncation and decklist parsing bugs ([#154](https://github.com/abcEDH/cedh-research/issues/154)) ([3448264](https://github.com/abcEDH/cedh-research/commit/3448264652687b6bf428c454f03602483b7222b1))
+
+## [1.10.2](https://github.com/abcEDH/cedh-research/compare/v1.10.1...v1.10.2) (2026-05-02)
+
+
+### Bug Fixes
+
+* **web:** drop NaN% and zero-game dips on commanders page ([#152](https://github.com/abcEDH/cedh-research/issues/152)) ([88d6c40](https://github.com/abcEDH/cedh-research/commit/88d6c40e5c2558bf5d1b010dca970f6c3ecb72da))
+
+## [1.10.1](https://github.com/abcEDH/cedh-research/compare/v1.10.0...v1.10.1) (2026-05-02)
+
+
+### Performance Improvements
+
+* **web:** consume regional Elo read models ([#145](https://github.com/abcEDH/cedh-research/issues/145)) ([b4601f8](https://github.com/abcEDH/cedh-research/commit/b4601f8cbf184a4a8885445620a7ee2d4ab4364d))
+
+# [1.10.0](https://github.com/abcEDH/cedh-research/compare/v1.9.0...v1.10.0) (2026-05-02)
+
+
+### Features
+
+* overhaul home page, seed scouting events, and clean repo bloat ([#144](https://github.com/abcEDH/cedh-research/issues/144)) ([bd0b5ad](https://github.com/abcEDH/cedh-research/commit/bd0b5adde02d7ff2b5c835f9b9caaeb938bc7b32))
+
+# [1.9.0](https://github.com/abcEDH/cedh-research/compare/v1.8.0...v1.9.0) (2026-05-02)
+
+
+### Features
+
+* **web:** refine home page, commander details, and expand trend history ([#143](https://github.com/abcEDH/cedh-research/issues/143)) ([8cb9e46](https://github.com/abcEDH/cedh-research/commit/8cb9e46d58a2c9e107084e72d5a162ec3b37294b))
+
 # [1.8.0](https://github.com/abcEDH/cedh-research/compare/v1.7.7...v1.8.0) (2026-05-01)
 
 

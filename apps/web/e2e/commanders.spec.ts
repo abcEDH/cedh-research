@@ -10,8 +10,7 @@ test.describe("Commanders List Page", () => {
   });
 
   test("displays commanders table with data", async ({ page }) => {
-    // Primary rankings table should be visible
-    const rankingsTable = page.locator("table").first();
+    const rankingsTable = page.getByTestId("all-commanders-table");
     await expect(rankingsTable).toBeVisible();
 
     // Should have table headers
@@ -24,8 +23,8 @@ test.describe("Commanders List Page", () => {
   });
 
   test("commanders have non-zero entry counts", async ({ page }) => {
-    // Get entry counts from table
-    const rows = page.locator("tbody tr");
+    const rankingsTable = page.getByTestId("all-commanders-table");
+    const rows = rankingsTable.locator("tbody tr");
     const rowCount = await rows.count();
 
     expect(rowCount).toBeGreaterThan(0);

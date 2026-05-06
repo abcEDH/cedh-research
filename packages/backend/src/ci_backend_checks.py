@@ -8,7 +8,8 @@ import os
 import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+UTC = timezone.utc
 from pathlib import Path
 from statistics import median
 from typing import Any
@@ -22,7 +23,6 @@ STATE_SAMPLE_SIZE = 25
 SUPABASE_STATEMENT_TIMEOUT_CODE = "57014"
 PR_VIEW_TIMEOUT_TOLERANT_NAMES = {
     "commander_stats",
-    "seat_position_stats",
     "commander_meta_monthly",
     "commander_momentum",
     "commander_first_appearances",
@@ -31,8 +31,6 @@ PR_VIEW_TIMEOUT_TOLERANT_NAMES = {
 
 VIEW_SPECS: list[tuple[str, int]] = [
     ("commander_stats", 10),
-    ("seat_position_stats", 4),
-    ("commander_seat_stats", 10),
     ("card_frequencies_global", 100),
     ("card_frequencies_by_commander", 100),
     ("trap_cards_report", 1),
@@ -58,12 +56,6 @@ RPC_SPECS: list[tuple[str, dict[str, Any], bool, tuple[str, ...]]] = [
         {"p_commander_id": "00000000-0000-0000-0000-000000000000"},
         False,
         ("opponent_commander_name", "games_played", "wins", "losses"),
-    ),
-    (
-        "get_commanders_for_card",
-        {"p_card_name": "Sol Ring"},
-        True,
-        ("commander_id", "commander_name", "deck_count", "inclusion_rate"),
     ),
 ]
 

@@ -90,9 +90,9 @@ TOPDECK_API_KEY=<server-only>
 - **Text secondary:** #a1a1aa
 
 ## Pending Improvements
-1. **Reviewability** - Keep supported-surface docs and CI checks aligned
-2. **League Validation** - Confirm TopDeck league payload support with authenticated samples
-3. **Observability** - Add PostHog for supported surfaces only
+1. **Reviewability** - **[VITAL/KEEP]** Keep supported-surface docs and CI checks aligned. We need to ensure backend PRs do not fail on unrelated data dictionary gates.
+2. **League Validation** - **[REJECTED/LOW]** Confirm TopDeck league payload support with authenticated samples. *Decision: Secondary to tournament data. Deferring indefinitely.*
+3. **Observability** - **[REJECTED/LOW]** Add PostHog for supported surfaces only. *Decision: Deferring until core functional surfaces are fully stabilized. Not a priority right now.*
 
 ## Reference Sites
 - **cedh.io** - Metagame statistics, deck analysis tools

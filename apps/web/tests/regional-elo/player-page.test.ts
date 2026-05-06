@@ -49,6 +49,24 @@ const tableData: TableData = {
       last_game_date: "2026-04-03",
     },
     {
+      region_type: "state",
+      region_key: "CALIFORNIA",
+      country_key: "UNITED STATES",
+      player_id: "player-1",
+      topdeck_id: "CCIQroaCHHQi7EELyNXlHiHQiQy1",
+      primary_country_key: "UNITED STATES",
+      primary_region_key: "CALIFORNIA",
+      rank: 5,
+      topdeck_elo_rank: 3,
+      rating: 1734.864,
+      topdeck_elo: 1900.066,
+      games_played: 3,
+      wins: 1,
+      draws: 1,
+      losses: 1,
+      last_game_date: "2026-04-03",
+    },
+    {
       region_type: "global",
       region_key: "ALL",
       player_id: "player-6",
@@ -64,6 +82,66 @@ const tableData: TableData = {
       draws: 0,
       losses: 0,
       last_game_date: "2025-01-01",
+    },
+  ],
+  global_elo_player_profile_summaries: [
+    {
+      player_id: "player-1",
+      games_played: 3,
+      wins: 1,
+      draws: 1,
+      losses: 1,
+      last_game_date: "2026-04-03",
+      home_country_key: "UNITED STATES",
+      home_region_key: "CALIFORNIA",
+      state_assignments: [
+        {
+          country_key: "UNITED STATES",
+          region_key: "CALIFORNIA",
+          games_played: 3,
+          wins: 1,
+          draws: 1,
+          losses: 1,
+        },
+      ],
+    },
+    {
+      player_id: "player-5",
+      games_played: 1,
+      wins: 1,
+      draws: 0,
+      losses: 0,
+      last_game_date: "2026-04-04",
+      home_country_key: "UNKNOWN",
+      home_region_key: "UNKNOWN",
+      state_assignments: [
+        {
+          country_key: "UNKNOWN",
+          region_key: "UNKNOWN",
+          games_played: 1,
+          wins: 1,
+          draws: 0,
+          losses: 0,
+        },
+      ],
+    },
+  ],
+  player_commander_profiles: [
+    {
+      topdeck_id: "CCIQroaCHHQi7EELyNXlHiHQiQy1",
+      active_commander: "Rograkh / Silas",
+      latest_decklist_url: "https://topdeck.gg/deck/tournament-1/CCIQroaCHHQi7EELyNXlHiHQiQy1",
+      latest_tournament_name: "California Open I",
+      latest_tournament_date: "2026-04-03",
+      latest_tournament_topdeck_tid: "tournament-1",
+    },
+    {
+      topdeck_id: "unknown-region-player",
+      active_commander: "Rograkh / Silas",
+      latest_decklist_url: null,
+      latest_tournament_name: "Unknown Region Open",
+      latest_tournament_date: "2026-04-04",
+      latest_tournament_topdeck_tid: "tournament-4",
     },
   ],
   global_elo_leaderboard: [
@@ -387,15 +465,47 @@ vi.mock("@/lib/supabase", () => ({
   },
 }));
 
+async function renderPlayerPage(
+  topdeckId: string,
+  searchParams: Record<string, string | string[] | undefined> = {}
+) {
+  const pageModule = await import("@/app/regional-elo/player/[topdeckId]/page");
+  const componentsModule = await import(
+    "@/app/regional-elo/player/[topdeckId]/player-profile-components"
+  );
+
+  const wrapperElement = await pageModule.default({
+    params: { topdeckId },
+    searchParams,
+  });
+  const wrapperHtml = renderToStaticMarkup(wrapperElement);
+
+  const player = (tableData.players ?? []).find(
+    (row) => row.topdeck_id === topdeckId
+  ) as { id: string; name: string; topdeck_id: string } | undefined;
+  if (!player) return wrapperHtml;
+
+  const rawRegion = searchParams.region;
+  const regionParam = Array.isArray(rawRegion) ? (rawRegion[0] ?? "") : (rawRegion ?? "");
+  const regionFilter = regionParam.toUpperCase() === "ALL" ? "" : regionParam.toUpperCase();
+
+  const [headerElement, gridElement, bodyElement] = await Promise.all([
+    componentsModule.PlayerHeader({ topdeckId }),
+    componentsModule.PlayerProfileGrid({ topdeckId, player, regionFilter }),
+    pageModule.PlayerProfileBody({ topdeckId, player, searchParams }),
+  ]);
+
+  const headerHtml = headerElement ? renderToStaticMarkup(headerElement) : "";
+  const gridHtml = renderToStaticMarkup(gridElement);
+  const bodyHtml = renderToStaticMarkup(bodyElement);
+  return wrapperHtml + headerHtml + gridHtml + bodyHtml;
+}
+
 describe("RegionalPlayerPage", () => {
   it("renders summary cards and regional rankings from the same canonical counts", async () => {
-    const pageModule = await import("@/app/regional-elo/player/[topdeckId]/page");
-    const element = await pageModule.default({
-      params: { topdeckId: "CCIQroaCHHQi7EELyNXlHiHQiQy1" },
-      searchParams: { region: "CALIFORNIA" },
+    const html = await renderPlayerPage("CCIQroaCHHQi7EELyNXlHiHQiQy1", {
+      region: "CALIFORNIA",
     });
-
-    const html = renderToStaticMarkup(element);
 
     expect(html).toContain("Alex Lien");
     expect(html).toContain("TopDeck Rank");
@@ -414,13 +524,7 @@ describe("RegionalPlayerPage", () => {
   });
 
   it("groups unknown-region games for any player profile", async () => {
-    const pageModule = await import("@/app/regional-elo/player/[topdeckId]/page");
-    const element = await pageModule.default({
-      params: { topdeckId: "unknown-region-player" },
-      searchParams: {},
-    });
-
-    const html = renderToStaticMarkup(element);
+    const html = await renderPlayerPage("unknown-region-player");
 
     expect(html).toContain("Unknown Region Player");
     expect(html).toMatch(/Games Played[\s\S]*?>1</);
@@ -428,13 +532,9 @@ describe("RegionalPlayerPage", () => {
   });
 
   it("hides inactive player global and state ranks", async () => {
-    const pageModule = await import("@/app/regional-elo/player/[topdeckId]/page");
-    const element = await pageModule.default({
-      params: { topdeckId: "inactive-player" },
-      searchParams: { region: "CALIFORNIA" },
+    const html = await renderPlayerPage("inactive-player", {
+      region: "CALIFORNIA",
     });
-
-    const html = renderToStaticMarkup(element);
 
     expect(html).toContain("Inactive Player");
     expect(html).toMatch(/State Rank[\s\S]*?>--</);
@@ -443,15 +543,9 @@ describe("RegionalPlayerPage", () => {
   });
 
   it("links opponent records to the head-to-head page", async () => {
-    const pageModule = await import("@/app/regional-elo/player/[topdeckId]/page");
-    const element = await pageModule.default({
-      params: { topdeckId: "CCIQroaCHHQi7EELyNXlHiHQiQy1" },
-      searchParams: {},
-    });
+    const html = await renderPlayerPage("CCIQroaCHHQi7EELyNXlHiHQiQy1");
 
-    const html = renderToStaticMarkup(element);
-
-    expect(html).toContain('/regional-elo/player/CCIQroaCHHQi7EELyNXlHiHQiQy1/vs/opp-a');
+    expect(html).toContain("/regional-elo/player/CCIQroaCHHQi7EELyNXlHiHQiQy1/vs/opp-a");
     expect(html).not.toContain('href="/regional-elo/player/opp-a"');
   });
 });

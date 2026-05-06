@@ -12,6 +12,7 @@ import TrendMetricCharts, {
 import type { CommanderPeriodSnapshot } from "@/components/commanders/commander-trends-table";
 
 export const dynamic = "force-dynamic";
+const SUPABASE_TREND_PAGE_SIZE = 1000;
 
 type SizeFilter = "all" | "large";
 
@@ -39,7 +40,6 @@ type WeeklyTrendRow = {
   wins?: number | null;
   losses?: number | null;
   draws?: number | null;
-  total_players?: number | null;
 };
 
 type MonthlyTrendRow = {
@@ -49,7 +49,23 @@ type MonthlyTrendRow = {
   wins?: number | null;
   losses?: number | null;
   draws?: number | null;
-  total_players?: number | null;
+};
+
+type GlobalWeeklyTrendRow = {
+  week_key?: string | null;
+  week_start_date?: string | null;
+  entries: number;
+  wins: number;
+  losses: number;
+  draws: number;
+};
+
+type GlobalMonthlyTrendRow = {
+  month_key: string;
+  entries: number;
+  wins: number;
+  losses: number;
+  draws: number;
 };
 
 function normalizeDateKey(value: string | null | undefined) {
@@ -78,12 +94,12 @@ async function getCommanderPeriodSnapshots(commanderIds: string[], sizeFilter: S
   const { weekly, monthly } = getTrendViews(sizeFilter);
   const weeklyPrimary = await supabase
     .from(weekly)
-    .select("commander_id, week_start_date, entries, wins, losses, draws, total_players")
+    .select("commander_id, week_start_date, entries, wins, losses, draws")
     .in("commander_id", commanderIds)
     .order("week_start_date", { ascending: true });
   const monthlyPrimary = await supabase
     .from(monthly)
-    .select("commander_id, month_key, entries, wins, losses, draws, total_players")
+    .select("commander_id, month_key, entries, wins, losses, draws")
     .in("commander_id", commanderIds)
     .order("month_key", { ascending: true });
 
@@ -148,19 +164,19 @@ async function getCommanderPeriodSnapshots(commanderIds: string[], sizeFilter: S
       weekEntries: week?.entries ?? null,
       weekWinRate: weekGames ? (weekWins / weekGames) * 100 : null,
       weekPointsPerGame: weekGames ? (weekWins * 5 + weekDraws) / weekGames : null,
-      weekPlayers: week?.total_players ?? null,
+      weekPlayers: null,
       monthKey: month?.month_key ?? null,
       monthEntries: month?.entries ?? null,
       monthWinRate: monthGames ? (monthWins / monthGames) * 100 : null,
       monthPointsPerGame: monthGames ? (monthWins * 5 + monthDraws) / monthGames : null,
-      monthPlayers: month?.total_players ?? null,
+      monthPlayers: null,
     };
   });
 
   return snapshots;
 }
 
-async function getWeeklyEntries(commanderIds: string[], sizeFilter: SizeFilter, weeks = 12) {
+async function getWeeklyEntries(commanderIds: string[], sizeFilter: SizeFilter, weeks = 104) {
   if (commanderIds.length === 0) return {};
 
   const { weekly } = getTrendViews(sizeFilter);
@@ -197,7 +213,7 @@ async function getWeeklyEntries(commanderIds: string[], sizeFilter: SizeFilter, 
   return result;
 }
 
-async function getWeeklyWinRateSeries(commanders: CommanderStat[], sizeFilter: SizeFilter, weeks = 13) {
+async function getWeeklyWinRateSeries(commanders: CommanderStat[], sizeFilter: SizeFilter, weeks = 104) {
   if (commanders.length === 0) {
     return { data: [] as CommanderTrendSeriesPoint[], series: [] as CommanderTrendSeriesMeta[] };
   }
@@ -249,41 +265,52 @@ async function getWeeklyWinRateSeries(commanders: CommanderStat[], sizeFilter: S
   return { data: dataPoints, series };
 }
 
-async function getGlobalTrendSeries(sizeFilter: SizeFilter) {
-  const { weekly: weeklyView, monthly: monthlyView } = getTrendViews(sizeFilter);
-  const [weeklyResult, monthlyResult] = await Promise.all([
-    supabase
+async function fetchGlobalWeeklyTrendRows(weeklyView: string) {
+  const rows: GlobalWeeklyTrendRow[] = [];
+  for (let offset = 0; ; offset += SUPABASE_TREND_PAGE_SIZE) {
+    const { data, error } = await supabase
       .from(weeklyView)
       .select("week_key, week_start_date, entries, wins, losses, draws")
-      .order("week_start_date", { ascending: true }),
-    supabase
+      .order("week_start_date", { ascending: true })
+      .range(offset, offset + SUPABASE_TREND_PAGE_SIZE - 1);
+
+    if (error) {
+      console.error("Error fetching global weekly trends:", error);
+      return rows;
+    }
+
+    rows.push(...(((data as GlobalWeeklyTrendRow[]) ?? [])));
+    if (!data || data.length < SUPABASE_TREND_PAGE_SIZE) break;
+  }
+  return rows;
+}
+
+async function fetchGlobalMonthlyTrendRows(monthlyView: string) {
+  const rows: GlobalMonthlyTrendRow[] = [];
+  for (let offset = 0; ; offset += SUPABASE_TREND_PAGE_SIZE) {
+    const { data, error } = await supabase
       .from(monthlyView)
       .select("month_key, entries, wins, losses, draws")
-      .order("month_key", { ascending: true }),
+      .order("month_key", { ascending: true })
+      .range(offset, offset + SUPABASE_TREND_PAGE_SIZE - 1);
+
+    if (error) {
+      console.error("Error fetching global monthly trends:", error);
+      return rows;
+    }
+
+    rows.push(...(((data as GlobalMonthlyTrendRow[]) ?? [])));
+    if (!data || data.length < SUPABASE_TREND_PAGE_SIZE) break;
+  }
+  return rows;
+}
+
+async function getGlobalTrendSeries(sizeFilter: SizeFilter) {
+  const { weekly: weeklyView, monthly: monthlyView } = getTrendViews(sizeFilter);
+  const [weeklyRows, monthlyRows] = await Promise.all([
+    fetchGlobalWeeklyTrendRows(weeklyView),
+    fetchGlobalMonthlyTrendRows(monthlyView),
   ]);
-
-  if (weeklyResult.error) {
-    console.error("Error fetching global weekly trends:", weeklyResult.error);
-  }
-  if (monthlyResult.error) {
-    console.error("Error fetching global monthly trends:", monthlyResult.error);
-  }
-
-  const weeklyRows = (weeklyResult.data || []) as {
-    week_key?: string | null;
-    week_start_date?: string | null;
-    entries: number;
-    wins: number;
-    losses: number;
-    draws: number;
-  }[];
-  const monthlyRows = (monthlyResult.data || []) as {
-    month_key: string;
-    entries: number;
-    wins: number;
-    losses: number;
-    draws: number;
-  }[];
 
   const weeklyByKey = new Map<string, { entries: number; wins: number; losses: number; draws: number }>();
   weeklyRows.forEach((row) => {
@@ -333,9 +360,13 @@ async function getGlobalTrendSeries(sizeFilter: SizeFilter) {
 export default async function CommanderTrendsPage({
   searchParams,
 }: {
-  searchParams?: { size?: string };
+  searchParams?: Promise<{ size?: string | string[] }> | { size?: string | string[] };
 }) {
-  const sizeFilter: SizeFilter = searchParams?.size === "large" ? "large" : "all";
+  const resolvedSearchParams = await searchParams;
+  const rawSize = Array.isArray(resolvedSearchParams?.size)
+    ? resolvedSearchParams?.size[0]
+    : resolvedSearchParams?.size;
+  const sizeFilter: SizeFilter = rawSize === "large" ? "large" : "all";
   const sizeLabel = sizeFilter === "large" ? "65+ players" : "32+ players";
 
   const commanders = await getCommanders(sizeFilter);

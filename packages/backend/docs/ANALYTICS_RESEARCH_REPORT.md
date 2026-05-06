@@ -342,10 +342,10 @@ plotly>=5.18.0
 
 ## 7. Open Questions
 
-1. **Moxfield API access** - Required for URL-only decklists (TOS may restrict)
-2. **Minimum sample sizes** - Need 200+ games for reliable card-level win-rate statistics
-3. **Cluster count determination** - Use silhouette analysis vs fixed N=10?
-4. **GIH WR tracking** - Requires game-level card draw logging (not currently captured)
+1. **Moxfield API access** - **[VITAL]** Required for URL-only decklists (TOS may restrict). We need a resilient way to fetch these without blocking.
+2. **Minimum sample sizes** - **[VITAL]** Need 200+ games for reliable card-level win-rate statistics. This must be enforced in queries to prevent statistical noise.
+3. **Cluster count determination** - **[REJECTED/LOW]** Use silhouette analysis vs fixed N=10? *Decision: Fixed N=10 is sufficient for current UI needs. Deferring complex analysis.*
+4. **GIH WR tracking** - **[UNFEASIBLE/REJECTED]** Requires game-level card draw logging. *Decision: Game-in-hand win rate tracking is realistically unachievable as the data is not captured by sources. Rely on inclusion win-rate deltas instead.*
 
 ---
 

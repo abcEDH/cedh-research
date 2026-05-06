@@ -65,6 +65,7 @@ vi.mock("@/lib/supabase", () => {
       not: () => chain,
       order: () => chain,
       in: () => chain,
+      range: () => chain,
       then: (
         onfulfilled?: ((value: { data: unknown; error: null }) => unknown) | null
       ) => {
@@ -126,7 +127,7 @@ vi.mock("@/components/ui/tooltip", () => ({
 }));
 
 describe("Commanders page caching", () => {
-  it("exports COMMANDERS_CACHE_REVALIDATE_SECONDS equal to 1800 (30 minutes)", async () => {
+  it("exports COMMANDERS_CACHE_REVALIDATE_SECONDS equal to 86400 (24 hours)", async () => {
     // The constant is module-scoped but not exported, so we verify it indirectly
     // by checking the module can be imported and the constant value is correct.
     // We read it from the source to confirm the value.
@@ -140,8 +141,8 @@ describe("Commanders page caching", () => {
       /const COMMANDERS_CACHE_REVALIDATE_SECONDS\s*=\s*(.+?);/
     );
     expect(match).not.toBeNull();
-    // Evaluate the expression (60 * 30 = 1800)
-    expect(eval(match![1])).toBe(1800);
+    // Evaluate the expression (60 * 60 * 24 = 86400)
+    expect(eval(match![1])).toBe(86400);
   });
 
   it("module imports without errors and default export is a function", async () => {
@@ -163,7 +164,7 @@ describe("Commanders page caching", () => {
     expect(html).toContain("View commander trends");
   });
 
-  it("source contains all four cached wrapper definitions with -v1 cache keys", async () => {
+  it("source contains all four cached wrapper definitions with expected cache keys", async () => {
     const fs = await import("fs");
     const path = await import("path");
     const source = fs.readFileSync(
@@ -181,7 +182,7 @@ describe("Commanders page caching", () => {
     expect(source).toContain('["commander-weekly-entries-v1"]');
 
     expect(source).toContain('getCachedGlobalTrendSeries = unstable_cache(');
-    expect(source).toContain('["commander-global-trends-v1"]');
+    expect(source).toContain('["commander-global-trends-v3"]');
   });
 
   it("page module calls cached wrappers instead of raw functions", async () => {

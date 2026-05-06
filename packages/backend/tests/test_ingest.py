@@ -156,7 +156,7 @@ class SupabaseClientUpdateTests(unittest.TestCase):
             json={"status": "running"},
             headers=self.client.headers,
             params={"id": "eq.job-123", "status": "eq.pending"},
-            timeout=30,
+            timeout=90,
         )
         self.assertEqual(result, [{"id": "row-1", "status": "running"}])
 

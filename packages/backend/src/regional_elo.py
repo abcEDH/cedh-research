@@ -14,7 +14,8 @@ import time
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
+UTC = timezone.utc
 from typing import Any
 
 import requests
