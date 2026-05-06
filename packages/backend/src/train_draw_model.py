@@ -193,17 +193,18 @@ def hypothetical_rank_by_player(
     point_delta: int,
 ) -> dict[str, int]:
     ranks: dict[str, int] = {}
+    fallback_seed = len(player_ids) + 1_000_000
     for player_id in player_ids:
-        target_points = points_by_player[player_id] + point_delta
-        target_omw = estimated_omw_by_player[player_id]
-        target_seed = tiebreak_seed_by_player[player_id]
+        target_points = points_by_player.get(player_id, 0) + point_delta
+        target_omw = estimated_omw_by_player.get(player_id, 0.0)
+        target_seed = tiebreak_seed_by_player.get(player_id, fallback_seed)
         better = 0
         for opponent_id in player_ids:
             if opponent_id == player_id:
                 continue
-            opponent_points = points_by_player[opponent_id]
-            opponent_omw = estimated_omw_by_player[opponent_id]
-            opponent_seed = tiebreak_seed_by_player[opponent_id]
+            opponent_points = points_by_player.get(opponent_id, 0)
+            opponent_omw = estimated_omw_by_player.get(opponent_id, 0.0)
+            opponent_seed = tiebreak_seed_by_player.get(opponent_id, fallback_seed)
             if (
                 opponent_points > target_points
                 or (

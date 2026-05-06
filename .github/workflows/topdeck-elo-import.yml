@@ -1,0 +1,48 @@
+name: TopDeck Elo Import
+
+on:
+  workflow_dispatch:
+    inputs:
+      elo_url:
+        description: "Optional TopDeck Elo snapshot URL override"
+        required: false
+        default: ""
+  schedule:
+    - cron: "0 16 * * 2"
+
+concurrency:
+  group: topdeck-elo-import
+  cancel-in-progress: true
+
+env:
+  SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+# Required secrets:
+#   SUPABASE_DB_URL — direct Postgres connection string for the Supabase project
+#
+# Optional workflow input:
+#   elo_url — alternate TopDeck snapshot URL for manual runs
+
+jobs:
+  import-topdeck-elo:
+    name: Import TopDeck published EDH Elo snapshot
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies (locked)
+        run: uv sync --frozen --project packages/backend
+
+      - name: Import snapshot
+        run: |
+          URL_FLAG=""
+          if [ -n "${{ inputs.elo_url }}" ]; then
+            URL_FLAG="--url ${{ inputs.elo_url }}"
+          fi
+          uv run --project packages/backend python packages/backend/src/import_topdeck_player_elos.py $URL_FLAG
