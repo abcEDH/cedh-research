@@ -17,7 +17,6 @@ from run_historical_tournament_sim import (
     DEFAULT_DRAW_MODEL_PATH,
     build_spec_and_players,
     derive_top_cut_player_ids,
-    fetch_all,
 )
 from sim_engine import apply_pod_result, apply_round_elo_updates, initialize_state, run_monte_carlo_from_state
 from sim_models import load_draw_model_artifact
