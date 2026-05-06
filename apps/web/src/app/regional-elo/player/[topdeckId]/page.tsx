@@ -895,13 +895,20 @@ export async function PlayerProfileBody({
     }
   }
   if (activeCommander) {
-    if (commanderProfile?.latest_decklist_url && commanderProfile.latest_tournament_date) {
+    if (
+      commanderProfile?.latest_decklist_url &&
+      commanderProfile.latest_tournament_date &&
+      !latestDecklistByCommander.has(activeCommander)
+    ) {
       latestDecklistByCommander.set(activeCommander, {
         date: commanderProfile.latest_tournament_date,
         url: commanderProfile.latest_decklist_url,
       });
     }
-    if (commanderProfile?.latest_tournament_date) {
+    if (
+      commanderProfile?.latest_tournament_date &&
+      !latestTournamentByCommander.has(activeCommander)
+    ) {
       latestTournamentByCommander.set(activeCommander, {
         date: commanderProfile.latest_tournament_date,
         name: commanderProfile.latest_tournament_name || "Unknown tournament",
