@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { notFound } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { normalizeDisplayString } from "@/lib/utils";
@@ -67,17 +68,6 @@ interface CommanderMeta {
   scryfall_ids: string[] | null;
   commander_names: string[] | null;
 }
-
-type TrendRow = {
-  week_key?: string | null;
-  week_start_date?: string | null;
-  month_key?: string | null;
-  entries: number;
-  wins?: number | null;
-  losses?: number | null;
-  draws?: number | null;
-  total_players?: number | null;
-};
 
 function normalizeDateKey(value: string | null | undefined) {
   if (!value) return "";
@@ -283,88 +273,68 @@ async function getCommanderMatchups(commanderId: string): Promise<CommanderMatch
 type CommanderTrendTableRow = {
   period: string;
   entries: number;
-  players: number | null;
   winRate: number;
   pointsPerGame: number;
 };
 
 async function getCommanderTrendSeries(commanderId: string) {
-  const weeklyPrimary = await supabase
-    .from("commander_weekly_trends")
-    .select("week_key, week_start_date, entries, wins, losses, draws, total_players")
-    .eq("commander_id", commanderId)
-    .order("week_start_date", { ascending: true });
-
-  const monthlyPrimary = await supabase
-    .from("commander_monthly_trends")
-    .select("month_key, entries, wins, losses, draws, total_players")
-    .eq("commander_id", commanderId)
-    .order("month_key", { ascending: true });
-
-  let weeklyData: TrendRow[] = weeklyPrimary.data ?? [];
-  let monthlyData: TrendRow[] = monthlyPrimary.data ?? [];
-
-  if (weeklyPrimary.error) {
-    console.error("Error fetching weekly trends (with players):", weeklyPrimary.error);
-    const weeklyFallback = await supabase
+  const [weeklyResult, monthlyResult] = await Promise.all([
+    supabase
       .from("commander_weekly_trends")
       .select("week_key, week_start_date, entries, wins, losses, draws")
       .eq("commander_id", commanderId)
-      .order("week_start_date", { ascending: true });
-    weeklyData = weeklyFallback.data ?? [];
-  }
-
-  if (monthlyPrimary.error) {
-    console.error("Error fetching monthly trends (with players):", monthlyPrimary.error);
-    const monthlyFallback = await supabase
+      .order("week_start_date", { ascending: true }),
+    supabase
       .from("commander_monthly_trends")
       .select("month_key, entries, wins, losses, draws")
       .eq("commander_id", commanderId)
-      .order("month_key", { ascending: true });
-    monthlyData = monthlyFallback.data ?? [];
+      .order("month_key", { ascending: true }),
+  ]);
+
+  if (weeklyResult.error) {
+    console.error("Error fetching commander weekly trends:", weeklyResult.error);
+  }
+  if (monthlyResult.error) {
+    console.error("Error fetching commander monthly trends:", monthlyResult.error);
   }
 
-  if (weeklyPrimary.error) {
-    console.error("Error fetching commander weekly trends:", weeklyPrimary.error);
-  }
-  if (monthlyPrimary.error) {
-    console.error("Error fetching commander monthly trends:", monthlyPrimary.error);
-  }
-
-  const weeklyRows = (weeklyData || []) as {
+  const weeklyRows = (weeklyResult.data || []) as {
     week_key?: string | null;
     week_start_date?: string | null;
     entries: number;
     wins: number;
     losses: number;
     draws: number;
-    total_players?: number | null;
   }[];
-  const monthlyRows = (monthlyData || []) as {
+  const monthlyRows = (monthlyResult.data || []) as {
     month_key: string;
     entries: number;
     wins: number;
     losses: number;
     draws: number;
-    total_players?: number | null;
   }[];
 
-  const weekly: TrendMetricPoint[] = weeklyRows.map((row) => {
-    const games = row.wins + row.losses + row.draws;
-    const winRate = games ? (row.wins / games) * 100 : 0;
-    const pointsPerGame = games ? (row.wins * 5 + row.draws) / games : 0;
-    return { period: normalizeDateKey(row.week_start_date) || row.week_key || "", entries: row.entries, winRate, pointsPerGame };
-  });
+  const weekly: TrendMetricPoint[] = weeklyRows
+    .filter((row) => row.wins + row.losses + row.draws > 0)
+    .map((row) => {
+      const games = row.wins + row.losses + row.draws;
+      const winRate = games ? (row.wins / games) * 100 : 0;
+      const pointsPerGame = games ? (row.wins * 5 + row.draws) / games : 0;
+      return { period: normalizeDateKey(row.week_start_date) || row.week_key || "", entries: row.entries, winRate, pointsPerGame };
+    });
 
-  const monthly: TrendMetricPoint[] = monthlyRows.map((row) => {
-    const games = row.wins + row.losses + row.draws;
-    const winRate = games ? (row.wins / games) * 100 : 0;
-    const pointsPerGame = games ? (row.wins * 5 + row.draws) / games : 0;
-    return { period: row.month_key, entries: row.entries, winRate, pointsPerGame };
-  });
+  const monthly: TrendMetricPoint[] = monthlyRows
+    .filter((row) => row.wins + row.losses + row.draws > 0)
+    .map((row) => {
+      const games = row.wins + row.losses + row.draws;
+      const winRate = games ? (row.wins / games) * 100 : 0;
+      const pointsPerGame = games ? (row.wins * 5 + row.draws) / games : 0;
+      return { period: row.month_key, entries: row.entries, winRate, pointsPerGame };
+    });
 
   const weeklyTable: CommanderTrendTableRow[] = weeklyRows
-    .slice(-12)
+    .filter((row) => row.wins + row.losses + row.draws > 0)
+    .slice(-52)
     .map((row) => {
       const games = row.wins + row.losses + row.draws;
       const winRate = games ? (row.wins / games) * 100 : 0;
@@ -372,14 +342,14 @@ async function getCommanderTrendSeries(commanderId: string) {
       return {
         period: normalizeDateKey(row.week_start_date) || row.week_key || "",
         entries: row.entries,
-        players: row.total_players ?? null,
         winRate,
         pointsPerGame,
       };
     });
 
   const monthlyTable: CommanderTrendTableRow[] = monthlyRows
-    .slice(-12)
+    .filter((row) => row.wins + row.losses + row.draws > 0)
+    .slice(-52)
     .map((row) => {
       const games = row.wins + row.losses + row.draws;
       const winRate = games ? (row.wins / games) * 100 : 0;
@@ -387,7 +357,6 @@ async function getCommanderTrendSeries(commanderId: string) {
       return {
         period: row.month_key,
         entries: row.entries,
-        players: row.total_players ?? null,
         winRate,
         pointsPerGame,
       };
@@ -473,13 +442,16 @@ export default async function CommanderDetailPage({
               {commanderMeta?.scryfall_ids && commanderMeta.scryfall_ids.length > 0 && (
                 <div className="flex items-center gap-3">
                   {commanderMeta.scryfall_ids.slice(0, 2).map((scryfallId) => (
-                    <img
-                      key={scryfallId}
-                      src={`https://cards.scryfall.io/art_crop/${scryfallId}.jpg`}
-                      alt={normalizeDisplayString(commander.commander_name)}
-                      className="h-28 w-28 rounded-xl border border-border/60 object-cover shadow-lg"
-                      loading="lazy"
-                    />
+                    <div key={scryfallId} className="h-28 w-28 relative rounded-xl border border-border/60 overflow-hidden shadow-lg">
+                      <Image
+                        src={`https://cards.scryfall.io/art_crop/${scryfallId}.jpg`}
+                        alt={normalizeDisplayString(commander.commander_name)}
+                        fill
+                        className="object-cover"
+                        loading="lazy"
+                        unoptimized
+                      />
+                    </div>
                   ))}
                 </div>
               )}
@@ -611,14 +583,6 @@ export default async function CommanderDetailPage({
                 </CardHeader>
                 <CardContent className="space-y-4 text-sm">
                   <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">Baseline Win Rate (4-player)</span>
-                    <span className="font-mono text-foreground">25.0%</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">Baseline Points / Game</span>
-                    <span className="font-mono text-foreground">{baselinePointsPerGame.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
                     <span className="text-muted-foreground">Actual Win Rate</span>
                     <span
                       className={`font-mono font-semibold ${
@@ -639,19 +603,6 @@ export default async function CommanderDetailPage({
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">Win Rate Delta</span>
-                    <span
-                      className={`font-mono ${
-                        winRateValue > 0.25
-                          ? "text-primary"
-                          : "text-[hsl(var(--knd-amber))]"
-                      }`}
-                    >
-                      {winRateValue > 0.25 ? "+" : ""}
-                      {((winRateValue - 0.25) * 100).toFixed(1)}%
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center">
                     <span className="text-muted-foreground">Resiliency (Win + Draw)</span>
                     <span className={`font-mono ${resiliencyRate > 0.25 ? "text-primary" : "text-muted-foreground"}`}>
                       {(resiliencyRate * 100).toFixed(1)}%
@@ -659,15 +610,9 @@ export default async function CommanderDetailPage({
                   </div>
                   <hr className="border-border/60" />
                   <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">Top 16/Top 4 Finishes</span>
+                    <span className="text-muted-foreground">Top Bracket Finishes (Top 16/10/4)</span>
                     <span className="font-mono text-muted-foreground">
                       {commander.top_16_count}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">Top Cut Finishes</span>
-                    <span className="font-mono text-muted-foreground">
-                      {commander.top_cut_count}
                     </span>
                   </div>
                 </CardContent>
@@ -759,7 +704,7 @@ export default async function CommanderDetailPage({
                 <CardContent>
                   <div className="space-y-3">
                     {recentFinishes.map((finish) => (
-                      <RecentFinishRow key={finish.id} finish={finish} commanderId={commander.commander_id} />
+                      <RecentFinishRow key={finish.id} finish={finish} />
                     ))}
                   </div>
                 </CardContent>
@@ -926,10 +871,10 @@ export default async function CommanderDetailPage({
                     <TableRow className="border-border/60 text-xs uppercase tracking-[0.2em] text-muted-foreground">
                       <TableHead>Card Name</TableHead>
                       <TableHead>Tier</TableHead>
-                      <TableHead className="text-right">Inclusion</TableHead>
-                      <TableHead className="text-right">Global Rate</TableHead>
-                      <TableHead className="text-right">Win Rate Delta</TableHead>
-                      <TableHead className="text-right">Decks</TableHead>
+                      <TableHead className="text-right">Inc.</TableHead>
+                      <TableHead className="text-right hidden md:table-cell">Global</TableHead>
+                      <TableHead className="text-right">Win Δ</TableHead>
+                      <TableHead className="text-right hidden sm:table-cell">Decks</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -956,7 +901,7 @@ export default async function CommanderDetailPage({
                           <TableCell className="text-right font-mono">
                             {(parseFloat(card.inclusion_rate) * 100).toFixed(1)}%
                           </TableCell>
-                          <TableCell className="text-right font-mono text-muted-foreground">
+                          <TableCell className="text-right font-mono text-muted-foreground hidden md:table-cell">
                             {(parseFloat(card.global_rate) * 100).toFixed(1)}%
                           </TableCell>
                           <TableCell className="text-right font-mono">
@@ -994,7 +939,7 @@ export default async function CommanderDetailPage({
                               <span className="text-muted-foreground">—</span>
                             )}
                           </TableCell>
-                          <TableCell className="text-right font-mono text-muted-foreground">
+                          <TableCell className="text-right font-mono text-muted-foreground hidden sm:table-cell">
                             {card.deck_count}/{card.total_decks}
                           </TableCell>
                         </TableRow>
@@ -1057,7 +1002,13 @@ function StatCard({
             </Tooltip>
           )}
         </div>
-        <p className={`text-xl font-semibold ${toneMap[tone]}`}>{value}</p>
+        <p
+          className={`${
+            value.length > 12 ? "text-lg" : "text-xl"
+          } font-semibold ${toneMap[tone]}`}
+        >
+          {value}
+        </p>
       </CardContent>
     </Card>
   );
@@ -1170,10 +1121,8 @@ function PerformanceCardRow({
 
 function RecentFinishRow({
   finish,
-  commanderId,
 }: {
   finish: RecentFinish;
-  commanderId: string;
 }) {
   const deckHost = (() => {
     if (!finish.decklist_url) return null;

@@ -12,7 +12,6 @@ import {
 } from "@/lib/meta-prep";
 import type { MetaShareRow, PlayerCommanderProfile } from "@/lib/meta-prep";
 import { extractTournamentSlug, fetchTournamentBySlug } from "@/lib/topdeck";
-import { fetchTopdeckEloMap } from "@/lib/topdeck-elo";
 import Link from "next/link";
 import { unstable_cache } from "next/cache";
 import { FieldShareList } from "./field-share-list";
@@ -50,6 +49,7 @@ type RegionalLeaderboardQueryRow = {
   topdeck_id: string | null;
   player_name: string;
   rating: number;
+  topdeck_elo: number | null;
   games_played: number;
   primary_region_key: string | null;
   region_key: string;
@@ -127,28 +127,22 @@ function hasTournamentStarted(startDate: string | number | null | undefined) {
 async function fetchBestEloRows(topdeckIds: string[]): Promise<EloRow[]> {
   if (topdeckIds.length === 0) return [];
 
-  async function fetchRows(table: "global_elo_leaderboard" | "regional_elo_leaderboard") {
-    return supabase
-      .from(table)
-      .select("topdeck_id, player_name, rating, games_played, primary_region_key, region_key, rank")
-      .in("topdeck_id", topdeckIds)
-      .eq("region_type", "global")
-      .eq("region_key", "ALL");
+  // Query global_elo_active_leaderboard for player ratings
+  // The rating column contains our calculated Elo for each player
+  // The topdeck_elo column contains the official TopDeck Elo
+  const { data, error } = await supabase
+    .from("global_elo_active_leaderboard")
+    .select("topdeck_id, player_name, rating, topdeck_elo, games_played, primary_region_key, region_key, rank")
+    .in("topdeck_id", topdeckIds)
+    .eq("region_type", "global")
+    .eq("region_key", "ALL");
+
+  if (error) {
+    throw new Error(`Error fetching Elo rows: ${error.message}`);
   }
 
-  const { data, error } = await fetchRows("global_elo_leaderboard");
-  const rows =
-    error
-      ? await fetchRows("regional_elo_leaderboard")
-      : { data, error };
-
-  if (rows.error) {
-    throw new Error(`Error fetching Elo rows: ${rows.error.message}`);
-  }
-
-  const topdeckEloById = await fetchTopdeckEloMap(topdeckIds);
   const rowsByTopdeckId = new Map(
-    ((rows.data ?? []) as RegionalLeaderboardQueryRow[])
+    ((data ?? []) as RegionalLeaderboardQueryRow[])
       .filter((row) => row.topdeck_id)
       .map((row) => [row.topdeck_id as string, row])
   );
@@ -156,13 +150,12 @@ async function fetchBestEloRows(topdeckIds: string[]): Promise<EloRow[]> {
   return Array.from(new Set(topdeckIds))
     .map((topdeckId) => {
       const row = rowsByTopdeckId.get(topdeckId);
-      const topdeckElo = topdeckEloById.get(topdeckId) ?? null;
       return {
         topdeck_id: topdeckId,
         player_name: row?.player_name ?? "",
-        rating: topdeckElo,
-        hidden_rating: row?.rating,
-        topdeck_elo: topdeckElo,
+        rating: row?.rating ?? null,
+        hidden_rating: undefined,
+        topdeck_elo: row?.topdeck_elo ?? null,
         games_played: row?.games_played ?? 0,
         region_key: row?.primary_region_key ?? row?.region_key ?? "",
       };
@@ -511,6 +504,24 @@ export default async function TournamentLikelihoodPage({
               since {lookbackStart}, then estimates likely deck choice from their recent history.
               Players with sparse recent history fall back to a {COMMANDER_FALLBACK_LOOKBACK_MONTHS}-month window.
             </p>
+
+            <div className="mt-6 border-t border-border/60 pt-6">
+              <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground mb-3">Suggested Upcoming Events</p>
+              <div className="flex flex-wrap gap-2">
+                <Link 
+                  href="/tournament-likelihood?tournament=the-quest-part-1"
+                  className="knd-chip border border-border/60 bg-muted/20 px-3 py-2 text-xs hover:border-primary/40 hover:bg-muted/40 transition"
+                >
+                  The Quest: Part 1
+                </Link>
+                <Link 
+                  href="/tournament-likelihood?tournament=puntcity5"
+                  className="knd-chip border border-border/60 bg-muted/20 px-3 py-2 text-xs hover:border-primary/40 hover:bg-muted/40 transition"
+                >
+                  Punt City 5
+                </Link>
+              </div>
+            </div>
           </CardContent>
         </Card>
 

@@ -203,6 +203,7 @@ erDiagram
   - `region_type`, `region_key`, `country_key`, `rank`
   - `player_id`, `player_name`, `topdeck_id`
   - `rating`, `games_played`, `wins`, `draws`, `losses`, `last_game_date`
+  - `topdeck_elo`, `topdeck_elo_rank`
   - `primary_country_key`, `primary_region_key`, `activity_score`, `updated_at`
 
 ### `global_elo_player_profile_summaries`
@@ -218,7 +219,9 @@ erDiagram
   - `player_id`, `topdeck_id`, `player_name`
   - `active_commander`, `active_commander_entries`, `active_commander_prediction_score`
   - `total_entries`, `commander_predictions`
-  - `latest_commander`, `latest_commander_date`, `latest_decklist_url`, `updated_at`
+  - `latest_commander`, `latest_commander_date`, `latest_decklist_url`
+  - `latest_tournament_id`, `latest_tournament_name`, `latest_tournament_date`, `latest_tournament_topdeck_tid`
+  - `updated_at`
 
 ### `topdeck_player_elos`
 - **Purpose**: stores TopDeck's published global EDH Elo snapshot separately from locally computed Global Elo tables.

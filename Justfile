@@ -11,22 +11,28 @@ web-deps:
 	npm ci --prefix apps/web
 
 web-build:
-	npm run --prefix apps/web build
+	npm run web:build
 
 web-dev:
-	npm run --prefix apps/web dev
+	npm run web:dev
 
 web-start:
-	npm run --prefix apps/web start
+	npm run web:start
 
 web-test:
-	npm run --prefix apps/web test
+	npm run web:test
 
 web-test-contracts:
-	npm run --prefix apps/web test:contracts
+	npm run web:test:contracts
 
 web-test-e2e:
-	npm run --prefix apps/web test:e2e
+	npm run web:test:e2e
+
+verify-frontend:
+	npm run verify:frontend
+
+preview-deploy-frontend:
+	npm run preview:frontend
 
 # Backend targets
 backend-deps:
@@ -43,8 +49,8 @@ check:
 	@echo "Running all checks..."
 	npm run docs:hygiene
 	npm run docs:check
-	npm --workspace apps/web run lint
-	npm --workspace apps/web run test:ci
+	npm run web:lint
+	npm run web:test:ci
 	@if command -v ruff >/dev/null; then \
 		ruff check packages/backend/src; \
 	else \

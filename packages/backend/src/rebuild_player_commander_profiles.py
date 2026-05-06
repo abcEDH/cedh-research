@@ -7,13 +7,16 @@ import argparse
 import logging
 import os
 from collections import defaultdict
-from datetime import UTC, date, datetime
+from datetime import date, datetime, timezone
 from typing import Any
 
 import requests
 from dateutil import parser as date_parser
 
 from ingest import SUPABASE_REST_BASE, SupabaseClient, load_local_env
+
+# Use timezone.utc for Python < 3.11 compatibility
+UTC = timezone.utc
 
 try:
     import psycopg2

@@ -65,6 +65,7 @@ Notes:
 - Frontend workflows run from `.github/workflows/frontend.yml` on `apps/web/**` changes.
 - Backend workflows run from `.github/workflows/ci-backend.yml` on `packages/backend/**` changes.
 - Docs checks run from `.github/workflows/docs.yml` for markdown and repo-hygiene validation.
+- Frontend verification is centralized in `scripts/verify-frontend.sh`; preview Vercel deployments use `scripts/deploy-frontend-preview.sh` after CI passes.
 - Release ownership: semantic release runs from `.github/workflows/frontend.yml`; production aliasing runs from `.github/workflows/cd.yml`; `.github/workflows/release.yml` remains a manual fallback only.
 - `cd.yml` expects `VERCEL_TOKEN` (or fallback `VERCEL_API_TOKEN`) plus a `VERCEL_SCOPE` repo/environment variable when the project is under a Vercel team.
 

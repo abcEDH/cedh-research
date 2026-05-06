@@ -919,10 +919,10 @@ class TopDeckClient:
         for attempt in range(max_retries):
             try:
                 if method == "GET":
-                    response = requests.get(url, headers=headers, timeout=30)
+                    response = requests.get(url, headers=headers, timeout=90)
                 elif method == "POST":
                     response = requests.post(
-                        url, json=json_payload, headers=headers, timeout=30
+                        url, json=json_payload, headers=headers, timeout=90
                     )
                 else:
                     raise ValueError(f"Unsupported HTTP method: {method}")
@@ -1119,7 +1119,7 @@ class SupabaseClient:
         for attempt in range(max_retries):
             try:
                 response = requests.post(
-                    endpoint, json=data, headers=headers, params=params, timeout=30
+                    endpoint, json=data, headers=headers, params=params, timeout=90
                 )
                 if response.status_code >= 400:
                     logger.error(f"Supabase error: {response.text}")
@@ -1154,7 +1154,7 @@ class SupabaseClient:
         for attempt in range(max_retries):
             try:
                 response = requests.get(
-                    endpoint, headers=self.headers, params=params, timeout=60
+                    endpoint, headers=self.headers, params=params, timeout=90
                 )
                 if response.status_code >= 500:
                     raise requests.exceptions.HTTPError(
@@ -1196,7 +1196,7 @@ class SupabaseClient:
         for attempt in range(max_retries):
             try:
                 response = requests.patch(
-                    endpoint, json=data, headers=self.headers, params=params, timeout=30
+                    endpoint, json=data, headers=self.headers, params=params, timeout=90
                 )
                 if response.status_code >= 400:
                     logger.error(f"Supabase update error: {response.text}")
@@ -1704,7 +1704,6 @@ class DataIngester:
             if player_topdeck_id and player_topdeck_id not in player_data:
                 player_data[player_topdeck_id] = player_name
 
-            # Store for later entry creation
             standing_info.append(
                 {
                     "idx": idx,
@@ -1714,6 +1713,9 @@ class DataIngester:
                     "decklist": decklist,
                     "rank": standing.get("rank") or standing.get("standing"),
                     "points": standing.get("points") or 0,
+                    "wins": standing.get("wins"),
+                    "losses": standing.get("losses"),
+                    "draws": standing.get("draws"),
                     "omw": standing.get("omw"),
                     "gw": standing.get("gw"),
                     "pgw": standing.get("pgw"),
@@ -1774,6 +1776,16 @@ class DataIngester:
                 "decklist_text": info["decklist"],
                 "topdeck_entry_id": f"{tid}_{info['topdeck_id']}",
             }
+
+            # Only add W/L/D if they are explicitly present in the data to avoid
+            # overwriting with zeros during re-ingestion.
+            if info.get("wins") is not None:
+                entry["wins"] = info["wins"]
+            if info.get("losses") is not None:
+                entry["losses"] = info["losses"]
+            if info.get("draws") is not None:
+                entry["draws"] = info["draws"]
+
             entries.append(entry)
 
         # Step 5: Batch upsert entries
@@ -1847,9 +1859,7 @@ class DataIngester:
 
                 game_key = build_game_key(tournament_id, round_num, round_name, table_num, is_bracket)
                 winner_topdeck_id = table.get("winner_id") or table.get("winnerId")
-                uses_topdeck_winner_id = players and (
-                    "winner_id" in table or "winnerId" in table
-                )
+                uses_topdeck_winner_id = "winner_id" in table or "winnerId" in table
 
                 # Process current TopDeck v2 results.
                 if uses_topdeck_winner_id:

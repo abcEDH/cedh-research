@@ -50,29 +50,18 @@ vi.mock("@/lib/supabase", () => ({
   },
 }));
 
-vi.mock("@/lib/meta-prep", () => ({
-  buildProfiles: vi.fn(() => ({ players: [] })),
-  getCommanderUsageRows: vi.fn(async () => []),
-  selectCommanderForecastRows: vi.fn(() => []),
-}));
-
 vi.mock("@/lib/region-countries", () => ({
   inferCountryForRegion: vi.fn(() => null),
 }));
 
-vi.mock("@/lib/topdeck-elo", () => ({
-  fetchAllTopdeckEloMap: vi.fn(async () => new Map()),
-  fetchTopdeckEloMap: vi.fn(async () => new Map()),
-}));
-
 describe("regional-elo cache configuration", () => {
-  it("REGIONAL_ELO_CACHE_REVALIDATE_SECONDS equals 900 (15 minutes)", async () => {
+  it("REGIONAL_ELO_CACHE_REVALIDATE_SECONDS equals 86400 (24 hours)", async () => {
     // Dynamic import to ensure mocks are in place
     const mod = await import("@/app/regional-elo/page");
     // The constant is module-scoped; we verify through the export if available,
     // otherwise test the value directly.
-    // Since the constant is not exported, we verify the math: 60 * 15 = 900
-    expect(60 * 15).toBe(900);
+    // Since the constant is not exported, we verify the math: 60 * 60 * 24 = 86400
+    expect(60 * 60 * 24).toBe(86400);
     // Verify the module loaded without error (mocks are correct)
     expect(mod).toBeDefined();
     expect(typeof mod.default).toBe("function");
@@ -118,7 +107,6 @@ describe("regional-elo cache configuration", () => {
     );
 
     expect(source).toContain("throw error;");
-    expect(source).toContain("throw fallbackError;");
     expect(source).not.toContain("return { rows: [], totalCount: 0 };");
   });
 
@@ -132,21 +120,29 @@ describe("regional-elo cache configuration", () => {
 
     const primaryReadSource = source.slice(
       source.indexOf("async function fetchLeaderboardRows("),
-      source.indexOf("async function fetchLeaderboardRowsFromView(")
+      source.indexOf("async function fetchRegionRows(")
     );
 
     expect(primaryReadSource).toContain("rank, topdeck_elo, topdeck_elo_rank");
     expect(primaryReadSource).toContain('.order("topdeck_elo_rank", { ascending: true, nullsFirst: false })');
     expect(primaryReadSource).not.toContain('.order("rank", { ascending: true })');
-    expect(source).toContain("const sortedRows = sortRowsByTopdeckElo(await applyTopdeckElo(fallbackRows));");
+    expect(source).toContain("normalizeLeaderboardRows");
     expect(source).toContain('console.info(`[regional-elo] ${event}`, details);');
     expect(source).toContain('logReadSummary("leaderboard-cache-miss"');
     expect(source).toContain('logReadSummary("latest-commanders-cache-miss"');
 
+    expect(source).toContain("latest_tournament_name, latest_tournament_date, latest_tournament_topdeck_tid");
     expect(source).not.toContain("fetchAllTopdeckEloMap");
+    expect(source).not.toContain("fetchTopdeckEloMap");
     expect(source).not.toContain('.from("topdeck_player_elos")');
+    expect(source).not.toContain('.from("global_elo_game_event_log")');
+    expect(source).not.toContain('.from("regional_elo_game_event_log")');
+    expect(source).not.toContain("fetchLeaderboardRowsFromView");
+    expect(source).not.toContain("fetchLegacyLeaderboardRows");
     expect(source).not.toContain("rating: topdeckElo ?? row.rating");
     expect(source).not.toContain("sortLeaderboardRowsByTopdeckElo");
+    expect(source).not.toContain("sortRowsByTopdeckElo");
+    expect(source).not.toContain("applyTopdeckElo");
     expect(source).not.toContain("fetchCountryLeaderboardRows");
     expect(source).not.toContain("applyGlobalLeaderboardTotals");
     expect(source).not.toContain("fetchEventLogTotals");

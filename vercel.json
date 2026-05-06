@@ -1,0 +1,6 @@
+{
+  "buildCommand": "cd apps/web && next build",
+  "installCommand": "npm ci",
+  "framework": "nextjs",
+  "regions": ["iad1"]
+}
