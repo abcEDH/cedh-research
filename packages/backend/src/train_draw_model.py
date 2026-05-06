@@ -343,7 +343,7 @@ def build_rich_pod_cache(client: SupabaseClient) -> list[DrawPodRow]:
             try:
                 swiss_rounds_by_tournament[tournament_id].add(int(round_number))
             except (TypeError, ValueError):
-                # Ignore non-numeric round labels when inferring Swiss round counts.
+                # Ignore rows where round_number is missing or malformed in source data.
                 continue
     max_swiss_round = {
         tournament_id: max(rounds)
