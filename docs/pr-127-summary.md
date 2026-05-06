@@ -2,113 +2,76 @@
 
 ## Summary
 
-This PR combines the recent regional Elo frontend work with a broader data-normalization and repair pass across the backend. It adds a dedicated player-vs-player page, tightens leaderboard and tournament-likelihood commander forecasting, introduces TopDeck Elo support, and hardens ingest so malformed or illegal commander pairings no longer enter the database.
+This PR is a backend-heavy data and Elo-model update. It cleans and canonicalizes commander data before write time, replaces the old ad hoc partner-order review flow with generated legality/review artifacts, adds TopDeck Elo enrichment support, shortens commander-forecast recency weighting to a `24`-day half-life, and upgrades the global Elo rebuild logic to use split decisive/draw learning rates plus seat-aware decisive expectations.
 
-The backend side of the PR is mostly about data quality and maintainability:
+The branch diff against `main` is concentrated in these areas:
 
-- normalizes commander names before write time
-- strips DFC back faces from stored commander labels
-- rewrites Stranger Things names to their in-universe equivalents
-- rejects illegal two-card commander pairings by mapping them to `Unknown Commander`
-- canonicalizes legal partner pair ordering from a generated legality reference
-- adds repair, rebuild, import, and review scripts used to bring Supabase into line with the new rules
-
-Changed files in PR 127:
-
-- [page.tsx](/Users/alexanderlien/Documents/GitHub/cedh-research/apps/web/src/app/regional-elo/page.tsx)
-- [page.tsx](/Users/alexanderlien/Documents/GitHub/cedh-research/apps/web/src/app/regional-elo/player/[topdeckId]/page.tsx)
-- [page.tsx](/Users/alexanderlien/Documents/GitHub/cedh-research/apps/web/src/app/regional-elo/player/[topdeckId]/vs/[opponentTopdeckId]/page.tsx)
-- [player-log-data.ts](/Users/alexanderlien/Documents/GitHub/cedh-research/apps/web/src/app/regional-elo/player/[topdeckId]/player-log-data.ts)
-- [regional-leaderboard-table.tsx](/Users/alexanderlien/Documents/GitHub/cedh-research/apps/web/src/app/regional-elo/regional-leaderboard-table.tsx)
-- [page.tsx](/Users/alexanderlien/Documents/GitHub/cedh-research/apps/web/src/app/tournament-likelihood/page.tsx)
-- [tournament-analysis-tables.tsx](/Users/alexanderlien/Documents/GitHub/cedh-research/apps/web/src/app/tournament-likelihood/tournament-analysis-tables.tsx)
 - [meta-prep.ts](/Users/alexanderlien/Documents/GitHub/cedh-research/apps/web/src/lib/meta-prep.ts)
-- [topdeck-elo.ts](/Users/alexanderlien/Documents/GitHub/cedh-research/apps/web/src/lib/topdeck-elo.ts)
-- [topdeck.ts](/Users/alexanderlien/Documents/GitHub/cedh-research/apps/web/src/lib/topdeck.ts)
 - [ingest.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/ingest.py)
+- [backfill_moxfield_commanders.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/backfill_moxfield_commanders.py)
 - [generate_legal_commander_pairings.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/generate_legal_commander_pairings.py)
 - [generate_missing_partner_order_review.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/generate_missing_partner_order_review.py)
-- [rebuild_player_commander_profiles.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/rebuild_player_commander_profiles.py)
 - [rebuild_global_elo_tables.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/rebuild_global_elo_tables.py)
-- [import_topdeck_player_elos.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/import_topdeck_player_elos.py)
-- [repair_unknown_commanders_from_decklists.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/repair_unknown_commanders_from_decklists.py)
-- [sweep_partner_commander_order.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/sweep_partner_commander_order.py)
+- [recompute_global_elo_all_games.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/recompute_global_elo_all_games.py)
+- [rebuild_player_commander_profiles.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/rebuild_player_commander_profiles.py)
+- [regional_elo.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/regional_elo.py)
 - [legal_commander_pairings.json](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/data/legal_commander_pairings.json)
 - [test_ingest.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/tests/test_ingest.py)
+- [partner-community-order-review.csv](/Users/alexanderlien/Documents/GitHub/cedh-research/docs/partner-community-order-review.csv) (deleted)
 
 GitHub source checked against the live PR diff:
 - [PR 127 Files Changed](https://github.com/abcEDH/cedh-research/pull/127/files)
-
-## Regional Elo Frontend
-
-- Adds the dedicated head-to-head route at [page.tsx](/Users/alexanderlien/Documents/GitHub/cedh-research/apps/web/src/app/regional-elo/player/[topdeckId]/vs/[opponentTopdeckId]/page.tsx) and rewires opponent links from the player profile to use it.
-- Adds shared-log loading in [player-log-data.ts](/Users/alexanderlien/Documents/GitHub/cedh-research/apps/web/src/app/regional-elo/player/[topdeckId]/player-log-data.ts) so the player profile and matchup page use the same canonical event history path.
-- Expands the matchup page with mirrored records, commander-specific summary cards, collapsed chronological game history, per-pod seat and commander context, and winner highlighting.
-- Tightens the leaderboard and player-profile surfaces around TopDeck-based ranking and matchup navigation.
-- Updates tournament likelihood and commander forecasting UI to use the same active-commander selection logic as the regional Elo surfaces.
-
-## TopDeck Elo And Commander Forecasting
-
-- Adds [topdeck-elo.ts](/Users/alexanderlien/Documents/GitHub/cedh-research/apps/web/src/lib/topdeck-elo.ts) and supporting leaderboard wiring so TopDeck Elo snapshots can be surfaced alongside the existing regional/global Elo views.
-- Updates commander-recommendation weighting in [meta-prep.ts](/Users/alexanderlien/Documents/GitHub/cedh-research/apps/web/src/lib/meta-prep.ts), [rebuild_player_commander_profiles.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/rebuild_player_commander_profiles.py), and [regional_elo.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/regional_elo.py) to use a `28`-day half-life instead of the earlier shorter recency window.
-- Improves tournament-likelihood tables with pagination and richer field-share output so larger event forecasts remain usable.
-- Adds [import_topdeck_player_elos.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/import_topdeck_player_elos.py) plus [20260415020000_topdeck_player_elos.sql](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/supabase/migrations/20260415020000_topdeck_player_elos.sql) to support importing the current TopDeck Elo snapshot into Supabase.
 
 ## Commander Normalization And Legality
 
 - Hardens [ingest.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/ingest.py) so commander payloads are normalized before upsert:
   - strips escaped apostrophes
   - removes DFC back faces from commander names
-  - rewrites Stranger Things Secret Lair names to their in-universe equivalents
-  - canonicalizes legal pair order before building stored pair names
+  - rewrites Stranger Things Secret Lair names to in-universe equivalents
+  - canonicalizes legal partner pair ordering
   - maps illegal two-card commander pairings to `Unknown Commander`
+- Applies the same normalization path to [backfill_moxfield_commanders.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/backfill_moxfield_commanders.py) so repair/backfill jobs write the same canonical commander names as ingest.
 - Adds [generate_legal_commander_pairings.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/generate_legal_commander_pairings.py) to build [legal_commander_pairings.json](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/data/legal_commander_pairings.json) from Scryfall oracle data as the canonical legality and ordering reference.
+- Replaces the checked-in archival review sheet by deleting [partner-community-order-review.csv](/Users/alexanderlien/Documents/GitHub/cedh-research/docs/partner-community-order-review.csv) and generating missing-order review artifacts from code instead.
+
+## Partner Order Review Workflow
+
+- Adds [generate_missing_partner_order_review.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/generate_missing_partner_order_review.py) to emit a review queue for legal partner pairings not yet represented in stored commander rows.
+- The generated review output includes direct search URLs for Reddit-focused search, X, and general web search so missing community ordering can be reviewed from discussion sources rather than inferred from TopDeck entry order.
+- Keeps ingest normalization aligned with the generated legality file so future writes land on the canonical ordering automatically.
+
+## Commander Forecasting
+
+- Updates commander-recommendation weighting in [meta-prep.ts](/Users/alexanderlien/Documents/GitHub/cedh-research/apps/web/src/lib/meta-prep.ts), [rebuild_player_commander_profiles.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/rebuild_player_commander_profiles.py), and [regional_elo.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/regional_elo.py) to use a `24`-day recency half-life.
+- This keeps the app-side forecast logic and the precomputed commander-profile rebuild aligned on the same weighting model.
+
+## Global Elo Rebuild Changes
+
+- Updates [rebuild_global_elo_tables.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/rebuild_global_elo_tables.py) and [recompute_global_elo_all_games.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/recompute_global_elo_all_games.py) to use:
+  - `K_win = 64`
+  - `K_draw = 24`
+  - seat-aware decisive expectations for standard 4-seat pods
+- The decisive expectation model now applies seat offsets before converting player ratings into multiplayer win equity, improving calibration of `P(winner | no draw)`.
+- The rebuild scripts also retain TopDeck Elo enrichment support, including fallback handling for either `topdeck_id` or legacy `uid` in `topdeck_player_elos`.
+- [rebuild_global_elo_tables.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/rebuild_global_elo_tables.py) now supports explicit incremental rebuilds from `--since-start-date`, so append-only Elo refreshes can replay only the affected suffix instead of replaying the full historical game stream every time.
+
+## Tests And Validation
+
 - Extends [test_ingest.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/tests/test_ingest.py) to cover:
   - apostrophe cleanup
   - DFC stripping
   - Stranger Things alias rewrites
-  - legal-pair canonical ordering
+  - canonical legal-pair ordering
   - illegal-pair fallback to `Unknown Commander`
-
-## Partner Order Review Workflow
-
-- Replaces the old archival partner community review CSV with generated review tooling.
-- Adds [generate_missing_partner_order_review.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/generate_missing_partner_order_review.py) to emit a review queue for legal partner pairings that are not yet represented in stored commander rows.
-- The generated review file includes direct search URLs for Reddit-focused search, X, and general web search so missing community ordering can be reviewed from discussion sources instead of inferred from TopDeck deck entry order.
-- Updates [sweep_partner_commander_order.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/sweep_partner_commander_order.py) and ingest normalization so canonical community ordering is enforced both in historical cleanup passes and on future ingest.
-
-## Data Repair And Rebuild Tooling
-
-- Adds or expands backend maintenance scripts used to reconcile Supabase with the new data rules:
-  - [rebuild_global_elo_tables.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/rebuild_global_elo_tables.py)
-  - [recompute_global_elo_all_games.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/recompute_global_elo_all_games.py)
-  - [repair_bad_game_outcomes.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/repair_bad_game_outcomes.py)
-  - [repair_participant_outcome_mismatches.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/repair_participant_outcome_mismatches.py)
-  - [repair_unknown_commanders_from_decklists.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/repair_unknown_commanders_from_decklists.py)
-  - [backfill_flat_firestore_games.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/backfill_flat_firestore_games.py)
-  - [backfill_topdeck_firestore_outcomes.py](/Users/alexanderlien/Documents/GitHub/cedh-research/packages/backend/src/backfill_topdeck_firestore_outcomes.py)
-- Keeps the player-commander profile rebuild aligned with the new commander normalization rules so active commander output stays consistent between ingest-time writes and derived profile tables.
-
-## Live Data Follow-Up
-
-- The supporting cleanup work behind this PR also refreshed live Supabase data so existing rows match the new normalization rules.
-- Follow-up maintenance included:
-  - refreshing recent TopDeck tournament ingest
-  - rebuilding player commander profiles and global Elo profile-facing tables
-  - importing the latest TopDeck Elo snapshot
-  - remapping illegal stored two-card commander rows to `Unknown Commander`
-  - merging reversed or alias-based commander rows into canonical in-universe names and canonical legal-pair ordering
+- The same test file also keeps the newer ingestion-job lifecycle and Supabase client behavior coverage that exists on `main`, so the branch does not regress that path while adding the commander normalization tests.
 
 ## Validation
 
-Compared this document against the live GitHub diff for [PR 127](https://github.com/abcEDH/cedh-research/pull/127/files).
+Compared this document against the current branch diff from `main` and the live GitHub PR files view for [PR 127](https://github.com/abcEDH/cedh-research/pull/127/files).
 
 Verified locally with:
 
 ```bash
 python3 -m unittest packages/backend/tests/test_ingest.py
-python3 packages/backend/src/generate_legal_commander_pairings.py
-python3 packages/backend/src/generate_missing_partner_order_review.py
-python3 packages/backend/src/rebuild_player_commander_profiles.py
-npm run build --workspace apps/web
+python3 -m py_compile packages/backend/src/rebuild_global_elo_tables.py packages/backend/src/recompute_global_elo_all_games.py
 ```

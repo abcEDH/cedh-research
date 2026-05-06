@@ -274,7 +274,7 @@ def fetch_results_from_tournament_start(
     )
     all_rows: list[dict[str, Any]] = []
     start_day = parse_datetime(threshold_start_date).date() if threshold_start_date else date(2022, 8, 1)
-    windows = month_starts(start_day, datetime.now(timezone.utc).date())
+    windows = month_starts(start_day, datetime.now(UTC).date())
     for window_start in windows:
         window_end = next_month(window_start)
         rows = fetch_all(
@@ -570,7 +570,7 @@ def build_state_from_results(
     state_activity = state_activity or {}
     player_meta = player_meta or {}
     events = events or []
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
 
     games: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in results:
@@ -591,7 +591,7 @@ def finalize_rows(
     player_meta: dict[str, dict[str, str | None]],
     events: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(UTC).date()
 
     for activity in state_activity.values():
         activity["activity_score"] = round(float(activity["activity_score"]), 6)
@@ -944,8 +944,8 @@ def main() -> None:
             state_activity=base_state_activity,
             player_meta=base_player_meta,
         )
-        recent_state_results = fetch_recent_state_results(client, datetime.now(timezone.utc).date() - timedelta(days=365))
-        recompute_rolling_state_windows(state_activity, recent_state_results, datetime.now(timezone.utc).date())
+        recent_state_results = fetch_recent_state_results(client, datetime.now(UTC).date() - timedelta(days=365))
+        recompute_rolling_state_windows(state_activity, recent_state_results, datetime.now(UTC).date())
         print("Fetching TopDeck Elos for enrichment...", flush=True)
         topdeck_elos = fetch_topdeck_elos(client)
         rating_rows, state_rows, event_rows, leaderboard_rows, profile_rows = finalize_rows(
