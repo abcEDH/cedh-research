@@ -7,7 +7,6 @@ import argparse
 import json
 import os
 from collections import defaultdict
-from pathlib import Path
 from typing import Any
 
 from ingest import SupabaseClient, load_local_env

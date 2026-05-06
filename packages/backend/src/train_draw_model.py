@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import os
 import pickle
 import re
@@ -344,7 +343,8 @@ def build_rich_pod_cache(client: SupabaseClient) -> list[DrawPodRow]:
             try:
                 swiss_rounds_by_tournament[tournament_id].add(int(round_number))
             except (TypeError, ValueError):
-                pass
+                # Ignore non-numeric round labels when inferring Swiss round counts.
+                continue
     max_swiss_round = {
         tournament_id: max(rounds)
         for tournament_id, rounds in swiss_rounds_by_tournament.items()

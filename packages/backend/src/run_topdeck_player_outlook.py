@@ -8,7 +8,6 @@ import json
 import os
 import random
 from collections import defaultdict
-from pathlib import Path
 
 from ingest import SupabaseClient, TopDeckClient, load_local_env
 from run_topdeck_ongoing_tournament_sim import (
