@@ -32,6 +32,12 @@ class SupabaseMigrationIntegrityTests(unittest.TestCase):
         self.assertIn("ALTER TABLE public.global_elo_state_activity ENABLE ROW LEVEL SECURITY;", sql)
         self.assertIn("ALTER TABLE public.global_elo_game_events ENABLE ROW LEVEL SECURITY;", sql)
 
+    def test_regional_elo_leaderboard_preserves_existing_column_order(self) -> None:
+        sql = (MIGRATIONS_DIR / "20260408010000_include_unknown_state_global_elo_games.sql").read_text()
+
+        self.assertIn("s.country_key AS primary_country_key,\n    s.region_key AS primary_region_key,\n    NULL::text AS country_key", sql)
+        self.assertNotIn("NULL::text AS country_key,\n    g.player_id", sql)
+
 
 if __name__ == "__main__":
     unittest.main()
