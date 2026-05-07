@@ -6,6 +6,7 @@ import requests
 
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "supabase" / "migrations"
+STATE_ACTIVITY_MIGRATION = MIGRATIONS_DIR / "20260406010000_global_elo_state_activity.sql"
 LEADERBOARD_TOPDECK_MIGRATION = (
     MIGRATIONS_DIR / "20260501000000_regional_elo_leaderboard_topdeck_fields.sql"
 )
@@ -17,6 +18,12 @@ import regional_elo  # noqa: E402
 
 
 class RegionalEloLeaderboardMigrationTests(unittest.TestCase):
+    def test_state_activity_migration_does_not_reference_country_key_too_early(self) -> None:
+        sql = STATE_ACTIVITY_MIGRATION.read_text()
+
+        self.assertIn("CREATE OR REPLACE VIEW regional_elo_primary_state_assignments AS", sql)
+        self.assertNotIn("a.country_key", sql)
+
     def test_migration_adds_topdeck_elo_columns_idempotently(self) -> None:
         sql = LEADERBOARD_TOPDECK_MIGRATION.read_text()
 
