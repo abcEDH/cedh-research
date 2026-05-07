@@ -24,6 +24,14 @@ class SupabaseMigrationIntegrityTests(unittest.TestCase):
         self.assertIn("SELECT unnest(ARRAY[", sql)
         self.assertNotIn("FOREACH table_name IN ARRAY[", sql)
 
+    def test_public_surface_migration_keeps_public_access(self) -> None:
+        sql = (MIGRATIONS_DIR / "20260508000000_keep_public_surfaces_and_rls.sql").read_text()
+
+        self.assertIn("ALTER VIEW player_commander_entries SET (security_invoker = true);", sql)
+        self.assertIn("GRANT SELECT ON TABLE", sql)
+        self.assertIn("ALTER TABLE public.global_elo_state_activity ENABLE ROW LEVEL SECURITY;", sql)
+        self.assertIn("ALTER TABLE public.global_elo_game_events ENABLE ROW LEVEL SECURITY;", sql)
+
 
 if __name__ == "__main__":
     unittest.main()
