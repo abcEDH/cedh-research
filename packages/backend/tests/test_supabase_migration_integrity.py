@@ -44,6 +44,7 @@ class SupabaseMigrationIntegrityTests(unittest.TestCase):
         self.assertIn("g.player_id,\n    p.name AS player_name", sql)
         self.assertIn("s.region_key AS primary_region_key,\n    s.country_key AS primary_country_key,\n    NULL::text AS country_key", sql)
         self.assertNotIn("NULL::text AS country_key,\n    g.player_id", sql)
+        self.assertIn("MAX(game_date)::date AS last_game_date", sql)
 
 
 if __name__ == "__main__":

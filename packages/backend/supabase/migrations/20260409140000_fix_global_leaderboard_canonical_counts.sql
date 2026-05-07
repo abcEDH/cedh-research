@@ -9,7 +9,7 @@ WITH global_counts AS (
     COUNT(*) FILTER (WHERE game_result = 'win')::integer AS wins,
     COUNT(*) FILTER (WHERE game_result = 'draw')::integer AS draws,
     COUNT(*) FILTER (WHERE game_result = 'loss')::integer AS losses,
-    MAX(game_date) AS last_game_date
+    MAX(game_date)::date AS last_game_date
   FROM global_elo_game_events
   WHERE region_type = 'global'
     AND region_key = 'ALL'
