@@ -263,12 +263,12 @@ async function getLeaderboardPreview(): Promise<LeaderboardPlayer[]> {
     const { data, error } = await supabase
       .from("global_elo_active_leaderboard")
       .select(
-        "player_id, player_name, topdeck_id, topdeck_elo, topdeck_elo_rank, games_played, wins, draws, losses, last_game_date"
+        "player_id, player_name, topdeck_id, rank, topdeck_elo, topdeck_elo_rank, games_played, wins, draws, losses, last_game_date"
       )
       .eq("region_type", "global")
       .eq("region_key", "ALL")
-      .not("topdeck_elo_rank", "is", null)
-      .order("topdeck_elo_rank", { ascending: true })
+      .order("topdeck_elo_rank", { ascending: true, nullsFirst: false })
+      .order("rank", { ascending: true })
       .limit(10);
 
     if (error) {
@@ -280,6 +280,7 @@ async function getLeaderboardPreview(): Promise<LeaderboardPlayer[]> {
       player_id: string;
       player_name: string;
       topdeck_id: string | null;
+      rank: number | null;
       topdeck_elo: number | null;
       topdeck_elo_rank: number | null;
       games_played: number;
@@ -305,7 +306,7 @@ async function getLeaderboardPreview(): Promise<LeaderboardPlayer[]> {
         player_id: row.player_id,
         topdeck_id: topdeckId,
         player_name: row.player_name,
-        rank: row.topdeck_elo_rank ?? index + 1,
+        rank: row.topdeck_elo_rank ?? row.rank ?? index + 1,
         topdeck_elo: row.topdeck_elo,
         games_played: row.games_played,
         wins: row.wins,
