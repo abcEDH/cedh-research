@@ -379,7 +379,8 @@ export default async function TournamentLikelihoodPage({
     .from("tournaments")
     .select("topdeck_tid, name")
     .or("name.ilike.%Platinum%,player_count.gte.100")
-    .order("start_date", { ascending: false })
+    .gte("start_date", new Date().toISOString())
+    .order("start_date", { ascending: true })
     .limit(6);
 
   if (slug) {
