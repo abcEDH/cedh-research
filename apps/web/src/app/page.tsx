@@ -263,12 +263,12 @@ async function getLeaderboardPreview(): Promise<LeaderboardPlayer[]> {
     const { data, error } = await supabase
       .from("global_elo_active_leaderboard")
       .select(
-        "player_id, player_name, topdeck_id, topdeck_elo, topdeck_elo_rank, games_played, wins, draws, losses, last_game_date"
+        "player_id, player_name, topdeck_id, rank, topdeck_elo, topdeck_elo_rank, games_played, wins, draws, losses, last_game_date"
       )
       .eq("region_type", "global")
       .eq("region_key", "ALL")
-      .not("topdeck_elo_rank", "is", null)
-      .order("topdeck_elo_rank", { ascending: true })
+      .order("topdeck_elo_rank", { ascending: true, nullsFirst: false })
+      .order("rank", { ascending: true })
       .limit(10);
 
     if (error) {
@@ -280,6 +280,7 @@ async function getLeaderboardPreview(): Promise<LeaderboardPlayer[]> {
       player_id: string;
       player_name: string;
       topdeck_id: string | null;
+      rank: number | null;
       topdeck_elo: number | null;
       topdeck_elo_rank: number | null;
       games_played: number;
@@ -305,7 +306,7 @@ async function getLeaderboardPreview(): Promise<LeaderboardPlayer[]> {
         player_id: row.player_id,
         topdeck_id: topdeckId,
         player_name: row.player_name,
-        rank: row.topdeck_elo_rank ?? index + 1,
+        rank: row.topdeck_elo_rank ?? row.rank ?? index + 1,
         topdeck_elo: row.topdeck_elo,
         games_played: row.games_played,
         wins: row.wins,
@@ -643,7 +644,7 @@ export default async function Home() {
           </Card>
         </section>
 
-        <section className="mt-12 grid gap-6 lg:grid-cols-[1.4fr_0.6fr]">
+        <section className="mt-12 grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
           <Card>
             <CardHeader className="knd-panel-header">
               <CardTitle className="text-lg">Field Performance</CardTitle>
@@ -651,7 +652,14 @@ export default async function Home() {
             </CardHeader>
             <CardContent className="px-2 sm:px-6">
               <div className="overflow-x-auto">
-                <Table>
+                <Table className="knd-data-table">
+                  <colgroup>
+                    <col className="w-10" />
+                    <col />
+                    <col className="w-20 sm:w-24" />
+                    <col className="w-16 sm:w-20" />
+                    <col className="w-16 sm:w-20" />
+                  </colgroup>
                   <TableHeader>
                     <TableRow className="border-border/60 text-[10px] uppercase tracking-wider text-muted-foreground">
                       <TableHead className="py-2 px-1 w-8">#</TableHead>
@@ -674,7 +682,7 @@ export default async function Home() {
                                 ))}
                               </div>
                               <Link
-                                className="max-w-[140px] sm:max-w-[220px] truncate text-xs sm:text-sm font-medium text-foreground hover:text-primary"
+                                className="knd-data-link text-xs sm:text-sm"
                                 href={`/commanders/${commander.commander_id}`}
                               >
                                 {normalizeDisplayString(commander.commander_name)}

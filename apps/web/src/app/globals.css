@@ -170,6 +170,23 @@
     @apply w-full rounded-lg border border-border/80 bg-muted/40 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/70 focus:border-primary/60 focus:outline-none focus:ring-2 focus:ring-primary/30;
   }
 
+
+  .knd-data-table {
+    @apply w-full table-fixed text-sm;
+  }
+
+  .knd-data-table--responsive {
+    min-width: min(760px, 100%);
+  }
+
+  .knd-data-cell-top {
+    @apply align-top;
+  }
+
+  .knd-data-link {
+    @apply block font-medium leading-snug text-foreground break-words transition hover:text-primary;
+  }
+
   .knd-watermark {
     background-image: url("/assets/shoji-grid.svg");
     background-repeat: no-repeat;
