@@ -17,6 +17,13 @@ class SupabaseMigrationIntegrityTests(unittest.TestCase):
 
         self.assertEqual(duplicates, [], f"duplicate migration versions found: {duplicates}")
 
+    def test_security_hardening_part2_uses_valid_plpgsql_array_loop(self) -> None:
+        sql = (MIGRATIONS_DIR / "20260408000000_security_hardening_part2.sql").read_text()
+
+        self.assertIn("FOR table_name IN", sql)
+        self.assertIn("SELECT unnest(ARRAY[", sql)
+        self.assertNotIn("FOREACH table_name IN ARRAY[", sql)
+
 
 if __name__ == "__main__":
     unittest.main()
