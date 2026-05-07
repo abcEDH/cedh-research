@@ -38,6 +38,13 @@ class SupabaseMigrationIntegrityTests(unittest.TestCase):
         self.assertIn("s.region_key AS primary_region_key,\n    s.country_key AS primary_country_key,\n    NULL::text AS country_key", sql)
         self.assertNotIn("s.country_key AS primary_country_key,\n    s.region_key AS primary_region_key,", sql)
 
+    def test_canonical_leaderboard_counts_preserves_existing_column_order(self) -> None:
+        sql = (MIGRATIONS_DIR / "20260409140000_fix_global_leaderboard_canonical_counts.sql").read_text()
+
+        self.assertIn("g.player_id,\n    p.name AS player_name", sql)
+        self.assertIn("s.region_key AS primary_region_key,\n    s.country_key AS primary_country_key,\n    NULL::text AS country_key", sql)
+        self.assertNotIn("NULL::text AS country_key,\n    g.player_id", sql)
+
 
 if __name__ == "__main__":
     unittest.main()
