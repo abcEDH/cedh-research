@@ -1,3 +1,15 @@
+# [1.14.0](https://github.com/abcEDH/cedh-research/compare/v1.13.3...v1.14.0) (2026-05-07)
+
+
+### Bug Fixes
+
+* pg_cron orchestration and event log access ([#171](https://github.com/abcEDH/cedh-research/issues/171)) ([509dddb](https://github.com/abcEDH/cedh-research/commit/509dddbb702b99d03cc23a3fcb2773057be73af6))
+
+
+### Features
+
+* replace hardcoded tournament suggestions with dynamic database query ([#173](https://github.com/abcEDH/cedh-research/issues/173)) ([2492e64](https://github.com/abcEDH/cedh-research/commit/2492e64c46b2b617a50ceed1c0e8313d4fb1bbc6))
+
 ## [1.13.3](https://github.com/abcEDH/cedh-research/compare/v1.13.2...v1.13.3) (2026-05-05)
 
 
