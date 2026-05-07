@@ -39,8 +39,7 @@ SELECT
   a.losses,
   a.last_game_date,
   a.activity_score,
-  a.updated_at,
-  a.country_key
+  a.updated_at
 FROM regional_elo_state_activity a
 WHERE a.region_type = 'state'
   AND a.is_primary_state = true;
