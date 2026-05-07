@@ -307,6 +307,7 @@ erDiagram
   - Applies service-role-only write policies to `regional_elo_state_activity` while preserving a dedicated public `SELECT` policy for leaderboard reads.
   - Converts the exposed regional Elo views to `SECURITY INVOKER`, keeping public grants on `regional_elo_leaderboard`, `regional_elo_regions`, `regional_elo_data_validity`, `regional_elo_player_stats`, and `regional_elo_primary_state_assignments`.
   - Restricts `regional_elo_game_event_log` to `service_role` only.
+  - `global_elo_game_event_log` remains the public player-log alias and now reads directly from `global_elo_game_events` so it does not depend on the private regional view.
 
 ## Analytical Views
 

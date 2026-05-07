@@ -5,6 +5,7 @@ from pathlib import Path
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "supabase" / "migrations"
 INGESTION_JOBS_MIGRATION = MIGRATIONS_DIR / "20260420000000_ingestion_jobs.sql"
 INGESTION_CRON_MIGRATION = MIGRATIONS_DIR / "20260420010000_ingestion_cron_schedule.sql"
+PG_NET_MIGRATION = MIGRATIONS_DIR / "20260507010000_enable_pg_net.sql"
 
 
 class IngestionSqlMigrationTests(unittest.TestCase):
@@ -22,6 +23,11 @@ class IngestionSqlMigrationTests(unittest.TestCase):
         self.assertIn("status IN ('pending', 'dispatched', 'running')", sql)
         self.assertIn("Skipping fallback Elo refresh because ingestion job", sql)
         self.assertIn("RETURN NULL;", sql)
+
+    def test_pg_net_migration_enables_extension(self) -> None:
+        sql = PG_NET_MIGRATION.read_text()
+
+        self.assertIn("CREATE EXTENSION IF NOT EXISTS pg_net;", sql)
 
 
 if __name__ == "__main__":
