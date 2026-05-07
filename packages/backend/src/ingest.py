@@ -1731,6 +1731,63 @@ class DataIngester:
                 }
             )
 
+        # Some league / Firestore-backed events include players in round tables
+        # who are absent from standings. If we only build tournament_entries from
+        # standings, later game ingest drops those players and leaves partial
+        # game rows with only losses recorded.
+        known_standing_topdeck_ids = {
+            str(info["topdeck_id"])
+            for info in standing_info
+            if info.get("topdeck_id")
+        }
+        next_idx = len(standing_info)
+        for round_data in rounds:
+            for table in round_data.get("tables", []) or []:
+                for player in table.get("players", []) or []:
+                    player_topdeck_id = player.get("id")
+                    if not player_topdeck_id:
+                        continue
+                    normalized_topdeck_id = str(player_topdeck_id)
+                    if normalized_topdeck_id in known_standing_topdeck_ids:
+                        continue
+                    player_name = player.get("name") or "Unknown"
+                    if normalized_topdeck_id not in player_data:
+                        player_data[normalized_topdeck_id] = player_name
+                    # Unknown / missing decklists are acceptable here; the
+                    # important part is creating the player entry so games can
+                    # attach all participants.
+                    commander_name = normalize_commander_name([])
+                    if commander_name not in commander_data:
+                        commander_data[commander_name] = []
+                    standing_info.append(
+                        {
+                            "idx": next_idx,
+                            "topdeck_id": normalized_topdeck_id,
+                            "name": player_name,
+                            "commander_name": commander_name,
+                            "decklist": "",
+                            "rank": None,
+                            "points": 0,
+                            "wins": None,
+                            "losses": None,
+                            "draws": None,
+                            "omw": None,
+                            "gw": None,
+                            "pgw": None,
+                            "primaryWinRate": None,
+                            "primaryWinRateElo": None,
+                            "primaryWinRateO": None,
+                            "winRate": None,
+                            "successRate": None,
+                            "opponentWinRate": None,
+                            "opponentWinRateElo": None,
+                            "opponentWinRateO": None,
+                            "opponentSuccessRate": None,
+                        }
+                    )
+                    known_standing_topdeck_ids.add(normalized_topdeck_id)
+                    next_idx += 1
+
         # Step 2: Batch upsert commanders
         logger.info(f"Upserting {len(commander_data)} unique commanders...")
         commander_id_map = self.batch_upsert_commanders(commander_data)

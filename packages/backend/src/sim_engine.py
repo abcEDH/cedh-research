@@ -33,7 +33,9 @@ from sim_types import (
 )
 
 K_FACTOR_DECISIVE = 64.0
-K_FACTOR_DRAW = 24.0
+K_FACTOR_DRAW = 26.0
+COMMANDER_K_FACTOR_DECISIVE = 16.0
+COMMANDER_K_FACTOR_DRAW = 8.0
 
 
 def clone_feature_context(feature_context: FeatureContext | None) -> FeatureContext:
@@ -80,6 +82,9 @@ def clone_state(state: TournamentState) -> TournamentState:
             player_id=player.player_id,
             name=player.name,
             elo=player.elo,
+            commander_id=player.commander_id,
+            commander_known=player.commander_known,
+            commander_elo=player.commander_elo,
             topdeck_id=player.topdeck_id,
             tiebreak_seed=player.tiebreak_seed,
         )
@@ -232,35 +237,56 @@ def apply_round_elo_updates(
 ) -> None:
     pod_by_key = {(pod.round_index, pod.table_number): pod for pod in pods}
     deltas_by_player: dict[str, float] = defaultdict(float)
+    deltas_by_commander: dict[str, float] = defaultdict(float)
     for result in results:
         pod = pod_by_key[(result.round_index, result.table_number)]
         player_ids = pod.player_ids
         before_ratings = {player_id: state.players[player_id].elo for player_id in player_ids}
+        before_commander_ratings = {
+            player_id: state.players[player_id].commander_elo for player_id in player_ids
+        }
         draw_count = len(player_ids) if result.is_draw else 0
         k_factor = K_FACTOR_DRAW if draw_count else K_FACTOR_DECISIVE
+        commander_k_factor = COMMANDER_K_FACTOR_DRAW if draw_count else COMMANDER_K_FACTOR_DECISIVE
         use_seat_bonus = (
-            not result.is_draw
-            and len(player_ids) == 4
+            len(player_ids) == 4
             and sorted(pod.seats_by_player.get(player_id, -1) for player_id in player_ids) == [1, 2, 3, 4]
         )
         expected_ratings = {}
+        expected_commander_ratings = {}
         for player_id in player_ids:
             expected_rating = before_ratings[player_id]
+            expected_commander_rating = before_commander_ratings[player_id]
             if use_seat_bonus:
                 seat = pod.seats_by_player.get(player_id)
                 if seat in SEAT_ELO_BONUS:
                     expected_rating += SEAT_ELO_BONUS[seat]
+                    expected_commander_rating += SEAT_ELO_BONUS[seat]
             expected_ratings[player_id] = expected_rating
+            expected_commander_ratings[player_id] = expected_commander_rating
         total_equity = sum(_rating_equity(expected_ratings[player_id]) for player_id in player_ids) or 1.0
+        total_commander_equity = (
+            sum(_rating_equity(expected_commander_ratings[player_id]) for player_id in player_ids) or 1.0
+        )
         for player_id in player_ids:
             expected = _rating_equity(expected_ratings[player_id]) / total_equity
+            commander_expected = (
+                _rating_equity(expected_commander_ratings[player_id]) / total_commander_equity
+            )
             if result.is_draw:
                 actual = 1.0 / draw_count
             else:
                 actual = 1.0 if player_id == result.winner_id else 0.0
             deltas_by_player[player_id] += k_factor * (actual - expected)
+            commander_id = state.players[player_id].commander_id
+            if commander_id and state.players[player_id].commander_known:
+                deltas_by_commander[commander_id] += commander_k_factor * (actual - commander_expected)
     for player_id, delta in deltas_by_player.items():
         state.players[player_id].elo = round(state.players[player_id].elo + delta, 6)
+    for player_id, player in state.players.items():
+        commander_id = player.commander_id
+        if player.commander_known and commander_id and commander_id in deltas_by_commander:
+            player.commander_elo = round(player.commander_elo + deltas_by_commander[commander_id], 6)
 
 
 def simulate_swiss(

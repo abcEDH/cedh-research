@@ -12,12 +12,27 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import requests
+
 from ingest import SupabaseClient, load_local_env
 from sim_engine import run_monte_carlo
 from sim_models import load_draw_model_artifact
 from sim_types import FeatureContext, PlayerHistory, SimPlayer, TournamentSpec
 
 DEFAULT_DRAW_MODEL_PATH = Path("/tmp/cedh_draw_model_artifact_v4.pkl")
+UNKNOWN_COMMANDER_NAMES = {"unknown commander"}
+
+
+def _http_error_is_missing_commander_table(exc: requests.exceptions.HTTPError) -> bool:
+    response = exc.response
+    status_code = getattr(response, "status_code", None)
+    response_text = str(getattr(response, "text", "") or "").lower()
+    if status_code not in {400, 404}:
+        return False
+    return "global_commander_elo_game_events" in response_text and any(
+        marker in response_text
+        for marker in ("42p01", "pgrst205", "could not find", "does not exist")
+    )
 
 
 def fetch_all(
@@ -68,10 +83,21 @@ def fetch_entries(client: SupabaseClient, tournament_id: str) -> list[dict[str, 
         client,
         "tournament_entries",
         {
-            "select": "player_id,final_standing,made_top_cut,players(name,topdeck_id)",
+            "select": "player_id,commander_id,final_standing,made_top_cut,players(name,topdeck_id),commanders(name)",
             "tournament_id": f"eq.{tournament_id}",
         },
     )
+
+
+def normalize_known_commander_id(row: dict[str, Any]) -> str:
+    commander_id = row.get("commander_id")
+    if not commander_id:
+        return ""
+    commander = row.get("commanders") or {}
+    commander_name = str(commander.get("name") or "").strip().lower()
+    if commander_name in UNKNOWN_COMMANDER_NAMES:
+        return ""
+    return str(commander_id)
 
 
 def derive_top_cut_player_ids(entries: list[dict[str, Any]], top_cut: int) -> set[str]:
@@ -134,6 +160,39 @@ def fetch_pre_tournament_elos(
             if player_id not in ratings:
                 ratings[player_id] = (str(game_date), float(rating_after))
     return {player_id: rating for player_id, (_, rating) in ratings.items()}
+
+
+def fetch_pre_tournament_commander_elos(
+    client: SupabaseClient,
+    commander_ids: list[str],
+    start_date: str,
+) -> dict[str, float]:
+    ratings: dict[str, tuple[str, float]] = {}
+    for batch in batched(commander_ids, 40):
+        try:
+            rows = fetch_all(
+                client,
+                "global_commander_elo_game_events",
+                {
+                    "select": "commander_id,game_date,rating_after",
+                    "game_date": f"lt.{start_date}",
+                    "commander_id": f"in.{in_filter(batch)}",
+                    "order": "game_date.desc",
+                },
+            )
+        except requests.exceptions.HTTPError as exc:
+            if _http_error_is_missing_commander_table(exc):
+                return {}
+            raise
+        for row in rows:
+            commander_id = row.get("commander_id")
+            game_date = row.get("game_date")
+            rating_after = row.get("rating_after")
+            if not commander_id or game_date is None or rating_after is None:
+                continue
+            if commander_id not in ratings:
+                ratings[commander_id] = (str(game_date), float(rating_after))
+    return {commander_id: rating for commander_id, (_, rating) in ratings.items()}
 
 
 def build_feature_context(
@@ -204,7 +263,9 @@ def build_spec_and_players(client: SupabaseClient, tournament_id: str) -> tuple[
     entries = fetch_entries(client, tournament_id)
     swiss_rounds = infer_swiss_rounds(client, tournament_id)
     player_ids = [str(row["player_id"]) for row in entries if row.get("player_id")]
+    commander_ids = sorted({commander_id for row in entries if (commander_id := normalize_known_commander_id(row))})
     pre_elos = fetch_pre_tournament_elos(client, player_ids, str(tournament["start_date"]))
+    pre_commander_elos = fetch_pre_tournament_commander_elos(client, commander_ids, str(tournament["start_date"]))
     feature_context = build_feature_context(client, player_ids, str(tournament["start_date"]))
 
     sortable_entries = []
@@ -218,6 +279,7 @@ def build_spec_and_players(client: SupabaseClient, tournament_id: str) -> tuple[
                 str(player_id),
                 str(player.get("name") or player_id),
                 player.get("topdeck_id"),
+                normalize_known_commander_id(row),
                 float(pre_elos.get(str(player_id), 1500.0)),
             )
         )
@@ -226,12 +288,15 @@ def build_spec_and_players(client: SupabaseClient, tournament_id: str) -> tuple[
     seeded_rng = random.Random(seed_source)
     seeded_rng.shuffle(sortable_entries)
     players = []
-    for tiebreak_seed, (player_id, name, topdeck_id, elo) in enumerate(sortable_entries, start=1):
+    for tiebreak_seed, (player_id, name, topdeck_id, commander_id, elo) in enumerate(sortable_entries, start=1):
         players.append(
             SimPlayer(
                 player_id=player_id,
                 name=name,
                 elo=elo,
+                commander_id=commander_id or None,
+                commander_known=bool(commander_id),
+                commander_elo=float(pre_commander_elos.get(commander_id, 1500.0)) if commander_id else 1500.0,
                 topdeck_id=topdeck_id,
                 tiebreak_seed=tiebreak_seed,
             )

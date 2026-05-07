@@ -16,12 +16,14 @@ from sim_types import ALL_DRAW_FEATURES, FeatureContext, Pod, RoundFeatureSnapsh
 
 ELO_BASE = 2.0
 ELO_DIVISOR = 200.0
+DEFAULT_COMMANDER_ELO = 1500.0
+COMMANDER_ELO_ALPHA = 0.0
 DEFAULT_DRAW_MODEL_PATH = Path(__file__).resolve().parents[1] / "data" / "draw_model_artifact.pkl"
 SEAT_ELO_BONUS = {
     1: 0.0,
-    2: -50.0,
+    2: -52.0,
     3: -96.0,
-    4: -142.0,
+    4: -145.0,
 }
 
 
@@ -101,6 +103,15 @@ def load_draw_model_artifact(path: Path | str = DEFAULT_DRAW_MODEL_PATH) -> Load
 
 def rating_equity(rating: float) -> float:
     return pow(ELO_BASE, rating / ELO_DIVISOR)
+
+
+def effective_player_rating(player, seat: int | None = None) -> float:
+    rating = float(player.elo)
+    if player.commander_id and getattr(player, "commander_known", False):
+        rating += COMMANDER_ELO_ALPHA * (float(player.commander_elo) - DEFAULT_COMMANDER_ELO)
+    if seat in SEAT_ELO_BONUS:
+        rating += SEAT_ELO_BONUS[seat]
+    return rating
 
 
 def _points_percentiles(points_by_player: dict[str, int]) -> dict[str, float]:
@@ -551,11 +562,8 @@ def predict_draw_probability(
 def predict_decisive_win_probs(pod: Pod, state: TournamentState) -> dict[str, float]:
     effective_ratings: dict[str, float] = {}
     for player_id in pod.player_ids:
-        rating = state.players[player_id].elo
         seat = pod.seats_by_player.get(player_id) if pod.seats_by_player else None
-        if seat in SEAT_ELO_BONUS:
-            rating += SEAT_ELO_BONUS[seat]
-        effective_ratings[player_id] = rating
+        effective_ratings[player_id] = effective_player_rating(state.players[player_id], seat)
     equities = {player_id: rating_equity(rating) for player_id, rating in effective_ratings.items()}
     total = sum(equities.values()) or 1.0
     return {player_id: equity / total for player_id, equity in equities.items()}
@@ -569,11 +577,8 @@ def predict_decisive_win_probabilities(
     for pod in pods:
         adjusted_ratings = []
         for player_id in pod.player_ids:
-            rating = state.players[player_id].elo
             seat = pod.seats_by_player.get(player_id) if pod.seats_by_player else None
-            if seat in SEAT_ELO_BONUS:
-                rating += SEAT_ELO_BONUS[seat]
-            adjusted_ratings.append(rating)
+            adjusted_ratings.append(effective_player_rating(state.players[player_id], seat))
         equity_values = np.asarray([rating_equity(rating) for rating in adjusted_ratings], dtype=float)
         total = float(equity_values.sum()) or 1.0
         probabilities[(pod.round_index, pod.table_number)] = tuple((equity_values / total).tolist())
