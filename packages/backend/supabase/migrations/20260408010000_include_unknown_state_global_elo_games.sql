@@ -50,8 +50,8 @@ WITH global_rows AS (
     NULL::integer AS games_30d,
     NULL::integer AS games_90d,
     NULL::integer AS games_365d,
-    s.country_key AS primary_country_key,
     s.region_key AS primary_region_key,
+    s.country_key AS primary_country_key,
     NULL::text AS country_key
   FROM regional_elo_ratings g
   JOIN players p ON p.id = g.player_id
@@ -85,8 +85,8 @@ country_rows AS (
     s.games_30d,
     s.games_90d,
     s.games_365d,
-    s.country_key AS primary_country_key,
     s.region_key AS primary_region_key,
+    s.country_key AS primary_country_key,
     s.country_key AS country_key
   FROM regional_elo_ratings g
   JOIN players p ON p.id = g.player_id
@@ -122,8 +122,8 @@ state_rows AS (
     s.games_30d,
     s.games_90d,
     s.games_365d,
-    s.country_key AS primary_country_key,
     s.region_key AS primary_region_key,
+    s.country_key AS primary_country_key,
     s.country_key AS country_key
   FROM regional_elo_ratings g
   JOIN players p ON p.id = g.player_id

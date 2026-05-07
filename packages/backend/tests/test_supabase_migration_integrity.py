@@ -35,8 +35,8 @@ class SupabaseMigrationIntegrityTests(unittest.TestCase):
     def test_regional_elo_leaderboard_preserves_existing_column_order(self) -> None:
         sql = (MIGRATIONS_DIR / "20260408010000_include_unknown_state_global_elo_games.sql").read_text()
 
-        self.assertIn("s.country_key AS primary_country_key,\n    s.region_key AS primary_region_key,\n    NULL::text AS country_key", sql)
-        self.assertNotIn("NULL::text AS country_key,\n    g.player_id", sql)
+        self.assertIn("s.region_key AS primary_region_key,\n    s.country_key AS primary_country_key,\n    NULL::text AS country_key", sql)
+        self.assertNotIn("s.country_key AS primary_country_key,\n    s.region_key AS primary_region_key,", sql)
 
 
 if __name__ == "__main__":
