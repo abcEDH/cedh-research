@@ -378,7 +378,7 @@ export default async function TournamentLikelihoodPage({
   const { data: suggestedTournaments } = await supabase
     .from("tournaments")
     .select("topdeck_tid, name")
-    .or("name.ilike.%Platinum%,player_count.gte.100")
+    .or("tier.eq.Platinum,tier.eq.Diamond,name.ilike.%Platinum%,topdeck_tid.ilike.%Platinum%,player_count.gte.100")
     .gte("start_date", new Date().toISOString())
     .order("start_date", { ascending: true })
     .limit(6);

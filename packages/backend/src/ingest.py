@@ -1029,6 +1029,27 @@ class TopDeckClient:
         data = {key: decode_firestore_value(value) for key, value in fields.items()}
         return flat_firestore_league_to_topdeck_payload(tid, data, base_tournament)
 
+    def get_tournament_tier(self, tid: str) -> str | None:
+        """Fetch the tournament tier (Platinum, Diamond, etc.) from Firestore otherEvents."""
+        firestore_api_key = os.environ.get("TOPDECK_FIRESTORE_API_KEY")
+        url = (
+            "https://firestore.googleapis.com/v1/projects/"
+            f"{TOPDECK_FIRESTORE_PROJECT}/databases/(default)/documents/"
+            f"otherEvents/{tid}"
+        )
+        if firestore_api_key:
+            url = f"{url}?key={firestore_api_key}"
+
+        try:
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                fields = response.json().get("fields", {})
+                if "tier" in fields:
+                    return decode_firestore_value(fields["tier"])
+        except Exception as e:
+            logger.warning(f"Failed to fetch tier for {tid}: {e}")
+        return None
+
 
 class SupabaseClient:
     """Client for Supabase REST API."""
@@ -1553,8 +1574,9 @@ class DataIngester:
         if isinstance(start_date, (int, float)):
             start_date = datetime.fromtimestamp(start_date).isoformat()
 
-        # Get location data
+        # Get location and tier data
         event_data = tournament.get("eventData", {})
+        tier = self.topdeck.get_tournament_tier(tid)
 
         # Upsert tournament
         tournament_data: dict[str, Any] = {
@@ -1588,6 +1610,7 @@ class DataIngester:
             "latitude": event_data.get("lat"),
             "longitude": event_data.get("lng"),
             "header_image_url": event_data.get("headerImage"),
+            "tier": tier,
         }
 
         result = self.supabase.upsert(
