@@ -6,6 +6,7 @@ MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "supabase" / "migrations"
 INGESTION_JOBS_MIGRATION = MIGRATIONS_DIR / "20260420000000_ingestion_jobs.sql"
 INGESTION_CRON_MIGRATION = MIGRATIONS_DIR / "20260420010000_ingestion_cron_schedule.sql"
 PG_NET_MIGRATION = MIGRATIONS_DIR / "20260507010000_enable_pg_net.sql"
+ELO_CRON_MIGRATION = MIGRATIONS_DIR / "20260411010000_elo_cron_schedule.sql"
 
 
 class IngestionSqlMigrationTests(unittest.TestCase):
@@ -28,6 +29,16 @@ class IngestionSqlMigrationTests(unittest.TestCase):
         sql = PG_NET_MIGRATION.read_text()
 
         self.assertIn("CREATE EXTENSION IF NOT EXISTS pg_net;", sql)
+
+    def test_cron_migrations_guard_missing_cron_extension(self) -> None:
+        elo_sql = ELO_CRON_MIGRATION.read_text()
+        ingestion_sql = INGESTION_CRON_MIGRATION.read_text()
+
+        for sql in (elo_sql, ingestion_sql):
+            self.assertIn("to_regclass('cron.job') IS NOT NULL", sql)
+            self.assertIn("EXECUTE format('SELECT cron.unschedule(%L)'", sql)
+            self.assertIn("EXECUTE format(", sql)
+            self.assertIn("SELECT cron.schedule(%L, %L, %L)", sql)
 
 
 if __name__ == "__main__":
