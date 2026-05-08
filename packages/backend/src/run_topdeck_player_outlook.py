@@ -160,7 +160,7 @@ def simulate_distribution(
             apply_pod_result(state, result)
         apply_round_elo_updates(state, active_round_pods, round_results)
         state.current_round_index = active_round_index + 1
-        state, winner_id, _ = simulate_from_state(
+        state, winner_id, _, _ = simulate_from_state(
             state,
             draw_model,
             seed=seed + simulation_index + 100_000,

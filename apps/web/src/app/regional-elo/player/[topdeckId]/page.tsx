@@ -302,7 +302,7 @@ function buildPlayerProfileHref(
   achievementsPage: number,
   achievementTournamentSearch = "",
   achievementCommanderSearch = "",
-  achievementSort: AchievementSort = "recent",
+  achievementSort: AchievementSort = "best",
   achievementDateFrom = "",
   achievementDateTo = ""
 ) {
@@ -310,7 +310,7 @@ function buildPlayerProfileHref(
   if (regionFilter) params.set("region", regionFilter);
   if (achievementTournamentSearch) params.set("achievementTournament", achievementTournamentSearch);
   if (achievementCommanderSearch) params.set("achievementCommander", achievementCommanderSearch);
-  if (achievementSort && achievementSort !== "recent") {
+  if (achievementSort && achievementSort !== "best") {
     params.set("achievementSort", achievementSort);
   }
   if (achievementDateFrom) params.set("achievementDateFrom", achievementDateFrom);
@@ -323,7 +323,7 @@ function buildPlayerProfileHref(
 type AchievementSort = "recent" | "best";
 
 function normalizeAchievementSort(value: string): AchievementSort {
-  return value === "best" ? "best" : "recent";
+  return value === "recent" ? "recent" : "best";
 }
 
 function buildTopdeckDecklistUrl(tournamentSlug: string | null | undefined, topdeckId: string) {
@@ -1304,17 +1304,6 @@ export async function PlayerProfileBody({
                     className="mt-1 w-full rounded-md border border-border/70 bg-background px-3 py-2 text-sm normal-case tracking-normal text-foreground outline-none transition-colors focus:border-primary/60"
                   />
                 </label>
-                <label className="space-y-1 text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  Sort
-                  <select
-                    name="achievementSort"
-                    defaultValue={achievementSort}
-                    className="mt-1 w-full rounded-md border border-border/70 bg-background px-3 py-2 text-sm normal-case tracking-normal text-foreground outline-none transition-colors focus:border-primary/60"
-                  >
-                    <option value="recent">Most recent</option>
-                    <option value="best">Best finish</option>
-                  </select>
-                </label>
                 <button
                   type="submit"
                   className="self-end rounded-md border border-border/70 px-3 py-2 text-sm text-foreground hover:border-primary/40 hover:text-primary"
@@ -1325,7 +1314,7 @@ export async function PlayerProfileBody({
                 achievementCommanderSearch ||
                 achievementDateFrom ||
                 achievementDateTo ||
-                achievementSort !== "recent" ? (
+                achievementSort !== "best" ? (
                   <Link
                     href={buildPlayerProfileHref(topdeckId, regionFilter, 1)}
                     className="self-end rounded-md border border-border/70 px-3 py-2 text-center text-sm text-foreground hover:border-primary/40 hover:text-primary"
@@ -1339,7 +1328,23 @@ export async function PlayerProfileBody({
                   <thead className="text-left text-xs uppercase tracking-[0.2em] text-muted-foreground">
                     <tr>
                       <th className="px-2 py-3">Tournament</th>
-                      <th className="px-2 py-3">Date</th>
+                      <th className="px-2 py-3">
+                        <Link
+                          href={buildPlayerProfileHref(
+                            topdeckId,
+                            regionFilter,
+                            1,
+                            achievementTournamentSearch,
+                            achievementCommanderSearch,
+                            "recent",
+                            achievementDateFrom,
+                            achievementDateTo
+                          )}
+                          className={achievementSort === "recent" ? "text-foreground" : "hover:text-primary"}
+                        >
+                          Date
+                        </Link>
+                      </th>
                       <th className="px-2 py-3">Commander</th>
                       <th className="px-2 py-3 text-right">Finish</th>
                       <th className="px-2 py-3 text-right">W-L-D</th>

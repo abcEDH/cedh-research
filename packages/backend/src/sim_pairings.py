@@ -203,7 +203,20 @@ def pair_topdeck_bracket(players: list[str], round_index: int) -> tuple[list[str
     auto_advancers: list[str] = []
     pod_groups: list[list[str]]
 
-    if len(players) == 16:
+    if len(players) == 40:
+        auto_advancers = players[:8]
+        play_in = players[8:]
+        pod_groups = [
+            [play_in[0], play_in[15], play_in[16], play_in[31]],
+            [play_in[1], play_in[14], play_in[17], play_in[30]],
+            [play_in[2], play_in[13], play_in[18], play_in[29]],
+            [play_in[3], play_in[12], play_in[19], play_in[28]],
+            [play_in[4], play_in[11], play_in[20], play_in[27]],
+            [play_in[5], play_in[10], play_in[21], play_in[26]],
+            [play_in[6], play_in[9], play_in[22], play_in[25]],
+            [play_in[7], play_in[8], play_in[23], play_in[24]],
+        ]
+    elif len(players) == 16:
         pod_groups = [
             [players[0], players[7], players[8], players[15]],
             [players[1], players[6], players[9], players[14]],

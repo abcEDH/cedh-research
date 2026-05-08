@@ -287,7 +287,9 @@ def build_base_state(
             name=player_names[topdeck_id],
             elo=float(pre_elos.get(player_records[topdeck_id]["id"], 1500.0)),
             topdeck_id=topdeck_id,
-            tiebreak_seed=tiebreak_seeds.get(topdeck_id, fallback_seed_by_topdeck_id[topdeck_id]),
+            tiebreak_seed=tiebreak_seeds[topdeck_id]
+            if topdeck_id in tiebreak_seeds
+            else fallback_seed_by_topdeck_id[topdeck_id],
         )
         for topdeck_id in topdeck_ids
     ]
@@ -315,7 +317,10 @@ def build_base_state(
 def build_output(summary: dict[str, Any], state, active_round_index: int, active_round_pods: list[Pod] | None) -> dict[str, Any]:
     player_name_by_id = {player_id: player.name for player_id, player in state.players.items()}
     top_win = sorted(summary["win_probability"].items(), key=lambda item: item[1], reverse=True)[:10]
-    top_cut = sorted(summary["top_cut_probability"].items(), key=lambda item: item[1], reverse=True)[:10]
+    advancement_probability = summary.get("advancement_probability", {})
+    top40 = sorted(advancement_probability.get(40, {}).items(), key=lambda item: item[1], reverse=True)[:10]
+    top16 = sorted(advancement_probability.get(16, {}).items(), key=lambda item: item[1], reverse=True)[:10]
+    top4 = sorted(advancement_probability.get(4, {}).items(), key=lambda item: item[1], reverse=True)[:10]
     return {
         "tournament": {
             "id": state.spec.tournament_id,
@@ -333,11 +338,18 @@ def build_output(summary: dict[str, Any], state, active_round_index: int, active
             {"player_id": player_id, "name": player_name_by_id.get(player_id, player_id), "win_probability": probability}
             for player_id, probability in top_win
         ],
-        "top_top_cut_probabilities": [
-            {"player_id": player_id, "name": player_name_by_id.get(player_id, player_id), "top_cut_probability": probability}
-            for player_id, probability in top_cut
+        "top_top40_probabilities": [
+            {"player_id": player_id, "name": player_name_by_id.get(player_id, player_id), "top40_probability": probability}
+            for player_id, probability in top40
         ],
-        "round_draw_rate": summary["round_draw_rate"],
+        "top_top16_probabilities": [
+            {"player_id": player_id, "name": player_name_by_id.get(player_id, player_id), "top16_probability": probability}
+            for player_id, probability in top16
+        ],
+        "top_top4_probabilities": [
+            {"player_id": player_id, "name": player_name_by_id.get(player_id, player_id), "top4_probability": probability}
+            for player_id, probability in top4
+        ],
         "simulations": summary["simulations"],
     }
 
@@ -389,6 +401,7 @@ def main() -> None:
         feature_context=feature_context,
         player_records=player_records,
     )
+    state.track_round_stats = False
 
     draw_model = load_draw_model_artifact(args.draw_model_path)
     summary = run_monte_carlo_from_state(
@@ -399,6 +412,8 @@ def main() -> None:
         workers=args.workers,
         start_round_index=active_round_index,
         locked_round_pods=active_round_pods,
+        requested_advancement_sizes=(40, 16, 4),
+        collect_detailed_metrics=False,
     ).to_dict()
 
     print(json.dumps(build_output(summary, state, active_round_index, active_round_pods), indent=2))

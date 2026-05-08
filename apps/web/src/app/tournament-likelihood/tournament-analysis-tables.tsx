@@ -60,6 +60,7 @@ type AttendeeRow = {
   standing: TournamentStanding;
   profile?: PlayerCommanderProfile;
   rating: number | null;
+  topdeckElo: number | null;
   regionKey: string | null;
 };
 
@@ -134,7 +135,7 @@ function sortRows(rows: AttendeeRow[], key: SortKey, direction: SortDirection) {
       return compareText(a.standing.name, b.standing.name, direction);
     }
     if (key === "elo") {
-      return compareNullableNumber(a.rating, b.rating, direction);
+      return compareNullableNumber(a.topdeckElo, b.topdeckElo, direction);
     }
     if (key === "homeRegion") {
       return compareText(a.regionKey, b.regionKey, direction);
@@ -277,6 +278,7 @@ export function TournamentAnalysisTables({
           standing,
           profile: profileByPlayer.get(standing.id),
           rating: elo?.rating ?? null,
+          topdeckElo: elo?.topdeck_elo ?? null,
           regionKey: elo?.region_key ?? null,
         };
       }),
@@ -293,7 +295,7 @@ export function TournamentAnalysisTables({
               includesSearch(row.standing.name, query) ||
               includesSearch(row.standing.username, query) ||
               includesSearch(row.standing.id, query) ||
-              includesSearch(row.rating, query) ||
+              includesSearch(row.topdeckElo, query) ||
               includesSearch(row.regionKey, query) ||
               includesSearch(row.standing.actualDeckCommander, query) ||
               includesSearch(row.standing.points, query) ||
@@ -387,7 +389,7 @@ export function TournamentAnalysisTables({
                   </th>
                 )}
                 <SortHeader column="elo" direction={sortDirection} onSort={handleSort} sortKey={sortKey}>
-                  Elo
+                  TopDeck Elo
                 </SortHeader>
                 <th className="px-2 py-3 hidden lg:table-cell">
                   <button
@@ -453,7 +455,7 @@ export function TournamentAnalysisTables({
                       <td className="px-2 py-4 text-muted-foreground hidden md:table-cell">{formatTournamentRecord(row.standing)}</td>
                     )}
                     <td className="px-2 py-4 font-semibold text-primary">
-                      {row.rating === null ? "-" : Math.round(row.rating)}
+                      {row.topdeckElo === null ? "-" : Math.round(row.topdeckElo)}
                     </td>
                     <td className="px-2 py-4 text-muted-foreground hidden lg:table-cell">{row.regionKey ?? "-"}</td>
                     {showActualDecks ? (

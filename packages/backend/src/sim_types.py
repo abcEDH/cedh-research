@@ -231,8 +231,11 @@ class TournamentState:
     players: dict[str, SimPlayer]
     standings: dict[str, StandingRow]
     completed_pods: list[PodResult] = field(default_factory=list)
+    completed_pod_count: int = 0
     current_round_index: int = 0
     feature_context: FeatureContext = field(default_factory=FeatureContext)
+    fast_live_mode: bool = False
+    track_round_stats: bool = True
     round_draw_counts: dict[int, int] = field(default_factory=dict)
     round_pod_counts: dict[int, int] = field(default_factory=dict)
 
@@ -246,6 +249,7 @@ class SimulationSummary:
     round_draw_counts: dict[int, int]
     round_pod_counts: dict[int, int]
     simulations: int
+    advancement_counts: dict[int, dict[str, int]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -254,6 +258,12 @@ class SimulationSummary:
             },
             "top_cut_probability": {
                 player_id: count / self.simulations for player_id, count in self.top_cut_counts.items()
+            },
+            "advancement_probability": {
+                cut_size: {
+                    player_id: count / self.simulations for player_id, count in player_counts.items()
+                }
+                for cut_size, player_counts in self.advancement_counts.items()
             },
             "expected_points": {
                 player_id: total / self.simulations for player_id, total in self.expected_points_total.items()
