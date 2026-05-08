@@ -21,11 +21,7 @@ from ingest import SupabaseClient, load_local_env
 
 K_FACTOR_DECISIVE = 64
 K_FACTOR_DRAW = 26
-COMMANDER_K_FACTOR_DECISIVE = 16
-COMMANDER_K_FACTOR_DRAW = 8
 DEFAULT_RATING = 1500.0
-DEFAULT_COMMANDER_RATING = 1500.0
-UNKNOWN_COMMANDER_NAMES = {"unknown commander"}
 ELO_BASE = 2
 ELO_DIVISOR = 200
 GLOBAL_REGION_TYPE = "global"
@@ -330,18 +326,6 @@ def empty_rating(player_id: str) -> dict[str, Any]:
     }
 
 
-def empty_commander_rating(commander_id: str) -> dict[str, Any]:
-    return {
-        "commander_id": commander_id,
-        "rating": DEFAULT_COMMANDER_RATING,
-        "games_played": 0,
-        "wins": 0,
-        "draws": 0,
-        "losses": 0,
-        "last_game_date": None,
-    }
-
-
 def with_page_params(
     params: dict[str, str] | list[tuple[str, str]], limit: int, offset: int
 ) -> dict[str, str] | list[tuple[str, str]]:
@@ -614,44 +598,12 @@ def fetch_recent_state_results(client: SupabaseClient, since: date) -> list[dict
     return rows
 
 
-def fetch_entry_commanders(client: SupabaseClient, entry_ids: set[str]) -> dict[str, str]:
-    if not entry_ids:
-        return {}
-    commander_by_entry: dict[str, str] = {}
-    ordered_ids = sorted(entry_ids)
-    chunk_size = 200
-    for start in range(0, len(ordered_ids), chunk_size):
-        chunk = ordered_ids[start : start + chunk_size]
-        rows = client.select(
-            "tournament_entries",
-            {
-                "select": "id,commander_id,commanders(name)",
-                "id": f"in.({','.join(chunk)})",
-            },
-        )
-        for row in rows:
-            entry_id = row.get("id")
-            commander_id = row.get("commander_id")
-            commander = row.get("commanders") or {}
-            commander_name = str(commander.get("name") or "").strip().lower()
-            if entry_id and commander_id and commander_name not in UNKNOWN_COMMANDER_NAMES:
-                commander_by_entry[str(entry_id)] = str(commander_id)
-    return commander_by_entry
-
-
 def merge_seat_positions(results: list[dict[str, Any]], seats: dict[tuple[str, str], int]) -> None:
     for row in results:
         game_id = row.get("game_id")
         entry_id = row.get("entry_id")
         if game_id and entry_id:
             row["seat_position"] = seats.get((game_id, entry_id))
-
-
-def merge_commander_ids(results: list[dict[str, Any]], commander_by_entry: dict[str, str]) -> None:
-    for row in results:
-        entry_id = row.get("entry_id")
-        if entry_id:
-            row["commander_id"] = commander_by_entry.get(str(entry_id))
 
 
 def rest_delete(client: SupabaseClient, table: str, params: dict[str, str]) -> None:
@@ -691,11 +643,10 @@ def delete_by_tournament_ids(client: SupabaseClient, table: str, tournament_ids:
 def apply_game(
     game_rows: list[dict[str, Any]],
     ratings: dict[str, dict[str, Any]],
-    commander_ratings: dict[str, dict[str, Any]],
     state_activity: dict[tuple[str, str], dict[str, Any]],
     player_meta: dict[str, dict[str, str | None]],
     now: date,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+) -> list[dict[str, Any]]:
     participants: list[dict[str, Any]] = []
     seen_players: set[str] = set()
     for row in game_rows:
@@ -707,18 +658,15 @@ def apply_game(
         participants.append(row)
         seen_players.add(player_id)
     if len(participants) < 2:
-        return [], []
+        return []
     if not any((score_for_result(row.get("result")) or 0) > 0 for row in participants):
-        return [], []
+        return []
 
     game_date = parse_date(participants[0].get("start_date"))
     game_datetime = participants[0].get("start_date")
     deltas: dict[str, float] = defaultdict(float)
     expected_scores: dict[str, float] = {}
     before_ratings: dict[str, float] = {}
-    commander_deltas: dict[str, float] = defaultdict(float)
-    commander_expected_scores: dict[str, float] = {}
-    before_commander_ratings: dict[str, float] = {}
 
     for row in participants:
         player_id = row["player_id"]
@@ -731,10 +679,6 @@ def apply_game(
             },
         )
         before_ratings[player_id] = float(ratings[player_id]["rating"])
-        commander_id = row.get("commander_id")
-        if commander_id:
-            commander_ratings.setdefault(str(commander_id), empty_commander_rating(str(commander_id)))
-            before_commander_ratings[player_id] = float(commander_ratings[str(commander_id)]["rating"])
 
     draw_count = sum(1 for row in participants if row.get("result") == "draw")
     k_factor = K_FACTOR_DRAW if draw_count else K_FACTOR_DECISIVE
@@ -757,26 +701,6 @@ def apply_game(
                 expected_rating += SEAT_ELO_BONUS.get(seat_position + 1, 0.0)
         expected_ratings[player_id] = expected_rating
     total_equity = sum(rating_equity(expected_ratings[row["player_id"]]) for row in participants)
-    commander_expected_ratings: dict[str, float] = {}
-    if before_commander_ratings:
-        for row in participants:
-            player_id = row["player_id"]
-            commander_rating = before_commander_ratings.get(player_id)
-            if commander_rating is None:
-                continue
-            expected_rating = commander_rating
-            if use_seat_bonus:
-                seat_position = row.get("seat_position")
-                if isinstance(seat_position, int):
-                    expected_rating += SEAT_ELO_BONUS.get(seat_position + 1, 0.0)
-            commander_expected_ratings[player_id] = expected_rating
-        commander_total_equity = sum(
-            rating_equity(commander_expected_ratings[row["player_id"]])
-            for row in participants
-            if row["player_id"] in commander_expected_ratings
-        )
-    else:
-        commander_total_equity = 0.0
 
     for row in participants:
         player_id = row["player_id"]
@@ -787,18 +711,10 @@ def apply_game(
         expected = rating_equity(expected_ratings[player_id]) / total_equity
         expected_scores[player_id] = expected
         deltas[player_id] = k_factor * (actual - expected)
-        commander_id = row.get("commander_id")
-        if commander_id and player_id in commander_expected_ratings and commander_total_equity > 0:
-            commander_expected = rating_equity(commander_expected_ratings[player_id]) / commander_total_equity
-            commander_expected_scores[player_id] = commander_expected
-            commander_k_factor = COMMANDER_K_FACTOR_DRAW if draw_count else COMMANDER_K_FACTOR_DECISIVE
-            commander_deltas[str(commander_id)] += commander_k_factor * (actual - commander_expected)
 
     events: list[dict[str, Any]] = []
-    commander_events: list[dict[str, Any]] = []
     for row in participants:
         player_id = row["player_id"]
-        commander_id = row.get("commander_id")
         result = row.get("result")
         score = score_for_result(result)
         if score is None:
@@ -815,19 +731,6 @@ def apply_game(
             rating_row["losses"] += 1
         if game_date and (rating_row["last_game_date"] is None or game_date > rating_row["last_game_date"]):
             rating_row["last_game_date"] = game_date
-
-        if commander_id:
-            commander_row = commander_ratings[str(commander_id)]
-            commander_row["rating"] = round(float(commander_row["rating"]) + commander_deltas.get(str(commander_id), 0.0), 6)
-            commander_row["games_played"] += 1
-            if result == "win":
-                commander_row["wins"] += 1
-            elif result == "draw":
-                commander_row["draws"] += 1
-            elif result == "loss":
-                commander_row["losses"] += 1
-            if game_date and (commander_row["last_game_date"] is None or game_date > commander_row["last_game_date"]):
-                commander_row["last_game_date"] = game_date
 
         state_key = normalize_key(row.get("state"))
         if state_key:
@@ -892,50 +795,25 @@ def apply_game(
                 "rating_after": round(float(rating_row["rating"]), 6),
             }
         )
-        if commander_id and player_id in commander_expected_scores:
-            commander_events.append(
-                {
-                    "game_id": row["game_id"],
-                    "tournament_id": row["tournament_id"],
-                    "commander_id": commander_id,
-                    "player_id": player_id,
-                    "entry_id": row["entry_id"],
-                    "game_date": game_datetime,
-                    "game_result": result,
-                    "is_draw": bool(row.get("is_draw")) or result == "draw",
-                    "opponent_count": len(participants) - 1,
-                    "expected_score": round(commander_expected_scores[player_id], 6),
-                    "actual_score": 1 / draw_count if result == "draw" and draw_count else score,
-                    "rating_before": round(before_commander_ratings[player_id], 6),
-                    "rating_delta": round(commander_deltas.get(str(commander_id), 0.0), 6),
-                    "rating_after": round(float(commander_ratings[str(commander_id)]["rating"]), 6),
-                }
-            )
-    return events, commander_events
+    return events
 
 
 def build_state_from_results(
     results: list[dict[str, Any]],
     ratings: dict[str, dict[str, Any]] | None = None,
-    commander_ratings: dict[str, dict[str, Any]] | None = None,
     state_activity: dict[tuple[str, str], dict[str, Any]] | None = None,
     player_meta: dict[str, dict[str, str | None]] | None = None,
     events: list[dict[str, Any]] | None = None,
-    commander_events: list[dict[str, Any]] | None = None,
 ) -> tuple[
-    dict[str, dict[str, Any]],
     dict[str, dict[str, Any]],
     dict[tuple[str, str], dict[str, Any]],
     dict[str, dict[str, str | None]],
     list[dict[str, Any]],
-    list[dict[str, Any]],
 ]:
     ratings = ratings or {}
-    commander_ratings = commander_ratings or {}
     state_activity = state_activity or {}
     player_meta = player_meta or {}
     events = events or []
-    commander_events = commander_events or []
     today = datetime.now(UTC).date()
 
     games: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -943,24 +821,21 @@ def build_state_from_results(
         games[row["game_id"]].append(row)
 
     for index, (_, rows) in enumerate(sorted(games.items(), key=game_sort_key), start=1):
-        player_events, game_commander_events = apply_game(rows, ratings, commander_ratings, state_activity, player_meta, today)
+        player_events = apply_game(rows, ratings, state_activity, player_meta, today)
         events.extend(player_events)
-        commander_events.extend(game_commander_events)
         if index % 25000 == 0:
             print(f"Processed {index:,}/{len(games):,} games", flush=True)
 
-    return ratings, commander_ratings, state_activity, player_meta, events, commander_events
+    return ratings, state_activity, player_meta, events
 
 
 def finalize_rows(
     topdeck_elos: dict[str, float],
     ratings: dict[str, dict[str, Any]],
-    commander_ratings: dict[str, dict[str, Any]],
     state_activity: dict[tuple[str, str], dict[str, Any]],
     player_meta: dict[str, dict[str, str | None]],
     events: list[dict[str, Any]],
-    commander_events: list[dict[str, Any]],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     today = datetime.now(UTC).date()
 
     for activity in state_activity.values():
@@ -996,16 +871,6 @@ def finalize_rows(
         state_rows.append(
             {
                 **row,
-                "last_game_date": str(row["last_game_date"]) if row.get("last_game_date") else None,
-            }
-        )
-
-    commander_rating_rows = []
-    for row in commander_ratings.values():
-        commander_rating_rows.append(
-            {
-                **row,
-                "rating": round(float(row["rating"]), 3),
                 "last_game_date": str(row["last_game_date"]) if row.get("last_game_date") else None,
             }
         )
@@ -1143,37 +1008,32 @@ def finalize_rows(
             }
         )
 
-    return rating_rows, commander_rating_rows, state_rows, events, commander_events, leaderboard_rows, profile_rows
+    return rating_rows, state_rows, events, leaderboard_rows, profile_rows
 
 
 def build_rows(
     client: SupabaseClient,
     results: list[dict[str, Any]],
     ratings: dict[str, dict[str, Any]] | None = None,
-    commander_ratings: dict[str, dict[str, Any]] | None = None,
     state_activity: dict[tuple[str, str], dict[str, Any]] | None = None,
     player_meta: dict[str, dict[str, str | None]] | None = None,
     events: list[dict[str, Any]] | None = None,
-    commander_events: list[dict[str, Any]] | None = None,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     print("Fetching TopDeck Elos for enrichment...", flush=True)
     topdeck_elos = fetch_topdeck_elos(client)
-    ratings, commander_ratings, state_activity, player_meta, events, commander_events = build_state_from_results(
+    ratings, state_activity, player_meta, events = build_state_from_results(
         results,
         ratings=ratings,
-        commander_ratings=commander_ratings,
         state_activity=state_activity,
         player_meta=player_meta,
         events=events,
-        commander_events=commander_events,
     )
-    return finalize_rows(topdeck_elos, ratings, commander_ratings, state_activity, player_meta, events, commander_events)
+    return finalize_rows(topdeck_elos, ratings, state_activity, player_meta, events)
 
 
 def fetch_existing_rating_state(
     client: SupabaseClient,
 ) -> tuple[
-    dict[str, dict[str, Any]],
     dict[str, dict[str, Any]],
     dict[tuple[str, str], dict[str, Any]],
     dict[str, dict[str, str | None]],
@@ -1194,33 +1054,6 @@ def fetch_existing_rating_state(
             "region_type": GLOBAL_REGION_TYPE,
             "region_key": GLOBAL_REGION_KEY,
             "rating": float(row.get("rating") or DEFAULT_RATING),
-            "games_played": int(row.get("games_played") or 0),
-            "wins": int(row.get("wins") or 0),
-            "draws": int(row.get("draws") or 0),
-            "losses": int(row.get("losses") or 0),
-            "last_game_date": parse_date(row.get("last_game_date")),
-        }
-
-    commander_ratings: dict[str, dict[str, Any]] = {}
-    try:
-        commander_rows = fetch_all(
-            client,
-            "global_commander_elo_ratings",
-            {"select": "commander_id,rating,games_played,wins,draws,losses,last_game_date"},
-            label="global_commander_elo_ratings",
-        )
-    except requests.exceptions.HTTPError as exc:
-        if _http_error_is_missing_table(exc, "global_commander_elo_ratings"):
-            commander_rows = []
-        else:
-            raise
-    for row in commander_rows:
-        commander_id = row.get("commander_id")
-        if not commander_id:
-            continue
-        commander_ratings[str(commander_id)] = {
-            "commander_id": str(commander_id),
-            "rating": float(row.get("rating") or DEFAULT_COMMANDER_RATING),
             "games_played": int(row.get("games_played") or 0),
             "wins": int(row.get("wins") or 0),
             "draws": int(row.get("draws") or 0),
@@ -1278,7 +1111,7 @@ def fetch_existing_rating_state(
             "topdeck_id": row.get("topdeck_id"),
         }
 
-    return ratings, commander_ratings, state_activity, player_meta
+    return ratings, state_activity, player_meta
 
 
 def decay_state_activity(state_activity: dict[tuple[str, str], dict[str, Any]], days_elapsed: int) -> None:
@@ -1345,7 +1178,7 @@ def main() -> None:
         print(f"Incremental rebuild from explicit start_date {args.since_start_date}", flush=True)
 
     if incremental_start:
-        base_ratings, base_commander_ratings, base_state_activity, base_player_meta = fetch_existing_rating_state(client)
+        base_ratings, base_state_activity, base_player_meta = fetch_existing_rating_state(client)
         results = fetch_results_from_tournament_start(
             client,
             str(incremental_start["start_date"]),
@@ -1353,13 +1186,10 @@ def main() -> None:
         relevant_game_ids = {row["game_id"] for row in results if row.get("game_id")}
         seat_positions = fetch_seat_positions_for_games(client, relevant_game_ids)
         merge_seat_positions(results, seat_positions)
-        commander_by_entry = fetch_entry_commanders(client, {str(row["entry_id"]) for row in results if row.get("entry_id")})
-        merge_commander_ids(results, commander_by_entry)
         print(f"Fetched {len(results):,} incremental participant result rows", flush=True)
-        ratings, commander_ratings, state_activity, player_meta, event_rows, commander_event_rows = build_state_from_results(
+        ratings, state_activity, player_meta, event_rows = build_state_from_results(
             results,
             ratings=base_ratings,
-            commander_ratings=base_commander_ratings,
             state_activity=base_state_activity,
             player_meta=base_player_meta,
         )
@@ -1367,31 +1197,25 @@ def main() -> None:
         recompute_rolling_state_windows(state_activity, recent_state_results, datetime.now(UTC).date())
         print("Fetching TopDeck Elos for enrichment...", flush=True)
         topdeck_elos = fetch_topdeck_elos(client)
-        rating_rows, commander_rating_rows, state_rows, event_rows, commander_event_rows, leaderboard_rows, profile_rows = finalize_rows(
+        rating_rows, state_rows, event_rows, leaderboard_rows, profile_rows = finalize_rows(
             topdeck_elos,
             ratings,
-            commander_ratings,
             state_activity,
             player_meta,
             event_rows,
-            commander_event_rows,
         )
     else:
         seat_positions = fetch_seat_positions(client)
         print(f"Fetched {len(seat_positions):,} seat assignments", flush=True)
         results = fetch_results_by_month(client)
         merge_seat_positions(results, seat_positions)
-        commander_by_entry = fetch_entry_commanders(client, {str(row["entry_id"]) for row in results if row.get("entry_id")})
-        merge_commander_ids(results, commander_by_entry)
         print(f"Fetched {len(results):,} participant result rows", flush=True)
-        rating_rows, commander_rating_rows, state_rows, event_rows, commander_event_rows, leaderboard_rows, profile_rows = build_rows(client, results)
+        rating_rows, state_rows, event_rows, leaderboard_rows, profile_rows = build_rows(client, results)
     print(
         "Built "
         f"{len(rating_rows):,} ratings, "
-        f"{len(commander_rating_rows):,} commander ratings, "
         f"{len(state_rows):,} state activity rows, "
         f"{len(event_rows):,} game events, "
-        f"{len(commander_event_rows):,} commander game events, "
         f"{len(leaderboard_rows):,} active leaderboard rows, "
         f"{len(profile_rows):,} profiles",
         flush=True,
@@ -1424,24 +1248,18 @@ def main() -> None:
             flush=True,
         )
         delete_by_tournament_ids(client, "global_elo_game_events", affected_tournament_ids)
-        delete_by_tournament_ids(client, "global_commander_elo_game_events", affected_tournament_ids)
         print("Clearing active leaderboard for full re-rank", flush=True)
         rest_delete(client, "global_elo_active_leaderboard", {"region_type": "not.is.null"})
     else:
         print("Clearing derived Elo tables", flush=True)
         rest_delete(client, "global_elo_ratings", {"region_type": "eq.global", "region_key": "eq.ALL"})
-        rest_delete(client, "global_commander_elo_ratings", {"commander_id": "not.is.null"})
         rest_delete(client, "global_elo_game_events", {"region_type": "eq.global", "region_key": "eq.ALL"})
-        rest_delete(client, "global_commander_elo_game_events", {"commander_id": "not.is.null"})
         rest_delete(client, "global_elo_active_leaderboard", {"region_type": "not.is.null"})
         rest_delete(client, "global_elo_state_activity", {"region_type": "eq.state"})
         rest_delete(client, "global_elo_player_profile_summaries", {"player_id": "not.is.null"})
 
     print("Upserting ratings", flush=True)
     chunked_upsert(client, "global_elo_ratings", rating_rows, "player_id,region_type,region_key")
-
-    print("Upserting commander ratings", flush=True)
-    chunked_upsert(client, "global_commander_elo_ratings", commander_rating_rows, "commander_id")
 
     print("Upserting state activity", flush=True)
     # Clear state activity before re-upserting to ensure old primary states are removed
@@ -1450,9 +1268,6 @@ def main() -> None:
 
     print("Upserting game events", flush=True)
     chunked_upsert(client, "global_elo_game_events", event_rows, "region_type,region_key,game_id,player_id")
-
-    print("Upserting commander game events", flush=True)
-    chunked_upsert(client, "global_commander_elo_game_events", commander_event_rows, "game_id,entry_id")
 
     print("Upserting active leaderboard", flush=True)
     # We clear the leaderboard because rank order changes and we don't want trailing rows

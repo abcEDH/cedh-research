@@ -17,7 +17,7 @@ from run_historical_tournament_sim import (
     fetch_all,
     in_filter,
 )
-from sim_engine import apply_pod_result, apply_round_elo_updates, initialize_state, run_monte_carlo_from_state
+from sim_engine import apply_pod_result, initialize_state, run_monte_carlo_from_state
 from sim_models import load_draw_model_artifact
 from sim_types import Pod, PodResult
 
@@ -128,7 +128,6 @@ def main() -> None:
         pods, results = rounds[round_number]
         for result in results:
             apply_pod_result(state, result)
-        apply_round_elo_updates(state, pods, results)
     state.current_round_index = args.completed_rounds
 
     locked_round_pods = None

@@ -16,8 +16,6 @@ from sim_types import ALL_DRAW_FEATURES, FeatureContext, Pod, RoundFeatureSnapsh
 
 ELO_BASE = 2.0
 ELO_DIVISOR = 200.0
-DEFAULT_COMMANDER_ELO = 1500.0
-COMMANDER_ELO_ALPHA = 0.0
 DEFAULT_DRAW_MODEL_PATH = Path(__file__).resolve().parents[1] / "data" / "draw_model_artifact.pkl"
 SEAT_ELO_BONUS = {
     1: 0.0,
@@ -107,8 +105,6 @@ def rating_equity(rating: float) -> float:
 
 def effective_player_rating(player, seat: int | None = None) -> float:
     rating = float(player.elo)
-    if player.commander_id and getattr(player, "commander_known", False):
-        rating += COMMANDER_ELO_ALPHA * (float(player.commander_elo) - DEFAULT_COMMANDER_ELO)
     if seat in SEAT_ELO_BONUS:
         rating += SEAT_ELO_BONUS[seat]
     return rating

@@ -18,7 +18,6 @@ from ingest import TopDeckClient, is_draw_winner_id, load_local_env
 from run_historical_tournament_sim import build_feature_context, fetch_pre_tournament_elos
 from sim_engine import (
     apply_pod_result,
-    apply_round_elo_updates,
     initialize_state,
     run_monte_carlo_from_state,
 )
@@ -309,7 +308,6 @@ def build_base_state(
     for pods, results in completed_rounds:
         for result in results:
             apply_pod_result(state, result)
-        apply_round_elo_updates(state, pods, results)
     state.current_round_index = active_round_index
     return state, active_round_index, active_round_pods
 
@@ -401,6 +399,7 @@ def main() -> None:
         feature_context=feature_context,
         player_records=player_records,
     )
+    state.fast_live_mode = True
     state.track_round_stats = False
 
     draw_model = load_draw_model_artifact(args.draw_model_path)

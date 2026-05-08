@@ -22,7 +22,6 @@ from run_topdeck_ongoing_tournament_sim import (
 from run_historical_tournament_sim import build_feature_context
 from sim_engine import (
     apply_pod_result,
-    apply_round_elo_updates,
     build_tournament_context,
     clone_state,
     simulate_from_state,
@@ -158,7 +157,6 @@ def simulate_distribution(
                 result = simulate_pod(pod, rng, pod_draw_probability, pod_win_probabilities)
             round_results.append(result)
             apply_pod_result(state, result)
-        apply_round_elo_updates(state, active_round_pods, round_results)
         state.current_round_index = active_round_index + 1
         state, winner_id, _, _ = simulate_from_state(
             state,

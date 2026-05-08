@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import math
 import os
-import pickle
 import random
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
@@ -33,13 +32,11 @@ from sim_types import (
     TournamentState,
 )
 
-K_FACTOR_DECISIVE = 64.0
-K_FACTOR_DRAW = 26.0
-COMMANDER_K_FACTOR_DECISIVE = 16.0
-COMMANDER_K_FACTOR_DRAW = 8.0
-
-
-def clone_feature_context(feature_context: FeatureContext | None) -> FeatureContext:
+def clone_feature_context(
+    feature_context: FeatureContext | None,
+    *,
+    share_global_pair_meetings: bool = False,
+) -> FeatureContext:
     if feature_context is None:
         return FeatureContext()
     return FeatureContext(
@@ -52,7 +49,11 @@ def clone_feature_context(feature_context: FeatureContext | None) -> FeatureCont
             for player_id, history in feature_context.player_history.items()
         },
         tournament_pair_meetings=dict(feature_context.tournament_pair_meetings),
-        global_pair_meetings=dict(feature_context.global_pair_meetings),
+        global_pair_meetings=(
+            feature_context.global_pair_meetings
+            if share_global_pair_meetings
+            else dict(feature_context.global_pair_meetings)
+        ),
         series_prior_draw_rate=feature_context.series_prior_draw_rate,
         series_events_seen=feature_context.series_events_seen,
         state_prior_draw_rate=feature_context.state_prior_draw_rate,
@@ -83,9 +84,6 @@ def clone_state(state: TournamentState) -> TournamentState:
             player_id=player.player_id,
             name=player.name,
             elo=player.elo,
-            commander_id=player.commander_id,
-            commander_known=player.commander_known,
-            commander_elo=player.commander_elo,
             topdeck_id=player.topdeck_id,
             tiebreak_seed=player.tiebreak_seed,
         )
@@ -110,7 +108,11 @@ def clone_state(state: TournamentState) -> TournamentState:
         standings=cloned_standings,
         completed_pod_count=state.completed_pod_count,
         current_round_index=state.current_round_index,
-        feature_context=clone_feature_context(state.feature_context),
+        feature_context=clone_feature_context(
+            state.feature_context,
+            share_global_pair_meetings=state.fast_live_mode,
+        ),
+        fast_live_mode=state.fast_live_mode,
         track_round_stats=state.track_round_stats,
     )
 
@@ -205,11 +207,13 @@ def apply_pod_result(state: TournamentState, result: PodResult) -> None:
         for opponent_id in result.player_ids[index + 1 :]:
             pair = tuple(sorted((player_id, opponent_id)))
             feature_context.tournament_pair_meetings[pair] = feature_context.tournament_pair_meetings.get(pair, 0) + 1
-            feature_context.global_pair_meetings[pair] = feature_context.global_pair_meetings.get(pair, 0) + 1
+            if not state.fast_live_mode:
+                feature_context.global_pair_meetings[pair] = feature_context.global_pair_meetings.get(pair, 0) + 1
     total_completed = state.completed_pod_count
-    feature_context.global_recent_draw_rate_90d = (
-        (feature_context.global_recent_draw_rate_90d * total_completed) + (1 if result.is_draw else 0)
-    ) / (total_completed + 1)
+    if not state.fast_live_mode:
+        feature_context.global_recent_draw_rate_90d = (
+            (feature_context.global_recent_draw_rate_90d * total_completed) + (1 if result.is_draw else 0)
+        ) / (total_completed + 1)
     state.completed_pod_count += 1
     if state.track_round_stats:
         state.round_pod_counts[result.round_index + 1] = state.round_pod_counts.get(result.round_index + 1, 0) + 1
@@ -233,65 +237,6 @@ def apply_bye(state: TournamentState, player_id: str) -> None:
     history.win_rate = (prior_wins + 1) / total_games
     history.decisive_rate = (prior_decisive + 1) / total_games
     state.feature_context.player_history[player_id] = history
-
-
-def apply_round_elo_updates(
-    state: TournamentState,
-    pods: list[Pod],
-    results: list[PodResult],
-) -> None:
-    pod_by_key = {(pod.round_index, pod.table_number): pod for pod in pods}
-    deltas_by_player: dict[str, float] = defaultdict(float)
-    deltas_by_commander: dict[str, float] = defaultdict(float)
-    for result in results:
-        pod = pod_by_key[(result.round_index, result.table_number)]
-        player_ids = pod.player_ids
-        before_ratings = {player_id: state.players[player_id].elo for player_id in player_ids}
-        before_commander_ratings = {
-            player_id: state.players[player_id].commander_elo for player_id in player_ids
-        }
-        draw_count = len(player_ids) if result.is_draw else 0
-        k_factor = K_FACTOR_DRAW if draw_count else K_FACTOR_DECISIVE
-        commander_k_factor = COMMANDER_K_FACTOR_DRAW if draw_count else COMMANDER_K_FACTOR_DECISIVE
-        use_seat_bonus = (
-            len(player_ids) == 4
-            and sorted(pod.seats_by_player.get(player_id, -1) for player_id in player_ids) == [1, 2, 3, 4]
-        )
-        expected_ratings = {}
-        expected_commander_ratings = {}
-        for player_id in player_ids:
-            expected_rating = before_ratings[player_id]
-            expected_commander_rating = before_commander_ratings[player_id]
-            if use_seat_bonus:
-                seat = pod.seats_by_player.get(player_id)
-                if seat in SEAT_ELO_BONUS:
-                    expected_rating += SEAT_ELO_BONUS[seat]
-                    expected_commander_rating += SEAT_ELO_BONUS[seat]
-            expected_ratings[player_id] = expected_rating
-            expected_commander_ratings[player_id] = expected_commander_rating
-        total_equity = sum(_rating_equity(expected_ratings[player_id]) for player_id in player_ids) or 1.0
-        total_commander_equity = (
-            sum(_rating_equity(expected_commander_ratings[player_id]) for player_id in player_ids) or 1.0
-        )
-        for player_id in player_ids:
-            expected = _rating_equity(expected_ratings[player_id]) / total_equity
-            commander_expected = (
-                _rating_equity(expected_commander_ratings[player_id]) / total_commander_equity
-            )
-            if result.is_draw:
-                actual = 1.0 / draw_count
-            else:
-                actual = 1.0 if player_id == result.winner_id else 0.0
-            deltas_by_player[player_id] += k_factor * (actual - expected)
-            commander_id = state.players[player_id].commander_id
-            if commander_id and state.players[player_id].commander_known:
-                deltas_by_commander[commander_id] += commander_k_factor * (actual - commander_expected)
-    for player_id, delta in deltas_by_player.items():
-        state.players[player_id].elo = round(state.players[player_id].elo + delta, 6)
-    for player_id, player in state.players.items():
-        commander_id = player.commander_id
-        if player.commander_known and commander_id and commander_id in deltas_by_commander:
-            player.commander_elo = round(player.commander_elo + deltas_by_commander[commander_id], 6)
 
 
 def simulate_swiss(
@@ -339,7 +284,6 @@ def simulate_swiss(
             )
             round_results.append(result)
             apply_pod_result(state, result)
-        apply_round_elo_updates(state, pods, round_results)
 
 
 def simulate_bracket_winner(
@@ -374,7 +318,6 @@ def simulate_bracket_winner(
             )
             round_results.append(result)
             winners.append(result.winner_id)
-        apply_round_elo_updates(state, pods, round_results)
         remaining = sorted(winners, key=lambda player_id: initial_seed_rank[player_id])
         advancement_by_size[len(remaining)] = remaining[:]
         round_index += 1
@@ -495,10 +438,8 @@ def _run_state_monte_carlo_batch(
     expected_finish_total: dict[str, float] = defaultdict(float)
     round_draw_counts: dict[int, int] = defaultdict(int)
     round_pod_counts: dict[int, int] = defaultdict(int)
-    base_state_blob = pickle.dumps(base_state, protocol=pickle.HIGHEST_PROTOCOL)
-
     for simulation_index in range(simulations):
-        state = pickle.loads(base_state_blob)
+        state = clone_state(base_state)
         state, winner_id, top_cut, advancement_by_size = simulate_from_state(
             state,
             draw_model,

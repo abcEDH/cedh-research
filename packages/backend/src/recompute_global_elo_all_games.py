@@ -14,11 +14,7 @@ from ingest import SupabaseClient, load_local_env
 
 K_FACTOR_DECISIVE = 64
 K_FACTOR_DRAW = 26
-COMMANDER_K_FACTOR_DECISIVE = 16
-COMMANDER_K_FACTOR_DRAW = 8
 DEFAULT_RATING = 1500.0
-DEFAULT_COMMANDER_RATING = 1500.0
-UNKNOWN_COMMANDER_NAMES = {"unknown commander"}
 ELO_BASE = 2
 ELO_DIVISOR = 200
 GLOBAL_REGION_TYPE = "global"
@@ -81,7 +77,6 @@ def _http_error_is_missing_topdeck_column(exc: requests.exceptions.HTTPError, co
 
 
 def detect_topdeck_elo_id_column(client: SupabaseClient) -> str:
-    """Detect the TopDeck Elo id column without weakening full snapshot retries."""
     last_schema_error: requests.exceptions.HTTPError | None = None
     for id_column in ("topdeck_id", "uid"):
         try:
@@ -101,7 +96,6 @@ def detect_topdeck_elo_id_column(client: SupabaseClient) -> str:
 
 
 def fetch_topdeck_elos(client: SupabaseClient) -> dict[str, float]:
-    """Read TopDeck Elo rows from either the live uid schema or normalized schema."""
     id_column = detect_topdeck_elo_id_column(client)
     rows = fetch_all(
         client,
@@ -131,18 +125,6 @@ def create_rating(player_id: str) -> dict[str, Any]:
     }
 
 
-def create_commander_rating(commander_id: str) -> dict[str, Any]:
-    return {
-        "commander_id": commander_id,
-        "rating": DEFAULT_COMMANDER_RATING,
-        "games_played": 0,
-        "wins": 0,
-        "draws": 0,
-        "losses": 0,
-        "last_game_date": None,
-    }
-
-
 def game_score(result: str) -> float | None:
     if result == "win":
         return 1.0
@@ -155,9 +137,7 @@ def game_score(result: str) -> float | None:
 
 def apply_game(
     ratings: dict[str, dict[str, Any]],
-    commander_ratings: dict[str, dict[str, Any]],
     participants: list[dict[str, Any]],
-    commander_events: list[dict[str, Any]],
 ) -> None:
     valid = [
         row for row in participants if row.get("player_id") and game_score(str(row.get("result") or "")) is not None
@@ -168,14 +148,10 @@ def apply_game(
     game_date = parse_game_date(valid[0].get("start_date"))
     deltas: dict[str, float] = defaultdict(float)
     increments: dict[str, dict[str, int]] = defaultdict(lambda: {"games_played": 0, "wins": 0, "draws": 0, "losses": 0})
-    commander_increments: dict[str, dict[str, int]] = defaultdict(lambda: {"games_played": 0, "wins": 0, "draws": 0, "losses": 0})
 
     for row in valid:
         player_id = row["player_id"]
         ratings.setdefault(player_id, create_rating(player_id))
-        commander_id = row.get("commander_id")
-        if commander_id:
-            commander_ratings.setdefault(str(commander_id), create_commander_rating(str(commander_id)))
         result = str(row.get("result") or "")
         increments[player_id]["games_played"] = 1
         if result == "win":
@@ -184,14 +160,6 @@ def apply_game(
             increments[player_id]["draws"] = 1
         elif result == "loss":
             increments[player_id]["losses"] = 1
-        if commander_id:
-            commander_increments[str(commander_id)]["games_played"] = 1
-            if result == "win":
-                commander_increments[str(commander_id)]["wins"] = 1
-            elif result == "draw":
-                commander_increments[str(commander_id)]["draws"] = 1
-            elif result == "loss":
-                commander_increments[str(commander_id)]["losses"] = 1
 
     has_draw = any(str(row.get("result") or "") == "draw" for row in valid)
     k_factor = K_FACTOR_DRAW if has_draw else K_FACTOR_DECISIVE
@@ -209,8 +177,6 @@ def apply_game(
         == [0, 1, 2, 3]
     )
     expected_ratings: dict[str, float] = {}
-    before_commander_ratings: dict[str, float] = {}
-    commander_expected_ratings: dict[str, float] = {}
     for row in valid:
         player_id = row["player_id"]
         expected_rating = before_ratings[player_id]
@@ -219,22 +185,7 @@ def apply_game(
             if isinstance(seat_position, int):
                 expected_rating += SEAT_ELO_BONUS.get(seat_position + 1, 0.0)
         expected_ratings[player_id] = expected_rating
-        commander_id = row.get("commander_id")
-        if commander_id:
-            commander_rating = float(commander_ratings[str(commander_id)]["rating"])
-            before_commander_ratings[player_id] = commander_rating
-            commander_expected = commander_rating
-            if use_seat_bonus:
-                seat_position = row.get("seat_position")
-                if isinstance(seat_position, int):
-                    commander_expected += SEAT_ELO_BONUS.get(seat_position + 1, 0.0)
-            commander_expected_ratings[player_id] = commander_expected
     total_equity = sum(rating_equity(expected_ratings[row["player_id"]]) for row in valid)
-    commander_total_equity = sum(rating_equity(commander_expected_ratings[row["player_id"]]) for row in valid if row["player_id"] in commander_expected_ratings)
-    commander_deltas: dict[str, float] = defaultdict(float)
-    commander_k_factor = COMMANDER_K_FACTOR_DRAW if has_draw else COMMANDER_K_FACTOR_DECISIVE
-    commander_expected_scores: dict[str, float] = {}
-    actual_scores: dict[str, float] = {}
 
     for row in valid:
         player_id = row["player_id"]
@@ -244,14 +195,8 @@ def apply_game(
         actual_score = 1.0 / sum(1 for r in valid if str(r.get("result") or "") == "draw") if has_draw and str(row.get("result") or "") == "draw" else score
         if has_draw and str(row.get("result") or "") == "loss":
             actual_score = 0.0
-        actual_scores[player_id] = actual_score
         expected_score = rating_equity(expected_ratings[player_id]) / total_equity
         deltas[player_id] = k_factor * (actual_score - expected_score)
-        commander_id = row.get("commander_id")
-        if commander_id and player_id in commander_expected_ratings and commander_total_equity > 0:
-            commander_expected_score = rating_equity(commander_expected_ratings[player_id]) / commander_total_equity
-            commander_expected_scores[player_id] = commander_expected_score
-            commander_deltas[str(commander_id)] += commander_k_factor * (actual_score - commander_expected_score)
 
     for player_id, delta in deltas.items():
         row = ratings[player_id]
@@ -260,57 +205,6 @@ def apply_game(
             row[key] += value
         if game_date and (row["last_game_date"] is None or game_date > row["last_game_date"]):
             row["last_game_date"] = game_date
-    for commander_id, delta in commander_deltas.items():
-        row = commander_ratings[commander_id]
-        row["rating"] = round(float(row["rating"]) + delta, 3)
-        for key, value in commander_increments[commander_id].items():
-            row[key] += value
-        if game_date and (row["last_game_date"] is None or game_date > row["last_game_date"]):
-            row["last_game_date"] = game_date
-    for row in valid:
-        player_id = row["player_id"]
-        commander_id = row.get("commander_id")
-        if not commander_id or player_id not in commander_expected_scores:
-            continue
-        commander_events.append(
-            {
-                "game_id": row["game_id"],
-                "tournament_id": row["tournament_id"],
-                "commander_id": commander_id,
-                "player_id": player_id,
-                "entry_id": row["entry_id"],
-                "game_date": row.get("start_date"),
-                "game_result": str(row.get("result") or ""),
-                "is_draw": bool(row.get("result") == "draw"),
-                "opponent_count": len(valid) - 1,
-                "expected_score": round(commander_expected_scores[player_id], 6),
-                "actual_score": actual_scores[player_id],
-                "rating_before": round(before_commander_ratings[player_id], 6),
-                "rating_delta": round(commander_deltas[str(commander_id)], 6),
-                "rating_after": round(float(commander_ratings[str(commander_id)]["rating"]), 6),
-            }
-        )
-
-
-def fetch_entry_commanders(client: SupabaseClient, entry_ids: list[str]) -> dict[str, str]:
-    commander_by_entry: dict[str, str] = {}
-    for start in range(0, len(entry_ids), 100):
-        chunk = entry_ids[start : start + 100]
-        rows = client.select(
-            "tournament_entries",
-            {
-                "id": f"in.({','.join(chunk)})",
-                "select": "id,commander_id,commanders(name)",
-            },
-        )
-        for row in rows:
-            entry_id = row.get("id")
-            commander_id = row.get("commander_id")
-            commander = row.get("commanders") or {}
-            commander_name = str(commander.get("name") or "").strip().lower()
-            if entry_id and commander_id and commander_name not in UNKNOWN_COMMANDER_NAMES:
-                commander_by_entry[str(entry_id)] = str(commander_id)
-    return commander_by_entry
 
 
 def build_leaderboard_rows(
@@ -331,7 +225,6 @@ def build_leaderboard_rows(
         ),
     )
 
-    # Pre-calculate TopDeck ranks within the active set
     active_players_with_tid = [
         (row["player_id"], player_lookup.get(row["player_id"], {}).get("topdeck_id")) for row in ratings
     ]
@@ -439,13 +332,11 @@ def main() -> None:
             "order": "start_date.asc,game_id.asc",
         },
     )
-    commander_by_entry = fetch_entry_commanders(client, sorted({str(row["entry_id"]) for row in rows if row.get("entry_id")}))
     for row in rows:
         game_id = row.get("game_id")
         entry_id = row.get("entry_id")
         if game_id and entry_id:
             row["seat_position"] = seat_positions.get((game_id, entry_id))
-            row["commander_id"] = commander_by_entry.get(str(entry_id))
     print(f"Fetched {len(rows)} participant result rows")
 
     games: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -455,13 +346,11 @@ def main() -> None:
     print(f"Processing {len(games)} games")
 
     ratings: dict[str, dict[str, Any]] = {}
-    commander_ratings: dict[str, dict[str, Any]] = {}
-    commander_events: list[dict[str, Any]] = []
     for _, participants in sorted(
         games.items(),
         key=lambda item: ((item[1][0].get("start_date") or ""), item[0]),
     ):
-        apply_game(ratings, commander_ratings, participants, commander_events)
+        apply_game(ratings, participants)
 
     rating_rows = list(ratings.values())
     player_lookup = fetch_players(client, list(ratings))
@@ -493,29 +382,6 @@ def main() -> None:
             for row in rating_rows[start : start + 1000]
         ]
         client.upsert("global_elo_ratings", payload, on_conflict="player_id,region_type,region_key")
-
-    commander_rating_rows = [
-        {
-            **row,
-            "last_game_date": str(row["last_game_date"]) if row.get("last_game_date") else None,
-        }
-        for row in commander_ratings.values()
-    ]
-    print(f"Upserting {len(commander_rating_rows)} global_commander_elo_ratings rows")
-    for start in range(0, len(commander_rating_rows), 1000):
-        client.upsert(
-            "global_commander_elo_ratings",
-            commander_rating_rows[start : start + 1000],
-            on_conflict="commander_id",
-        )
-
-    print(f"Upserting {len(commander_events)} global_commander_elo_game_events rows")
-    for start in range(0, len(commander_events), 1000):
-        client.upsert(
-            "global_commander_elo_game_events",
-            commander_events[start : start + 1000],
-            on_conflict="game_id,entry_id",
-        )
 
     print(f"Upserting {len(leaderboard_rows)} global_elo_active_leaderboard rows")
     for start in range(0, len(leaderboard_rows), 1000):

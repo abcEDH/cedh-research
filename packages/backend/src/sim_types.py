@@ -117,9 +117,6 @@ class SimPlayer:
     player_id: str
     name: str
     elo: float
-    commander_id: str | None = None
-    commander_known: bool = False
-    commander_elo: float = 1500.0
     topdeck_id: str | None = None
     tiebreak_seed: int = 0
 
