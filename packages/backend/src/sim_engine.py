@@ -12,7 +12,6 @@ from concurrent.futures import ProcessPoolExecutor
 from sim_models import (
     ELO_BASE,
     ELO_DIVISOR,
-    SEAT_ELO_BONUS,
     LoadedDrawModel,
     build_round_snapshot,
     predict_decisive_win_probabilities,

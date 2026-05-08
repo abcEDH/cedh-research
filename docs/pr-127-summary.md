@@ -2,19 +2,23 @@
 
 ## Summary
 
-This branch is now broader than the original commander-normalization patch. It includes:
+This branch is now broader than the original commander-normalization patch. It currently includes:
 - commander normalization and legal partner-pair canonicalization
 - generated legality/review artifacts for partner ordering
 - TopDeck Elo snapshot import plus Elo rebuild/maintenance updates
-- late-Swiss tournament simulation and draw-model training infrastructure
-- historical backtest tooling for tournament continuation from checkpointed Swiss states
-- player-outlook tooling for ongoing TopDeck events using exact current pods
-- maintenance workflow updates so player-profile data stays refreshed
+- tournament simulation and draw-model training infrastructure
+- historical continuation backtests and live TopDeck outlook tooling
+- player-profile and tournament-likelihood UI updates
+- removal of commander Elo from the active simulation/rebuild pipeline
+
+## Main Areas Changed
 
 The diff against `main` is concentrated in these areas:
 - `.github/workflows/ci-backend-maintenance.yml`
 - `.github/workflows/topdeck-elo-import.yml`
 - `apps/web/src/lib/meta-prep.ts`
+- `apps/web/src/app/tournament-likelihood/tournament-analysis-tables.tsx`
+- `apps/web/src/app/regional-elo/player/[topdeckId]/page.tsx`
 - `packages/backend/src/ingest.py`
 - `packages/backend/src/backfill_moxfield_commanders.py`
 - `packages/backend/src/generate_legal_commander_pairings.py`
@@ -24,6 +28,8 @@ The diff against `main` is concentrated in these areas:
 - `packages/backend/src/rebuild_player_commander_profiles.py`
 - `packages/backend/src/regional_elo.py`
 - `packages/backend/src/train_draw_model.py`
+- `packages/backend/src/train_draw_model_weight_experiments.py`
+- `packages/backend/src/summarize_draw_backtest_slices.py`
 - `packages/backend/src/sim_types.py`
 - `packages/backend/src/sim_pairings.py`
 - `packages/backend/src/sim_models.py`
@@ -36,6 +42,7 @@ The diff against `main` is concentrated in these areas:
 - `packages/backend/src/fix_top_cut_labels.py`
 - `packages/backend/data/legal_commander_pairings.json`
 - `packages/backend/tests/test_ingest.py`
+- `packages/backend/supabase/migrations/20260507170000_drop_global_commander_elo_tables.sql`
 - `docs/partner-community-order-review.csv` (deleted)
 
 ## Commander Normalization And Legality
@@ -60,18 +67,18 @@ The diff against `main` is concentrated in these areas:
 - Updates commander-recommendation weighting in `apps/web/src/lib/meta-prep.ts`, `rebuild_player_commander_profiles.py`, and `regional_elo.py` to use a `24`-day recency half-life.
 - This keeps the app-side forecast logic and the precomputed commander-profile rebuild aligned on the same weighting model.
 
-## Elo And Maintenance Updates
+## Elo Changes
 
-- Updates `rebuild_global_elo_tables.py` and `recompute_global_elo_all_games.py` to use:
+- Updates `rebuild_global_elo_tables.py` and `recompute_global_elo_all_games.py` to use the currently tuned player-Elo settings:
   - `K_win = 64`
-  - `K_draw = 24`
-  - seat-aware decisive expectations for standard 4-seat pods
+  - `K_draw = 26`
+  - 4-seat offsets: `0 / -52 / -96 / -145`
+  - draw-seat weighting enabled for valid 4-player draw pods
 - Keeps TopDeck Elo enrichment support, including fallback handling for either `topdeck_id` or legacy `uid` in `topdeck_player_elos`.
-- Adds incremental rebuild support from `--since-start-date` so append-only Elo refreshes can replay only the affected suffix instead of replaying the full historical stream.
-- Updates `ci-backend-maintenance.yml` so scheduled maintenance also rebuilds `player_commander_profiles`.
-- Adds a weekly `topdeck-elo-import.yml` workflow to import TopDeck’s published EDH Elo snapshot into `topdeck_player_elos`.
+- Keeps incremental rebuild support from `--since-start-date` so append-only Elo refreshes can replay only the affected suffix instead of replaying the full historical stream.
+- Removes commander Elo from the active rebuild/recompute pipeline and adds a Supabase migration to drop the commander-Elo tables.
 
-## Tournament Simulation And Draw Modeling
+## Tournament Simulation
 
 - Adds a resumable Monte Carlo tournament simulator:
   - `sim_types.py`
@@ -82,17 +89,29 @@ The diff against `main` is concentrated in these areas:
   - full-tournament simulation from pre-event state
   - resume-state simulation from a historical or live checkpoint
   - current-round pod locking for posted Swiss pairings
-  - round-batched temporary in-event Elo updates
-  - TopDeck top-cut pod layouts for `Top 16` and `Top 10`
-  - Swiss pairing with bracket float-down behavior plus handling for non-multiples of 4
-- Adds draw-model training in `train_draw_model.py` for `P(draw)` with richer late-Swiss features, including:
+  - historical continuation backtests from completed-round checkpoints
+  - TopDeck top-cut pod layouts for `Top 16`, `Top 10`, and the `Top 40 -> Top 16` play-in structure used by Quest-style events
+- The current simulation stack now uses:
+  - player Elo only
+  - no commander Elo
+  - no in-tournament Elo updates
+  - lighter live-page summary outputs focused on advancement probabilities rather than expected-points / expected-finish bookkeeping
+
+## Draw Modeling And Evaluation
+
+- Adds draw-model training in `train_draw_model.py` for `P(draw)` with richer tournament-state features, including:
   - standings and cut-pressure features
   - OMW-aware bubble context
   - draw-safe / must-win incentive counts
   - rank/cut-band features
   - player-style and familiarity features
+- Adds `train_draw_model_weight_experiments.py` to rerun the `v8` holdout protocol under alternative weighting schemes.
+- Adds `summarize_draw_backtest_slices.py` to summarize draw-model backtests by:
+  - rounds remaining
+  - tournament size buckets
+- Current branch finding: the tested weighting tweaks did not beat the existing `v8` all-games holdout baseline.
 
-## Historical Backtesting And Data Repair
+## Historical Backtesting And Live Outlook Tooling
 
 - Adds `run_historical_tournament_sim.py` and `run_historical_tournament_from_round_sim.py` to simulate from full-tournament and post-round historical states.
 - Adds `backtest_resume_tournament_sim.py` to score checkpointed tournament continuations on:
@@ -101,16 +120,17 @@ The diff against `main` is concentrated in these areas:
   - top-cut overlap
   - remaining-round draw-rate MAE
 - Adds `fix_top_cut_labels.py` to repair `made_top_cut` / `made_top_16` labels from `final_standing` and tournament cut structure.
+- Adds `run_topdeck_ongoing_tournament_sim.py` and `run_topdeck_player_outlook.py` for live TopDeck event simulation and player-facing outlook generation.
 
-## Live TopDeck Outlook Tooling
+## UI Updates
 
-- Adds `run_topdeck_ongoing_tournament_sim.py` to fetch a TopDeck event, reconstruct the current state, and simulate the remaining tournament.
-- Adds `run_topdeck_player_outlook.py` to compute player-facing ongoing-event outputs from exact current pods, including:
-  - current pod `P(draw)`
-  - each player’s `P(win | no draw)` for the posted pod
-  - final Swiss standing distribution
-  - conditional final Swiss standing distributions given current-pod win / loss / draw
-  - tournament win probability when applicable
+- `tournament-likelihood` attendee tables now display and sort by `TopDeck Elo` instead of the hidden internal Elo field.
+- Regional player achievements now default to `best` ordering, with `recent` available by clicking the date header.
+
+## Maintenance And Data Refresh
+
+- Updates `ci-backend-maintenance.yml` so scheduled maintenance also rebuilds `player_commander_profiles`.
+- Adds a weekly `topdeck-elo-import.yml` workflow to import TopDeck’s published EDH Elo snapshot into `topdeck_player_elos`.
 
 ## Tests And Validation
 
@@ -120,8 +140,9 @@ The diff against `main` is concentrated in these areas:
   - Stranger Things alias rewrites
   - canonical legal-pair ordering
   - illegal-pair fallback to `Unknown Commander`
-- The branch also includes local compile/lint-style cleanup on the newer simulator/training utilities where review bots flagged unused imports and silent exception handling.
+- Local `py_compile` verification was run on the touched Python modules after the recent simulation / Elo cleanup.
 
 ## Notes
 
-- This PR now bundles both the original commander/elo work and the newer simulation/draw-model tooling. If review scope becomes unwieldy, the simulation/backtest/outlook work is the main candidate to split into a follow-up PR.
+- This PR now bundles the original commander/elo work together with the simulation, backtest, draw-model, and live-outlook tooling.
+- If review scope becomes unwieldy, the simulator / draw-model / live-outlook work is still the main candidate to split into a follow-up PR.
