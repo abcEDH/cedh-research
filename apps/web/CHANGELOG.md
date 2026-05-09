@@ -1,3 +1,10 @@
+# [1.16.0](https://github.com/abcEDH/cedh-research/compare/v1.15.0...v1.16.0) (2026-05-09)
+
+
+### Features
+
+* server-side query timing utilities ([#174](https://github.com/abcEDH/cedh-research/issues/174)) ([ffb38d5](https://github.com/abcEDH/cedh-research/commit/ffb38d50d6a6f5867dae2be19a51462e07c179bb))
+
 # [1.15.0](https://github.com/abcEDH/cedh-research/compare/v1.14.0...v1.15.0) (2026-05-09)
 
 
