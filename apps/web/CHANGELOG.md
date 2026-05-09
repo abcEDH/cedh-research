@@ -1,3 +1,10 @@
+# [1.15.0](https://github.com/abcEDH/cedh-research/compare/v1.14.0...v1.15.0) (2026-05-09)
+
+
+### Features
+
+* **web:** optimize tables for mobile responsiveness ([#167](https://github.com/abcEDH/cedh-research/issues/167)) ([e67200a](https://github.com/abcEDH/cedh-research/commit/e67200a2b0f2363d348c7ec60a29fadab46842a7))
+
 # [1.14.0](https://github.com/abcEDH/cedh-research/compare/v1.13.3...v1.14.0) (2026-05-07)
 
 
