@@ -15,7 +15,6 @@ import {
   StateAssignmentRow,
   PlayerAchievementRow,
   PlayerCommanderUsageRow,
-  PlayerCommanderProfileRow,
   PlayerTournamentEntryRow,
   PlayerEventLogRow,
   PlayerEventOpponentRow,
