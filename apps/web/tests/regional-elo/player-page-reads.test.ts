@@ -8,16 +8,10 @@ describe("regional player read path", () => {
       path.resolve(__dirname, "../../src/app/regional-elo/player/[topdeckId]/player-profile-components.tsx"),
       "utf-8"
     );
-    const pageSource = fs.readFileSync(
-      path.resolve(__dirname, "../../src/app/regional-elo/player/[topdeckId]/page.tsx"),
-      "utf-8"
-    );
 
     expect(componentsSource).toContain("async function fetchPlayerTournamentEntries");
     expect(componentsSource).toContain('console.info(`[regional-player] ${event}`, details);');
-    expect(pageSource).toContain('console.info(`[regional-player] ${event}`, details);');
-    expect(pageSource).toContain("function logPlayerReadSummary(");
-    expect(componentsSource).toContain("async function fetchPlayerTournamentEntries");
+    expect(componentsSource).toContain("function logPlayerReadSummary(");
     expect(componentsSource.match(/fetchPlayerTournamentEntries\(playerId\)/g)).toHaveLength(2);
   });
 
