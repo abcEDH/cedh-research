@@ -375,6 +375,14 @@ export default async function TournamentLikelihoodPage({
   let hasRounds = false;
   let errorMessage: string | null = null;
 
+  const { data: suggestedTournaments } = await supabase
+    .from("tournaments")
+    .select("topdeck_tid, name")
+    .or("tier.eq.Platinum,tier.eq.Diamond,name.ilike.%Platinum%,topdeck_tid.ilike.%Platinum%,player_count.gte.100")
+    .gte("start_date", new Date().toISOString())
+    .order("start_date", { ascending: true })
+    .limit(6);
+
   if (slug) {
     try {
       const analysis = await getCachedTournamentAnalysis(slug, lookbackMonths);
@@ -506,20 +514,17 @@ export default async function TournamentLikelihoodPage({
             </p>
 
             <div className="mt-6 border-t border-border/60 pt-6">
-              <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground mb-3">Suggested Upcoming Events</p>
+              <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground mb-3">Suggested Platinum & Large Events</p>
               <div className="flex flex-wrap gap-2">
-                <Link 
-                  href="/tournament-likelihood?tournament=the-quest-part-1"
-                  className="knd-chip border border-border/60 bg-muted/20 px-3 py-2 text-xs hover:border-primary/40 hover:bg-muted/40 transition"
-                >
-                  The Quest: Part 1
-                </Link>
-                <Link 
-                  href="/tournament-likelihood?tournament=puntcity5"
-                  className="knd-chip border border-border/60 bg-muted/20 px-3 py-2 text-xs hover:border-primary/40 hover:bg-muted/40 transition"
-                >
-                  Punt City 5
-                </Link>
+                {suggestedTournaments?.map((t) => (
+                  <Link 
+                    key={t.topdeck_tid}
+                    href={`/tournament-likelihood?tournament=${t.topdeck_tid}`}
+                    className="knd-chip border border-border/60 bg-muted/20 px-3 py-2 text-xs hover:border-primary/40 hover:bg-muted/40 transition"
+                  >
+                    {t.name}
+                  </Link>
+                ))}
               </div>
             </div>
           </CardContent>

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { unstable_cache } from "next/cache";
+import { withTiming } from "@/lib/performance";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -12,7 +13,8 @@ import { buildPlayerVersusHref } from "../../player-routes";
 const PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS = 60 * 60 * 24; // 24 hours
 
 const fetchCachedCanonicalPlayerLogs = unstable_cache(
-  async (playerId: string) => fetchCanonicalPlayerLogs(playerId),
+  async (playerId: string) =>
+    withTiming("regional-player:canonical-logs", () => fetchCanonicalPlayerLogs(playerId)),
   ["regional-player-canonical-logs-v1"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );

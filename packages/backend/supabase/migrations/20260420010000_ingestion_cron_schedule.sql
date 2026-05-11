@@ -100,38 +100,46 @@ BEGIN
 END;
 $$;
 
--- Unschedule existing jobs if they exist, then reschedule
+-- Unschedule existing jobs if they exist, then reschedule.
 DO $$
+DECLARE
+  v_job_name text;
 BEGIN
-  IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'elo-refresh-daily-dispatch') THEN
-    PERFORM cron.unschedule('elo-refresh-daily-dispatch');
-  END IF;
-  IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'ingestion-refresh-daily-dispatch') THEN
-    PERFORM cron.unschedule('ingestion-refresh-daily-dispatch');
-  END IF;
-  IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'ingestion-refresh-stale-cleanup') THEN
-    PERFORM cron.unschedule('ingestion-refresh-stale-cleanup');
+  IF to_regclass('cron.job') IS NOT NULL THEN
+    FOREACH v_job_name IN ARRAY ARRAY[
+      'elo-refresh-daily-dispatch',
+      'ingestion-refresh-daily-dispatch',
+      'ingestion-refresh-stale-cleanup'
+    ]
+    LOOP
+      IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = v_job_name) THEN
+        EXECUTE format('SELECT cron.unschedule(%L)', v_job_name);
+      END IF;
+    END LOOP;
+
+    -- Ingestion at 6:00 AM UTC daily
+    EXECUTE format(
+      'SELECT cron.schedule(%L, %L, %L)',
+      'ingestion-refresh-daily-dispatch',
+      '0 6 * * *',
+      'select public.trigger_ingestion_refresh_via_edge();'
+    );
+
+    -- Move Elo to 6:30 AM UTC (30-min offset as safety net; primary chain is workflow-driven)
+    EXECUTE format(
+      'SELECT cron.schedule(%L, %L, %L)',
+      'elo-refresh-daily-dispatch',
+      '30 6 * * *',
+      'select public.trigger_elo_refresh_via_edge();'
+    );
+
+    -- Ingestion stale cleanup every 15 min
+    EXECUTE format(
+      'SELECT cron.schedule(%L, %L, %L)',
+      'ingestion-refresh-stale-cleanup',
+      '*/15 * * * *',
+      'select public.cleanup_stale_ingestion_jobs(45);'
+    );
   END IF;
 END;
 $$;
-
--- Ingestion at 6:00 AM UTC daily
-SELECT cron.schedule(
-  'ingestion-refresh-daily-dispatch',
-  '0 6 * * *',
-  $$select public.trigger_ingestion_refresh_via_edge();$$
-);
-
--- Move Elo to 6:30 AM UTC (30-min offset as safety net; primary chain is workflow-driven)
-SELECT cron.schedule(
-  'elo-refresh-daily-dispatch',
-  '30 6 * * *',
-  $$select public.trigger_elo_refresh_via_edge();$$
-);
-
--- Ingestion stale cleanup every 15 min
-SELECT cron.schedule(
-  'ingestion-refresh-stale-cleanup',
-  '*/15 * * * *',
-  $$select public.cleanup_stale_ingestion_jobs(45);$$
-);

@@ -40,14 +40,17 @@ $$;
 
 DO $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'topdeck-elo-weekly-dispatch') THEN
-    PERFORM cron.unschedule('topdeck-elo-weekly-dispatch');
+  IF to_regclass('cron.job') IS NOT NULL THEN
+    IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'topdeck-elo-weekly-dispatch') THEN
+      EXECUTE format('SELECT cron.unschedule(%L)', 'topdeck-elo-weekly-dispatch');
+    END IF;
+
+    EXECUTE format(
+      'SELECT cron.schedule(%L, %L, %L)',
+      'topdeck-elo-weekly-dispatch',
+      '0 16 * * 2',
+      'select public.trigger_topdeck_elo_import_via_edge();'
+    );
   END IF;
 END;
 $$;
-
-SELECT cron.schedule(
-  'topdeck-elo-weekly-dispatch',
-  '0 16 * * 2',
-  $$select public.trigger_topdeck_elo_import_via_edge();$$
-);

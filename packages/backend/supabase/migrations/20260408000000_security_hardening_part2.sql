@@ -25,12 +25,13 @@ DO $$
 DECLARE
   table_name text;
 BEGIN
-  FOREACH table_name IN ARRAY[
-    'regional_elo_game_events',
-    'ingestion_backfill_batches',
-    'ingestion_backfill_runs',
-    'ingestion_backfill_events'
-  ]
+  FOR table_name IN
+    SELECT unnest(ARRAY[
+      'regional_elo_game_events',
+      'ingestion_backfill_batches',
+      'ingestion_backfill_runs',
+      'ingestion_backfill_events'
+    ])
   LOOP
     EXECUTE format('DROP POLICY IF EXISTS "Service role access" ON public.%I', table_name);
     EXECUTE format(

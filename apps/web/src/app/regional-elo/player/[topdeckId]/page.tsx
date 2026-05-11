@@ -4,11 +4,8 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { CommanderUsageRow } from "@/lib/meta-prep";
 import { supabase } from "@/lib/supabase";
-import { fetchChampionshipLeaderboard, fetchTopDeckProfileStats } from "@/lib/topdeck";
-import { inferCountryForRegion } from "@/lib/region-countries";
 import { OpponentRecordsTable } from "./opponent-records-table";
 import { summarizePlayerLogs, type PlayerGameLog } from "./player-stats";
-import { unstable_cache } from "next/cache";
 import {
   PlayerHeader,
   PlayerHeaderSkeleton,
@@ -18,9 +15,6 @@ import {
   fetchCachedGlobalEloRank,
   fetchCachedRegionalRanks,
   fetchCachedPlayerProfileSummary,
-  fetchCachedGlobalSnapshot,
-  fetchCachedRegionalRank,
-  fetchCachedCountryRank,
   fetchCachedPlayerCommanderProfile,
   fetchCachedPlayerEventLogs,
   fetchCachedPlayerAchievements,
@@ -28,7 +22,6 @@ import {
   fetchEntries,
   sortAchievementsByFinish,
   isKnownCommanderName,
-  firstRelation,
 } from "./player-profile-components";
 
 export const revalidate = 86400; // 24 hours
@@ -36,9 +29,7 @@ export const dynamicParams = true;
 
 const SUPABASE_PAGE_SIZE = 1000;
 const SUPABASE_IN_CHUNK_SIZE = 100;
-const ACTIVE_PLAYER_LOOKBACK_MONTHS = 6;
 const ACHIEVEMENTS_PAGE_SIZE = 10;
-const PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS = 60 * 60 * 24; // 24 hours
 
 export async function generateStaticParams() {
   const { data } = await supabase
@@ -224,16 +215,6 @@ export type PlayerEventOpponentRow = {
   game_result: string;
 };
 
-function activePlayerCutoffDate() {
-  const cutoff = new Date();
-  cutoff.setMonth(cutoff.getMonth() - ACTIVE_PLAYER_LOOKBACK_MONTHS);
-  return cutoff.toISOString().slice(0, 10);
-}
-
-function isActiveRank(row: LeaderboardRankRow | null) {
-  return Boolean(row?.last_game_date && row.last_game_date >= activePlayerCutoffDate());
-}
-
 function toRoundLabel(game: GameRow) {
   if (game.round_name) return game.round_name;
   if (game.round_number !== null) return `Round ${game.round_number}`;
@@ -326,10 +307,6 @@ function normalizeAchievementSort(value: string): AchievementSort {
   return value === "recent" ? "recent" : "best";
 }
 
-function buildTopdeckDecklistUrl(tournamentSlug: string | null | undefined, topdeckId: string) {
-  return tournamentSlug ? `https://topdeck.gg/deck/${tournamentSlug}/${topdeckId}` : null;
-}
-
 function buildTopdeckTournamentUrl(tournamentSlug: string | null | undefined) {
   return tournamentSlug ? `https://topdeck.gg/bracket/${tournamentSlug}` : null;
 }
@@ -354,10 +331,6 @@ function formatPlacementRatio(placement: number | null, playerCount: number | nu
 
 function achievementTournamentKey(tournamentName: string | null | undefined, startDate: string | null | undefined) {
   return `${tournamentName ?? "Unknown tournament"}:${(startDate ?? "").slice(0, 10)}`;
-}
-
-function logPlayerReadSummary(event: string, details: Record<string, unknown>) {
-  console.info(`[regional-player] ${event}`, details);
 }
 
 async function fetchGamesAndParticipants(entryIds: string[]) {
@@ -671,7 +644,6 @@ export async function PlayerProfileBody({
     : "/regional-elo";
 
   const [
-    globalSnapshot,
     globalEloRank,
     regionalRanks,
     profileSummary,
@@ -681,7 +653,6 @@ export async function PlayerProfileBody({
     eventPlayerLogsResult,
     rawEntries,
   ] = await Promise.all([
-    fetchCachedGlobalSnapshot(topdeckId),
     fetchCachedGlobalEloRank(player.id),
     fetchCachedRegionalRanks(player.id),
     fetchCachedPlayerProfileSummary(player.id),
@@ -695,11 +666,6 @@ export async function PlayerProfileBody({
   ]);
 
   const activeCommander = commanderProfile?.active_commander ?? null;
-
-  const regionalRankRows = regionalRanks.map((row: LeaderboardRankRow) => ({
-    ...row,
-    country_key: row.country_key ?? inferCountryForRegion(row.region_key) ?? "UNKNOWN",
-  }));
 
   const eventPlayerLogs =
     eventPlayerLogsResult.status === "fulfilled" ? eventPlayerLogsResult.value : [];
@@ -720,10 +686,6 @@ export async function PlayerProfileBody({
     bestCommanderMatchup,
     worstCommanderMatchup,
   } = summarizePlayerLogs(playerLogs, topdeckId);
-  const canonicalGames = profileSummary?.games_played ?? totalGames;
-  const canonicalWins = profileSummary?.wins ?? totalWins;
-  const canonicalDraws = profileSummary?.draws ?? totalDraws;
-  const canonicalLosses = profileSummary?.losses ?? totalLosses;
   const achievementResultByTournament = playerLogs.reduce(
     (results, log) => {
       const key = achievementTournamentKey(log.tournamentName, log.startDate);
@@ -796,20 +758,6 @@ export async function PlayerProfileBody({
         return a.region_key.localeCompare(b.region_key);
       })[0]?.region_key ?? null;
   const homeRegion = profileSummary?.home_region_key ?? globalEloRank?.primary_region_key ?? regionalRanks[0]?.region_key ?? derivedHomeRegion;
-  const homeCountry =
-    profileSummary?.home_country_key ??
-    globalEloRank?.primary_country_key ??
-    (homeRegion ? inferCountryForRegion(homeRegion) : null) ??
-    (regionalRankRows[0]?.country_key ?? null);
-  const selectedRegion = regionFilter || homeRegion || "";
-  const regionalRank = await fetchCachedRegionalRank(player.id, selectedRegion);
-  const countryRank = await fetchCachedCountryRank(player.id, homeCountry ?? "");
-  const activeRank = regionalRank;
-  const displayedTopdeckElo =
-    globalEloRank?.topdeck_elo ?? activeRank?.topdeck_elo ?? countryRank?.topdeck_elo ?? null;
-  const shouldShowGlobalRank = isActiveRank(globalEloRank);
-  const shouldShowLocalRank = isActiveRank(activeRank);
-  const shouldShowCountryRank = isActiveRank(countryRank);
   const stateAssignmentRows = Array.from(assignmentRowsByRegion.values()).sort((a: StateAssignmentRow, b: StateAssignmentRow) => {
     const aCountry = a.country_key ?? "UNKNOWN";
     const bCountry = b.country_key ?? "UNKNOWN";
@@ -916,15 +864,6 @@ export async function PlayerProfileBody({
       });
     }
   }
-  const stateLeaderboardHref = homeRegion
-    ? `/regional-elo?scope=country&country=${encodeURIComponent(
-        inferCountryForRegion(homeRegion) ?? "UNITED STATES"
-      )}&region=${encodeURIComponent(homeRegion)}`
-    : null;
-  const countryLeaderboardHref = homeCountry
-    ? `/regional-elo?scope=country&country=${encodeURIComponent(homeCountry)}`
-    : null;
-
   return (
     <>
       <Link href={backHref} className="-mt-6 block text-sm text-muted-foreground hover:text-foreground">
@@ -948,7 +887,7 @@ export async function PlayerProfileBody({
                       <th className="px-2 py-3">Commander</th>
                       <th className="px-2 py-3">Last Played</th>
                       <th className="px-2 py-3 text-right">Games</th>
-                      <th className="px-2 py-3 text-right">W-L-D</th>
+                      <th className="px-2 py-3 text-right hidden sm:table-cell">W-L-D</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1011,7 +950,7 @@ export async function PlayerProfileBody({
                           <td className="px-2 py-3 text-right font-mono text-muted-foreground">
                             {row.games}
                           </td>
-                          <td className="px-2 py-3 text-right font-mono text-muted-foreground">
+                          <td className="px-2 py-3 text-right font-mono text-muted-foreground hidden sm:table-cell">
                             {row.wins}-{row.losses}-{row.draws}
                           </td>
                         </tr>
@@ -1047,7 +986,7 @@ export async function PlayerProfileBody({
                         <th className="px-2 py-3">Country</th>
                         <th className="px-2 py-3">State</th>
                         <th className="px-2 py-3 text-right">Games</th>
-                        <th className="px-2 py-3 text-right">W-L-D</th>
+                        <th className="px-2 py-3 text-right hidden sm:table-cell">W-L-D</th>
                       </tr>
                   </thead>
                   <tbody>
@@ -1078,7 +1017,7 @@ export async function PlayerProfileBody({
                           <td className="px-2 py-3 text-right font-mono text-muted-foreground">
                             {row.games_played}
                           </td>
-                          <td className="px-2 py-3 text-right font-mono text-muted-foreground">
+                          <td className="px-2 py-3 text-right font-mono text-muted-foreground hidden sm:table-cell">
                             {row.wins}-{row.losses}-{row.draws}
                           </td>
                         </tr>
@@ -1345,9 +1284,10 @@ export async function PlayerProfileBody({
                           Date
                         </Link>
                       </th>
+                      <th className="px-2 py-3 hidden sm:table-cell">Date</th>
                       <th className="px-2 py-3">Commander</th>
                       <th className="px-2 py-3 text-right">Finish</th>
-                      <th className="px-2 py-3 text-right">W-L-D</th>
+                      <th className="px-2 py-3 text-right hidden md:table-cell">W-L-D</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1362,15 +1302,15 @@ export async function PlayerProfileBody({
                               href={row.tournamentUrl}
                               target="_blank"
                               rel="noreferrer"
-                              className="text-foreground hover:text-primary"
+                              className="text-foreground hover:text-primary line-clamp-2 max-w-[140px] sm:max-w-none"
                             >
                               {row.tournamentName}
                             </a>
                           ) : (
-                            <span className="text-foreground">{row.tournamentName}</span>
+                            <span className="text-foreground line-clamp-2 max-w-[140px] sm:max-w-none">{row.tournamentName}</span>
                           )}
                         </td>
-                        <td className="px-2 py-3 text-muted-foreground">
+                        <td className="px-2 py-3 text-muted-foreground hidden sm:table-cell">
                           {formatShortDate(row.startDate)}
                         </td>
                         <td className="px-2 py-3 text-muted-foreground">
@@ -1379,18 +1319,18 @@ export async function PlayerProfileBody({
                               href={row.decklistUrl}
                               target="_blank"
                               rel="noreferrer"
-                              className="text-foreground hover:text-primary"
+                              className="text-foreground hover:text-primary line-clamp-1 max-w-[100px] sm:max-w-none"
                             >
                               {row.commanderName}
                             </a>
                           ) : (
-                            row.commanderName ?? "Unknown"
+                            <span className="line-clamp-1 max-w-[100px] sm:max-w-none">{row.commanderName ?? "Unknown"}</span>
                           )}
                         </td>
                         <td className="px-2 py-3 text-right font-mono text-muted-foreground">
                           {formatPlacementRatio(row.placement, row.playerCount)}
                         </td>
-                        <td className="px-2 py-3 text-right font-mono text-muted-foreground">
+                        <td className="px-2 py-3 text-right font-mono text-muted-foreground hidden md:table-cell">
                           {row.recordGames > 0 ? `${row.wins}-${row.losses}-${row.draws}` : "—"}
                         </td>
                       </tr>

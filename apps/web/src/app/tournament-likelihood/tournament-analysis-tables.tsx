@@ -363,7 +363,7 @@ export function TournamentAnalysisTables({
           />
         </label>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="knd-data-table knd-data-table--responsive">
             <thead className="text-left text-xs text-muted-foreground">
               <tr>
                 {showTournamentRecord && (
@@ -440,10 +440,10 @@ export function TournamentAnalysisTables({
                     {showTournamentRecord && (
                       <td className="px-2 py-4 text-muted-foreground text-xs">#{row.standing.standing}</td>
                     )}
-                    <td className="px-2 py-4">
+                    <td className="px-2 py-4 knd-data-cell-top">
                       <div className="space-y-1">
                         <Link
-                          className="block font-medium text-foreground hover:text-primary truncate max-w-[120px] sm:max-w-none"
+                          className="knd-data-link"
                           href={regionalProfileHref}
                           target="_blank"
                         >
@@ -459,10 +459,10 @@ export function TournamentAnalysisTables({
                     </td>
                     <td className="px-2 py-4 text-muted-foreground hidden lg:table-cell">{row.regionKey ?? "-"}</td>
                     {showActualDecks ? (
-                      <td className="px-2 py-4">
+                      <td className="px-2 py-4 knd-data-cell-top">
                         {row.standing.actualDeckCommander && row.standing.actualDecklistUrl ? (
                           <a
-                            className="font-medium text-foreground hover:text-primary line-clamp-1 sm:line-clamp-none"
+                            className="knd-data-link"
                             href={row.standing.actualDecklistUrl}
                             rel="noreferrer"
                             target="_blank"
@@ -475,12 +475,12 @@ export function TournamentAnalysisTables({
                       </td>
                     ) : (
                       <>
-                        <td className="px-2 py-4">
+                        <td className="px-2 py-4 knd-data-cell-top">
                           {primary ? (
                             <div>
                               {primaryDecklistHref ? (
                                 <a
-                                  className="font-medium text-foreground hover:text-primary line-clamp-1 sm:line-clamp-none"
+                                  className="knd-data-link"
                                   href={primaryDecklistHref}
                                   rel="noreferrer"
                                   target="_blank"
@@ -498,7 +498,7 @@ export function TournamentAnalysisTables({
                             <span className="text-xs text-muted-foreground">No data</span>
                           )}
                         </td>
-                        <td className="px-2 py-4 hidden md:table-cell">
+                        <td className="px-2 py-4 hidden md:table-cell align-top">
                           <div className="flex flex-wrap gap-2">
                             {alternatives.length ? (
                               alternatives.map((commander, index) => (
