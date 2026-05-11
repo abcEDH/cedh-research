@@ -337,9 +337,22 @@ def build_base_state(
     feature_context,
     player_records: dict[str, dict[str, str]],
     repeat_avoidance_max_pods: int | None,
+    excluded_topdeck_ids: set[str] | None = None,
 ) -> tuple[Any, int, list[Pod] | None, dict[str, Any]]:
     player_names = collect_players(tournament)
+    if excluded_topdeck_ids:
+        player_names = {
+            topdeck_id: name
+            for topdeck_id, name in player_names.items()
+            if topdeck_id not in excluded_topdeck_ids
+        }
     tiebreak_seeds = standings_tiebreak_seed_map(tournament)
+    if excluded_topdeck_ids:
+        tiebreak_seeds = {
+            topdeck_id: seed
+            for topdeck_id, seed in tiebreak_seeds.items()
+            if topdeck_id not in excluded_topdeck_ids
+        }
     topdeck_ids = sorted(player_names)
     start_date = parse_start_date(tournament.get("startDate"))
     known_player_ids = [

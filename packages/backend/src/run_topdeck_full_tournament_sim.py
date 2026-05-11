@@ -37,6 +37,12 @@ def main() -> None:
     parser.add_argument("--swiss-rounds", type=int, default=None)
     parser.add_argument("--top-cut", type=int, default=None)
     parser.add_argument("--repeat-avoidance-max-pods", type=int, default=32)
+    parser.add_argument(
+        "--exclude-player",
+        action="append",
+        default=[],
+        help="Case-insensitive substring of a TopDeck player name to remove from the simulated field.",
+    )
     parser.add_argument("--output", type=Path, default=None)
     args = parser.parse_args()
 
@@ -52,6 +58,21 @@ def main() -> None:
 
     client = SupabaseClient(url=os.environ["SUPABASE_URL"], service_key=os.environ["SUPABASE_SERVICE_KEY"])
     player_names = collect_players(tournament)
+    excluded_topdeck_ids = {
+        topdeck_id
+        for topdeck_id, name in player_names.items()
+        if any(excluded.lower() in name.lower() for excluded in args.exclude_player)
+    }
+    if args.exclude_player and not excluded_topdeck_ids:
+        raise RuntimeError(f"No players matched --exclude-player values: {args.exclude_player}")
+    if excluded_topdeck_ids:
+        excluded_names = ", ".join(player_names[topdeck_id] for topdeck_id in sorted(excluded_topdeck_ids))
+        print(f"Excluding players: {excluded_names}", file=os.sys.stderr, flush=True)
+        player_names = {
+            topdeck_id: name
+            for topdeck_id, name in player_names.items()
+            if topdeck_id not in excluded_topdeck_ids
+        }
     topdeck_ids = sorted(player_names)
     existing_players = fetch_existing_players(client, topdeck_ids)
     player_records = {
@@ -79,6 +100,7 @@ def main() -> None:
         feature_context=feature_context,
         player_records=player_records,
         repeat_avoidance_max_pods=args.repeat_avoidance_max_pods,
+        excluded_topdeck_ids=excluded_topdeck_ids,
     )
     state.fast_live_mode = True
     state.track_round_stats = True
@@ -94,6 +116,7 @@ def main() -> None:
         locked_round_pods=active_round_pods,
         requested_advancement_sizes=DEFAULT_ADVANCEMENT_SIZES,
         collect_detailed_metrics=True,
+        collect_player_metrics=False,
     )
     historical_point_requirements = fetch_historical_point_requirement_baseline(
         client,
@@ -111,10 +134,11 @@ def main() -> None:
         active_player_count=len(state.eligible_player_ids or state.players),
         historical_point_requirements=historical_point_requirements,
         current_state=metadata,
-        top_limit=20,
+        top_limit=len(state.eligible_player_ids or state.players),
     )
 
     if args.output:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(output, indent=2))
     print(json.dumps(output, indent=2))
 

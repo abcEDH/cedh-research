@@ -22,6 +22,7 @@ def run_simulation_from_state(
     locked_round_pods: list[Pod] | None = None,
     requested_advancement_sizes: tuple[int, ...] = DEFAULT_ADVANCEMENT_SIZES,
     collect_detailed_metrics: bool = True,
+    collect_player_metrics: bool = True,
 ) -> dict[str, Any]:
     return run_monte_carlo_from_state(
         state,
@@ -33,6 +34,7 @@ def run_simulation_from_state(
         locked_round_pods=locked_round_pods,
         requested_advancement_sizes=requested_advancement_sizes,
         collect_detailed_metrics=collect_detailed_metrics,
+        collect_player_metrics=collect_player_metrics,
     ).to_dict()
 
 

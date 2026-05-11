@@ -528,6 +528,7 @@ def _run_state_monte_carlo_batch(
     locked_round_win_probabilities: dict[tuple[int, int], tuple[float, ...]] | None,
     requested_advancement_sizes: tuple[int, ...] | None,
     collect_detailed_metrics: bool,
+    collect_player_metrics: bool,
 ) -> SimulationSummary:
     win_counts: dict[str, int] = defaultdict(int)
     top_cut_counts: dict[str, int] = defaultdict(int)
@@ -564,9 +565,10 @@ def _run_state_monte_carlo_batch(
             bye_rank = topdeck_bye_rank(state.spec.top_cut)
             if bye_rank is not None and bye_rank <= len(ranked):
                 bye_line_point_counts[ranked[bye_rank - 1].points] += 1
-            for finish_index, standing in enumerate(ranked, start=1):
-                expected_points_total[standing.player_id] += standing.points
-                expected_finish_total[standing.player_id] += finish_index
+            if collect_player_metrics:
+                for finish_index, standing in enumerate(ranked, start=1):
+                    expected_points_total[standing.player_id] += standing.points
+                    expected_finish_total[standing.player_id] += finish_index
             for round_index, count in state.round_pod_counts.items():
                 round_pod_counts[round_index] += count
             for round_index, count in state.round_draw_counts.items():
@@ -692,6 +694,7 @@ def run_monte_carlo_from_state(
     locked_round_pods: list[Pod] | None = None,
     requested_advancement_sizes: tuple[int, ...] | None = None,
     collect_detailed_metrics: bool = True,
+    collect_player_metrics: bool = True,
 ) -> SimulationSummary:
     effective_workers = workers if workers is not None else max(1, min(4, os.cpu_count() or 1))
     effective_start_round = base_state.current_round_index if start_round_index is None else start_round_index
@@ -720,6 +723,7 @@ def run_monte_carlo_from_state(
             locked_round_win_probabilities=locked_round_win_probabilities,
             requested_advancement_sizes=requested_advancement_sizes,
             collect_detailed_metrics=collect_detailed_metrics,
+            collect_player_metrics=collect_player_metrics,
         )
 
     batch_count = min(effective_workers, simulations)
@@ -747,6 +751,7 @@ def run_monte_carlo_from_state(
                 [locked_round_win_probabilities] * len(batch_specs),
                 [requested_advancement_sizes] * len(batch_specs),
                 [collect_detailed_metrics] * len(batch_specs),
+                [collect_player_metrics] * len(batch_specs),
             )
         )
     return _merge_summaries(summaries)
