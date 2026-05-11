@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { withTiming } from "@/lib/performance";
 import type { PlayerGameLog } from "./player-stats";
 
 const SUPABASE_PAGE_SIZE = 1000;
@@ -108,13 +109,15 @@ function toEventRoundLabel(row: PlayerEventLogRow) {
 }
 
 export async function fetchPlayer(topdeckId: string): Promise<PlayerRow | null> {
-  const { data } = await supabase
-    .from("players")
-    .select("id, name, topdeck_id")
-    .eq("topdeck_id", topdeckId)
-    .maybeSingle();
+  return withTiming("player-log-data:fetch-player", async () => {
+    const { data } = await supabase
+      .from("players")
+      .select("id, name, topdeck_id")
+      .eq("topdeck_id", topdeckId)
+      .maybeSingle();
 
-  return (data as PlayerRow | null) ?? null;
+    return (data as PlayerRow | null) ?? null;
+  });
 }
 
 async function fetchEntries(playerId: string): Promise<EntryRow[]> {

@@ -46,25 +46,33 @@ END;
 $$;
 
 DO $$
+DECLARE
+  v_job_name text;
 BEGIN
-  IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'elo-refresh-daily-dispatch') THEN
-    PERFORM cron.unschedule('elo-refresh-daily-dispatch');
-  END IF;
+  IF to_regclass('cron.job') IS NOT NULL THEN
+    FOREACH v_job_name IN ARRAY ARRAY[
+      'elo-refresh-daily-dispatch',
+      'elo-refresh-stale-cleanup'
+    ]
+    LOOP
+      IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = v_job_name) THEN
+        EXECUTE format('SELECT cron.unschedule(%L)', v_job_name);
+      END IF;
+    END LOOP;
 
-  IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'elo-refresh-stale-cleanup') THEN
-    PERFORM cron.unschedule('elo-refresh-stale-cleanup');
+    EXECUTE format(
+      'SELECT cron.schedule(%L, %L, %L)',
+      'elo-refresh-daily-dispatch',
+      '0 6 * * *',
+      'select public.trigger_elo_refresh_via_edge();'
+    );
+
+    EXECUTE format(
+      'SELECT cron.schedule(%L, %L, %L)',
+      'elo-refresh-stale-cleanup',
+      '*/15 * * * *',
+      'select public.cleanup_stale_elo_jobs(30);'
+    );
   END IF;
 END;
 $$;
-
-SELECT cron.schedule(
-  'elo-refresh-daily-dispatch',
-  '0 6 * * *',
-  $$select public.trigger_elo_refresh_via_edge();$$
-);
-
-SELECT cron.schedule(
-  'elo-refresh-stale-cleanup',
-  '*/15 * * * *',
-  $$select public.cleanup_stale_elo_jobs(30);$$
-);

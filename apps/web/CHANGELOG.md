@@ -1,3 +1,29 @@
+# [1.16.0](https://github.com/abcEDH/cedh-research/compare/v1.15.0...v1.16.0) (2026-05-09)
+
+
+### Features
+
+* server-side query timing utilities ([#174](https://github.com/abcEDH/cedh-research/issues/174)) ([ffb38d5](https://github.com/abcEDH/cedh-research/commit/ffb38d50d6a6f5867dae2be19a51462e07c179bb))
+
+# [1.15.0](https://github.com/abcEDH/cedh-research/compare/v1.14.0...v1.15.0) (2026-05-09)
+
+
+### Features
+
+* **web:** optimize tables for mobile responsiveness ([#167](https://github.com/abcEDH/cedh-research/issues/167)) ([e67200a](https://github.com/abcEDH/cedh-research/commit/e67200a2b0f2363d348c7ec60a29fadab46842a7))
+
+# [1.14.0](https://github.com/abcEDH/cedh-research/compare/v1.13.3...v1.14.0) (2026-05-07)
+
+
+### Bug Fixes
+
+* pg_cron orchestration and event log access ([#171](https://github.com/abcEDH/cedh-research/issues/171)) ([509dddb](https://github.com/abcEDH/cedh-research/commit/509dddbb702b99d03cc23a3fcb2773057be73af6))
+
+
+### Features
+
+* replace hardcoded tournament suggestions with dynamic database query ([#173](https://github.com/abcEDH/cedh-research/issues/173)) ([2492e64](https://github.com/abcEDH/cedh-research/commit/2492e64c46b2b617a50ceed1c0e8313d4fb1bbc6))
+
 ## [1.13.3](https://github.com/abcEDH/cedh-research/compare/v1.13.2...v1.13.3) (2026-05-05)
 
 

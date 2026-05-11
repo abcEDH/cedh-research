@@ -29,7 +29,6 @@ WITH global_rows AS (
   SELECT
     'global'::text AS region_type,
     'ALL'::text AS region_key,
-    NULL::text AS country_key,
     g.player_id,
     p.name AS player_name,
     p.topdeck_id,
@@ -51,8 +50,9 @@ WITH global_rows AS (
     NULL::integer AS games_30d,
     NULL::integer AS games_90d,
     NULL::integer AS games_365d,
+    s.region_key AS primary_region_key,
     s.country_key AS primary_country_key,
-    s.region_key AS primary_region_key
+    NULL::text AS country_key
   FROM regional_elo_ratings g
   JOIN players p ON p.id = g.player_id
   LEFT JOIN regional_elo_player_stats s ON s.player_id = g.player_id
@@ -63,7 +63,6 @@ country_rows AS (
   SELECT
     'country'::text AS region_type,
     s.country_key AS region_key,
-    s.country_key,
     g.player_id,
     p.name AS player_name,
     p.topdeck_id,
@@ -86,8 +85,9 @@ country_rows AS (
     s.games_30d,
     s.games_90d,
     s.games_365d,
+    s.region_key AS primary_region_key,
     s.country_key AS primary_country_key,
-    s.region_key AS primary_region_key
+    s.country_key AS country_key
   FROM regional_elo_ratings g
   JOIN players p ON p.id = g.player_id
   JOIN regional_elo_player_stats s ON s.player_id = g.player_id
@@ -100,7 +100,6 @@ state_rows AS (
   SELECT
     'state'::text AS region_type,
     s.region_key,
-    s.country_key,
     g.player_id,
     p.name AS player_name,
     p.topdeck_id,
@@ -123,8 +122,9 @@ state_rows AS (
     s.games_30d,
     s.games_90d,
     s.games_365d,
+    s.region_key AS primary_region_key,
     s.country_key AS primary_country_key,
-    s.region_key AS primary_region_key
+    s.country_key AS country_key
   FROM regional_elo_ratings g
   JOIN players p ON p.id = g.player_id
   JOIN regional_elo_player_stats s ON s.player_id = g.player_id

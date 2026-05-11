@@ -1,7 +1,12 @@
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
-const GITHUB_PAT = Deno.env.get("GITHUB_PAT");
+const CRON_SUPABASE_URL = Deno.env.get("CRON_SUPABASE_URL") ??
+  Deno.env.get("SUPABASE_URL");
+const CRON_SUPABASE_SERVICE_ROLE_KEY = Deno.env.get(
+  "CRON_SUPABASE_SERVICE_ROLE_KEY",
+) ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+const CRON_SUPABASE_ANON_KEY = Deno.env.get("CRON_SUPABASE_ANON_KEY") ??
+  Deno.env.get("SUPABASE_ANON_KEY");
+const CRON_GITHUB_PAT = Deno.env.get("CRON_GITHUB_PAT") ??
+  Deno.env.get("GITHUB_PAT");
 const GITHUB_OWNER = Deno.env.get("GITHUB_OWNER") ?? "abcEDH";
 const GITHUB_REPO = Deno.env.get("GITHUB_REPO") ?? "cedh-research";
 const GITHUB_WORKFLOW_ID = Deno.env.get("GITHUB_WORKFLOW_ID") ??
@@ -26,10 +31,10 @@ function requireEnv(name: string, value: string | undefined): string {
 }
 
 async function supabaseRequest<T>(path: string, init: RequestInit): Promise<T> {
-  const baseUrl = requireEnv("SUPABASE_URL", SUPABASE_URL);
+  const baseUrl = requireEnv("SUPABASE_URL", CRON_SUPABASE_URL);
   const serviceRoleKey = requireEnv(
     "SUPABASE_SERVICE_ROLE_KEY",
-    SUPABASE_SERVICE_ROLE_KEY,
+    CRON_SUPABASE_SERVICE_ROLE_KEY,
   );
   const response = await fetch(`${baseUrl}${path}`, {
     ...init,
@@ -94,7 +99,7 @@ async function markFailed(jobId: string, errorText: string): Promise<void> {
 }
 
 async function dispatchWorkflow(jobId: string): Promise<void> {
-  const pat = requireEnv("GITHUB_PAT", GITHUB_PAT);
+  const pat = requireEnv("GITHUB_PAT", CRON_GITHUB_PAT);
   const response = await fetch(
     `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/${GITHUB_WORKFLOW_ID}/dispatches`,
     {
@@ -128,7 +133,10 @@ Deno.serve(async (request) => {
     return json(405, { error: "Method not allowed" });
   }
 
-  const expectedAnonKey = requireEnv("SUPABASE_ANON_KEY", SUPABASE_ANON_KEY);
+  const expectedAnonKey = requireEnv(
+    "CRON_SUPABASE_ANON_KEY",
+    CRON_SUPABASE_ANON_KEY,
+  );
   const authHeader = request.headers.get("Authorization");
   const apiKey = request.headers.get("apikey");
   const expectedBearer = `Bearer ${expectedAnonKey}`;
