@@ -100,6 +100,15 @@ def actual_points_at_rank(entries: list[dict[str, Any]], rank: int) -> int | Non
     return None
 
 
+def valid_swiss_cut_line_points(points: int | None, swiss_rounds: int) -> int | None:
+    if points is None or points <= 0:
+        return None
+    max_possible_points = max(1, swiss_rounds) * 5
+    if points > max_possible_points:
+        return None
+    return points
+
+
 def top_cut_recall(probabilities: dict[str, float], actual_top_cut_ids: set[str], n: int) -> float | None:
     if not actual_top_cut_ids or n <= 0:
         return None
@@ -118,7 +127,7 @@ def brier_score(observations: list[tuple[float, int]]) -> float | None:
 
 def bucket_rows(observations: list[tuple[float, int]], buckets: list[float]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for left, right in zip(buckets, buckets[1:], strict=True):
+    for left, right in zip(buckets, buckets[1:]):
         if right == buckets[-1]:
             values = [(p, y) for p, y in observations if left <= p <= right]
         else:
@@ -166,7 +175,10 @@ def evaluate_model_on_tournament(
     player_ids = [player.player_id for player in players]
     actual_top_cut_ids = derive_top_cut_player_ids(entries, spec.top_cut)
     actual_winner_id = next((str(row["player_id"]) for row in entries if row.get("final_standing") == 1), None)
-    actual_cut_line_points = actual_points_at_rank(entries, spec.top_cut)
+    actual_cut_line_points = valid_swiss_cut_line_points(
+        actual_points_at_rank(entries, spec.top_cut),
+        spec.swiss_rounds,
+    )
     top_cut_probabilities = {player_id: float(summary["top_cut_probability"].get(player_id, 0.0)) for player_id in player_ids}
     winner_probabilities = {player_id: float(summary["win_probability"].get(player_id, 0.0)) for player_id in player_ids}
     cut_line_distribution = summary["point_requirements"]["top_cut"]
@@ -197,17 +209,26 @@ def evaluate_model_on_tournament(
         "metrics": {
             "winner_probability": winner_probabilities.get(actual_winner_id or "", 0.0),
             "winner_log_loss": -math.log(max(winner_probabilities.get(actual_winner_id or "", 0.0), 1e-9)),
-            "cut_line_probability_at_actual": cut_line_actual_probability,
-            "cut_line_log_loss": -math.log(max(cut_line_actual_probability, 1e-9)),
+            "cut_line_probability_at_actual": (
+                cut_line_actual_probability if actual_cut_line_points is not None else None
+            ),
+            "cut_line_log_loss": (
+                -math.log(max(cut_line_actual_probability, 1e-9))
+                if actual_cut_line_points is not None
+                else None
+            ),
             "cut_line_expected_abs_error": (
                 abs(expected_cut_line - actual_cut_line_points)
                 if expected_cut_line is not None and actual_cut_line_points is not None
                 else None
             ),
-            "cut_line_mode_hit": int(
-                actual_cut_line_points is not None
-                and bool(cut_line_distribution)
-                and max(cut_line_distribution, key=lambda row: float(row["probability"]))["points"] == actual_cut_line_points
+            "cut_line_mode_hit": (
+                int(
+                    bool(cut_line_distribution)
+                    and max(cut_line_distribution, key=lambda row: float(row["probability"]))["points"] == actual_cut_line_points
+                )
+                if actual_cut_line_points is not None
+                else None
             ),
             "top_cut_brier": brier_score(
                 [(top_cut_probabilities[player_id], int(player_id in actual_top_cut_ids)) for player_id in player_ids]
@@ -220,11 +241,15 @@ def evaluate_model_on_tournament(
         "calibration_inputs": {
             "top_cut": [(top_cut_probabilities[player_id], int(player_id in actual_top_cut_ids)) for player_id in player_ids],
             "winner": [(winner_probabilities[player_id], int(player_id == actual_winner_id)) for player_id in player_ids],
-            "cut_line": [
-                (float(row["probability"]), int(actual_cut_line_points is not None and int(row["points"]) == actual_cut_line_points))
-                for row in cut_line_distribution
-            ]
-            + ([(0.0, 1)] if actual_cut_line_points is not None and cut_line_actual_probability == 0.0 else []),
+            "cut_line": (
+                [
+                    (float(row["probability"]), int(int(row["points"]) == actual_cut_line_points))
+                    for row in cut_line_distribution
+                ]
+                + ([(0.0, 1)] if cut_line_actual_probability == 0.0 else [])
+                if actual_cut_line_points is not None
+                else []
+            ),
         },
         "simulations": simulations,
     }

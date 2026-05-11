@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from dateutil import parser as date_parser
 from sklearn.ensemble import ExtraTreesClassifier, HistGradientBoostingClassifier, RandomForestClassifier
 from sklearn.inspection import permutation_importance
 from sklearn.isotonic import IsotonicRegression
@@ -36,6 +37,10 @@ RESULTS_SELECT = (
 EVENTS_SELECT = "game_id,player_id,rating_before"
 SEATS_SELECT = "game_id,entry_id,seat_position"
 TOURNAMENTS_SELECT = "id,start_date,player_count,name,topdeck_tid,top_cut,state,country"
+
+
+def parse_datetime_value(value: Any) -> datetime:
+    return date_parser.parse(str(value))
 
 
 @dataclass(slots=True)
@@ -569,7 +574,7 @@ def build_rich_pod_cache(client: SupabaseClient) -> list[DrawPodRow]:
         if not valid or len(ratings) < 2:
             continue
 
-        game_date = datetime.fromisoformat(str(rows[0]["start_date"]).replace("Z", "+00:00"))
+        game_date = parse_datetime_value(rows[0]["start_date"])
         while recent_draw_window and (game_date - recent_draw_window[0][0]).days > 90:
             _, old_draw = recent_draw_window.popleft()
             recent_draw_sum -= old_draw
@@ -595,12 +600,9 @@ def build_rich_pod_cache(client: SupabaseClient) -> list[DrawPodRow]:
         if round_number is not None and max_round and max_round > 1:
             swiss_progress = (round_number - 1) / (max_round - 1)
             rounds_remaining = max(0, max_round - round_number)
-        elif round_number is not None:
+        else:
             swiss_progress = 0.0
             rounds_remaining = 0
-        else:
-            swiss_progress = -1.0
-            rounds_remaining = -1
 
         is_draw = 1 if any(str(row.get("result") or "") == "draw" for row in rows) else 0
         sorted_ratings = sorted(ratings, reverse=True)
@@ -1550,6 +1552,10 @@ def main() -> None:
     parser.add_argument("--artifact-path", default=str(DEFAULT_ARTIFACT_PATH))
     parser.add_argument("--report-path", default=str(DEFAULT_REPORT_PATH))
     parser.add_argument("--rebuild-cache", action="store_true")
+    parser.add_argument(
+        "--force-feature-set",
+        help="Train the final model with this named feature set instead of selecting the best pruning result.",
+    )
     args = parser.parse_args()
 
     load_local_env()
@@ -1881,6 +1887,60 @@ def main() -> None:
             "avg_player_prior_draw",
         ],
     }
+    v11_direct_incentive_features = {
+        "bye_fraction",
+        "bye_line_points",
+        "expected_bye_line_points",
+        "count_currently_in_bye",
+        "count_draw_secures_bye",
+        "count_win_secures_bye",
+        "count_must_win_for_bye",
+        "count_players_win_only_live",
+        "count_players_win_only_live_for_bye",
+        "all_players_draw_lock_cut",
+        "all_players_draw_lock_bye",
+        "min_draw_rank_margin_to_cut",
+        "min_draw_rank_margin_to_bye",
+        "count_players_draw_makes_cut",
+        "count_players_draw_makes_bye",
+        "draw_hurts_any_player_cut_status",
+        "draw_hurts_any_player_bye_status",
+        "draw_hurts_any_player_status",
+        "all_players_above_cut_after_draw",
+        "all_players_above_bye_after_draw",
+        "all_players_above_cut_after_loss",
+        "all_players_above_bye_after_loss",
+        "pod_has_asymmetric_cut_incentive",
+        "pod_has_asymmetric_bye_incentive",
+        "pod_has_asymmetric_incentive",
+        "draw_vs_win_status_same_count",
+        "pairwise_mutual_draw_benefit_count",
+        "count_players_draw_as_good_as_win_for_bye",
+    }
+    v11b_core_direct_incentive_features = {
+        "all_players_draw_lock_cut",
+        "all_players_draw_lock_bye",
+        "min_draw_rank_margin_to_cut",
+        "min_draw_rank_margin_to_bye",
+        "count_players_draw_makes_cut",
+        "count_players_draw_makes_bye",
+        "count_players_win_only_live",
+        "count_players_win_only_live_for_bye",
+        "count_players_loss_eliminates",
+        "draw_vs_win_status_same_count",
+        "draw_hurts_any_player_status",
+        "all_players_above_cut_after_draw",
+        "all_players_above_bye_after_draw",
+        "all_players_above_cut_after_loss",
+        "all_players_above_bye_after_loss",
+        "pod_has_asymmetric_incentive",
+        "pairwise_mutual_draw_benefit_count",
+    }
+    feature_sets["v11b_intentional_core"] = [
+        feature
+        for feature in feature_sets["projected_cut_only"]
+        if feature not in v11_direct_incentive_features or feature in v11b_core_direct_incentive_features
+    ]
 
     base_params = {
         "learning_rate": 0.08,
@@ -1910,6 +1970,7 @@ def main() -> None:
             "smoothed_series_only",
             "smoothed_series_100_only",
             "raw_series_only",
+            "v11b_intentional_core",
         )
         if name in feature_sets
     }
@@ -1931,7 +1992,13 @@ def main() -> None:
             flush=True,
         )
 
-    _, _, feature_set_name, selected_features = feature_results[0]
+    if args.force_feature_set:
+        if args.force_feature_set not in feature_sets:
+            raise ValueError(f"Unknown --force-feature-set {args.force_feature_set!r}. Options: {sorted(feature_sets)}")
+        feature_set_name = args.force_feature_set
+        selected_features = feature_sets[feature_set_name]
+    else:
+        _, _, feature_set_name, selected_features = feature_results[0]
     print(f"Best feature set after pruning: {feature_set_name} {selected_features}", flush=True)
 
     hyperparameter_results = tune_hgb_holdout(train_rows, validation_rows, selected_features)
