@@ -7,15 +7,17 @@ import argparse
 import json
 import os
 import random
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from ingest import SupabaseClient, load_local_env
-from sim_engine import run_monte_carlo
+from sim_engine import initialize_state
 from sim_models import load_draw_model_artifact
+from sim_pairings import topdeck_bye_rank
 from sim_types import FeatureContext, PlayerHistory, SimPlayer, TournamentSpec
+from tournament_sim_runner import build_common_output, run_simulation_from_state
 
 DEFAULT_DRAW_MODEL_PATH = Path("/tmp/cedh_draw_model_artifact_v4.pkl")
 def fetch_all(
@@ -66,7 +68,7 @@ def fetch_entries(client: SupabaseClient, tournament_id: str) -> list[dict[str, 
         client,
         "tournament_entries",
         {
-            "select": "player_id,commander_id,final_standing,made_top_cut,players(name,topdeck_id),commanders(name)",
+            "select": "player_id,commander_id,final_standing,points,wins,losses,draws,made_top_cut,players(name,topdeck_id),commanders(name)",
             "tournament_id": f"eq.{tournament_id}",
         },
     )
@@ -87,6 +89,182 @@ def derive_top_cut_player_ids(entries: list[dict[str, Any]], top_cut: int) -> se
         except (TypeError, ValueError):
             continue
     return top_cut_players
+
+
+def entry_games_played(entry: dict[str, Any]) -> int:
+    total = 0
+    for key in ("wins", "losses", "draws"):
+        try:
+            total += int(entry.get(key) or 0)
+        except (TypeError, ValueError):
+            continue
+    return total
+
+
+def active_player_count_from_entries(entries: list[dict[str, Any]]) -> int:
+    return sum(1 for entry in entries if entry.get("player_id") and entry_games_played(entry) > 0)
+
+
+def fetch_active_player_count_from_games(client: SupabaseClient, tournament_id: str) -> int:
+    rows = fetch_all(
+        client,
+        "global_elo_game_results",
+        {
+            "select": "player_id",
+            "tournament_id": f"eq.{tournament_id}",
+        },
+    )
+    return len({str(row["player_id"]) for row in rows if row.get("player_id")})
+
+
+def fetch_active_player_ids_from_games(client: SupabaseClient, tournament_id: str) -> set[str]:
+    rows = fetch_all(
+        client,
+        "global_elo_game_results",
+        {
+            "select": "player_id",
+            "tournament_id": f"eq.{tournament_id}",
+        },
+    )
+    return {str(row["player_id"]) for row in rows if row.get("player_id")}
+
+
+def point_count_distribution(counts: Counter[int], total: int) -> list[dict[str, float | int]]:
+    if total <= 0:
+        return []
+    return [
+        {"points": points, "probability": count / total, "count": count}
+        for points, count in sorted(counts.items())
+    ]
+
+
+def fetch_historical_point_requirement_baseline(
+    client: SupabaseClient,
+    *,
+    active_player_count: int,
+    top_cut: int,
+    swiss_rounds: int | None = None,
+    exclude_tournament_id: str | None = None,
+    window_fraction: float = 0.15,
+    min_window: int = 8,
+) -> dict[str, Any]:
+    if active_player_count <= 0 or top_cut <= 0:
+        return {
+            "active_player_count": active_player_count,
+            "cut_size": top_cut,
+            "swiss_rounds": swiss_rounds,
+            "events": 0,
+            "active_player_count_window": None,
+            "top_cut": [],
+            "bye": [],
+        }
+
+    window = max(min_window, int(round(active_player_count * window_fraction)))
+    min_players = max(1, active_player_count - window)
+    max_players = active_player_count + window
+    tournaments = fetch_all(
+        client,
+        "tournaments",
+        {
+            "select": "id,top_cut,swiss_rounds",
+            "top_cut": f"eq.{top_cut}",
+        },
+    )
+    tournament_meta = {
+        str(row["id"]): row
+        for row in tournaments
+        if row.get("id") and str(row.get("id")) != str(exclude_tournament_id)
+    }
+    if swiss_rounds is not None:
+        tournament_meta = {
+            tournament_id: row
+            for tournament_id, row in tournament_meta.items()
+            if str(row.get("swiss_rounds")) == str(swiss_rounds)
+        }
+    tournament_ids = list(tournament_meta)
+
+    top_cut_counts: Counter[int] = Counter()
+    bye_counts: Counter[int] = Counter()
+    events = 0
+    bye_rank = topdeck_bye_rank(top_cut)
+
+    for batch in batched(tournament_ids, 80):
+        game_rows = fetch_all(
+            client,
+            "global_elo_game_results",
+            {
+                "select": "tournament_id,player_id",
+                "tournament_id": f"in.{in_filter(batch)}",
+            },
+        )
+        active_players_by_tournament: dict[str, set[str]] = defaultdict(set)
+        for row in game_rows:
+            tournament_id = row.get("tournament_id")
+            player_id = row.get("player_id")
+            if tournament_id and player_id:
+                active_players_by_tournament[str(tournament_id)].add(str(player_id))
+        rows = fetch_all(
+            client,
+            "tournament_entries",
+            {
+                "select": "tournament_id,player_id,final_standing,points,wins,losses,draws",
+                "tournament_id": f"in.{in_filter(batch)}",
+            },
+        )
+        by_tournament: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for row in rows:
+            tournament_id = row.get("tournament_id")
+            if tournament_id:
+                by_tournament[str(tournament_id)].append(row)
+
+        for tournament_id, entries in by_tournament.items():
+            event_active_count = len(active_players_by_tournament.get(tournament_id, set()))
+            if event_active_count < min_players or event_active_count > max_players:
+                continue
+            swiss_rounds = tournament_meta.get(tournament_id, {}).get("swiss_rounds")
+            try:
+                max_possible_points = int(swiss_rounds) * 5 if swiss_rounds is not None else None
+            except (TypeError, ValueError):
+                max_possible_points = None
+            standings_rows: list[tuple[int, int]] = []
+            for entry in entries:
+                final_standing = entry.get("final_standing")
+                points = entry.get("points")
+                if final_standing is None or points is None:
+                    continue
+                try:
+                    standings_rows.append((int(final_standing), int(points)))
+                except (TypeError, ValueError):
+                    continue
+            if len(standings_rows) < top_cut:
+                continue
+            points_by_rank = {rank: points for rank, points in standings_rows}
+            if top_cut not in points_by_rank:
+                continue
+            top_cut_points = points_by_rank[top_cut]
+            if top_cut_points <= 0 or (
+                max_possible_points is not None and top_cut_points > max_possible_points
+            ):
+                continue
+            bye_points = points_by_rank.get(bye_rank) if bye_rank is not None else None
+            if bye_points is not None and (
+                bye_points <= 0 or (max_possible_points is not None and bye_points > max_possible_points)
+            ):
+                bye_points = None
+            events += 1
+            top_cut_counts[top_cut_points] += 1
+            if bye_points is not None:
+                bye_counts[bye_points] += 1
+
+    return {
+        "active_player_count": active_player_count,
+        "cut_size": top_cut,
+        "swiss_rounds": swiss_rounds,
+        "events": events,
+        "active_player_count_window": {"min": min_players, "max": max_players},
+        "top_cut": point_count_distribution(top_cut_counts, events),
+        "bye": point_count_distribution(bye_counts, events),
+    }
 
 
 def infer_swiss_rounds(client: SupabaseClient, tournament_id: str) -> int:
@@ -183,6 +361,7 @@ def build_feature_context(
             draw_rate=(draws / total) if total else 0.0,
             win_rate=(wins / total) if total else 0.0,
             decisive_rate=(decisive / total) if total else 0.0,
+            games_played=total,
         )
 
     return FeatureContext(
@@ -197,9 +376,23 @@ def build_feature_context(
     )
 
 
-def build_spec_and_players(client: SupabaseClient, tournament_id: str) -> tuple[TournamentSpec, list[SimPlayer], list[dict[str, Any]], FeatureContext]:
+def build_spec_and_players(
+    client: SupabaseClient,
+    tournament_id: str,
+    *,
+    repeat_avoidance_max_pods: int | None = None,
+    active_players_only: bool = True,
+) -> tuple[TournamentSpec, list[SimPlayer], list[dict[str, Any]], FeatureContext]:
     tournament = fetch_tournament(client, tournament_id)
     entries = fetch_entries(client, tournament_id)
+    if active_players_only:
+        active_player_ids = fetch_active_player_ids_from_games(client, tournament_id)
+        if active_player_ids:
+            entries = [
+                entry
+                for entry in entries
+                if entry.get("player_id") and str(entry["player_id"]) in active_player_ids
+            ]
     swiss_rounds = infer_swiss_rounds(client, tournament_id)
     player_ids = [str(row["player_id"]) for row in entries if row.get("player_id")]
     pre_elos = fetch_pre_tournament_elos(client, player_ids, str(tournament["start_date"]))
@@ -241,7 +434,8 @@ def build_spec_and_players(client: SupabaseClient, tournament_id: str) -> tuple[
         start_date=datetime.fromisoformat(str(tournament["start_date"]).replace("Z", "+00:00")),
         swiss_rounds=swiss_rounds,
         top_cut=int(tournament.get("top_cut") or 0),
-        player_count=int(tournament.get("player_count") or len(players)),
+        player_count=len(players) if active_players_only else int(tournament.get("player_count") or len(players)),
+        repeat_avoidance_max_pods=repeat_avoidance_max_pods,
         state=tournament.get("state"),
         country=tournament.get("country"),
     )
@@ -255,49 +449,54 @@ def main() -> None:
     parser.add_argument("--simulations", type=int, default=2000)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--workers", type=int, default=None)
+    parser.add_argument("--repeat-avoidance-max-pods", type=int, default=32)
+    parser.add_argument(
+        "--include-inactive-entries",
+        action="store_true",
+        help="Include registered players with no recorded games. By default historical sims use active players only.",
+    )
     args = parser.parse_args()
 
     load_local_env()
     client = SupabaseClient(url=os.environ["SUPABASE_URL"], service_key=os.environ["SUPABASE_SERVICE_KEY"])
-    spec, players, entries, feature_context = build_spec_and_players(client, args.tournament_id)
+    spec, players, entries, feature_context = build_spec_and_players(
+        client,
+        args.tournament_id,
+        repeat_avoidance_max_pods=args.repeat_avoidance_max_pods,
+        active_players_only=not args.include_inactive_entries,
+    )
     draw_model = load_draw_model_artifact(args.draw_model_path)
-    summary = run_monte_carlo(
-        spec,
-        players,
+    state = initialize_state(spec, players, feature_context=feature_context)
+    summary_dict = run_simulation_from_state(
+        state,
         draw_model,
         simulations=args.simulations,
         seed=args.seed,
-        feature_context=feature_context,
         workers=args.workers,
     )
 
     actual_top_cut = derive_top_cut_player_ids(entries, spec.top_cut)
     actual_winner = next((str(row["player_id"]) for row in entries if row.get("final_standing") == 1), None)
-    top_win = sorted(summary.to_dict()["win_probability"].items(), key=lambda item: item[1], reverse=True)[:10]
-    top_cut_prob = sorted(summary.to_dict()["top_cut_probability"].items(), key=lambda item: item[1], reverse=True)[:10]
     player_name_by_id = {player.player_id: player.name for player in players}
+    active_player_count = fetch_active_player_count_from_games(client, spec.tournament_id)
+    historical_point_requirements = fetch_historical_point_requirement_baseline(
+        client,
+        active_player_count=active_player_count,
+        top_cut=spec.top_cut,
+        swiss_rounds=spec.swiss_rounds,
+        exclude_tournament_id=spec.tournament_id,
+    )
 
-    output = {
-        "tournament": {
-            "id": spec.tournament_id,
-            "name": spec.name,
-            "player_count": spec.player_count,
-            "swiss_rounds": spec.swiss_rounds,
-            "top_cut": spec.top_cut,
-        },
-        "simulations": args.simulations,
-        "actual_winner": {"player_id": actual_winner, "name": player_name_by_id.get(actual_winner or "", actual_winner)},
-        "actual_top_cut_count": len(actual_top_cut),
-        "top_win_probabilities": [
-            {"player_id": player_id, "name": player_name_by_id.get(player_id, player_id), "win_probability": probability}
-            for player_id, probability in top_win
-        ],
-        "top_top_cut_probabilities": [
-            {"player_id": player_id, "name": player_name_by_id.get(player_id, player_id), "top_cut_probability": probability}
-            for player_id, probability in top_cut_prob
-        ],
-        "round_draw_rate": summary.to_dict()["round_draw_rate"],
-    }
+    output = build_common_output(
+        summary=summary_dict,
+        state=state,
+        player_name_by_id=player_name_by_id,
+        active_player_count=active_player_count,
+        historical_point_requirements=historical_point_requirements,
+        actual_winner_id=actual_winner,
+        actual_top_cut_count=len(actual_top_cut),
+        top_limit=20,
+    )
     print(json.dumps(output, indent=2))
 
 

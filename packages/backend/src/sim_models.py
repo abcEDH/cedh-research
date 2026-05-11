@@ -5,13 +5,24 @@ from __future__ import annotations
 
 import pickle
 import re
+import os
+from bisect import bisect_left
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+for thread_env_var in (
+    "OMP_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "VECLIB_MAXIMUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+):
+    os.environ.setdefault(thread_env_var, "1")
+
 import numpy as np
 
-from sim_pairings import opponent_match_win_percentage
+from sim_pairings import opponent_match_win_percentage, topdeck_bye_rank
 from sim_types import ALL_DRAW_FEATURES, FeatureContext, Pod, RoundFeatureSnapshot, TournamentContext, TournamentState
 
 ELO_BASE = 2.0
@@ -85,6 +96,12 @@ def small_std(values: list[float]) -> float:
     return variance**0.5
 
 
+def smoothed_rate(successes: float, total: float, fallback_rate: float, prior_weight: float) -> float:
+    if prior_weight <= 0:
+        return (successes / total) if total else fallback_rate
+    return (successes + (fallback_rate * prior_weight)) / (total + prior_weight)
+
+
 def load_draw_model_artifact(path: Path | str = DEFAULT_DRAW_MODEL_PATH) -> LoadedDrawModel:
     with Path(path).open("rb") as handle:
         artifact = pickle.load(handle)
@@ -137,37 +154,26 @@ def _hypothetical_rank_by_player(
     tiebreak_seed_by_player: dict[str, int],
     point_delta: int,
 ) -> dict[str, int]:
-    ranks: dict[str, int] = {}
     fallback_seed = len(player_ids) + 1_000_000
+    sort_keys = sorted(
+        (
+            -points_by_player.get(player_id, 0),
+            -estimated_omw_by_player.get(player_id, 0.0),
+            tiebreak_seed_by_player.get(player_id, fallback_seed),
+            player_id,
+        )
+        for player_id in player_ids
+    )
+
+    ranks: dict[str, int] = {}
     for player_id in player_ids:
-        target_points = points_by_player.get(player_id, 0) + point_delta
-        target_omw = estimated_omw_by_player.get(player_id, 0.0)
-        target_seed = tiebreak_seed_by_player.get(player_id, fallback_seed)
-        better = 0
-        for opponent_id in player_ids:
-            if opponent_id == player_id:
-                continue
-            opponent_points = points_by_player.get(opponent_id, 0)
-            opponent_omw = estimated_omw_by_player.get(opponent_id, 0.0)
-            opponent_seed = tiebreak_seed_by_player.get(opponent_id, fallback_seed)
-            if (
-                opponent_points > target_points
-                or (
-                    opponent_points == target_points
-                    and (
-                        opponent_omw > target_omw
-                        or (
-                            opponent_omw == target_omw
-                            and (
-                                opponent_seed < target_seed
-                                or (opponent_seed == target_seed and opponent_id < player_id)
-                            )
-                        )
-                    )
-                )
-            ):
-                better += 1
-        ranks[player_id] = better + 1
+        target_key = (
+            -(points_by_player.get(player_id, 0) + point_delta),
+            -estimated_omw_by_player.get(player_id, 0.0),
+            tiebreak_seed_by_player.get(player_id, fallback_seed),
+            player_id,
+        )
+        ranks[player_id] = bisect_left(sort_keys, target_key) + 1
     return ranks
 
 
@@ -395,6 +401,11 @@ def build_draw_feature_row(
     draw_rates = [history.draw_rate if history else 0.0 for history in player_histories]
     win_rates = [history.win_rate if history else 0.0 for history in player_histories]
     decisive_rates = [history.decisive_rate if history else 0.0 for history in player_histories]
+    prior_games = [float(history.games_played if history else 0) for history in player_histories]
+    smoothed_draw_rates = [
+        smoothed_rate((history.draw_rate * history.games_played) if history else 0.0, history.games_played if history else 0.0, feature_context.global_recent_draw_rate_90d, 50.0)
+        for history in player_histories
+    ]
     count_high_draw_players = sum(1 for rate in draw_rates if rate >= 0.25)
     count_high_win_low_draw_players = sum(1 for win_rate, draw_rate in zip(win_rates, draw_rates, strict=True) if win_rate >= 0.35 and draw_rate <= 0.10)
     draw_rate_range_above_threshold = 1 if draw_rates and (max(draw_rates) - min(draw_rates)) >= 0.15 else 0
@@ -406,6 +417,141 @@ def build_draw_feature_row(
             pair = tuple(sorted((player_id, opponent_id)))
             tournament_pair_counts.append(feature_context.tournament_pair_meetings.get(pair, 0))
             global_pair_counts.append(feature_context.global_pair_meetings.get(pair, 0))
+    count_repeat_pairs = sum(1 for count in tournament_pair_counts if count > 0)
+    points_by_value: dict[int, int] = {}
+    for points in pod_points:
+        points_by_value[points] = points_by_value.get(points, 0) + 1
+    same_points_count_in_pod = max(points_by_value.values()) if points_by_value else 0
+    min_points_in_pod = min(pod_points) if pod_points else 0
+    max_points_in_pod = max(pod_points) if pod_points else 0
+    points_range_within_pod = max_points_in_pod - min_points_in_pod
+    draw_as_good_as_win = [
+        (draw_rank <= context.top_cut) == (win_rank <= context.top_cut) if context.top_cut > 0 else True
+        for draw_rank, win_rank in zip(pod_draw_secure_ranks, pod_win_secure_ranks, strict=True)
+    ]
+    loss_eliminates = [
+        points + max_future_points < round_snapshot.expected_cut_line_points
+        for points in pod_points
+    ]
+    draw_preserves_cut_rank = [
+        current_rank <= context.top_cut and draw_rank <= context.top_cut
+        for current_rank, draw_rank in zip(pod_current_ranks, pod_draw_secure_ranks, strict=True)
+    ] if context.top_cut > 0 else []
+    win_changes_cut_status = [
+        (current_rank <= context.top_cut) != (win_rank <= context.top_cut)
+        for current_rank, win_rank in zip(pod_current_ranks, pod_win_secure_ranks, strict=True)
+    ] if context.top_cut > 0 else []
+    adjusted_ratings = [
+        effective_player_rating(state.players[player_id], pod.seats_by_player.get(player_id) if pod.seats_by_player else None)
+        for player_id in player_ids
+    ]
+    equity_values = np.asarray([rating_equity(rating) for rating in adjusted_ratings], dtype=float)
+    total_equity = float(equity_values.sum()) or 1.0
+    decisive_probabilities = equity_values / total_equity if len(equity_values) else np.asarray([], dtype=float)
+    decisive_entropy = (
+        -float(np.sum(decisive_probabilities * np.log(np.clip(decisive_probabilities, 1e-12, 1.0))))
+        / float(np.log(len(decisive_probabilities)))
+        if len(decisive_probabilities) > 1
+        else 0.0
+    )
+    decisive_max = float(decisive_probabilities.max()) if len(decisive_probabilities) else 0.0
+    decisive_min = float(decisive_probabilities.min()) if len(decisive_probabilities) else 0.0
+    count_default_elos = sum(1 for rating in ratings if abs(rating - 1500.0) < 1e-9)
+    min_draw_secure_rank = min(pod_draw_secure_ranks) if pod_draw_secure_ranks else 0
+    max_draw_secure_rank = max(pod_draw_secure_ranks) if pod_draw_secure_ranks else 0
+    bye_rank = topdeck_bye_rank(context.top_cut)
+    bye_fraction = (bye_rank / round_snapshot.field_size) if bye_rank else 0.0
+    sorted_point_values = sorted(round_snapshot.points_by_player.values(), reverse=True)
+    bye_rank_index = min(max((bye_rank or 1) - 1, 0), max(len(sorted_point_values) - 1, 0)) if sorted_point_values else 0
+    bye_line_points = sorted_point_values[bye_rank_index] if bye_rank and sorted_point_values else 0
+    projected_bye_points = [
+        points + (round_snapshot.rounds_remaining * 1.25)
+        for points in round_snapshot.points_by_player.values()
+    ]
+    projected_bye_points.sort(reverse=True)
+    expected_bye_line_points = projected_bye_points[bye_rank_index] if bye_rank and projected_bye_points else 0.0
+    pod_loss_ranks = pod_current_ranks
+    count_currently_in_bye = sum(1 for rank in pod_current_ranks if bye_rank and rank <= bye_rank)
+    count_draw_secures_bye = sum(1 for rank in pod_draw_secure_ranks if bye_rank and rank <= bye_rank)
+    count_win_secures_bye = sum(1 for rank in pod_win_secure_ranks if bye_rank and rank <= bye_rank)
+    count_must_win_for_bye = sum(
+        1
+        for draw_rank, win_rank in zip(pod_draw_secure_ranks, pod_win_secure_ranks, strict=True)
+        if bye_rank and draw_rank > bye_rank and win_rank <= bye_rank
+    )
+    count_players_win_only_live = sum(
+        1
+        for draw_rank, win_rank in zip(pod_draw_secure_ranks, pod_win_secure_ranks, strict=True)
+        if context.top_cut > 0 and draw_rank > context.top_cut and win_rank <= context.top_cut
+    )
+    count_players_win_only_live_for_bye = count_must_win_for_bye
+    all_players_draw_lock_cut = 1 if context.top_cut > 0 and pod_draw_secure_ranks and max_draw_secure_rank <= context.top_cut else 0
+    all_players_draw_lock_bye = 1 if bye_rank and pod_draw_secure_ranks and max_draw_secure_rank <= bye_rank else 0
+    min_draw_rank_margin_to_cut = (
+        min(float(context.top_cut - rank) for rank in pod_draw_secure_ranks)
+        if context.top_cut > 0 and pod_draw_secure_ranks
+        else 0.0
+    )
+    min_draw_rank_margin_to_bye = (
+        min(float(bye_rank - rank) for rank in pod_draw_secure_ranks)
+        if bye_rank and pod_draw_secure_ranks
+        else 0.0
+    )
+    count_players_draw_makes_cut = sum(
+        1
+        for current_rank, draw_rank in zip(pod_current_ranks, pod_draw_secure_ranks, strict=True)
+        if context.top_cut > 0 and current_rank > context.top_cut and draw_rank <= context.top_cut
+    )
+    count_players_draw_makes_bye = sum(
+        1
+        for current_rank, draw_rank in zip(pod_current_ranks, pod_draw_secure_ranks, strict=True)
+        if bye_rank and current_rank > bye_rank and draw_rank <= bye_rank
+    )
+    draw_hurts_any_player_cut_status = (
+        1
+        if context.top_cut > 0
+        and any(current_rank <= context.top_cut and draw_rank > context.top_cut for current_rank, draw_rank in zip(pod_current_ranks, pod_draw_secure_ranks, strict=True))
+        else 0
+    )
+    draw_hurts_any_player_bye_status = (
+        1
+        if bye_rank
+        and any(current_rank <= bye_rank and draw_rank > bye_rank for current_rank, draw_rank in zip(pod_current_ranks, pod_draw_secure_ranks, strict=True))
+        else 0
+    )
+    draw_hurts_any_player_status = 1 if draw_hurts_any_player_cut_status or draw_hurts_any_player_bye_status else 0
+    all_players_above_cut_after_draw = all_players_draw_lock_cut
+    all_players_above_bye_after_draw = all_players_draw_lock_bye
+    all_players_above_cut_after_loss = 1 if context.top_cut > 0 and pod_loss_ranks and max(pod_loss_ranks) <= context.top_cut else 0
+    all_players_above_bye_after_loss = 1 if bye_rank and pod_loss_ranks and max(pod_loss_ranks) <= bye_rank else 0
+    pod_has_asymmetric_cut_incentive = 1 if context.top_cut > 0 and count_draw_secures_cut > 0 and count_draw_secures_cut < len(player_ids) else 0
+    pod_has_asymmetric_bye_incentive = 1 if bye_rank and count_draw_secures_bye > 0 and count_draw_secures_bye < len(player_ids) else 0
+    pod_has_asymmetric_incentive = 1 if pod_has_asymmetric_cut_incentive or pod_has_asymmetric_bye_incentive else 0
+    draw_cut_status = [rank <= context.top_cut if context.top_cut > 0 else False for rank in pod_draw_secure_ranks]
+    win_cut_status = [rank <= context.top_cut if context.top_cut > 0 else False for rank in pod_win_secure_ranks]
+    draw_bye_status = [rank <= bye_rank if bye_rank else False for rank in pod_draw_secure_ranks]
+    win_bye_status = [rank <= bye_rank if bye_rank else False for rank in pod_win_secure_ranks]
+    player_draw_as_good_as_win = [
+        (draw_cut == win_cut) and (draw_bye == win_bye)
+        for draw_cut, win_cut, draw_bye, win_bye in zip(draw_cut_status, win_cut_status, draw_bye_status, win_bye_status, strict=True)
+    ]
+    draw_vs_win_status_same_count = sum(1 for value in player_draw_as_good_as_win if value)
+    pairwise_mutual_draw_benefit_count = 0
+    for left_index in range(len(player_draw_as_good_as_win)):
+        for right_index in range(left_index + 1, len(player_draw_as_good_as_win)):
+            if player_draw_as_good_as_win[left_index] and player_draw_as_good_as_win[right_index]:
+                pairwise_mutual_draw_benefit_count += 1
+    count_players_draw_as_good_as_win_for_bye = sum(
+        1
+        for draw_status, win_status in zip(draw_bye_status, win_bye_status, strict=True)
+        if bye_rank and draw_status == win_status
+    )
+    series_draws = feature_context.series_prior_draw_rate * feature_context.series_events_seen
+    series_total = float(feature_context.series_events_seen)
+    series_smoothed_50 = smoothed_rate(series_draws, series_total, feature_context.global_recent_draw_rate_90d, 50.0)
+    series_smoothed_100 = smoothed_rate(series_draws, series_total, feature_context.global_recent_draw_rate_90d, 100.0)
+    series_smoothed_250 = smoothed_rate(series_draws, series_total, feature_context.global_recent_draw_rate_90d, 250.0)
+    series_smoothed_500 = smoothed_rate(series_draws, series_total, feature_context.global_recent_draw_rate_90d, 500.0)
 
     return np.asarray(
         [
@@ -509,6 +655,87 @@ def build_draw_feature_row(
             feature_context.state_prior_draw_rate,
             feature_context.country_prior_draw_rate,
             float(count_players_near_cut_band),
+            series_smoothed_50,
+            series_smoothed_100,
+            series_smoothed_250,
+            series_smoothed_500,
+            float(np.log1p(feature_context.series_events_seen)),
+            small_mean(smoothed_draw_rates),
+            small_median(smoothed_draw_rates),
+            max(smoothed_draw_rates) if smoothed_draw_rates else 0.0,
+            small_mean(prior_games),
+            min(prior_games) if prior_games else 0.0,
+            small_mean([games / (games + 50.0) for games in prior_games]),
+            float(all_players_draw_safe),
+            float(count_must_win_to_stay_live > 0),
+            float(all_players_draw_secures_cut),
+            float(sum(1 for value in draw_as_good_as_win if value)),
+            float(sum(1 for value in loss_eliminates if value)),
+            float(sum(1 for value in draw_preserves_cut_rank if value)),
+            float(sum(1 for value in win_changes_cut_status if value)),
+            float(same_points_count_in_pod),
+            float(1 if pod_points and same_points_count_in_pod == len(pod_points) else 0),
+            float(points_range_within_pod),
+            float(min_points_in_pod),
+            float(max_points_in_pod),
+            float(1 if pod_points and all(points >= round_snapshot.expected_cut_line_points for points in pod_points) else 0),
+            float(1 if pod_points and all(abs(points - round_snapshot.expected_cut_line_points) <= 1 for points in pod_points) else 0),
+            round_snapshot.cut_fraction if is_last_swiss_round else 0.0,
+            round_snapshot.cut_fraction if is_penultimate_swiss_round else 0.0,
+            float(round_number * (round_snapshot.size_bucket + 1)),
+            float(round_snapshot.size_bucket if is_last_swiss_round else 0),
+            float((round_number * 100) + (round_snapshot.size_bucket * 10) + round_snapshot.cut_size_bucket),
+            feature_context.global_recent_draw_rate_90d,
+            decisive_entropy,
+            decisive_max,
+            decisive_min,
+            decisive_max - decisive_min,
+            float(count_repeat_pairs > 0),
+            float(count_repeat_pairs),
+            float(len(player_ids) * round_number),
+            float(len(player_ids) if is_last_swiss_round else 0),
+            float(len(player_ids) * round_snapshot.cut_fraction),
+            float(len(player_ids) * feature_context.series_prior_draw_rate),
+            series_smoothed_100,
+            feature_context.series_prior_draw_rate - feature_context.global_recent_draw_rate_90d,
+            float(sum(1 for games in prior_games if games == 0)),
+            float(sum(1 for games in prior_games if games < 10)),
+            float(1 if ratings and count_default_elos == len(ratings) else 0),
+            float(count_default_elos),
+            float(1 if not pod.seats_by_player else 0),
+            float(min_draw_secure_rank),
+            float(max_draw_secure_rank),
+            float(max_draw_secure_rank - min_draw_secure_rank),
+            float(1 if context.top_cut > 0 and pod_draw_secure_ranks and max_draw_secure_rank <= context.top_cut + 4 else 0),
+            float(1 if context.top_cut > 0 and pod_draw_secure_ranks and max_draw_secure_rank <= context.top_cut + 8 else 0),
+            float(bye_fraction),
+            float(bye_line_points),
+            float(expected_bye_line_points),
+            float(count_currently_in_bye),
+            float(count_draw_secures_bye),
+            float(count_win_secures_bye),
+            float(count_must_win_for_bye),
+            float(count_players_win_only_live),
+            float(count_players_win_only_live_for_bye),
+            float(all_players_draw_lock_cut),
+            float(all_players_draw_lock_bye),
+            float(min_draw_rank_margin_to_cut),
+            float(min_draw_rank_margin_to_bye),
+            float(count_players_draw_makes_cut),
+            float(count_players_draw_makes_bye),
+            float(draw_hurts_any_player_cut_status),
+            float(draw_hurts_any_player_bye_status),
+            float(draw_hurts_any_player_status),
+            float(all_players_above_cut_after_draw),
+            float(all_players_above_bye_after_draw),
+            float(all_players_above_cut_after_loss),
+            float(all_players_above_bye_after_loss),
+            float(pod_has_asymmetric_cut_incentive),
+            float(pod_has_asymmetric_bye_incentive),
+            float(pod_has_asymmetric_incentive),
+            float(draw_vs_win_status_same_count),
+            float(pairwise_mutual_draw_benefit_count),
+            float(count_players_draw_as_good_as_win_for_bye),
         ],
         dtype=float,
     )

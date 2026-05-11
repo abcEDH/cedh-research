@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import pickle
 import re
+from bisect import bisect_left
 from collections import defaultdict, deque
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -141,6 +143,93 @@ class DrawPodRow:
     state_prior_draw_rate: float
     country_prior_draw_rate: float
     count_players_near_cut_band: int
+    tournament_id: str = ""
+    tournament_name: str = ""
+    series_key: str = ""
+    round_name: str = ""
+    table_number: int = -1
+    series_prior_draw_rate_smoothed_50: float = 0.0
+    series_prior_draw_rate_smoothed_100: float = 0.0
+    series_prior_draw_rate_smoothed_250: float = 0.0
+    series_prior_draw_rate_smoothed_500: float = 0.0
+    series_events_seen_log: float = 0.0
+    avg_player_prior_draw_smoothed_50: float = 0.0
+    median_player_prior_draw_smoothed_50: float = 0.0
+    max_player_prior_draw_smoothed_50: float = 0.0
+    avg_player_prior_games: float = 0.0
+    min_player_prior_games: float = 0.0
+    player_prior_confidence_avg: float = 0.0
+    all_players_can_draw_into_cut: int = 0
+    any_player_eliminated_by_draw: int = 0
+    all_players_locked_with_draw: int = 0
+    count_players_draw_as_good_as_win: int = 0
+    count_players_loss_eliminates: int = 0
+    draw_preserves_cut_rank_count: int = 0
+    win_changes_cut_status_count: int = 0
+    same_points_count_in_pod: int = 0
+    all_players_same_points: int = 0
+    points_range_within_pod: int = 0
+    min_points_in_pod: int = 0
+    max_points_in_pod: int = 0
+    all_players_above_projected_cut_line: int = 0
+    all_players_within_one_point_of_cut_line: int = 0
+    last_round_cut_fraction: float = 0.0
+    penultimate_round_cut_fraction: float = 0.0
+    round_number_size_bucket: float = 0.0
+    last_round_size_bucket: int = 0
+    round_size_cut_bucket_key: int = 0
+    round_size_cut_prior_draw_rate_smoothed_100: float = 0.0
+    decisive_win_probability_entropy: float = 0.0
+    max_decisive_win_probability: float = 0.0
+    min_decisive_win_probability: float = 0.0
+    decisive_win_probability_spread: float = 0.0
+    any_repeat_pair: int = 0
+    count_repeat_pairs: int = 0
+    pod_size_round_number: float = 0.0
+    pod_size_is_last_swiss_round: int = 0
+    pod_size_cut_fraction: float = 0.0
+    pod_size_series_prior_draw_rate: float = 0.0
+    series_pod_size_prior_draw_rate_smoothed_100: float = 0.0
+    series_swiss_prior_draw_rate_smoothed_100: float = 0.0
+    series_prior_draw_rate_residual: float = 0.0
+    count_players_with_no_history: int = 0
+    count_players_with_low_history: int = 0
+    all_elos_default: int = 0
+    count_default_elos: int = 0
+    seat_data_missing: int = 0
+    min_draw_secure_rank: int = 0
+    max_draw_secure_rank: int = 0
+    draw_secure_rank_spread: int = 0
+    all_players_draw_rank_within_cut_plus_4: int = 0
+    all_players_draw_rank_within_cut_plus_8: int = 0
+    bye_fraction: float = 0.0
+    bye_line_points: float = 0.0
+    expected_bye_line_points: float = 0.0
+    count_currently_in_bye: int = 0
+    count_draw_secures_bye: int = 0
+    count_win_secures_bye: int = 0
+    count_must_win_for_bye: int = 0
+    count_players_win_only_live: int = 0
+    count_players_win_only_live_for_bye: int = 0
+    all_players_draw_lock_cut: int = 0
+    all_players_draw_lock_bye: int = 0
+    min_draw_rank_margin_to_cut: float = 0.0
+    min_draw_rank_margin_to_bye: float = 0.0
+    count_players_draw_makes_cut: int = 0
+    count_players_draw_makes_bye: int = 0
+    draw_hurts_any_player_cut_status: int = 0
+    draw_hurts_any_player_bye_status: int = 0
+    draw_hurts_any_player_status: int = 0
+    all_players_above_cut_after_draw: int = 0
+    all_players_above_bye_after_draw: int = 0
+    all_players_above_cut_after_loss: int = 0
+    all_players_above_bye_after_loss: int = 0
+    pod_has_asymmetric_cut_incentive: int = 0
+    pod_has_asymmetric_bye_incentive: int = 0
+    pod_has_asymmetric_incentive: int = 0
+    draw_vs_win_status_same_count: int = 0
+    pairwise_mutual_draw_benefit_count: int = 0
+    count_players_draw_as_good_as_win_for_bye: int = 0
 
 
 @dataclass(slots=True)
@@ -171,6 +260,30 @@ def normalize_series_key(name: str | None) -> str:
     return normalized or "unknown_series"
 
 
+def smoothed_rate(successes: float, total: float, fallback_rate: float, prior_weight: float) -> float:
+    if prior_weight <= 0:
+        return (successes / total) if total else fallback_rate
+    return (successes + (fallback_rate * prior_weight)) / (total + prior_weight)
+
+
+def decisive_probability_features(ratings: list[float]) -> tuple[float, float, float, float]:
+    if not ratings:
+        return (0.0, 0.0, 0.0, 0.0)
+    equities = np.asarray([10.0 ** (rating / 400.0) for rating in ratings], dtype=float)
+    total = float(equities.sum()) or 1.0
+    probabilities = equities / total
+    entropy = -float(np.sum(probabilities * np.log(np.clip(probabilities, 1e-12, 1.0))))
+    normalized_entropy = entropy / float(np.log(len(probabilities))) if len(probabilities) > 1 else 0.0
+    max_probability = float(probabilities.max())
+    min_probability = float(probabilities.min())
+    return (
+        normalized_entropy,
+        max_probability,
+        min_probability,
+        max_probability - min_probability,
+    )
+
+
 def gini(values: list[float]) -> float:
     if not values:
         return 0.0
@@ -186,43 +299,42 @@ def gini(values: list[float]) -> float:
 def hypothetical_rank_by_player(
     player_ids: list[str],
     *,
+    target_player_ids: list[str] | None = None,
     points_by_player: dict[str, int],
     estimated_omw_by_player: dict[str, float],
     tiebreak_seed_by_player: dict[str, int],
     point_delta: int,
 ) -> dict[str, int]:
-    ranks: dict[str, int] = {}
     fallback_seed = len(player_ids) + 1_000_000
-    for player_id in player_ids:
-        target_points = points_by_player.get(player_id, 0) + point_delta
-        target_omw = estimated_omw_by_player.get(player_id, 0.0)
-        target_seed = tiebreak_seed_by_player.get(player_id, fallback_seed)
-        better = 0
-        for opponent_id in player_ids:
-            if opponent_id == player_id:
-                continue
-            opponent_points = points_by_player.get(opponent_id, 0)
-            opponent_omw = estimated_omw_by_player.get(opponent_id, 0.0)
-            opponent_seed = tiebreak_seed_by_player.get(opponent_id, fallback_seed)
-            if (
-                opponent_points > target_points
-                or (
-                    opponent_points == target_points
-                    and (
-                        opponent_omw > target_omw
-                        or (
-                            opponent_omw == target_omw
-                            and (
-                                opponent_seed < target_seed
-                                or (opponent_seed == target_seed and opponent_id < player_id)
-                            )
-                        )
-                    )
-                )
-            ):
-                better += 1
-        ranks[player_id] = better + 1
+    target_ids = target_player_ids if target_player_ids is not None else player_ids
+    sort_keys = sorted(
+        (
+            -points_by_player.get(player_id, 0),
+            -estimated_omw_by_player.get(player_id, 0.0),
+            tiebreak_seed_by_player.get(player_id, fallback_seed),
+            player_id,
+        )
+        for player_id in player_ids
+    )
+
+    ranks: dict[str, int] = {}
+    for player_id in target_ids:
+        target_key = (
+            -(points_by_player.get(player_id, 0) + point_delta),
+            -estimated_omw_by_player.get(player_id, 0.0),
+            tiebreak_seed_by_player.get(player_id, fallback_seed),
+            player_id,
+        )
+        ranks[player_id] = bisect_left(sort_keys, target_key) + 1
     return ranks
+
+
+def topdeck_bye_rank(cut_size: int) -> int | None:
+    if cut_size == 40:
+        return 8
+    if cut_size == 10:
+        return 2
+    return None
 
 
 def fetch_all(
@@ -365,6 +477,9 @@ def build_rich_pod_cache(client: SupabaseClient) -> list[DrawPodRow]:
     series_history: dict[str, list[int]] = defaultdict(lambda: [0, 0])
     state_history: dict[str, list[int]] = defaultdict(lambda: [0, 0])
     country_history: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    round_size_cut_history: dict[tuple[int, int, int], list[int]] = defaultdict(lambda: [0, 0])
+    series_pod_size_history: dict[tuple[str, int], list[int]] = defaultdict(lambda: [0, 0])
+    series_swiss_history: dict[tuple[str, int], list[int]] = defaultdict(lambda: [0, 0])
 
     def parse_int(value: Any, default: int = -1) -> int:
         try:
@@ -465,6 +580,8 @@ def build_rich_pod_cache(client: SupabaseClient) -> list[DrawPodRow]:
             round_number = int(raw_round_number) if raw_round_number is not None else None
         except (TypeError, ValueError):
             round_number = None
+        if round_number is None:
+            continue
 
         tournament_id = rows[0].get("tournament_id")
         tournament_id_str = str(tournament_id or "")
@@ -652,6 +769,7 @@ def build_rich_pod_cache(client: SupabaseClient) -> list[DrawPodRow]:
         current_rank_by_player = {field_player_id: index + 1 for index, field_player_id in enumerate(ordered_field_players)}
         draw_secure_rank_by_player = hypothetical_rank_by_player(
             ordered_field_players,
+            target_player_ids=player_ids,
             points_by_player=current_points_by_player,
             estimated_omw_by_player=estimated_omw_by_player,
             tiebreak_seed_by_player=tiebreak_seed_by_player,
@@ -659,6 +777,7 @@ def build_rich_pod_cache(client: SupabaseClient) -> list[DrawPodRow]:
         )
         win_secure_rank_by_player = hypothetical_rank_by_player(
             ordered_field_players,
+            target_player_ids=player_ids,
             points_by_player=current_points_by_player,
             estimated_omw_by_player=estimated_omw_by_player,
             tiebreak_seed_by_player=tiebreak_seed_by_player,
@@ -756,13 +875,176 @@ def build_rich_pod_cache(client: SupabaseClient) -> list[DrawPodRow]:
         state_prior_draw_rate = (state_draws / state_total) if state_total and state_key else 0.0
         country_draws, country_total = country_history[country_key]
         country_prior_draw_rate = (country_draws / country_total) if country_total and country_key else 0.0
+        series_prior_draw_rate_smoothed_50 = smoothed_rate(series_draws, series_total, global_recent_draw_rate_90d, 50.0)
+        series_prior_draw_rate_smoothed_100 = smoothed_rate(series_draws, series_total, global_recent_draw_rate_90d, 100.0)
+        series_prior_draw_rate_smoothed_250 = smoothed_rate(series_draws, series_total, global_recent_draw_rate_90d, 250.0)
+        series_prior_draw_rate_smoothed_500 = smoothed_rate(series_draws, series_total, global_recent_draw_rate_90d, 500.0)
+        series_events_seen_log = float(np.log1p(series_total))
+
+        player_prior_games = [player_history[player_id][1] for player_id in player_ids]
+        player_prior_draws = [player_history[player_id][0] for player_id in player_ids]
+        smoothed_player_draw_rates = [
+            smoothed_rate(draws, games, global_recent_draw_rate_90d, 50.0)
+            for draws, games in zip(player_prior_draws, player_prior_games, strict=True)
+        ]
+        avg_player_prior_games = float(sum(player_prior_games) / len(player_prior_games)) if player_prior_games else 0.0
+        min_player_prior_games = float(min(player_prior_games)) if player_prior_games else 0.0
+        player_prior_confidence_avg = (
+            float(sum(games / (games + 50.0) for games in player_prior_games) / len(player_prior_games))
+            if player_prior_games
+            else 0.0
+        )
+
+        draw_as_good_as_win = [
+            (draw_rank <= top_cut) == (win_rank <= top_cut) if top_cut > 0 else True
+            for draw_rank, win_rank in zip(pod_draw_secure_ranks, pod_win_secure_ranks, strict=True)
+        ]
+        loss_eliminates = [
+            points + max_future_points < expected_cut_line_points
+            for points in player_points
+        ]
+        draw_preserves_cut_rank = [
+            current_rank <= top_cut and draw_rank <= top_cut
+            for current_rank, draw_rank in zip(pod_current_ranks, pod_draw_secure_ranks, strict=True)
+        ] if top_cut > 0 else []
+        win_changes_cut_status = [
+            (current_rank <= top_cut) != (win_rank <= top_cut)
+            for current_rank, win_rank in zip(pod_current_ranks, pod_win_secure_ranks, strict=True)
+        ] if top_cut > 0 else []
+
+        points_by_value: dict[int, int] = defaultdict(int)
+        for points in player_points:
+            points_by_value[points] += 1
+        same_points_count_in_pod = max(points_by_value.values()) if points_by_value else 0
+        min_points_in_pod = min(player_points) if player_points else 0
+        max_points_in_pod = max(player_points) if player_points else 0
+        points_range_within_pod = max_points_in_pod - min_points_in_pod
+        all_players_above_projected_cut_line = 1 if player_points and all(points >= expected_cut_line_points for points in player_points) else 0
+        all_players_within_one_point_of_cut_line = 1 if player_points and all(abs(points - expected_cut_line_points) <= 1 for points in player_points) else 0
+
+        round_size_cut_key = (round_number if round_number is not None else -1, size_bucket, cut_size_bucket)
+        round_size_cut_draws, round_size_cut_total = round_size_cut_history[round_size_cut_key]
+        round_size_cut_prior_draw_rate_smoothed_100 = smoothed_rate(
+            round_size_cut_draws,
+            round_size_cut_total,
+            global_recent_draw_rate_90d,
+            100.0,
+        )
+        series_pod_size_key = (series_key, len(rows))
+        series_pod_size_draws, series_pod_size_total = series_pod_size_history[series_pod_size_key]
+        series_pod_size_prior_draw_rate_smoothed_100 = smoothed_rate(
+            series_pod_size_draws,
+            series_pod_size_total,
+            global_recent_draw_rate_90d,
+            100.0,
+        )
+        is_swiss = 1 if round_number is not None else 0
+        series_swiss_key = (series_key, is_swiss)
+        series_swiss_draws, series_swiss_total = series_swiss_history[series_swiss_key]
+        series_swiss_prior_draw_rate_smoothed_100 = smoothed_rate(
+            series_swiss_draws,
+            series_swiss_total,
+            global_recent_draw_rate_90d,
+            100.0,
+        )
+        decisive_entropy, decisive_max, decisive_min, decisive_spread = decisive_probability_features(ratings)
+        count_repeat_pairs = sum(1 for count in prior_pair_meetings if count > 0)
+        count_players_with_no_history = sum(1 for games in player_prior_games if games == 0)
+        count_players_with_low_history = sum(1 for games in player_prior_games if games < 10)
+        count_default_elos = sum(1 for rating in ratings if abs(rating - 1500.0) < 1e-9)
+        min_draw_secure_rank = min(pod_draw_secure_ranks) if pod_draw_secure_ranks else 0
+        max_draw_secure_rank = max(pod_draw_secure_ranks) if pod_draw_secure_ranks else 0
+        bye_rank = topdeck_bye_rank(top_cut)
+        bye_fraction = (bye_rank / field_size) if bye_rank else 0.0
+        bye_rank_index = min(max((bye_rank or 1) - 1, 0), max(len(point_values) - 1, 0)) if point_values else 0
+        bye_line_points = point_values[bye_rank_index] if bye_rank and point_values else 0
+        expected_bye_line_points = (
+            projected_final_points[bye_rank_index] if bye_rank and projected_final_points else 0.0
+        )
+        pod_loss_ranks = pod_current_ranks
+        count_currently_in_bye = sum(1 for rank in pod_current_ranks if bye_rank and rank <= bye_rank)
+        count_draw_secures_bye = sum(1 for rank in pod_draw_secure_ranks if bye_rank and rank <= bye_rank)
+        count_win_secures_bye = sum(1 for rank in pod_win_secure_ranks if bye_rank and rank <= bye_rank)
+        count_must_win_for_bye = sum(
+            1
+            for draw_rank, win_rank in zip(pod_draw_secure_ranks, pod_win_secure_ranks, strict=True)
+            if bye_rank and draw_rank > bye_rank and win_rank <= bye_rank
+        )
+        count_players_win_only_live = sum(
+            1
+            for draw_rank, win_rank in zip(pod_draw_secure_ranks, pod_win_secure_ranks, strict=True)
+            if top_cut > 0 and draw_rank > top_cut and win_rank <= top_cut
+        )
+        count_players_win_only_live_for_bye = count_must_win_for_bye
+        all_players_draw_lock_cut = 1 if top_cut > 0 and pod_draw_secure_ranks and max_draw_secure_rank <= top_cut else 0
+        all_players_draw_lock_bye = 1 if bye_rank and pod_draw_secure_ranks and max_draw_secure_rank <= bye_rank else 0
+        min_draw_rank_margin_to_cut = (
+            min(float(top_cut - rank) for rank in pod_draw_secure_ranks)
+            if top_cut > 0 and pod_draw_secure_ranks
+            else 0.0
+        )
+        min_draw_rank_margin_to_bye = (
+            min(float(bye_rank - rank) for rank in pod_draw_secure_ranks)
+            if bye_rank and pod_draw_secure_ranks
+            else 0.0
+        )
+        count_players_draw_makes_cut = sum(
+            1
+            for current_rank, draw_rank in zip(pod_current_ranks, pod_draw_secure_ranks, strict=True)
+            if top_cut > 0 and current_rank > top_cut and draw_rank <= top_cut
+        )
+        count_players_draw_makes_bye = sum(
+            1
+            for current_rank, draw_rank in zip(pod_current_ranks, pod_draw_secure_ranks, strict=True)
+            if bye_rank and current_rank > bye_rank and draw_rank <= bye_rank
+        )
+        draw_hurts_any_player_cut_status = (
+            1
+            if top_cut > 0
+            and any(current_rank <= top_cut and draw_rank > top_cut for current_rank, draw_rank in zip(pod_current_ranks, pod_draw_secure_ranks, strict=True))
+            else 0
+        )
+        draw_hurts_any_player_bye_status = (
+            1
+            if bye_rank
+            and any(current_rank <= bye_rank and draw_rank > bye_rank for current_rank, draw_rank in zip(pod_current_ranks, pod_draw_secure_ranks, strict=True))
+            else 0
+        )
+        draw_hurts_any_player_status = 1 if draw_hurts_any_player_cut_status or draw_hurts_any_player_bye_status else 0
+        all_players_above_cut_after_draw = all_players_draw_lock_cut
+        all_players_above_bye_after_draw = all_players_draw_lock_bye
+        all_players_above_cut_after_loss = 1 if top_cut > 0 and pod_loss_ranks and max(pod_loss_ranks) <= top_cut else 0
+        all_players_above_bye_after_loss = 1 if bye_rank and pod_loss_ranks and max(pod_loss_ranks) <= bye_rank else 0
+        pod_has_asymmetric_cut_incentive = 1 if top_cut > 0 and count_draw_secures_cut > 0 and count_draw_secures_cut < len(player_ids) else 0
+        pod_has_asymmetric_bye_incentive = 1 if bye_rank and count_draw_secures_bye > 0 and count_draw_secures_bye < len(player_ids) else 0
+        pod_has_asymmetric_incentive = 1 if pod_has_asymmetric_cut_incentive or pod_has_asymmetric_bye_incentive else 0
+        draw_cut_status = [rank <= top_cut if top_cut > 0 else False for rank in pod_draw_secure_ranks]
+        win_cut_status = [rank <= top_cut if top_cut > 0 else False for rank in pod_win_secure_ranks]
+        draw_bye_status = [rank <= bye_rank if bye_rank else False for rank in pod_draw_secure_ranks]
+        win_bye_status = [rank <= bye_rank if bye_rank else False for rank in pod_win_secure_ranks]
+        player_draw_as_good_as_win = [
+            (draw_cut == win_cut) and (draw_bye == win_bye)
+            for draw_cut, win_cut, draw_bye, win_bye in zip(draw_cut_status, win_cut_status, draw_bye_status, win_bye_status, strict=True)
+        ]
+        draw_vs_win_status_same_count = sum(1 for value in player_draw_as_good_as_win if value)
+        pairwise_mutual_draw_benefit_count = 0
+        for left_index in range(len(player_draw_as_good_as_win)):
+            for right_index in range(left_index + 1, len(player_draw_as_good_as_win)):
+                if player_draw_as_good_as_win[left_index] and player_draw_as_good_as_win[right_index]:
+                    pairwise_mutual_draw_benefit_count += 1
+        count_players_draw_as_good_as_win_for_bye = sum(
+            1
+            for draw_status, win_status in zip(draw_bye_status, win_bye_status, strict=True)
+            if bye_rank and draw_status == win_status
+        )
+        first_row = rows[0]
 
         pods.append(
             DrawPodRow(
                 game_id=game_id,
                 date=game_date,
                 is_draw=is_draw,
-                is_swiss=1 if round_number is not None else 0,
+                is_swiss=is_swiss,
                 pod_size=len(rows),
                 spread=max(ratings) - min(ratings),
                 mean_elo=mean_elo,
@@ -864,6 +1146,93 @@ def build_rich_pod_cache(client: SupabaseClient) -> list[DrawPodRow]:
                 state_prior_draw_rate=state_prior_draw_rate,
                 country_prior_draw_rate=country_prior_draw_rate,
                 count_players_near_cut_band=count_players_near_cut_band,
+                tournament_id=tournament_id_str,
+                tournament_name=str(tournament_meta.get(str(tournament_id), {}).get("name") or ""),
+                series_key=series_key,
+                round_name=str(first_row.get("round_name") or ""),
+                table_number=parse_int(first_row.get("table_number"), -1),
+                series_prior_draw_rate_smoothed_50=series_prior_draw_rate_smoothed_50,
+                series_prior_draw_rate_smoothed_100=series_prior_draw_rate_smoothed_100,
+                series_prior_draw_rate_smoothed_250=series_prior_draw_rate_smoothed_250,
+                series_prior_draw_rate_smoothed_500=series_prior_draw_rate_smoothed_500,
+                series_events_seen_log=series_events_seen_log,
+                avg_player_prior_draw_smoothed_50=(sum(smoothed_player_draw_rates) / len(smoothed_player_draw_rates)) if smoothed_player_draw_rates else 0.0,
+                median_player_prior_draw_smoothed_50=float(np.median(np.asarray(smoothed_player_draw_rates, dtype=float))) if smoothed_player_draw_rates else 0.0,
+                max_player_prior_draw_smoothed_50=max(smoothed_player_draw_rates) if smoothed_player_draw_rates else 0.0,
+                avg_player_prior_games=avg_player_prior_games,
+                min_player_prior_games=min_player_prior_games,
+                player_prior_confidence_avg=player_prior_confidence_avg,
+                all_players_can_draw_into_cut=all_players_draw_safe,
+                any_player_eliminated_by_draw=1 if count_must_win_to_stay_live > 0 else 0,
+                all_players_locked_with_draw=all_players_draw_secures_cut,
+                count_players_draw_as_good_as_win=sum(1 for value in draw_as_good_as_win if value),
+                count_players_loss_eliminates=sum(1 for value in loss_eliminates if value),
+                draw_preserves_cut_rank_count=sum(1 for value in draw_preserves_cut_rank if value),
+                win_changes_cut_status_count=sum(1 for value in win_changes_cut_status if value),
+                same_points_count_in_pod=same_points_count_in_pod,
+                all_players_same_points=1 if player_points and same_points_count_in_pod == len(player_points) else 0,
+                points_range_within_pod=points_range_within_pod,
+                min_points_in_pod=min_points_in_pod,
+                max_points_in_pod=max_points_in_pod,
+                all_players_above_projected_cut_line=all_players_above_projected_cut_line,
+                all_players_within_one_point_of_cut_line=all_players_within_one_point_of_cut_line,
+                last_round_cut_fraction=cut_fraction if is_last_swiss_round else 0.0,
+                penultimate_round_cut_fraction=cut_fraction if is_penultimate_swiss_round else 0.0,
+                round_number_size_bucket=float((round_number if round_number is not None else -1) * (size_bucket + 1)),
+                last_round_size_bucket=size_bucket if is_last_swiss_round else 0,
+                round_size_cut_bucket_key=((round_number if round_number is not None else -1) * 100) + (size_bucket * 10) + cut_size_bucket,
+                round_size_cut_prior_draw_rate_smoothed_100=round_size_cut_prior_draw_rate_smoothed_100,
+                decisive_win_probability_entropy=decisive_entropy,
+                max_decisive_win_probability=decisive_max,
+                min_decisive_win_probability=decisive_min,
+                decisive_win_probability_spread=decisive_spread,
+                any_repeat_pair=1 if count_repeat_pairs > 0 else 0,
+                count_repeat_pairs=count_repeat_pairs,
+                pod_size_round_number=float(len(rows) * (round_number if round_number is not None else -1)),
+                pod_size_is_last_swiss_round=len(rows) if is_last_swiss_round else 0,
+                pod_size_cut_fraction=float(len(rows) * cut_fraction),
+                pod_size_series_prior_draw_rate=float(len(rows) * series_prior_draw_rate),
+                series_pod_size_prior_draw_rate_smoothed_100=series_pod_size_prior_draw_rate_smoothed_100,
+                series_swiss_prior_draw_rate_smoothed_100=series_swiss_prior_draw_rate_smoothed_100,
+                series_prior_draw_rate_residual=series_prior_draw_rate - global_recent_draw_rate_90d,
+                count_players_with_no_history=count_players_with_no_history,
+                count_players_with_low_history=count_players_with_low_history,
+                all_elos_default=1 if ratings and count_default_elos == len(ratings) else 0,
+                count_default_elos=count_default_elos,
+                seat_data_missing=1 if any((game_id, row.get("entry_id")) not in seat_by_pair for row in rows) else 0,
+                min_draw_secure_rank=min_draw_secure_rank,
+                max_draw_secure_rank=max_draw_secure_rank,
+                draw_secure_rank_spread=max_draw_secure_rank - min_draw_secure_rank,
+                all_players_draw_rank_within_cut_plus_4=1 if top_cut > 0 and pod_draw_secure_ranks and max_draw_secure_rank <= top_cut + 4 else 0,
+                all_players_draw_rank_within_cut_plus_8=1 if top_cut > 0 and pod_draw_secure_ranks and max_draw_secure_rank <= top_cut + 8 else 0,
+                bye_fraction=bye_fraction,
+                bye_line_points=float(bye_line_points),
+                expected_bye_line_points=float(expected_bye_line_points),
+                count_currently_in_bye=count_currently_in_bye,
+                count_draw_secures_bye=count_draw_secures_bye,
+                count_win_secures_bye=count_win_secures_bye,
+                count_must_win_for_bye=count_must_win_for_bye,
+                count_players_win_only_live=count_players_win_only_live,
+                count_players_win_only_live_for_bye=count_players_win_only_live_for_bye,
+                all_players_draw_lock_cut=all_players_draw_lock_cut,
+                all_players_draw_lock_bye=all_players_draw_lock_bye,
+                min_draw_rank_margin_to_cut=min_draw_rank_margin_to_cut,
+                min_draw_rank_margin_to_bye=min_draw_rank_margin_to_bye,
+                count_players_draw_makes_cut=count_players_draw_makes_cut,
+                count_players_draw_makes_bye=count_players_draw_makes_bye,
+                draw_hurts_any_player_cut_status=draw_hurts_any_player_cut_status,
+                draw_hurts_any_player_bye_status=draw_hurts_any_player_bye_status,
+                draw_hurts_any_player_status=draw_hurts_any_player_status,
+                all_players_above_cut_after_draw=all_players_above_cut_after_draw,
+                all_players_above_bye_after_draw=all_players_above_bye_after_draw,
+                all_players_above_cut_after_loss=all_players_above_cut_after_loss,
+                all_players_above_bye_after_loss=all_players_above_bye_after_loss,
+                pod_has_asymmetric_cut_incentive=pod_has_asymmetric_cut_incentive,
+                pod_has_asymmetric_bye_incentive=pod_has_asymmetric_bye_incentive,
+                pod_has_asymmetric_incentive=pod_has_asymmetric_incentive,
+                draw_vs_win_status_same_count=draw_vs_win_status_same_count,
+                pairwise_mutual_draw_benefit_count=pairwise_mutual_draw_benefit_count,
+                count_players_draw_as_good_as_win_for_bye=count_players_draw_as_good_as_win_for_bye,
             )
         )
 
@@ -888,6 +1257,12 @@ def build_rich_pod_cache(client: SupabaseClient) -> list[DrawPodRow]:
         if country_key:
             country_history[country_key][0] += is_draw
             country_history[country_key][1] += 1
+        round_size_cut_history[round_size_cut_key][0] += is_draw
+        round_size_cut_history[round_size_cut_key][1] += 1
+        series_pod_size_history[series_pod_size_key][0] += is_draw
+        series_pod_size_history[series_pod_size_key][1] += 1
+        series_swiss_history[series_swiss_key][0] += is_draw
+        series_swiss_history[series_swiss_key][1] += 1
 
     for tournament_id_str in list(pending_round_updates):
         apply_pending_round_updates(tournament_id_str)
@@ -954,6 +1329,59 @@ def evaluate_feature_sets(
             )
         )
     return sorted(results, key=lambda item: (item[0], item[1]))
+
+
+def stable_series_fold(series_key: str, fold_count: int) -> int:
+    digest = hashlib.sha256((series_key or "unknown_series").encode("utf-8")).hexdigest()
+    return int(digest[:8], 16) % fold_count
+
+
+def evaluate_series_holdout_feature_sets(
+    rows: list[DrawPodRow],
+    feature_sets: dict[str, list[str]],
+    *,
+    fold_count: int,
+    half_life: int,
+    base_params: dict[str, Any],
+) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    for name, features in feature_sets.items():
+        fold_scores: list[tuple[float, float, int, int]] = []
+        for fold_index in range(fold_count):
+            train_rows = [row for row in rows if stable_series_fold(row.series_key, fold_count) != fold_index]
+            validation_rows = [row for row in rows if stable_series_fold(row.series_key, fold_count) == fold_index]
+            if not train_rows or not validation_rows:
+                continue
+            x_train, y_train = make_xy(train_rows, features)
+            x_validation, y_validation = make_xy(validation_rows, features)
+            sample_weight = np.asarray(
+                [recency_weight(row.date, train_rows[-1].date, half_life) for row in train_rows],
+                dtype=float,
+            )
+            model = HistGradientBoostingClassifier(loss="log_loss", random_state=0, **base_params)
+            model.fit(x_train, y_train, sample_weight=sample_weight)
+            probabilities = model.predict_proba(x_validation)[:, 1]
+            log_loss, brier = score_probs(y_validation, probabilities)
+            fold_scores.append((log_loss, brier, len(train_rows), len(validation_rows)))
+        if not fold_scores:
+            continue
+        results.append(
+            {
+                "feature_set": name,
+                "avg_series_holdout_log_loss": float(np.mean([score[0] for score in fold_scores])),
+                "avg_series_holdout_brier": float(np.mean([score[1] for score in fold_scores])),
+                "folds": [
+                    {
+                        "log_loss": log_loss,
+                        "brier": brier,
+                        "train_rows": train_count,
+                        "validation_rows": validation_count,
+                    }
+                    for log_loss, brier, train_count, validation_count in fold_scores
+                ],
+            }
+        )
+    return sorted(results, key=lambda item: (item["avg_series_holdout_log_loss"], item["avg_series_holdout_brier"]))
 
 
 def tune_hgb_holdout(
@@ -1152,7 +1580,6 @@ def main() -> None:
     print(f"Prepared rolling folds: {[(len(train), len(validation)) for train, validation in folds]}", flush=True)
 
     full_features = [
-        "is_swiss",
         "pod_size",
         "spread",
         "mean_elo",
@@ -1252,7 +1679,124 @@ def main() -> None:
         "state_prior_draw_rate",
         "country_prior_draw_rate",
         "count_players_near_cut_band",
+        "series_prior_draw_rate_smoothed_50",
+        "series_prior_draw_rate_smoothed_100",
+        "series_prior_draw_rate_smoothed_250",
+        "series_prior_draw_rate_smoothed_500",
+        "series_events_seen_log",
+        "avg_player_prior_draw_smoothed_50",
+        "median_player_prior_draw_smoothed_50",
+        "max_player_prior_draw_smoothed_50",
+        "avg_player_prior_games",
+        "min_player_prior_games",
+        "player_prior_confidence_avg",
+        "all_players_can_draw_into_cut",
+        "any_player_eliminated_by_draw",
+        "all_players_locked_with_draw",
+        "count_players_draw_as_good_as_win",
+        "count_players_loss_eliminates",
+        "draw_preserves_cut_rank_count",
+        "win_changes_cut_status_count",
+        "same_points_count_in_pod",
+        "all_players_same_points",
+        "points_range_within_pod",
+        "min_points_in_pod",
+        "max_points_in_pod",
+        "all_players_above_projected_cut_line",
+        "all_players_within_one_point_of_cut_line",
+        "last_round_cut_fraction",
+        "penultimate_round_cut_fraction",
+        "round_number_size_bucket",
+        "last_round_size_bucket",
+        "round_size_cut_bucket_key",
+        "round_size_cut_prior_draw_rate_smoothed_100",
+        "decisive_win_probability_entropy",
+        "max_decisive_win_probability",
+        "min_decisive_win_probability",
+        "decisive_win_probability_spread",
+        "any_repeat_pair",
+        "count_repeat_pairs",
+        "pod_size_round_number",
+        "pod_size_is_last_swiss_round",
+        "pod_size_cut_fraction",
+        "pod_size_series_prior_draw_rate",
+        "series_pod_size_prior_draw_rate_smoothed_100",
+        "series_prior_draw_rate_residual",
+        "count_players_with_no_history",
+        "count_players_with_low_history",
+        "all_elos_default",
+        "count_default_elos",
+        "seat_data_missing",
+        "min_draw_secure_rank",
+        "max_draw_secure_rank",
+        "draw_secure_rank_spread",
+        "all_players_draw_rank_within_cut_plus_4",
+        "all_players_draw_rank_within_cut_plus_8",
+        "bye_fraction",
+        "bye_line_points",
+        "expected_bye_line_points",
+        "count_currently_in_bye",
+        "count_draw_secures_bye",
+        "count_win_secures_bye",
+        "count_must_win_for_bye",
+        "count_players_win_only_live",
+        "count_players_win_only_live_for_bye",
+        "all_players_draw_lock_cut",
+        "all_players_draw_lock_bye",
+        "min_draw_rank_margin_to_cut",
+        "min_draw_rank_margin_to_bye",
+        "count_players_draw_makes_cut",
+        "count_players_draw_makes_bye",
+        "draw_hurts_any_player_cut_status",
+        "draw_hurts_any_player_bye_status",
+        "draw_hurts_any_player_status",
+        "all_players_above_cut_after_draw",
+        "all_players_above_bye_after_draw",
+        "all_players_above_cut_after_loss",
+        "all_players_above_bye_after_loss",
+        "pod_has_asymmetric_cut_incentive",
+        "pod_has_asymmetric_bye_incentive",
+        "pod_has_asymmetric_incentive",
+        "draw_vs_win_status_same_count",
+        "pairwise_mutual_draw_benefit_count",
+        "count_players_draw_as_good_as_win_for_bye",
     ]
+    raw_series_features = {"series_prior_draw_rate", "series_events_seen"}
+    smoothed_series_features = {
+        "series_prior_draw_rate_smoothed_50",
+        "series_prior_draw_rate_smoothed_100",
+        "series_prior_draw_rate_smoothed_250",
+        "series_prior_draw_rate_smoothed_500",
+        "series_pod_size_prior_draw_rate_smoothed_100",
+        "series_prior_draw_rate_residual",
+        "series_events_seen_log",
+    }
+    player_history_features = {
+        "avg_player_prior_draw",
+        "median_player_prior_draw",
+        "min_player_prior_draw",
+        "max_player_prior_draw",
+        "prior_draw_std",
+        "prior_draw_range",
+        "count_high_draw_players",
+        "count_high_win_low_draw_players",
+        "draw_rate_range_above_threshold",
+        "avg_player_prior_win",
+        "max_player_prior_win",
+        "avg_player_prior_decisive",
+        "max_player_prior_decisive",
+        "avg_player_prior_draw_smoothed_50",
+        "median_player_prior_draw_smoothed_50",
+        "max_player_prior_draw_smoothed_50",
+        "avg_player_prior_games",
+        "min_player_prior_games",
+        "player_prior_confidence_avg",
+        "count_players_with_no_history",
+        "count_players_with_low_history",
+        "all_elos_default",
+        "count_default_elos",
+        "seat_data_missing",
+    }
     feature_sets = {
         "full": full_features,
         "projected_cut_only": [
@@ -1288,11 +1832,40 @@ def main() -> None:
         ],
         "no_calendar": [feature for feature in full_features if feature not in {"month", "quarter"}],
         "no_seat": [feature for feature in full_features if feature not in {"seat_highest", "seat_second", "top2_adjacent"}],
-        "no_player_history": [feature for feature in full_features if feature not in {"avg_player_prior_draw", "max_player_prior_draw"}],
+        "no_player_history": [feature for feature in full_features if feature not in player_history_features],
         "no_recent_global": [feature for feature in full_features if feature != "global_recent_draw_rate_90d"],
-        "no_round_context": [feature for feature in full_features if feature not in {"swiss_progress", "round_number"}],
+        "no_round_context": [
+            feature
+            for feature in full_features
+            if feature
+            not in {
+                "swiss_progress",
+                "round_number",
+                "rounds_remaining",
+                "is_last_swiss_round",
+                "is_penultimate_swiss_round",
+                "last_round_cut_fraction",
+                "penultimate_round_cut_fraction",
+                "round_number_size_bucket",
+                "last_round_size_bucket",
+                "round_size_cut_bucket_key",
+                "round_size_cut_prior_draw_rate_smoothed_100",
+            }
+        ],
+        "no_series": [feature for feature in full_features if feature not in raw_series_features | smoothed_series_features],
+        "smoothed_series_only": [
+            feature for feature in full_features if feature not in raw_series_features
+        ],
+        "raw_series_only": [
+            feature for feature in full_features if feature not in smoothed_series_features
+        ],
+        "smoothed_series_100_only": [
+            feature
+            for feature in full_features
+            if feature not in raw_series_features | smoothed_series_features
+        ]
+        + ["series_prior_draw_rate_smoothed_100", "series_events_seen_log"],
         "compact": [
-            "is_swiss",
             "pod_size",
             "spread",
             "mean_elo",
@@ -1325,6 +1898,35 @@ def main() -> None:
                 "avg_val_brier": brier,
                 "feature_set": name,
                 "feature_count": len(features),
+            },
+            flush=True,
+        )
+    series_holdout_feature_sets = {
+        name: feature_sets[name]
+        for name in (
+            "full",
+            "projected_cut_only",
+            "no_series",
+            "smoothed_series_only",
+            "smoothed_series_100_only",
+            "raw_series_only",
+        )
+        if name in feature_sets
+    }
+    series_holdout_results = evaluate_series_holdout_feature_sets(
+        development_rows,
+        series_holdout_feature_sets,
+        fold_count=5,
+        half_life=90,
+        base_params=base_params,
+    )
+    print("Series-holdout feature results:", flush=True)
+    for row in series_holdout_results:
+        print(
+            {
+                "feature_set": row["feature_set"],
+                "avg_series_holdout_log_loss": row["avg_series_holdout_log_loss"],
+                "avg_series_holdout_brier": row["avg_series_holdout_brier"],
             },
             flush=True,
         )
@@ -1432,12 +2034,17 @@ def main() -> None:
     artifact_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.parent.mkdir(parents=True, exist_ok=True)
 
-    best_calibration = "platt" if platt_log_loss < isotonic_log_loss else "isotonic"
+    calibration_scores = {
+        "none": uncalibrated_log_loss,
+        "isotonic": isotonic_log_loss,
+        "platt": platt_log_loss,
+    }
+    best_calibration = min(calibration_scores, key=calibration_scores.get)
     artifact = {
         "selection": asdict(selection),
         "model": final_hgb,
         "calibration": best_calibration,
-        "calibrator": platt if best_calibration == "platt" else isotonic,
+        "calibrator": platt if best_calibration == "platt" else isotonic if best_calibration == "isotonic" else None,
     }
     with artifact_path.open("wb") as handle:
         pickle.dump(artifact, handle)
@@ -1453,6 +2060,7 @@ def main() -> None:
             }
             for log_loss, brier, name, features in feature_results
         ],
+        "series_holdout_feature_results": series_holdout_results,
         "hyperparameter_results": [
             {"val_log_loss": log_loss, "val_brier": brier, "half_life": half_life, **params}
             for log_loss, brier, half_life, params in hyperparameter_results[:10]

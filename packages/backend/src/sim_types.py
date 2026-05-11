@@ -109,6 +109,87 @@ ALL_DRAW_FEATURES = [
     "state_prior_draw_rate",
     "country_prior_draw_rate",
     "count_players_near_cut_band",
+    "series_prior_draw_rate_smoothed_50",
+    "series_prior_draw_rate_smoothed_100",
+    "series_prior_draw_rate_smoothed_250",
+    "series_prior_draw_rate_smoothed_500",
+    "series_events_seen_log",
+    "avg_player_prior_draw_smoothed_50",
+    "median_player_prior_draw_smoothed_50",
+    "max_player_prior_draw_smoothed_50",
+    "avg_player_prior_games",
+    "min_player_prior_games",
+    "player_prior_confidence_avg",
+    "all_players_can_draw_into_cut",
+    "any_player_eliminated_by_draw",
+    "all_players_locked_with_draw",
+    "count_players_draw_as_good_as_win",
+    "count_players_loss_eliminates",
+    "draw_preserves_cut_rank_count",
+    "win_changes_cut_status_count",
+    "same_points_count_in_pod",
+    "all_players_same_points",
+    "points_range_within_pod",
+    "min_points_in_pod",
+    "max_points_in_pod",
+    "all_players_above_projected_cut_line",
+    "all_players_within_one_point_of_cut_line",
+    "last_round_cut_fraction",
+    "penultimate_round_cut_fraction",
+    "round_number_size_bucket",
+    "last_round_size_bucket",
+    "round_size_cut_bucket_key",
+    "round_size_cut_prior_draw_rate_smoothed_100",
+    "decisive_win_probability_entropy",
+    "max_decisive_win_probability",
+    "min_decisive_win_probability",
+    "decisive_win_probability_spread",
+    "any_repeat_pair",
+    "count_repeat_pairs",
+    "pod_size_round_number",
+    "pod_size_is_last_swiss_round",
+    "pod_size_cut_fraction",
+    "pod_size_series_prior_draw_rate",
+    "series_pod_size_prior_draw_rate_smoothed_100",
+    "series_prior_draw_rate_residual",
+    "count_players_with_no_history",
+    "count_players_with_low_history",
+    "all_elos_default",
+    "count_default_elos",
+    "seat_data_missing",
+    "min_draw_secure_rank",
+    "max_draw_secure_rank",
+    "draw_secure_rank_spread",
+    "all_players_draw_rank_within_cut_plus_4",
+    "all_players_draw_rank_within_cut_plus_8",
+    "bye_fraction",
+    "bye_line_points",
+    "expected_bye_line_points",
+    "count_currently_in_bye",
+    "count_draw_secures_bye",
+    "count_win_secures_bye",
+    "count_must_win_for_bye",
+    "count_players_win_only_live",
+    "count_players_win_only_live_for_bye",
+    "all_players_draw_lock_cut",
+    "all_players_draw_lock_bye",
+    "min_draw_rank_margin_to_cut",
+    "min_draw_rank_margin_to_bye",
+    "count_players_draw_makes_cut",
+    "count_players_draw_makes_bye",
+    "draw_hurts_any_player_cut_status",
+    "draw_hurts_any_player_bye_status",
+    "draw_hurts_any_player_status",
+    "all_players_above_cut_after_draw",
+    "all_players_above_bye_after_draw",
+    "all_players_above_cut_after_loss",
+    "all_players_above_bye_after_loss",
+    "pod_has_asymmetric_cut_incentive",
+    "pod_has_asymmetric_bye_incentive",
+    "pod_has_asymmetric_incentive",
+    "draw_vs_win_status_same_count",
+    "pairwise_mutual_draw_benefit_count",
+    "count_players_draw_as_good_as_win_for_bye",
 ]
 
 
@@ -162,6 +243,7 @@ class TournamentSpec:
     top_cut: int
     player_count: int
     pod_size: int = 4
+    repeat_avoidance_max_pods: int | None = None
     state: str | None = None
     country: str | None = None
 
@@ -182,6 +264,7 @@ class PlayerHistory:
     draw_rate: float = 0.0
     win_rate: float = 0.0
     decisive_rate: float = 0.0
+    games_played: int = 0
 
 
 @dataclass(slots=True)
@@ -231,6 +314,7 @@ class TournamentState:
     completed_pod_count: int = 0
     current_round_index: int = 0
     feature_context: FeatureContext = field(default_factory=FeatureContext)
+    eligible_player_ids: set[str] | None = None
     fast_live_mode: bool = False
     track_round_stats: bool = True
     round_draw_counts: dict[int, int] = field(default_factory=dict)
@@ -239,14 +323,16 @@ class TournamentState:
 
 @dataclass(slots=True)
 class SimulationSummary:
-    win_counts: dict[str, int]
-    top_cut_counts: dict[str, int]
+    win_counts: dict[str, float]
+    top_cut_counts: dict[str, float]
     expected_points_total: dict[str, float]
     expected_finish_total: dict[str, float]
     round_draw_counts: dict[int, int]
     round_pod_counts: dict[int, int]
     simulations: int
-    advancement_counts: dict[int, dict[str, int]] = field(default_factory=dict)
+    advancement_counts: dict[int, dict[str, float]] = field(default_factory=dict)
+    top_cut_line_point_counts: dict[int, int] = field(default_factory=dict)
+    bye_line_point_counts: dict[int, int] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -273,6 +359,16 @@ class SimulationSummary:
                     self.round_draw_counts.get(round_index, 0) / self.round_pod_counts.get(round_index, 1)
                 )
                 for round_index in self.round_pod_counts
+            },
+            "point_requirements": {
+                "top_cut": [
+                    {"points": points, "probability": count / self.simulations, "count": count}
+                    for points, count in sorted(self.top_cut_line_point_counts.items())
+                ],
+                "bye": [
+                    {"points": points, "probability": count / self.simulations, "count": count}
+                    for points, count in sorted(self.bye_line_point_counts.items())
+                ],
             },
             "simulations": self.simulations,
         }

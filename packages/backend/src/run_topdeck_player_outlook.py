@@ -158,7 +158,7 @@ def simulate_distribution(
             round_results.append(result)
             apply_pod_result(state, result)
         state.current_round_index = active_round_index + 1
-        state, winner_id, _, _ = simulate_from_state(
+        state, winner_probabilities, _, _ = simulate_from_state(
             state,
             draw_model,
             seed=seed + simulation_index + 100_000,
@@ -166,8 +166,7 @@ def simulate_distribution(
             locked_round_pods=None,
         )
         standing_counts[rank_player_after_swiss(state, target_player_id)] += 1
-        if winner_id == target_player_id:
-            tournament_wins += 1
+        tournament_wins += winner_probabilities.get(target_player_id, 0.0)
     return normalize_distribution(standing_counts, simulations), tournament_wins / simulations
 
 

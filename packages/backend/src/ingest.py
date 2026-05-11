@@ -14,6 +14,7 @@ import os
 import re
 import sys
 import time
+from collections import defaultdict
 from functools import lru_cache
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -1581,14 +1582,19 @@ class DataIngester:
             for entry in entries
             if entry.get("player_id") and entry.get("topdeck_entry_id")
         }
-        db_entries = [
-            {k: v for k, v in entry.items() if k != "topdeck_entry_id"}
-            for entry in entries
-        ]
+        entries_by_keys: dict[tuple[str, ...], list[dict[str, Any]]] = defaultdict(list)
+        for entry in entries:
+            db_entry = {k: v for k, v in entry.items() if k != "topdeck_entry_id"}
+            entries_by_keys[tuple(sorted(db_entry.keys()))].append(db_entry)
 
-        result = self.supabase.upsert(
-            "tournament_entries", db_entries, on_conflict="tournament_id,player_id"
-        )
+        result: list[dict[str, Any]] = []
+        for db_entries in entries_by_keys.values():
+            upserted = self.supabase.upsert(
+                "tournament_entries", db_entries, on_conflict="tournament_id,player_id"
+            )
+            if upserted:
+                result.extend(upserted)
+
         if not result:
             logger.error("Failed to batch upsert tournament entries")
             return {}

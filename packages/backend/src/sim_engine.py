@@ -8,6 +8,7 @@ import os
 import random
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
+from itertools import product
 
 from sim_models import (
     ELO_BASE,
@@ -17,7 +18,7 @@ from sim_models import (
     predict_decisive_win_probabilities,
     predict_draw_probabilities,
 )
-from sim_pairings import pair_swiss_round, pair_topdeck_bracket, select_top_cut, sort_standings_rows
+from sim_pairings import pair_swiss_round, pair_topdeck_bracket, select_top_cut, sort_standings_rows, topdeck_bye_rank
 from sim_types import (
     FeatureContext,
     PlayerHistory,
@@ -35,18 +36,24 @@ def clone_feature_context(
     feature_context: FeatureContext | None,
     *,
     share_global_pair_meetings: bool = False,
+    share_player_history: bool = False,
 ) -> FeatureContext:
     if feature_context is None:
         return FeatureContext()
     return FeatureContext(
-        player_history={
-            player_id: PlayerHistory(
-                draw_rate=history.draw_rate,
-                win_rate=history.win_rate,
-                decisive_rate=history.decisive_rate,
-            )
-            for player_id, history in feature_context.player_history.items()
-        },
+        player_history=(
+            feature_context.player_history
+            if share_player_history
+            else {
+                player_id: PlayerHistory(
+                    draw_rate=history.draw_rate,
+                    win_rate=history.win_rate,
+                    decisive_rate=history.decisive_rate,
+                    games_played=history.games_played,
+                )
+                for player_id, history in feature_context.player_history.items()
+            }
+        ),
         tournament_pair_meetings=dict(feature_context.tournament_pair_meetings),
         global_pair_meetings=(
             feature_context.global_pair_meetings
@@ -78,16 +85,6 @@ def initialize_state(
 
 
 def clone_state(state: TournamentState) -> TournamentState:
-    cloned_players = {
-        player_id: SimPlayer(
-            player_id=player.player_id,
-            name=player.name,
-            elo=player.elo,
-            topdeck_id=player.topdeck_id,
-            tiebreak_seed=player.tiebreak_seed,
-        )
-        for player_id, player in state.players.items()
-    }
     cloned_standings = {
         player_id: StandingRow(
             player_id=standing.player_id,
@@ -103,14 +100,16 @@ def clone_state(state: TournamentState) -> TournamentState:
     }
     return TournamentState(
         spec=state.spec,
-        players=cloned_players,
+        players=state.players,
         standings=cloned_standings,
         completed_pod_count=state.completed_pod_count,
         current_round_index=state.current_round_index,
         feature_context=clone_feature_context(
             state.feature_context,
             share_global_pair_meetings=state.fast_live_mode,
+            share_player_history=state.fast_live_mode,
         ),
+        eligible_player_ids=set(state.eligible_player_ids) if state.eligible_player_ids is not None else None,
         fast_live_mode=state.fast_live_mode,
         track_round_stats=state.track_round_stats,
     )
@@ -188,16 +187,18 @@ def apply_pod_result(state: TournamentState, result: PodResult) -> None:
             standing.wins += 1
         else:
             standing.losses += 1
-        history = feature_context.player_history.get(player_id, PlayerHistory())
-        prior_games = standing.pods_played - 1
-        total_games = max(1, standing.pods_played)
-        prior_draws = history.draw_rate * prior_games
-        prior_wins = history.win_rate * prior_games
-        prior_decisive = history.decisive_rate * prior_games
-        history.draw_rate = (prior_draws + (1 if result.is_draw else 0)) / total_games
-        history.win_rate = (prior_wins + (1 if player_id == result.winner_id else 0)) / total_games
-        history.decisive_rate = (prior_decisive + (0 if result.is_draw else 1)) / total_games
-        feature_context.player_history[player_id] = history
+        if not state.fast_live_mode:
+            history = feature_context.player_history.get(player_id, PlayerHistory())
+            prior_games = standing.pods_played - 1
+            total_games = max(1, standing.pods_played)
+            prior_draws = history.draw_rate * prior_games
+            prior_wins = history.win_rate * prior_games
+            prior_decisive = history.decisive_rate * prior_games
+            history.draw_rate = (prior_draws + (1 if result.is_draw else 0)) / total_games
+            history.win_rate = (prior_wins + (1 if player_id == result.winner_id else 0)) / total_games
+            history.decisive_rate = (prior_decisive + (0 if result.is_draw else 1)) / total_games
+            history.games_played = total_games
+            feature_context.player_history[player_id] = history
     for index, player_id in enumerate(result.player_ids):
         for opponent_id in result.player_ids[index + 1 :]:
             state.standings[player_id].opponents.add(opponent_id)
@@ -226,16 +227,18 @@ def apply_bye(state: TournamentState, player_id: str) -> None:
     standing.bye_count += 1
     standing.points += 5
     standing.wins += 1
-    history = state.feature_context.player_history.get(player_id, PlayerHistory())
-    prior_games = standing.pods_played - 1
-    total_games = max(1, standing.pods_played)
-    prior_draws = history.draw_rate * prior_games
-    prior_wins = history.win_rate * prior_games
-    prior_decisive = history.decisive_rate * prior_games
-    history.draw_rate = prior_draws / total_games
-    history.win_rate = (prior_wins + 1) / total_games
-    history.decisive_rate = (prior_decisive + 1) / total_games
-    state.feature_context.player_history[player_id] = history
+    if not state.fast_live_mode:
+        history = state.feature_context.player_history.get(player_id, PlayerHistory())
+        prior_games = standing.pods_played - 1
+        total_games = max(1, standing.pods_played)
+        prior_draws = history.draw_rate * prior_games
+        prior_wins = history.win_rate * prior_games
+        prior_decisive = history.decisive_rate * prior_games
+        history.draw_rate = prior_draws / total_games
+        history.win_rate = (prior_wins + 1) / total_games
+        history.decisive_rate = (prior_decisive + 1) / total_games
+        history.games_played = total_games
+        state.feature_context.player_history[player_id] = history
 
 
 def simulate_swiss(
@@ -323,6 +326,87 @@ def simulate_bracket_winner(
     return remaining[0], advancement_by_size
 
 
+def exact_top_cut_probabilities(
+    qualified_player_ids: list[str],
+    state: TournamentState,
+    *,
+    max_exact_cut_size: int = 16,
+) -> tuple[dict[str, float], dict[int, dict[str, float]]]:
+    if len(qualified_player_ids) > max_exact_cut_size:
+        raise ValueError(f"exact top-cut propagation is capped at {max_exact_cut_size} players")
+
+    initial_seed_rank = {player_id: index for index, player_id in enumerate(qualified_player_ids)}
+    winner_probabilities: dict[str, float] = defaultdict(float)
+    advancement_probabilities: dict[int, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+
+    def visit(remaining: list[str], round_index: int, branch_probability: float) -> None:
+        if not remaining or branch_probability <= 0:
+            return
+        for player_id in remaining:
+            advancement_probabilities[len(remaining)][player_id] += branch_probability
+        if len(remaining) == 1:
+            winner_probabilities[remaining[0]] += branch_probability
+            return
+
+        auto_advancers, pods = pair_topdeck_bracket(remaining, round_index)
+        if not pods:
+            if auto_advancers:
+                split_probability = branch_probability / len(auto_advancers)
+                for player_id in auto_advancers:
+                    winner_probabilities[player_id] += split_probability
+            return
+
+        win_probabilities = predict_decisive_win_probabilities(pods, state)
+        pod_options = [
+            list(zip(pod.player_ids, win_probabilities[(pod.round_index, pod.table_number)], strict=False))
+            for pod in pods
+        ]
+        for outcome in product(*pod_options):
+            winners = auto_advancers + [player_id for player_id, _probability in outcome]
+            probability = branch_probability
+            for _player_id, player_probability in outcome:
+                probability *= player_probability
+            ordered_winners = sorted(winners, key=lambda player_id: initial_seed_rank[player_id])
+            visit(ordered_winners, round_index + 1, probability)
+
+    visit(qualified_player_ids, state.spec.swiss_rounds, 1.0)
+    return dict(winner_probabilities), {
+        cut_size: dict(player_probabilities)
+        for cut_size, player_probabilities in advancement_probabilities.items()
+    }
+
+
+def resolve_bracket_probabilities(
+    qualified_player_ids: list[str],
+    state: TournamentState,
+    rng: random.Random,
+    draw_model: LoadedDrawModel,
+    context: TournamentContext,
+    *,
+    exact_cut_sizes: tuple[int, ...] = (16, 10, 4),
+) -> tuple[dict[str, float], dict[int, dict[str, float]]]:
+    if len(qualified_player_ids) in exact_cut_sizes:
+        return exact_top_cut_probabilities(
+            qualified_player_ids,
+            state,
+            max_exact_cut_size=max(exact_cut_sizes),
+        )
+
+    winner_id, advancement_by_size = simulate_bracket_winner(
+        qualified_player_ids,
+        state,
+        rng,
+        draw_model,
+        context,
+    )
+    winner_probabilities = {winner_id: 1.0} if winner_id else {}
+    advancement_probabilities = {
+        cut_size: {player_id: 1.0 for player_id in player_ids}
+        for cut_size, player_ids in advancement_by_size.items()
+    }
+    return winner_probabilities, advancement_probabilities
+
+
 def simulate_tournament(
     spec: TournamentSpec,
     entrants: list[SimPlayer],
@@ -330,7 +414,7 @@ def simulate_tournament(
     *,
     seed: int | None = None,
     feature_context=None,
-) -> tuple[TournamentState, str | None, list[str], dict[int, list[str]]]:
+) -> tuple[TournamentState, dict[str, float], list[str], dict[int, dict[str, float]]]:
     state = initialize_state(spec, entrants, feature_context=feature_context)
     return simulate_from_state(state, draw_model, seed=seed)
 
@@ -344,7 +428,7 @@ def simulate_from_state(
     locked_round_pods: list[Pod] | None = None,
     locked_round_draw_probabilities: dict[tuple[int, int], float] | None = None,
     locked_round_win_probabilities: dict[tuple[int, int], tuple[float, ...]] | None = None,
-) -> tuple[TournamentState, str | None, list[str], dict[int, list[str]]]:
+) -> tuple[TournamentState, dict[str, float], list[str], dict[int, dict[str, float]]]:
     rng = random.Random(seed)
     context = build_tournament_context(state.spec)
     effective_start_round = state.current_round_index if start_round_index is None else start_round_index
@@ -360,10 +444,16 @@ def simulate_from_state(
     )
     top_cut = select_top_cut(state) if state.spec.top_cut > 0 else []
     if top_cut:
-        winner_id, advancement_by_size = simulate_bracket_winner(top_cut, state, rng, draw_model, context)
+        winner_probabilities, advancement_probabilities = resolve_bracket_probabilities(
+            top_cut,
+            state,
+            rng,
+            draw_model,
+            context,
+        )
     else:
-        winner_id, advancement_by_size = None, {}
-    return state, winner_id, top_cut, advancement_by_size
+        winner_probabilities, advancement_probabilities = {}, {}
+    return state, winner_probabilities, top_cut, advancement_probabilities
 
 
 def _run_monte_carlo_batch(
@@ -381,23 +471,30 @@ def _run_monte_carlo_batch(
     expected_finish_total: dict[str, float] = defaultdict(float)
     round_draw_counts: dict[int, int] = defaultdict(int)
     round_pod_counts: dict[int, int] = defaultdict(int)
+    top_cut_line_point_counts: dict[int, int] = defaultdict(int)
+    bye_line_point_counts: dict[int, int] = defaultdict(int)
 
     for simulation_index in range(simulations):
-        state, winner_id, top_cut, advancement_by_size = simulate_tournament(
+        state, winner_probabilities, top_cut, advancement_probabilities = simulate_tournament(
             spec,
             entrants,
             draw_model,
             seed=seed + simulation_index,
             feature_context=feature_context,
         )
-        if winner_id:
-            win_counts[winner_id] += 1
+        for player_id, probability in winner_probabilities.items():
+            win_counts[player_id] += probability
         for player_id in top_cut:
             top_cut_counts[player_id] += 1
-        for cut_size, player_ids in advancement_by_size.items():
-            for player_id in player_ids:
-                advancement_counts[cut_size][player_id] += 1
+        for cut_size, player_probabilities in advancement_probabilities.items():
+            for player_id, probability in player_probabilities.items():
+                advancement_counts[cut_size][player_id] += probability
         ranked = sort_standings_rows(state)
+        if 0 < spec.top_cut <= len(ranked):
+            top_cut_line_point_counts[ranked[spec.top_cut - 1].points] += 1
+        bye_rank = topdeck_bye_rank(spec.top_cut)
+        if bye_rank is not None and bye_rank <= len(ranked):
+            bye_line_point_counts[ranked[bye_rank - 1].points] += 1
         for finish_index, standing in enumerate(ranked, start=1):
             expected_points_total[standing.player_id] += standing.points
             expected_finish_total[standing.player_id] += finish_index
@@ -415,6 +512,8 @@ def _run_monte_carlo_batch(
         round_draw_counts=dict(round_draw_counts),
         round_pod_counts=dict(round_pod_counts),
         simulations=simulations,
+        top_cut_line_point_counts=dict(top_cut_line_point_counts),
+        bye_line_point_counts=dict(bye_line_point_counts),
     )
 
 
@@ -437,9 +536,11 @@ def _run_state_monte_carlo_batch(
     expected_finish_total: dict[str, float] = defaultdict(float)
     round_draw_counts: dict[int, int] = defaultdict(int)
     round_pod_counts: dict[int, int] = defaultdict(int)
+    top_cut_line_point_counts: dict[int, int] = defaultdict(int)
+    bye_line_point_counts: dict[int, int] = defaultdict(int)
     for simulation_index in range(simulations):
         state = clone_state(base_state)
-        state, winner_id, top_cut, advancement_by_size = simulate_from_state(
+        state, winner_probabilities, top_cut, advancement_probabilities = simulate_from_state(
             state,
             draw_model,
             seed=seed + simulation_index,
@@ -448,16 +549,21 @@ def _run_state_monte_carlo_batch(
             locked_round_draw_probabilities=locked_round_draw_probabilities,
             locked_round_win_probabilities=locked_round_win_probabilities,
         )
-        if winner_id:
-            win_counts[winner_id] += 1
+        for player_id, probability in winner_probabilities.items():
+            win_counts[player_id] += probability
         for player_id in top_cut:
             top_cut_counts[player_id] += 1
         if requested_advancement_sizes:
             for cut_size in requested_advancement_sizes:
-                for player_id in advancement_by_size.get(cut_size, []):
-                    advancement_counts[cut_size][player_id] += 1
+                for player_id, probability in advancement_probabilities.get(cut_size, {}).items():
+                    advancement_counts[cut_size][player_id] += probability
         if collect_detailed_metrics:
             ranked = sort_standings_rows(state)
+            if 0 < state.spec.top_cut <= len(ranked):
+                top_cut_line_point_counts[ranked[state.spec.top_cut - 1].points] += 1
+            bye_rank = topdeck_bye_rank(state.spec.top_cut)
+            if bye_rank is not None and bye_rank <= len(ranked):
+                bye_line_point_counts[ranked[bye_rank - 1].points] += 1
             for finish_index, standing in enumerate(ranked, start=1):
                 expected_points_total[standing.player_id] += standing.points
                 expected_finish_total[standing.player_id] += finish_index
@@ -475,6 +581,8 @@ def _run_state_monte_carlo_batch(
         round_draw_counts=dict(round_draw_counts),
         round_pod_counts=dict(round_pod_counts),
         simulations=simulations,
+        top_cut_line_point_counts=dict(top_cut_line_point_counts),
+        bye_line_point_counts=dict(bye_line_point_counts),
     )
 
 
@@ -486,6 +594,8 @@ def _merge_summaries(summaries: list[SimulationSummary]) -> SimulationSummary:
     expected_finish_total: dict[str, float] = defaultdict(float)
     round_draw_counts: dict[int, int] = defaultdict(int)
     round_pod_counts: dict[int, int] = defaultdict(int)
+    top_cut_line_point_counts: dict[int, int] = defaultdict(int)
+    bye_line_point_counts: dict[int, int] = defaultdict(int)
     total_simulations = 0
 
     for summary in summaries:
@@ -505,6 +615,10 @@ def _merge_summaries(summaries: list[SimulationSummary]) -> SimulationSummary:
             round_draw_counts[round_index] += count
         for round_index, count in summary.round_pod_counts.items():
             round_pod_counts[round_index] += count
+        for points, count in summary.top_cut_line_point_counts.items():
+            top_cut_line_point_counts[points] += count
+        for points, count in summary.bye_line_point_counts.items():
+            bye_line_point_counts[points] += count
 
     return SimulationSummary(
         win_counts=dict(win_counts),
@@ -515,6 +629,8 @@ def _merge_summaries(summaries: list[SimulationSummary]) -> SimulationSummary:
         round_draw_counts=dict(round_draw_counts),
         round_pod_counts=dict(round_pod_counts),
         simulations=total_simulations,
+        top_cut_line_point_counts=dict(top_cut_line_point_counts),
+        bye_line_point_counts=dict(bye_line_point_counts),
     )
 
 

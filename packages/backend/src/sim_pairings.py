@@ -39,8 +39,13 @@ def standings_sort_key(state: TournamentState, player_id: str) -> tuple[float, f
 
 
 def sort_standings_rows(state: TournamentState) -> list[StandingRow]:
+    eligible_player_ids = state.eligible_player_ids
     return sorted(
-        state.standings.values(),
+        (
+            row
+            for row in state.standings.values()
+            if eligible_player_ids is None or row.player_id in eligible_player_ids
+        ),
         key=lambda row: standings_sort_key(state, row.player_id),
     )
 
@@ -148,12 +153,20 @@ def _pods_from_brackets(
     if carry_down:
         pod_groups.extend(_build_initial_pods_from_pool(carry_down, pod_size))
     pod_groups = _normalize_trailing_pods(pod_groups)
+    repeat_avoidance_max_pods = state.spec.repeat_avoidance_max_pods
+    if repeat_avoidance_max_pods is not None and (
+        repeat_avoidance_max_pods <= 0 or len(pod_groups) > repeat_avoidance_max_pods
+    ):
+        return pod_groups
     return _optimize_pods_for_repeats(state, pod_groups)
 
 
 def pair_swiss_round(state: TournamentState, round_index: int, rng: random.Random) -> list[Pod]:
     grouped: dict[int, list[str]] = defaultdict(list)
+    eligible_player_ids = state.eligible_player_ids
     for player_id, standing in state.standings.items():
+        if eligible_player_ids is not None and player_id not in eligible_player_ids:
+            continue
         grouped[standing.points].append(player_id)
 
     pod_size = state.spec.pod_size
@@ -181,6 +194,14 @@ def select_top_cut(state: TournamentState) -> list[str]:
     return [row.player_id for row in rows[: state.spec.top_cut]]
 
 
+def topdeck_bye_rank(cut_size: int) -> int | None:
+    if cut_size == 40:
+        return 8
+    if cut_size == 10:
+        return 2
+    return None
+
+
 def pair_bracket(players: list[str], round_index: int, pod_size: int) -> list[Pod]:
     pods: list[Pod] = []
     for index in range(0, len(players), pod_size):
@@ -203,7 +224,12 @@ def pair_topdeck_bracket(players: list[str], round_index: int) -> tuple[list[str
     auto_advancers: list[str] = []
     pod_groups: list[list[str]]
 
-    if len(players) == 40:
+    if len(players) == 64:
+        pod_groups = [
+            [players[index], players[31 - index], players[32 + index], players[63 - index]]
+            for index in range(16)
+        ]
+    elif len(players) == 40:
         auto_advancers = players[:8]
         play_in = players[8:]
         pod_groups = [

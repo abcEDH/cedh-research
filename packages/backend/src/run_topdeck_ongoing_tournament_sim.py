@@ -5,9 +5,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import random
 import re
+from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -15,16 +17,39 @@ from typing import Any
 import requests
 
 from ingest import TopDeckClient, is_draw_winner_id, load_local_env
-from run_historical_tournament_sim import build_feature_context, fetch_pre_tournament_elos
+from run_historical_tournament_sim import (
+    build_feature_context,
+    fetch_historical_point_requirement_baseline,
+    fetch_pre_tournament_elos,
+)
 from sim_engine import (
     apply_pod_result,
+    build_tournament_context,
+    clone_state,
+    exact_top_cut_probabilities,
     initialize_state,
-    run_monte_carlo_from_state,
+    simulate_swiss,
 )
-from sim_models import load_draw_model_artifact
+from sim_models import (
+    ELO_BASE,
+    ELO_DIVISOR,
+    SEAT_ELO_BONUS,
+    build_round_snapshot,
+    load_draw_model_artifact,
+    predict_draw_probabilities,
+    predict_decisive_win_probabilities,
+)
+from sim_pairings import select_top_cut, sort_standings_rows, topdeck_bye_rank
 from sim_types import FeatureContext, Pod, PodResult, SimPlayer, TournamentSpec
+from tournament_sim_runner import (
+    DEFAULT_ADVANCEMENT_SIZES,
+    build_common_output,
+    run_simulation_from_state,
+)
 
 DEFAULT_DRAW_MODEL_PATH = Path("/tmp/cedh_draw_model_artifact_v4.pkl")
+K_FACTOR_DECISIVE = 64
+K_FACTOR_DRAW = 26
 
 
 def fetch_event_page_html(event_id: str) -> str:
@@ -172,10 +197,14 @@ def build_pods_for_round(round_data: dict[str, Any], round_index: int, id_map: d
         if len(player_ids) < 2:
             continue
         table_number = table.get("table") or table.get("table_number") or table.get("tableNumber") or (len(pods) + 1)
+        try:
+            parsed_table_number = int(table_number)
+        except (TypeError, ValueError):
+            parsed_table_number = len(pods) + 1
         pods.append(
             Pod(
                 round_index=round_index,
-                table_number=int(table_number),
+                table_number=parsed_table_number,
                 player_ids=player_ids,
                 round_name=f"Round {round_index + 1}",
                 seats_by_player={player_id: seat for seat, player_id in enumerate(player_ids, start=1)},
@@ -200,12 +229,12 @@ def table_active(table: dict[str, Any]) -> bool:
     return winner_id in (None, "")
 
 
-def build_result_for_table(pod: Pod, table: dict[str, Any]) -> PodResult | None:
+def build_result_for_table(pod: Pod, table: dict[str, Any], id_map: dict[str, str]) -> PodResult | None:
     winner_id = table.get("winner_id") or table.get("winnerId")
     if not table_completed(table):
         return None
     draw = is_draw_winner_id(winner_id)
-    normalized_winner_id = None if draw else str(winner_id)
+    normalized_winner_id = None if draw else id_map.get(str(winner_id), str(winner_id))
     return PodResult(
         round_index=pod.round_index,
         table_number=pod.table_number,
@@ -217,14 +246,39 @@ def build_result_for_table(pod: Pod, table: dict[str, Any]) -> PodResult | None:
     )
 
 
+def update_elos_for_result(state, pod: Pod, result: PodResult) -> None:
+    player_ids = list(result.player_ids)
+    if len(player_ids) < 2:
+        return
+    k_factor = K_FACTOR_DRAW if result.is_draw else K_FACTOR_DECISIVE
+    use_seat_bonus = len(player_ids) == 4 and sorted(pod.seats_by_player.values()) == [1, 2, 3, 4]
+    effective_ratings: dict[str, float] = {}
+    for player_id in player_ids:
+        rating = float(state.players[player_id].elo)
+        if use_seat_bonus:
+            rating += SEAT_ELO_BONUS.get(pod.seats_by_player.get(player_id), 0.0)
+        effective_ratings[player_id] = rating
+    total_equity = sum(math.pow(ELO_BASE, effective_ratings[player_id] / ELO_DIVISOR) for player_id in player_ids)
+    if total_equity <= 0:
+        return
+    for player_id in player_ids:
+        expected = math.pow(ELO_BASE, effective_ratings[player_id] / ELO_DIVISOR) / total_equity
+        actual = (1.0 / len(player_ids)) if result.is_draw else (1.0 if player_id == result.winner_id else 0.0)
+        state.players[player_id].elo = round(float(state.players[player_id].elo) + (k_factor * (actual - expected)), 6)
+
+
 def split_rounds(
     tournament: dict[str, Any],
     swiss_rounds: int,
     id_map: dict[str, str],
-) -> tuple[list[tuple[list[Pod], list[PodResult]]], int, list[Pod] | None]:
-    completed_rounds: list[tuple[list[Pod], list[PodResult]]] = []
+) -> tuple[list[tuple[Pod, PodResult]], int, list[Pod] | None, set[str], dict[str, Any]]:
+    completed_tables: list[tuple[Pod, PodResult]] = []
     active_round_index: int | None = None
-    active_round_pods: list[Pod] | None = None
+    active_round_pods: list[Pod] = []
+    latest_posted_round_number = 0
+    active_player_ids: set[str] = set()
+    player_ids_by_round: dict[int, set[str]] = defaultdict(set)
+    round_status_counts: list[tuple[int, dict[str, int]]] = []
 
     for round_data in sorted(
         [row for row in tournament.get("rounds") or [] if isinstance(row.get("round"), int)],
@@ -233,26 +287,45 @@ def split_rounds(
         round_number = int(round_data["round"])
         if round_number > swiss_rounds:
             continue
+        latest_posted_round_number = max(latest_posted_round_number, round_number)
         round_index = round_number - 1
-        pods = build_pods_for_round(round_data, round_index, id_map)
-        if not pods:
-            continue
         tables = round_data.get("tables") or []
-        if any(table_active(table) for table in tables):
-            active_round_index = round_index
-            active_round_pods = pods
-            break
-        results = [
-            result
-            for pod, table in zip(pods, tables, strict=False)
-            if (result := build_result_for_table(pod, table)) is not None
-        ]
-        if len(results) == len(pods):
-            completed_rounds.append((pods, results))
+        round_status_counts.append(
+            (
+                round_number,
+                dict(
+                    Counter(
+                        str(table.get("status") or "").strip()
+                        or ("Completed" if table_completed(table) else "Active")
+                        for table in tables
+                    )
+                ),
+            )
+        )
+        for table in tables:
+            pod = build_pods_for_round({"tables": [table]}, round_index, id_map)
+            if not pod:
+                continue
+            table_pod = pod[0]
+            player_ids_by_round[round_number].update(table_pod.player_ids)
+            if table_completed(table):
+                result = build_result_for_table(table_pod, table, id_map)
+                if result is not None:
+                    completed_tables.append((table_pod, result))
+            elif table_active(table):
+                active_round_index = round_index
+                active_round_pods.append(table_pod)
 
     if active_round_index is None:
-        active_round_index = len(completed_rounds)
-    return completed_rounds, active_round_index, active_round_pods
+        active_round_index = latest_posted_round_number
+    field_round_number = (active_round_index + 1) if active_round_pods else latest_posted_round_number
+    if field_round_number in player_ids_by_round:
+        active_player_ids = set(player_ids_by_round[field_round_number])
+    metadata = {
+        "rounds": round_status_counts,
+        "active_player_count": len(active_player_ids),
+    }
+    return completed_tables, active_round_index, active_round_pods or None, active_player_ids, metadata
 
 
 def build_base_state(
@@ -263,7 +336,8 @@ def build_base_state(
     top_cut: int,
     feature_context,
     player_records: dict[str, dict[str, str]],
-) -> tuple[Any, int, list[Pod] | None]:
+    repeat_avoidance_max_pods: int | None,
+) -> tuple[Any, int, list[Pod] | None, dict[str, Any]]:
     player_names = collect_players(tournament)
     tiebreak_seeds = standings_tiebreak_seed_map(tournament)
     topdeck_ids = sorted(player_names)
@@ -299,56 +373,163 @@ def build_base_state(
         swiss_rounds=swiss_rounds,
         top_cut=top_cut,
         player_count=len(players),
+        repeat_avoidance_max_pods=repeat_avoidance_max_pods,
         state=((tournament.get("eventData") or {}).get("state")),
         country=((tournament.get("eventData") or {}).get("country")),
     )
     state = initialize_state(spec, players, feature_context=feature_context)
     id_map = {topdeck_id: record["id"] for topdeck_id, record in player_records.items()}
-    completed_rounds, active_round_index, active_round_pods = split_rounds(tournament, swiss_rounds, id_map)
-    for pods, results in completed_rounds:
-        for result in results:
-            apply_pod_result(state, result)
+    completed_tables, active_round_index, active_round_pods, active_player_ids, metadata = split_rounds(
+        tournament,
+        swiss_rounds,
+        id_map,
+    )
+    for pod, result in completed_tables:
+        update_elos_for_result(state, pod, result)
+        apply_pod_result(state, result)
+    if active_player_ids:
+        state.eligible_player_ids = active_player_ids
     state.current_round_index = active_round_index
-    return state, active_round_index, active_round_pods
+    metadata["locked_current_tables"] = [pod.table_number for pod in active_round_pods or []]
+    metadata["completed_tables_applied"] = [
+        (
+            pod.round_index + 1,
+            pod.table_number,
+            "Draw"
+            if result.is_draw
+            else state.players[result.winner_id].name
+            if result.winner_id in state.players
+            else result.winner_id,
+        )
+        for pod, result in completed_tables
+    ]
+    return state, active_round_index, active_round_pods, metadata
 
 
-def build_output(summary: dict[str, Any], state, active_round_index: int, active_round_pods: list[Pod] | None) -> dict[str, Any]:
-    player_name_by_id = {player_id: player.name for player_id, player in state.players.items()}
-    top_win = sorted(summary["win_probability"].items(), key=lambda item: item[1], reverse=True)[:10]
-    advancement_probability = summary.get("advancement_probability", {})
-    top40 = sorted(advancement_probability.get(40, {}).items(), key=lambda item: item[1], reverse=True)[:10]
-    top16 = sorted(advancement_probability.get(16, {}).items(), key=lambda item: item[1], reverse=True)[:10]
-    top4 = sorted(advancement_probability.get(4, {}).items(), key=lambda item: item[1], reverse=True)[:10]
+def run_live_monte_carlo(
+    state,
+    draw_model,
+    *,
+    simulations: int,
+    seed: int,
+    start_round_index: int,
+    locked_round_pods: list[Pod] | None,
+    exact_top_cut: bool,
+    max_exact_cut_size: int,
+    requested_advancement_sizes: tuple[int, ...],
+) -> dict[str, Any]:
+    context = build_tournament_context(state.spec)
+    locked_round_draw_probabilities = None
+    locked_round_win_probabilities = None
+    if locked_round_pods:
+        round_snapshot = build_round_snapshot(state, context, start_round_index + 1)
+        locked_round_draw_probabilities = predict_draw_probabilities(
+            locked_round_pods,
+            state,
+            context,
+            draw_model,
+            round_snapshot,
+        )
+        locked_round_win_probabilities = predict_decisive_win_probabilities(locked_round_pods, state)
+
+    win_probability_totals: dict[str, float] = defaultdict(float)
+    top_cut_counts: dict[str, float] = defaultdict(float)
+    advancement_totals: dict[int, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    expected_points: dict[str, float] = defaultdict(float)
+    expected_finish: dict[str, float] = defaultdict(float)
+    top_cut_line_point_counts: dict[int, int] = defaultdict(int)
+    bye_line_point_counts: dict[int, int] = defaultdict(int)
+
+    for simulation_index in range(simulations):
+        simulation_state = clone_state(state)
+        rng = random.Random(seed + simulation_index)
+        simulate_swiss(
+            simulation_state,
+            rng,
+            draw_model,
+            context,
+            start_round_index=start_round_index,
+            locked_round_pods=locked_round_pods,
+            locked_round_draw_probabilities=locked_round_draw_probabilities,
+            locked_round_win_probabilities=locked_round_win_probabilities,
+        )
+        top_cut = select_top_cut(simulation_state) if simulation_state.spec.top_cut > 0 else []
+        for player_id in top_cut:
+            top_cut_counts[player_id] += 1.0
+
+        if top_cut:
+            if exact_top_cut and len(top_cut) <= max_exact_cut_size:
+                winner_probabilities, advancement_probabilities = exact_top_cut_probabilities(
+                    top_cut,
+                    simulation_state,
+                    max_exact_cut_size=max_exact_cut_size,
+                )
+                for player_id, probability in winner_probabilities.items():
+                    win_probability_totals[player_id] += probability
+                for cut_size in requested_advancement_sizes:
+                    for player_id, probability in advancement_probabilities.get(cut_size, {}).items():
+                        advancement_totals[cut_size][player_id] += probability
+            else:
+                from sim_engine import simulate_bracket_winner
+
+                winner_id, advancement_by_size = simulate_bracket_winner(
+                    top_cut,
+                    simulation_state,
+                    rng,
+                    draw_model,
+                    context,
+                )
+                win_probability_totals[winner_id] += 1.0
+                for cut_size in requested_advancement_sizes:
+                    for player_id in advancement_by_size.get(cut_size, []):
+                        advancement_totals[cut_size][player_id] += 1.0
+
+        ranked = sort_standings_rows(simulation_state)
+        if 0 < simulation_state.spec.top_cut <= len(ranked):
+            top_cut_line_point_counts[ranked[simulation_state.spec.top_cut - 1].points] += 1
+        bye_rank = topdeck_bye_rank(simulation_state.spec.top_cut)
+        if bye_rank is not None and bye_rank <= len(ranked):
+            bye_line_point_counts[ranked[bye_rank - 1].points] += 1
+        for finish_index, standing in enumerate(ranked, start=1):
+            expected_points[standing.player_id] += standing.points
+            expected_finish[standing.player_id] += finish_index
+
     return {
-        "tournament": {
-            "id": state.spec.tournament_id,
-            "name": state.spec.name,
-            "player_count": state.spec.player_count,
-            "swiss_rounds": state.spec.swiss_rounds,
-            "top_cut": state.spec.top_cut,
+        "win_probability": {
+            player_id: probability / simulations
+            for player_id, probability in win_probability_totals.items()
         },
-        "current_state": {
-            "completed_swiss_rounds": active_round_index,
-            "active_round_number": (active_round_index + 1) if active_round_pods else None,
-            "active_tables": len(active_round_pods or []),
+        "top_cut_probability": {
+            player_id: count / simulations
+            for player_id, count in top_cut_counts.items()
         },
-        "top_win_probabilities": [
-            {"player_id": player_id, "name": player_name_by_id.get(player_id, player_id), "win_probability": probability}
-            for player_id, probability in top_win
-        ],
-        "top_top40_probabilities": [
-            {"player_id": player_id, "name": player_name_by_id.get(player_id, player_id), "top40_probability": probability}
-            for player_id, probability in top40
-        ],
-        "top_top16_probabilities": [
-            {"player_id": player_id, "name": player_name_by_id.get(player_id, player_id), "top16_probability": probability}
-            for player_id, probability in top16
-        ],
-        "top_top4_probabilities": [
-            {"player_id": player_id, "name": player_name_by_id.get(player_id, player_id), "top4_probability": probability}
-            for player_id, probability in top4
-        ],
-        "simulations": summary["simulations"],
+        "advancement_probability": {
+            cut_size: {
+                player_id: probability / simulations
+                for player_id, probability in player_probabilities.items()
+            }
+            for cut_size, player_probabilities in advancement_totals.items()
+        },
+        "expected_points": {
+            player_id: total / simulations
+            for player_id, total in expected_points.items()
+        },
+        "expected_finish": {
+            player_id: total / simulations
+            for player_id, total in expected_finish.items()
+        },
+        "point_requirements": {
+            "top_cut": [
+                {"points": points, "probability": count / simulations, "count": count}
+                for points, count in sorted(top_cut_line_point_counts.items())
+            ],
+            "bye": [
+                {"points": points, "probability": count / simulations, "count": count}
+                for points, count in sorted(bye_line_point_counts.items())
+            ],
+        },
+        "simulations": simulations,
+        "winner_method": "exact_top_cut" if exact_top_cut else "sampled_top_cut",
     }
 
 
@@ -361,6 +542,18 @@ def main() -> None:
     parser.add_argument("--workers", type=int, default=None)
     parser.add_argument("--swiss-rounds", type=int, default=None)
     parser.add_argument("--top-cut", type=int, default=None)
+    parser.add_argument(
+        "--repeat-avoidance-max-pods",
+        type=int,
+        default=32,
+        help="Run repeat-opponent swap optimization only when generated Swiss pod count is at or below this value. Use 0 to disable.",
+    )
+    parser.add_argument(
+        "--sample-top-cut",
+        action="store_true",
+        help="Sample top-cut winners instead of exact Elo propagation.",
+    )
+    parser.add_argument("--max-exact-cut-size", type=int, default=16)
     args = parser.parse_args()
 
     load_local_env()
@@ -391,31 +584,75 @@ def main() -> None:
         if known_player_ids
         else FeatureContext()
     )
-    state, active_round_index, active_round_pods = build_base_state(
+    state, active_round_index, active_round_pods, live_metadata = build_base_state(
         client,
         tournament,
         swiss_rounds=swiss_rounds,
         top_cut=top_cut,
         feature_context=feature_context,
         player_records=player_records,
+        repeat_avoidance_max_pods=args.repeat_avoidance_max_pods,
     )
     state.fast_live_mode = True
     state.track_round_stats = False
 
     draw_model = load_draw_model_artifact(args.draw_model_path)
-    summary = run_monte_carlo_from_state(
-        state,
-        draw_model,
-        simulations=args.simulations,
-        seed=args.seed,
-        workers=args.workers,
-        start_round_index=active_round_index,
-        locked_round_pods=active_round_pods,
-        requested_advancement_sizes=(40, 16, 4),
-        collect_detailed_metrics=False,
-    ).to_dict()
+    if args.sample_top_cut:
+        summary = run_live_monte_carlo(
+            state,
+            draw_model,
+            simulations=args.simulations,
+            seed=args.seed,
+            start_round_index=active_round_index,
+            locked_round_pods=active_round_pods,
+            exact_top_cut=False,
+            max_exact_cut_size=args.max_exact_cut_size,
+            requested_advancement_sizes=DEFAULT_ADVANCEMENT_SIZES,
+        )
+    else:
+        summary = run_simulation_from_state(
+            state,
+            draw_model,
+            simulations=args.simulations,
+            seed=args.seed,
+            workers=args.workers,
+            start_round_index=active_round_index,
+            locked_round_pods=active_round_pods,
+            requested_advancement_sizes=DEFAULT_ADVANCEMENT_SIZES,
+        )
+        summary["winner_method"] = "exact_top_cut"
+    historical_point_requirements = fetch_historical_point_requirement_baseline(
+        client,
+        active_player_count=len(state.eligible_player_ids or state.players),
+        top_cut=state.spec.top_cut,
+        swiss_rounds=state.spec.swiss_rounds,
+        exclude_tournament_id=state.spec.tournament_id,
+    )
 
-    print(json.dumps(build_output(summary, state, active_round_index, active_round_pods), indent=2))
+    print(
+        json.dumps(
+            {
+                **build_common_output(
+                    summary=summary,
+                    state=state,
+                    player_name_by_id={player_id: player.name for player_id, player in state.players.items()},
+                    active_player_count=len(state.eligible_player_ids or state.players),
+                    historical_point_requirements=historical_point_requirements,
+                    current_state={
+                        "completed_swiss_rounds": active_round_index,
+                        "active_round_number": (active_round_index + 1) if active_round_pods else None,
+                        "active_tables": len(active_round_pods or []),
+                        "eligible_player_count": len(state.eligible_player_ids or state.players),
+                        "rounds": live_metadata.get("rounds", []),
+                        "locked_current_tables": live_metadata.get("locked_current_tables", []),
+                    },
+                    top_limit=20,
+                ),
+                "winner_method": summary.get("winner_method"),
+            },
+            indent=2,
+        )
+    )
 
 
 if __name__ == "__main__":
