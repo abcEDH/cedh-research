@@ -2,12 +2,13 @@
 
 ## Summary
 
-This branch is now broader than the original commander-normalization patch. It currently includes:
+This branch is broader than the original commander-normalization patch. It now includes:
 - commander normalization and legal partner-pair canonicalization
 - generated legality/review artifacts for partner ordering
 - TopDeck Elo snapshot import plus Elo rebuild/maintenance updates
-- tournament simulation and draw-model training infrastructure
-- historical continuation backtests and live TopDeck outlook tooling
+- tournament simulation infrastructure for historical, live, and resumed events
+- draw-model training, tournament backtesting, and runtime reporting
+- live TopDeck outlook tooling
 - player-profile and tournament-likelihood UI updates
 - removal of commander Elo from the active simulation/rebuild pipeline
 
@@ -34,11 +35,13 @@ The diff against `main` is concentrated in these areas:
 - `packages/backend/src/sim_pairings.py`
 - `packages/backend/src/sim_models.py`
 - `packages/backend/src/sim_engine.py`
+- `packages/backend/src/tournament_sim_runner.py`
 - `packages/backend/src/run_historical_tournament_sim.py`
 - `packages/backend/src/run_historical_tournament_from_round_sim.py`
 - `packages/backend/src/run_topdeck_ongoing_tournament_sim.py`
 - `packages/backend/src/run_topdeck_player_outlook.py`
 - `packages/backend/src/backtest_resume_tournament_sim.py`
+- `packages/backend/src/backtest_tournament_sim_models.py`
 - `packages/backend/src/fix_top_cut_labels.py`
 - `packages/backend/data/legal_commander_pairings.json`
 - `packages/backend/tests/test_ingest.py`
@@ -65,7 +68,7 @@ The diff against `main` is concentrated in these areas:
 ## Commander Forecasting
 
 - Updates commander-recommendation weighting in `apps/web/src/lib/meta-prep.ts`, `rebuild_player_commander_profiles.py`, and `regional_elo.py` to use a `24`-day recency half-life.
-- This keeps the app-side forecast logic and the precomputed commander-profile rebuild aligned on the same weighting model.
+- Keeps the app-side forecast logic and the precomputed commander-profile rebuild aligned on the same weighting model.
 
 ## Elo Changes
 
@@ -80,21 +83,27 @@ The diff against `main` is concentrated in these areas:
 
 ## Tournament Simulation
 
-- Adds a resumable Monte Carlo tournament simulator:
+- Adds a reusable Monte Carlo tournament simulator:
   - `sim_types.py`
   - `sim_pairings.py`
   - `sim_models.py`
   - `sim_engine.py`
+  - `tournament_sim_runner.py`
 - Supports:
   - full-tournament simulation from pre-event state
   - resume-state simulation from a historical or live checkpoint
   - current-round pod locking for posted Swiss pairings
   - historical continuation backtests from completed-round checkpoints
-  - TopDeck top-cut pod layouts for `Top 16`, `Top 10`, and the `Top 40 -> Top 16` play-in structure used by Quest-style events
+  - dropped/no-show filtering by active players who played at least one game
+  - repeat-opponent avoidance below the configured pod-count threshold
+  - point-requirement distributions for the final cut slot and bye slot
+  - TopDeck top-cut pod layouts for `Top 4`, `Top 10`, `Top 16`, `Top 40`, and `Top 64`
+  - exact top-cut probability math where practical for smaller top cuts
 - The current simulation stack now uses:
   - player Elo only
   - no commander Elo
-  - no in-tournament Elo updates
+  - no in-tournament Elo updates during simulated future Swiss rounds
+  - exact Elo-derived top-cut win probabilities for small cut brackets
   - lighter live-page summary outputs focused on advancement probabilities rather than expected-points / expected-finish bookkeeping
 
 ## Draw Modeling And Evaluation
@@ -105,11 +114,16 @@ The diff against `main` is concentrated in these areas:
   - draw-safe / must-win incentive counts
   - rank/cut-band features
   - player-style and familiarity features
-- Adds `train_draw_model_weight_experiments.py` to rerun the `v8` holdout protocol under alternative weighting schemes.
+  - experimental intentional-draw incentive features for v11/v11b
+- Drops top-cut games from draw-model training so the model targets Swiss pod draw probability.
+- Adds optional raw Supabase table snapshot caching via `--raw-data-cache-dir` when rebuilding the rich pod cache.
+- Adds `train_draw_model_weight_experiments.py` to rerun the holdout protocol under alternative weighting schemes.
 - Adds `summarize_draw_backtest_slices.py` to summarize draw-model backtests by:
   - rounds remaining
   - tournament size buckets
-- Current branch finding: the tested weighting tweaks did not beat the existing `v8` all-games holdout baseline.
+- Current branch finding:
+  - v10 remains the recommended production draw model because it has the best same-dataset draw holdout log loss and better winner-log-loss results in tournament backtests.
+  - v11b is useful as an experimental candidate because it improves cut-line distribution metrics, but it is not recommended as the default model yet.
 
 ## Historical Backtesting And Live Outlook Tooling
 
@@ -119,8 +133,29 @@ The diff against `main` is concentrated in these areas:
   - top-cut Brier
   - top-cut overlap
   - remaining-round draw-rate MAE
+- Adds `backtest_tournament_sim_models.py` to compare full historical tournament simulations across draw-model artifacts.
+- Adds runtime reporting to the tournament backtest output:
+  - total runtime
+  - candidate-selection runtime
+  - model-load runtime
+  - per-model total and average runtime
 - Adds `fix_top_cut_labels.py` to repair `made_top_cut` / `made_top_16` labels from `final_standing` and tournament cut structure.
 - Adds `run_topdeck_ongoing_tournament_sim.py` and `run_topdeck_player_outlook.py` for live TopDeck event simulation and player-facing outlook generation.
+
+## Recent Backtest Results
+
+The latest checked comparison ran v10, v11, and v11b on the same historical tournament slices with 500 simulations per model/event.
+
+For 20 historical tournaments with at least 100 active players:
+- Total runtime: 2,326 seconds
+- v10: best winner log loss
+- v11: best top-cut Brier by a small margin
+- v11b: best cut-line probability and expected absolute cut-line error
+
+For 17 historical tournaments with at least 200 active players:
+- Total runtime: 1,761 seconds
+- v10: best winner log loss and top-cut Brier
+- v11b: best cut-line probability, cut-line expected absolute error, and cut-line mode hit rate
 
 ## UI Updates
 
@@ -130,7 +165,7 @@ The diff against `main` is concentrated in these areas:
 ## Maintenance And Data Refresh
 
 - Updates `ci-backend-maintenance.yml` so scheduled maintenance also rebuilds `player_commander_profiles`.
-- Adds a weekly `topdeck-elo-import.yml` workflow to import TopDeck’s published EDH Elo snapshot into `topdeck_player_elos`.
+- Adds a weekly `topdeck-elo-import.yml` workflow to import TopDeck's published EDH Elo snapshot into `topdeck_player_elos`.
 
 ## Tests And Validation
 
@@ -140,9 +175,11 @@ The diff against `main` is concentrated in these areas:
   - Stranger Things alias rewrites
   - canonical legal-pair ordering
   - illegal-pair fallback to `Unknown Commander`
-- Local `py_compile` verification was run on the touched Python modules after the recent simulation / Elo cleanup.
+- Local `py_compile` verification was run on the touched Python modules after the recent simulation, backtest, raw-cache, and Elo cleanup work.
+- Recent model-comparison outputs were validated with `json.tool`.
 
 ## Notes
 
 - This PR now bundles the original commander/elo work together with the simulation, backtest, draw-model, and live-outlook tooling.
+- All current review threads are resolved.
 - If review scope becomes unwieldy, the simulator / draw-model / live-outlook work is still the main candidate to split into a follow-up PR.
