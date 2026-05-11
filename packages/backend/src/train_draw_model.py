@@ -385,9 +385,43 @@ def save_pods(cache_path: Path, pods: list[DrawPodRow]) -> None:
         pickle.dump([asdict(pod) for pod in pods], handle)
 
 
-def build_rich_pod_cache(client: SupabaseClient) -> list[DrawPodRow]:
+def load_raw_rows(cache_path: Path) -> list[dict[str, Any]] | None:
+    if not cache_path.exists():
+        return None
+    with cache_path.open("rb") as handle:
+        return pickle.load(handle)
+
+
+def save_raw_rows(cache_path: Path, rows: list[dict[str, Any]]) -> None:
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    with cache_path.open("wb") as handle:
+        pickle.dump(rows, handle)
+
+
+def fetch_or_load_raw_rows(
+    client: SupabaseClient,
+    table: str,
+    params: dict[str, str],
+    *,
+    label: str,
+    raw_data_cache_dir: Path | None,
+) -> list[dict[str, Any]]:
+    cache_path = raw_data_cache_dir / f"{label}.pkl" if raw_data_cache_dir else None
+    if cache_path:
+        cached_rows = load_raw_rows(cache_path)
+        if cached_rows is not None:
+            print(f"Loaded raw {label}: {len(cached_rows):,} rows", flush=True)
+            return cached_rows
+    rows = fetch_all(client, table, params, label=label)
+    if cache_path:
+        save_raw_rows(cache_path, rows)
+        print(f"Cached raw {label}: {len(rows):,} rows", flush=True)
+    return rows
+
+
+def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | None = None) -> list[DrawPodRow]:
     print("Fetching game results...", flush=True)
-    results = fetch_all(
+    results = fetch_or_load_raw_rows(
         client,
         "global_elo_game_results",
         {
@@ -395,12 +429,13 @@ def build_rich_pod_cache(client: SupabaseClient) -> list[DrawPodRow]:
             "result": "neq.bye",
             "order": "start_date.asc,game_id.asc",
         },
+        raw_data_cache_dir=raw_data_cache_dir,
         label="global_elo_game_results",
     )
     print(f"Fetched {len(results):,} result rows", flush=True)
 
     print("Fetching game events...", flush=True)
-    events = fetch_all(
+    events = fetch_or_load_raw_rows(
         client,
         "global_elo_game_events",
         {
@@ -408,6 +443,7 @@ def build_rich_pod_cache(client: SupabaseClient) -> list[DrawPodRow]:
             "region_type": "eq.global",
             "region_key": "eq.ALL",
         },
+        raw_data_cache_dir=raw_data_cache_dir,
         label="global_elo_game_events",
     )
     rating_before = {
@@ -417,7 +453,13 @@ def build_rich_pod_cache(client: SupabaseClient) -> list[DrawPodRow]:
     }
 
     print("Fetching seats...", flush=True)
-    seats = fetch_all(client, "game_participants", {"select": SEATS_SELECT}, label="game_participants")
+    seats = fetch_or_load_raw_rows(
+        client,
+        "game_participants",
+        {"select": SEATS_SELECT},
+        raw_data_cache_dir=raw_data_cache_dir,
+        label="game_participants",
+    )
     seat_by_pair = {
         (row["game_id"], row["entry_id"]): int(row["seat_position"])
         for row in seats
@@ -425,7 +467,13 @@ def build_rich_pod_cache(client: SupabaseClient) -> list[DrawPodRow]:
     }
 
     print("Fetching tournaments...", flush=True)
-    tournaments = fetch_all(client, "tournaments", {"select": TOURNAMENTS_SELECT}, label="tournaments")
+    tournaments = fetch_or_load_raw_rows(
+        client,
+        "tournaments",
+        {"select": TOURNAMENTS_SELECT},
+        raw_data_cache_dir=raw_data_cache_dir,
+        label="tournaments",
+    )
     tournament_meta = {row["id"]: row for row in tournaments if row.get("id")}
     tournament_player_ids: dict[str, set[str]] = defaultdict(set)
     tournament_cut_sizes: dict[str, int] = {}
@@ -1553,6 +1601,10 @@ def main() -> None:
     parser.add_argument("--report-path", default=str(DEFAULT_REPORT_PATH))
     parser.add_argument("--rebuild-cache", action="store_true")
     parser.add_argument(
+        "--raw-data-cache-dir",
+        help="Optional directory for cached raw Supabase table snapshots used while rebuilding the rich pod cache.",
+    )
+    parser.add_argument(
         "--force-feature-set",
         help="Train the final model with this named feature set instead of selecting the best pruning result.",
     )
@@ -1562,6 +1614,7 @@ def main() -> None:
     cache_path = Path(args.cache_path)
     artifact_path = Path(args.artifact_path)
     report_path = Path(args.report_path)
+    raw_data_cache_dir = Path(args.raw_data_cache_dir) if args.raw_data_cache_dir else None
 
     pods = None if args.rebuild_cache else load_pods(cache_path)
     if pods is None:
@@ -1569,7 +1622,7 @@ def main() -> None:
             url=os.environ["SUPABASE_URL"],
             service_key=os.environ["SUPABASE_SERVICE_KEY"],
         )
-        pods = build_rich_pod_cache(client)
+        pods = build_rich_pod_cache(client, raw_data_cache_dir=raw_data_cache_dir)
         save_pods(cache_path, pods)
         print(f"Built and cached rich pod dataset: {len(pods):,} pods", flush=True)
     else:

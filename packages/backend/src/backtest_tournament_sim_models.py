@@ -7,6 +7,7 @@ import argparse
 import json
 import math
 import os
+import time
 from dataclasses import dataclass
 from statistics import fmean
 from typing import Any
@@ -156,6 +157,7 @@ def evaluate_model_on_tournament(
     workers: int | None,
     repeat_avoidance_max_pods: int,
 ) -> dict[str, Any]:
+    started = time.perf_counter()
     spec, players, entries, feature_context = build_spec_and_players(
         client,
         tournament_id,
@@ -252,6 +254,7 @@ def evaluate_model_on_tournament(
             ),
         },
         "simulations": simulations,
+        "runtime_seconds": time.perf_counter() - started,
     }
 
 
@@ -283,6 +286,10 @@ def aggregate_model_results(results: list[dict[str, Any]]) -> dict[str, Any]:
 
     return {
         "events": len(results),
+        "runtime_seconds": {
+            "total": sum(float(result.get("runtime_seconds") or 0.0) for result in results),
+            "average": fmean(float(result.get("runtime_seconds") or 0.0) for result in results),
+        },
         "average_metrics": {
             "winner_probability": average_metric(results, ("metrics", "winner_probability")),
             "winner_log_loss": average_metric(results, ("metrics", "winner_log_loss")),
@@ -307,6 +314,7 @@ def strip_calibration_inputs(result: dict[str, Any]) -> dict[str, Any]:
 
 
 def main() -> None:
+    started = time.perf_counter()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", action="append", type=parse_model, required=True, help="LABEL=PATH")
     parser.add_argument("--simulations", type=int, default=200)
@@ -338,8 +346,11 @@ def main() -> None:
             tournaments.append({**row, "active_player_count": active_count})
         if len(tournaments) >= args.limit:
             break
+    candidate_selection_seconds = time.perf_counter() - started
 
+    model_load_started = time.perf_counter()
     models = {spec.label: load_draw_model_artifact(spec.path) for spec in args.model}
+    model_load_seconds = time.perf_counter() - model_load_started
     results_by_model: dict[str, list[dict[str, Any]]] = {spec.label: [] for spec in args.model}
     errors: list[dict[str, Any]] = []
 
@@ -372,6 +383,11 @@ def main() -> None:
             "min_active_player_count": args.min_active_player_count,
             "repeat_avoidance_max_pods": args.repeat_avoidance_max_pods,
             "models": {spec.label: spec.path for spec in args.model},
+        },
+        "runtime_seconds": {
+            "total": time.perf_counter() - started,
+            "candidate_selection": candidate_selection_seconds,
+            "model_load": model_load_seconds,
         },
         "tournaments": tournaments,
         "aggregate": {
