@@ -9,7 +9,7 @@
  * Run with: npm run test:contracts
  */
 
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect } from "vitest";
 import { createClient } from "@supabase/supabase-js";
 import {
   CommanderMatchupsResponseSchema,

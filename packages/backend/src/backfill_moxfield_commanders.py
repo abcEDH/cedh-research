@@ -21,6 +21,7 @@ from ingest import (
     clean_commander_card_name,
     extract_commanders,
     normalize_commander_name,
+    sanitize_commander_payload,
 )
 
 PLACEHOLDER_COMMANDERS = {"Unknown Commander", "Moxfield Deck"}
@@ -407,10 +408,7 @@ def upsert_commanders(client: SupabaseClient, commander_data: dict[str, list[str
     result = client.upsert(
         "commanders",
         [
-            {
-                "name": name,
-                "commander_names": [clean_commander_card_name(value) for value in (names or [name])],
-            }
+            dict(zip(("name", "commander_names"), sanitize_commander_payload(name, names)))
             for name, names in commander_data.items()
         ],
         on_conflict="name",

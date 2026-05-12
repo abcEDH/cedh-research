@@ -59,7 +59,7 @@ jobs:
       - name: Install dependencies (locked)
         run: uv sync --frozen --project packages/backend
 
-      - name: Recompute global Elo, state activity, game events, and commander profiles
+      - name: Recompute global Elo, state activity, and game events
         run: |
           if [ "${{ inputs.refresh_mode }}" = "full" ]; then
             if [ -n "${{ inputs.job_id }}" ]; then
@@ -70,6 +70,10 @@ jobs:
           else
             uv run --project packages/backend python packages/backend/src/regional_elo.py --smoke-days "${{ inputs.smoke_days }}" --dry-run
           fi
+
+      - name: Rebuild player commander profiles
+        if: ${{ inputs.refresh_mode == 'full' }}
+        run: uv run --project packages/backend python packages/backend/src/rebuild_player_commander_profiles.py
 
       - name: Upload logs
         uses: actions/upload-artifact@v4

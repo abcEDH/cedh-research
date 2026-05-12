@@ -20,7 +20,7 @@ export class AnalyticsErrorBoundary extends React.Component<ErrorBoundaryProps, 
     this.state = { hasError: false }
   }
 
-  static getDerivedStateFromError(_error: Error) {
+  static getDerivedStateFromError() {
     return { hasError: true }
   }
 
