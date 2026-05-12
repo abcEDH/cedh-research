@@ -188,8 +188,16 @@ For 17 historical tournaments with at least 200 active players:
   - canonical legal-pair ordering
   - illegal-pair fallback to `Unknown Commander`
 - Local `py_compile` verification was run on the touched Python modules after the recent simulation, backtest, raw-cache, and Elo cleanup work.
+- Local frontend verification was rerun after the final code-quality cleanup:
+  - `npm run web:lint`
+  - `npm run web:test:ci`
 - Recent model-comparison outputs were validated with `json.tool`.
 - Supabase migrations were applied with `npx supabase db push --include-all`, including the incremental hidden-Elo snapshot RPC migration.
+- PR #127 review threads are resolved, and the latest GitHub checks are green:
+  - CI Pre-flight
+  - Docs Check
+  - CI Backend
+  - Frontend
 
 ## Notes
 
