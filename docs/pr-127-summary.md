@@ -46,6 +46,7 @@ The diff against `main` is concentrated in these areas:
 - `packages/backend/data/legal_commander_pairings.json`
 - `packages/backend/tests/test_ingest.py`
 - `packages/backend/supabase/migrations/20260507170000_drop_global_commander_elo_tables.sql`
+- `packages/backend/supabase/migrations/20260511235955_global_elo_incremental_snapshot_rpcs.sql`
 - `docs/partner-community-order-review.csv` (deleted)
 
 ## Commander Normalization And Legality
@@ -78,7 +79,13 @@ The diff against `main` is concentrated in these areas:
   - 4-seat offsets: `0 / -52 / -96 / -145`
   - draw-seat weighting enabled for valid 4-player draw pods
 - Keeps TopDeck Elo enrichment support, including fallback handling for either `topdeck_id` or legacy `uid` in `topdeck_player_elos`.
-- Keeps incremental rebuild support from `--since-start-date` so append-only Elo refreshes can replay only the affected suffix instead of replaying the full historical stream.
+- Fixes incremental hidden-Elo rebuilds from `--since-start-date` so suffix replays start from a true pre-cutoff rating snapshot instead of applying the suffix on top of current ratings.
+- Adds DB-side paginated snapshot RPCs for incremental hidden-Elo rebuilds:
+  - `get_global_elo_snapshot_before(cutoff, p_limit, p_offset)`
+  - `get_global_elo_state_activity_snapshot(p_limit, p_offset)`
+  - `get_global_elo_player_meta_snapshot(p_limit, p_offset)`
+- Supports direct Postgres/pooler snapshots when `SUPABASE_DB_URL` is available, with REST/RPC fallback when direct SQL is unavailable.
+- Keeps TopDeck Elo separate from hidden/internal Elo: TopDeck Elo remains imported into `topdeck_player_elos` for enrichment/display, while `global_elo_*` tables are rebuilt from hidden Elo event replay.
 - Removes commander Elo from the active rebuild/recompute pipeline and adds a Supabase migration to drop the commander-Elo tables.
 
 ## Tournament Simulation
@@ -166,6 +173,11 @@ For 17 historical tournaments with at least 200 active players:
 
 - Updates `ci-backend-maintenance.yml` so scheduled maintenance also rebuilds `player_commander_profiles`.
 - Adds a weekly `topdeck-elo-import.yml` workflow to import TopDeck's published EDH Elo snapshot into `topdeck_player_elos`.
+- Recent maintenance run inserted 178 missing TopDeck events from the last two months using `ingest.py --days 62 --skip-existing-tournaments`.
+- Hidden/internal Elo was then incrementally refreshed from `2026-03-10` using the corrected pre-cutoff snapshot path:
+  - replayed `123,190` participant result rows across `30,384` games
+  - replaced suffix game events for `1,838` tournaments
+  - wrote `87,519` ratings, `51,014` state activity rows, `116,394` game events, `70,319` active leaderboard rows, and `87,519` profile summaries
 
 ## Tests And Validation
 
@@ -177,6 +189,7 @@ For 17 historical tournaments with at least 200 active players:
   - illegal-pair fallback to `Unknown Commander`
 - Local `py_compile` verification was run on the touched Python modules after the recent simulation, backtest, raw-cache, and Elo cleanup work.
 - Recent model-comparison outputs were validated with `json.tool`.
+- Supabase migrations were applied with `npx supabase db push --include-all`, including the incremental hidden-Elo snapshot RPC migration.
 
 ## Notes
 
