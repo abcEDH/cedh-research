@@ -1081,6 +1081,26 @@ class TopDeckClient:
         return None
 
 
+def _describe_request_failure(
+    exc: BaseException, *, table: str, body_chars: int = 200
+) -> str:
+    """Build a one-line diagnostic for a failed HTTP attempt: class, status, body excerpt."""
+    response = getattr(exc, "response", None)
+    status = getattr(response, "status_code", None)
+    body = getattr(response, "text", "") or ""
+    body_excerpt = body[:body_chars].replace("\n", " ").strip()
+    parts = [f"table={table}", type(exc).__name__]
+    if status is not None:
+        parts.append(f"status={status}")
+    if body_excerpt:
+        parts.append(f"body={body_excerpt!r}")
+    msg = str(exc).strip()
+    # Avoid duplicating "{status} Server Error" when we already have status separately.
+    if msg and not (status is not None and msg.startswith(f"{status} ")):
+        parts.append(f"err={msg}")
+    return " ".join(parts)
+
+
 class SupabaseClient:
     """Client for Supabase REST API."""
 
@@ -1165,14 +1185,18 @@ class SupabaseClient:
                 requests.exceptions.ReadTimeout,
                 requests.exceptions.HTTPError,
             ) as e:
+                diag = _describe_request_failure(e, table=table)
                 if attempt < max_retries - 1:
                     wait_time = 2**attempt
                     logger.warning(
-                        f"Query failed, retrying in {wait_time}s... ({attempt + 1}/{max_retries})"
+                        f"Query failed: {diag}; retrying in {wait_time}s "
+                        f"({attempt + 1}/{max_retries})"
                     )
                     time.sleep(wait_time)
                 else:
-                    logger.error(f"Query failed after {max_retries} retries: {e}")
+                    logger.error(
+                        f"Query failed after {max_retries} retries: {diag}"
+                    )
                     raise
         # This is a safety net; the loop above either returns or raises
         return []

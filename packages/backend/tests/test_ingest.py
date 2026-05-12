@@ -33,6 +33,7 @@ sys.modules.setdefault("dateutil.parser", dateutil_parser_module)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from ingest import (  # noqa: E402
+    _describe_request_failure,
     extract_standing_rates,
     INGESTION_JOB_ALREADY_CLAIMED_EXIT_CODE,
     SupabaseClient,
@@ -294,6 +295,73 @@ class IngestionJobLifecycleTests(unittest.TestCase):
         call_args = client.update.call_args
         self.assertEqual(call_args.args[1]["status"], "completed")
         self.assertEqual(call_args.args[1]["duration_seconds"], 42.5)
+
+
+class SupabaseClientSelectDiagnosticsTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.client = SupabaseClient("https://test.supabase.co", "test-service-key")
+
+    def test_describe_request_failure_includes_status_and_body(self) -> None:
+        response = Mock()
+        response.status_code = 503
+        response.text = "upstream connect error: connection refused\n"
+        http_error = requests_module.exceptions.HTTPError("503 Server Error")
+        http_error.response = response
+
+        diag = _describe_request_failure(http_error, table="tournaments")
+
+        self.assertIn("table=tournaments", diag)
+        self.assertIn("HTTPError", diag)
+        self.assertIn("status=503", diag)
+        self.assertIn("upstream connect error", diag)
+
+    def test_describe_request_failure_handles_connection_error_without_response(
+        self,
+    ) -> None:
+        conn_error = requests_module.exceptions.ConnectionError("Connection refused")
+
+        diag = _describe_request_failure(conn_error, table="elo_maintenance_jobs")
+
+        self.assertIn("table=elo_maintenance_jobs", diag)
+        self.assertIn("ConnectionError", diag)
+        self.assertIn("Connection refused", diag)
+        self.assertNotIn("status=", diag)
+
+    def test_describe_request_failure_truncates_long_bodies(self) -> None:
+        response = Mock()
+        response.status_code = 500
+        response.text = "x" * 5000
+        http_error = requests_module.exceptions.HTTPError("500 Server Error")
+        http_error.response = response
+
+        diag = _describe_request_failure(http_error, table="t", body_chars=200)
+
+        # The body excerpt is wrapped in repr() (adds quotes); cap with slack for quoting.
+        self.assertLess(len(diag), 400)
+
+    @patch("ingest.time.sleep")
+    @patch("ingest.requests.get")
+    def test_select_logs_status_and_body_on_retry(
+        self, mock_get: Mock, _mock_sleep: Mock
+    ) -> None:
+        failing = Mock()
+        failing.status_code = 503
+        failing.text = "service unavailable: db is recovering"
+
+        succeeding = Mock()
+        succeeding.status_code = 200
+        succeeding.json.return_value = [{"id": "row-1"}]
+
+        mock_get.side_effect = [failing, succeeding]
+
+        with self.assertLogs("ingest", level="WARNING") as captured:
+            result = self.client.select("tournaments", {"id": "eq.row-1"})
+
+        self.assertEqual(result, [{"id": "row-1"}])
+        warning_text = "\n".join(captured.output)
+        self.assertIn("table=tournaments", warning_text)
+        self.assertIn("status=503", warning_text)
+        self.assertIn("service unavailable", warning_text)
 
 
 if __name__ == "__main__":
