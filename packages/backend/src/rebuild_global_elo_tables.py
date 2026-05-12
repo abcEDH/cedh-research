@@ -19,6 +19,15 @@ import requests
 
 from ingest import SupabaseClient, load_local_env
 
+try:
+    import psycopg2
+    import psycopg2.extras
+    import psycopg2.extensions
+
+    PSYCOPG2_AVAILABLE = True
+except ImportError:
+    PSYCOPG2_AVAILABLE = False
+
 K_FACTOR_DECISIVE = 64
 K_FACTOR_DRAW = 26
 DEFAULT_RATING = 1500.0
@@ -279,10 +288,18 @@ REGION_COUNTRY_BY_STATE = {
 def parse_datetime(value: str | None) -> datetime | None:
     if not value:
         return None
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    normalized = value.replace("Z", "+00:00")
+    normalized = re.sub(
+        r"\.(\d{1,5})(?=([+-]\d\d:\d\d)?$)",
+        lambda match: "." + match.group(1).ljust(6, "0"),
+        normalized,
+    )
+    return datetime.fromisoformat(normalized)
 
 
 def parse_date(value: str | None) -> date | None:
+    if isinstance(value, date):
+        return value
     parsed = parse_datetime(value)
     return parsed.date() if parsed else None
 
@@ -357,6 +374,42 @@ def fetch_all(
             elapsed = time.time() - started
             source = label or table
             print(f"Fetched {offset:,} rows from {source} in {elapsed:.1f}s", flush=True)
+    return rows
+
+
+def rpc_fetch_all(
+    client: SupabaseClient,
+    function_name: str,
+    payload: dict[str, Any] | None = None,
+    limit: int = 1000,
+    label: str | None = None,
+    timeout: int = 600,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    offset = 0
+    started = time.time()
+    source = label or function_name
+    endpoint = f"{client.url}/rest/v1/rpc/{function_name}"
+    while True:
+        page_payload = {**(payload or {}), "p_limit": limit, "p_offset": offset}
+        response = requests.post(
+            endpoint,
+            json=page_payload,
+            headers=client.headers,
+            timeout=timeout,
+        )
+        if response.status_code >= 400:
+            raise RuntimeError(f"RPC {function_name} failed: {response.status_code} {response.text}")
+        page = response.json()
+        if not page:
+            break
+        rows.extend(page)
+        print(f"Fetched {len(rows):,} rows from {source}", flush=True)
+        if len(page) < limit:
+            break
+        offset += limit
+        elapsed = time.time() - started
+        print(f"Fetched {offset:,} rows from {source} in {elapsed:.1f}s", flush=True)
     return rows
 
 
@@ -540,6 +593,143 @@ def fetch_results_from_tournament_start(
     return all_rows
 
 
+def connect_snapshot_db():
+    db_url = os.environ.get("SUPABASE_DB_URL")
+    if not db_url or not PSYCOPG2_AVAILABLE:
+        raise SystemExit("SUPABASE_DB_URL and psycopg2 are required for incremental Elo snapshots")
+    try:
+        return psycopg2.connect(db_url)
+    except psycopg2.OperationalError as exc:
+        raise SystemExit(
+            "Could not connect to Supabase Postgres for incremental Elo snapshots. "
+            "Update SUPABASE_DB_URL or apply a DB-side snapshot RPC before using --since-start-date."
+        ) from exc
+
+
+def can_use_snapshot_db() -> bool:
+    return bool(os.environ.get("SUPABASE_DB_URL")) and PSYCOPG2_AVAILABLE
+
+
+def try_fetch_snapshot_table(
+    client: SupabaseClient,
+    table: str,
+    select: str,
+    label: str,
+) -> list[dict[str, Any]] | None:
+    try:
+        rows = fetch_all(
+        client,
+        table,
+        {"select": select, "order": "player_id.asc"},
+        label=label,
+        max_retries=1,
+    )
+    except requests.exceptions.HTTPError:
+        return None
+    return rows
+
+
+def fetch_rating_snapshot_before(
+    client: SupabaseClient,
+    threshold_start_date: str,
+) -> dict[str, dict[str, Any]]:
+    query = """
+        WITH latest AS (
+            SELECT DISTINCT ON (player_id)
+                player_id,
+                rating_after
+            FROM global_elo_game_events
+            WHERE region_type = %s
+              AND region_key = %s
+              AND game_date < %s::timestamptz
+            ORDER BY player_id, game_date DESC, game_id DESC
+        ),
+        counts AS (
+            SELECT
+                player_id,
+                count(*)::int AS games_played,
+                count(*) FILTER (WHERE game_result = 'win')::int AS wins,
+                count(*) FILTER (WHERE game_result = 'draw')::int AS draws,
+                count(*) FILTER (WHERE game_result = 'loss')::int AS losses,
+                max(game_date)::date AS last_game_date
+            FROM global_elo_game_events
+            WHERE region_type = %s
+              AND region_key = %s
+              AND game_date < %s::timestamptz
+            GROUP BY player_id
+        )
+        SELECT
+            counts.player_id,
+            latest.rating_after,
+            counts.games_played,
+            counts.wins,
+            counts.draws,
+            counts.losses,
+            counts.last_game_date
+        FROM counts
+        JOIN latest USING (player_id)
+    """
+    print(f"Fetching pre-cutoff Elo snapshot before {threshold_start_date}", flush=True)
+    rows = try_fetch_snapshot_table(
+        client,
+        "global_elo_incremental_rating_snapshot",
+        "player_id,rating,games_played,wins,draws,losses,last_game_date",
+        "global_elo_incremental_rating_snapshot",
+    )
+    if rows is not None:
+        print(f"Fetched rating snapshot table with {len(rows):,} rows", flush=True)
+    elif can_use_snapshot_db():
+        with connect_snapshot_db() as connection:
+            with connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
+                cursor.execute(
+                    query,
+                    (
+                        GLOBAL_REGION_TYPE,
+                        GLOBAL_REGION_KEY,
+                        threshold_start_date,
+                        GLOBAL_REGION_TYPE,
+                        GLOBAL_REGION_KEY,
+                        threshold_start_date,
+                    ),
+                )
+                rows = list(cursor.fetchall())
+    else:
+        rows = rpc_fetch_all(
+            client,
+            "get_global_elo_snapshot_before",
+            {"cutoff": threshold_start_date},
+            label="get_global_elo_snapshot_before",
+        )
+
+    ratings: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        player_id = row.get("player_id")
+        if not player_id:
+            continue
+        ratings[player_id] = {
+            "player_id": player_id,
+            "region_type": GLOBAL_REGION_TYPE,
+            "region_key": GLOBAL_REGION_KEY,
+            "rating": float(row.get("rating") or row.get("rating_after") or DEFAULT_RATING),
+            "games_played": int(row.get("games_played") or 0),
+            "wins": int(row.get("wins") or 0),
+            "draws": int(row.get("draws") or 0),
+            "losses": int(row.get("losses") or 0),
+            "last_game_date": parse_date(row.get("last_game_date")),
+        }
+
+    print(
+        f"Fetched pre-cutoff rating snapshot for {len(ratings):,} players",
+        flush=True,
+    )
+    if len(ratings) < 10_000:
+        raise RuntimeError(
+            f"Pre-cutoff Elo snapshot is unexpectedly small ({len(ratings):,} players); "
+            "check that the snapshot RPC is returning all rows."
+        )
+    return ratings
+
+
 def fetch_seat_positions(client: SupabaseClient) -> dict[tuple[str, str], int]:
     rows = fetch_all(
         client,
@@ -640,12 +830,200 @@ def delete_by_tournament_ids(client: SupabaseClient, table: str, tournament_ids:
         rest_delete(client, table, {"tournament_id": f"in.({','.join(chunk)})"})
 
 
+def update_state_activity_from_result(
+    row: dict[str, Any],
+    state_activity: dict[tuple[str, str], dict[str, Any]],
+    player_meta: dict[str, dict[str, str | None]],
+    today: date,
+) -> None:
+    player_id = row.get("player_id")
+    result = row.get("result") or row.get("game_result")
+    if not player_id or score_for_result(result) is None:
+        return
+
+    player_meta.setdefault(
+        player_id,
+        {
+            "player_name": row.get("player_name"),
+            "topdeck_id": row.get("topdeck_id"),
+        },
+    )
+
+    state_key = normalize_key(row.get("state"))
+    if not state_key:
+        return
+
+    game_date = parse_date(row.get("start_date") or row.get("game_date"))
+    country_key = infer_country(row.get("state"), row.get("country"))
+    activity_key = (player_id, state_key)
+    activity = state_activity.setdefault(
+        activity_key,
+        {
+            "region_type": "state",
+            "region_key": state_key,
+            "country_key": country_key or None,
+            "player_id": player_id,
+            "games_30d": 0,
+            "games_90d": 0,
+            "games_365d": 0,
+            "games_lifetime": 0,
+            "wins": 0,
+            "draws": 0,
+            "losses": 0,
+            "last_game_date": None,
+            "activity_score": 0.0,
+            "is_primary_state": False,
+        },
+    )
+    if country_key and not activity.get("country_key"):
+        activity["country_key"] = country_key
+    activity["games_lifetime"] += 1
+    if result == "win":
+        activity["wins"] += 1
+    elif result == "draw":
+        activity["draws"] += 1
+    elif result == "loss":
+        activity["losses"] += 1
+    if game_date:
+        age_days = (today - game_date).days
+        if age_days <= 30:
+            activity["games_30d"] += 1
+        if age_days <= 90:
+            activity["games_90d"] += 1
+        if age_days <= 365:
+            activity["games_365d"] += 1
+        activity["activity_score"] += math.pow(0.5, max(age_days, 0) / 180)
+        if activity["last_game_date"] is None or game_date > activity["last_game_date"]:
+            activity["last_game_date"] = game_date
+
+
+def fetch_state_activity_snapshot(
+    client: SupabaseClient,
+) -> tuple[
+    dict[tuple[str, str], dict[str, Any]],
+    dict[str, dict[str, str | None]],
+]:
+    activity_query = """
+        SELECT
+            player_id,
+            upper(btrim(state)) AS region_key,
+            max(country) FILTER (WHERE country IS NOT NULL AND country <> '') AS country,
+            count(*)::int AS games_lifetime,
+            count(*) FILTER (WHERE start_date::date >= current_date - interval '30 days')::int AS games_30d,
+            count(*) FILTER (WHERE start_date::date >= current_date - interval '90 days')::int AS games_90d,
+            count(*) FILTER (WHERE start_date::date >= current_date - interval '365 days')::int AS games_365d,
+            count(*) FILTER (WHERE result = 'win')::int AS wins,
+            count(*) FILTER (WHERE result = 'draw')::int AS draws,
+            count(*) FILTER (WHERE result = 'loss')::int AS losses,
+            max(start_date)::date AS last_game_date,
+            sum(power(0.5, greatest(0, current_date - start_date::date) / 180.0))::float AS activity_score
+        FROM global_elo_game_results
+        WHERE player_id IS NOT NULL
+          AND state IS NOT NULL
+          AND btrim(state) <> ''
+          AND result IN ('win', 'draw', 'loss')
+        GROUP BY player_id, upper(btrim(state))
+    """
+    meta_query = """
+        SELECT DISTINCT ON (player_id)
+            player_id,
+            player_name,
+            topdeck_id
+        FROM global_elo_game_results
+        WHERE player_id IS NOT NULL
+        ORDER BY player_id, start_date DESC NULLS LAST
+    """
+
+    print("Fetching state activity snapshot", flush=True)
+    activity_rows = try_fetch_snapshot_table(
+        client,
+        "global_elo_incremental_state_activity_snapshot",
+        (
+            "player_id,region_key,country,games_lifetime,games_30d,games_90d,"
+            "games_365d,wins,draws,losses,last_game_date,activity_score"
+        ),
+        "global_elo_incremental_state_activity_snapshot",
+    )
+    meta_rows = try_fetch_snapshot_table(
+        client,
+        "global_elo_incremental_player_meta_snapshot",
+        "player_id,player_name,topdeck_id",
+        "global_elo_incremental_player_meta_snapshot",
+    )
+    if activity_rows is not None and meta_rows is not None:
+        print(
+            f"Fetched state snapshot tables with {len(activity_rows):,} activity rows "
+            f"and {len(meta_rows):,} meta rows",
+            flush=True,
+        )
+    elif can_use_snapshot_db():
+        with connect_snapshot_db() as connection:
+            with connection.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
+                cursor.execute(activity_query)
+                activity_rows = list(cursor.fetchall())
+                cursor.execute(meta_query)
+                meta_rows = list(cursor.fetchall())
+    else:
+        activity_rows = rpc_fetch_all(
+            client,
+            "get_global_elo_state_activity_snapshot",
+            label="get_global_elo_state_activity_snapshot",
+        )
+        meta_rows = rpc_fetch_all(
+            client,
+            "get_global_elo_player_meta_snapshot",
+            label="get_global_elo_player_meta_snapshot",
+        )
+
+    state_activity: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in activity_rows:
+        player_id = row.get("player_id")
+        region_key = row.get("region_key")
+        if not player_id or not region_key:
+            continue
+        country_key = infer_country(region_key, row.get("country"))
+        state_activity[(player_id, region_key)] = {
+            "region_type": "state",
+            "region_key": region_key,
+            "country_key": country_key or None,
+            "player_id": player_id,
+            "games_30d": int(row.get("games_30d") or 0),
+            "games_90d": int(row.get("games_90d") or 0),
+            "games_365d": int(row.get("games_365d") or 0),
+            "games_lifetime": int(row.get("games_lifetime") or 0),
+            "wins": int(row.get("wins") or 0),
+            "draws": int(row.get("draws") or 0),
+            "losses": int(row.get("losses") or 0),
+            "last_game_date": parse_date(row.get("last_game_date")),
+            "activity_score": float(row.get("activity_score") or 0.0),
+            "is_primary_state": False,
+        }
+
+    player_meta: dict[str, dict[str, str | None]] = {}
+    for row in meta_rows:
+        player_id = row.get("player_id")
+        if not player_id:
+            continue
+        player_meta[player_id] = {
+            "player_name": row.get("player_name"),
+            "topdeck_id": row.get("topdeck_id"),
+        }
+
+    print(
+        f"Fetched state activity snapshot with {len(state_activity):,} player-state rows "
+        f"and {len(player_meta):,} player profiles",
+        flush=True,
+    )
+    return state_activity, player_meta
+
+
 def apply_game(
     game_rows: list[dict[str, Any]],
     ratings: dict[str, dict[str, Any]],
     state_activity: dict[tuple[str, str], dict[str, Any]],
     player_meta: dict[str, dict[str, str | None]],
     now: date,
+    update_activity: bool = True,
 ) -> list[dict[str, Any]]:
     participants: list[dict[str, Any]] = []
     seen_players: set[str] = set()
@@ -732,49 +1110,8 @@ def apply_game(
         if game_date and (rating_row["last_game_date"] is None or game_date > rating_row["last_game_date"]):
             rating_row["last_game_date"] = game_date
 
-        state_key = normalize_key(row.get("state"))
-        if state_key:
-            country_key = infer_country(row.get("state"), row.get("country"))
-            activity_key = (player_id, state_key)
-            activity = state_activity.setdefault(
-                activity_key,
-                {
-                    "region_type": "state",
-                    "region_key": state_key,
-                    "country_key": country_key or None,
-                    "player_id": player_id,
-                    "games_30d": 0,
-                    "games_90d": 0,
-                    "games_365d": 0,
-                    "games_lifetime": 0,
-                    "wins": 0,
-                    "draws": 0,
-                    "losses": 0,
-                    "last_game_date": None,
-                    "activity_score": 0.0,
-                    "is_primary_state": False,
-                },
-            )
-            if country_key and not activity.get("country_key"):
-                activity["country_key"] = country_key
-            activity["games_lifetime"] += 1
-            if result == "win":
-                activity["wins"] += 1
-            elif result == "draw":
-                activity["draws"] += 1
-            elif result == "loss":
-                activity["losses"] += 1
-            if game_date:
-                age_days = (now - game_date).days
-                if age_days <= 30:
-                    activity["games_30d"] += 1
-                if age_days <= 90:
-                    activity["games_90d"] += 1
-                if age_days <= 365:
-                    activity["games_365d"] += 1
-                activity["activity_score"] += math.pow(0.5, max(age_days, 0) / 180)
-                if activity["last_game_date"] is None or game_date > activity["last_game_date"]:
-                    activity["last_game_date"] = game_date
+        if update_activity:
+            update_state_activity_from_result(row, state_activity, player_meta, now)
 
         events.append(
             {
@@ -804,6 +1141,7 @@ def build_state_from_results(
     state_activity: dict[tuple[str, str], dict[str, Any]] | None = None,
     player_meta: dict[str, dict[str, str | None]] | None = None,
     events: list[dict[str, Any]] | None = None,
+    update_activity: bool = True,
 ) -> tuple[
     dict[str, dict[str, Any]],
     dict[tuple[str, str], dict[str, Any]],
@@ -821,7 +1159,14 @@ def build_state_from_results(
         games[row["game_id"]].append(row)
 
     for index, (_, rows) in enumerate(sorted(games.items(), key=game_sort_key), start=1):
-        player_events = apply_game(rows, ratings, state_activity, player_meta, today)
+        player_events = apply_game(
+            rows,
+            ratings,
+            state_activity,
+            player_meta,
+            today,
+            update_activity=update_activity,
+        )
         events.extend(player_events)
         if index % 25000 == 0:
             print(f"Processed {index:,}/{len(games):,} games", flush=True)
@@ -1178,7 +1523,11 @@ def main() -> None:
         print(f"Incremental rebuild from explicit start_date {args.since_start_date}", flush=True)
 
     if incremental_start:
-        base_ratings, base_state_activity, base_player_meta = fetch_existing_rating_state(client)
+        base_ratings = fetch_rating_snapshot_before(
+            client,
+            str(incremental_start["start_date"]),
+        )
+        base_state_activity, base_player_meta = fetch_state_activity_snapshot(client)
         results = fetch_results_from_tournament_start(
             client,
             str(incremental_start["start_date"]),
@@ -1192,9 +1541,8 @@ def main() -> None:
             ratings=base_ratings,
             state_activity=base_state_activity,
             player_meta=base_player_meta,
+            update_activity=False,
         )
-        recent_state_results = fetch_recent_state_results(client, datetime.now(UTC).date() - timedelta(days=365))
-        recompute_rolling_state_windows(state_activity, recent_state_results, datetime.now(UTC).date())
         print("Fetching TopDeck Elos for enrichment...", flush=True)
         topdeck_elos = fetch_topdeck_elos(client)
         rating_rows, state_rows, event_rows, leaderboard_rows, profile_rows = finalize_rows(

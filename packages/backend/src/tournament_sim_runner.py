@@ -49,9 +49,13 @@ def top_probability_rows(
         {
             "player_id": player_id,
             "name": player_name_by_id.get(player_id, player_id),
-            probability_key: probability,
+            probability_key: probabilities.get(player_id, 0.0),
         }
-        for player_id, probability in sorted(probabilities.items(), key=lambda item: item[1], reverse=True)[:limit]
+        for player_id in sorted(
+            player_name_by_id,
+            key=lambda player_id: probabilities.get(player_id, 0.0),
+            reverse=True,
+        )[:limit]
     ]
 
 
