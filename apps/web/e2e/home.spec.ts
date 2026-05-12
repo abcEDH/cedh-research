@@ -6,7 +6,7 @@ test.describe("Home Page", () => {
   });
 
   test("loads and displays hero section", async ({ page }) => {
-    await expect(page.getByRole("heading", { name: /tedh\.gg/i })).toBeVisible();
+    await expect(page.getByRole("link", { name: /tedh\.gg/i }).first()).toBeVisible();
     await expect(page.getByRole("heading", { name: /competitive Intelligence for cEDH/i })).toBeVisible();
   });
 

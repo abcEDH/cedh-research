@@ -430,17 +430,6 @@ export default async function RegionalEloPage({
     <div className="min-h-screen">
       <main className="container mx-auto px-4 pb-24 pt-10">
         <header className="flex flex-col gap-6 border-b border-border/60 pb-8">
-          <nav className="flex flex-wrap items-center justify-end gap-4 text-sm text-muted-foreground">
-            <Link className="transition hover:text-foreground" href="/">
-              Home
-            </Link>
-            <Link className="transition hover:text-foreground" href="/tournament-likelihood">
-              Tournament Prep
-            </Link>
-            <Link className="transition hover:text-foreground" href="/about">
-              Elo methodology
-            </Link>
-          </nav>
           <div className="flex flex-col gap-6 xl:grid xl:grid-cols-[1fr_350px] xl:items-start xl:gap-12">
             <div className="flex flex-col gap-4">
               <div>
