@@ -1,3 +1,15 @@
+# [1.17.0](https://github.com/abcEDH/cedh-research/compare/v1.16.0...v1.17.0) (2026-05-12)
+
+
+### Bug Fixes
+
+* **supabase:** guard cron migrations when extension is absent ([8b6dfb8](https://github.com/abcEDH/cedh-research/commit/8b6dfb8cd584c1b2d1883cd68716e35653c20a20))
+
+
+### Features
+
+* unify site header across all pages ([5df6870](https://github.com/abcEDH/cedh-research/commit/5df68702013255ec3c2c189c6031a97950e094c0))
+
 # [1.16.0](https://github.com/abcEDH/cedh-research/compare/v1.15.0...v1.16.0) (2026-05-09)
 
 
