@@ -4,6 +4,7 @@ import Link from "next/link";
 import { RegionalLeaderboardTable } from "./regional-leaderboard-table";
 import { RegionSelector } from "./region-selector";
 import { unstable_cache } from "next/cache";
+import { withTiming } from "@/lib/performance";
 
 export const dynamic = "force-dynamic";
 const GLOBAL_REGION_KEY = "ALL";
@@ -311,7 +312,7 @@ async function fetchLatestCommanders(
 }
 
 const getCachedRegionRows = unstable_cache(
-  fetchRegionRows,
+  () => withTiming("regional-elo:regions", fetchRegionRows),
   ["regional-elo-regions-v2"],
   { revalidate: REGIONAL_ELO_CACHE_REVALIDATE_SECONDS }
 );
@@ -323,16 +324,21 @@ const getCachedLeaderboardRows = unstable_cache(
     page: number,
     pageSize: number,
     searchQuery: string
-  ) => fetchLeaderboardRows(regionType, regionKey, page, pageSize, searchQuery),
+  ) =>
+    withTiming("regional-elo:leaderboard", () =>
+      fetchLeaderboardRows(regionType, regionKey, page, pageSize, searchQuery)
+    ),
   ["regional-elo-leaderboard-v4"],
   { revalidate: REGIONAL_ELO_CACHE_REVALIDATE_SECONDS }
 );
 
 const getCachedLatestCommanders = unstable_cache(
   async (players: Array<{ player_id: string; topdeck_id: string }>) => {
-    // We fetch profiles using IDs to ensure the cache key is stable and specific to the players shown.
-    const map = await fetchLatestCommanders(players);
-    return Object.fromEntries(map.entries());
+    return withTiming("regional-elo:latest-commanders", async () => {
+      // We fetch profiles using IDs to ensure the cache key is stable and specific to the players shown.
+      const map = await fetchLatestCommanders(players);
+      return Object.fromEntries(map.entries());
+    });
   },
   ["regional-elo-latest-commanders-v4"],
   { revalidate: REGIONAL_ELO_CACHE_REVALIDATE_SECONDS }

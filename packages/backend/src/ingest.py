@@ -946,6 +946,23 @@ class TopDeckClient:
         """Get detailed tournament data including standings."""
         url = f"{self.base_url}/tournaments/{tid}"
         tournament = normalize_topdeck_tournament_payload(self._request("GET", url), tid=tid)
+        
+        # If standings are empty, try PublicPData (common for upcoming events)
+        if not tournament.get("standings"):
+            public_players = self.get_public_player_data(tid)
+            if public_players:
+                tournament["standings"] = [
+                    {
+                        "id": p.get("uid"),
+                        "name": p.get("name"),
+                        "username": p.get("username"),
+                        "decklist": p.get("decklist"),
+                        "standing": i + 1,
+                    }
+                    for i, p in enumerate(public_players)
+                    if p.get("uid")
+                ]
+
         if should_use_firestore_tournament_fallback(tournament) or not tournament.get("rounds"):
             firestore_tournament = self.get_firestore_tournament(tid, tournament)
             if firestore_tournament:
@@ -1028,6 +1045,40 @@ class TopDeckClient:
 
         data = {key: decode_firestore_value(value) for key, value in fields.items()}
         return flat_firestore_league_to_topdeck_payload(tid, data, base_tournament)
+
+    def get_public_player_data(self, tid: str) -> list[dict[str, Any]]:
+        """Fetch public player registration data from TopDeck.gg."""
+        url = f"https://topdeck.gg/PublicPData/{tid}"
+        try:
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                if isinstance(data, dict):
+                    return list(data.values())
+        except Exception as e:
+            logger.warning(f"Failed to fetch public player data for {tid}: {e}")
+        return []
+
+    def get_tournament_tier(self, tid: str) -> str | None:
+        """Fetch the tournament tier (Platinum, Diamond, etc.) from Firestore otherEvents."""
+        firestore_api_key = os.environ.get("TOPDECK_FIRESTORE_API_KEY")
+        url = (
+            "https://firestore.googleapis.com/v1/projects/"
+            f"{TOPDECK_FIRESTORE_PROJECT}/databases/(default)/documents/"
+            f"otherEvents/{tid}"
+        )
+        if firestore_api_key:
+            url = f"{url}?key={firestore_api_key}"
+
+        try:
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                fields = response.json().get("fields", {})
+                if "tier" in fields:
+                    return decode_firestore_value(fields["tier"])
+        except Exception as e:
+            logger.warning(f"Failed to fetch tier for {tid}: {e}")
+        return None
 
 
 class SupabaseClient:
@@ -1553,8 +1604,9 @@ class DataIngester:
         if isinstance(start_date, (int, float)):
             start_date = datetime.fromtimestamp(start_date).isoformat()
 
-        # Get location data
+        # Get location and tier data
         event_data = tournament.get("eventData", {})
+        tier = self.topdeck.get_tournament_tier(tid)
 
         # Upsert tournament
         tournament_data: dict[str, Any] = {
@@ -1588,6 +1640,7 @@ class DataIngester:
             "latitude": event_data.get("lat"),
             "longitude": event_data.get("lng"),
             "header_image_url": event_data.get("headerImage"),
+            "tier": tier,
         }
 
         result = self.supabase.upsert(

@@ -13,6 +13,7 @@ import TrendMetricCharts, {
   TrendMetricSeries,
 } from "@/components/commanders/trend-metric-charts";
 import { aggregateTrendPoint, formatPercent, mean } from "@/lib/commander-stats";
+import { withTiming } from "@/lib/performance";
 
 export const dynamic = "force-dynamic";
 const COMMANDERS_CACHE_REVALIDATE_SECONDS = 60 * 60 * 24; // 24 hours
@@ -299,25 +300,27 @@ async function getGlobalTrendSeries() {
 }
 
 const getCachedCommanders = unstable_cache(
-  getCommanders,
+  () => withTiming("commanders:list", getCommanders),
   ["commanders-list-v1"],
   { revalidate: COMMANDERS_CACHE_REVALIDATE_SECONDS }
 );
 
 const getCachedCommanderPeriodSnapshots = unstable_cache(
-  async (commanderIds: string[]) => getCommanderPeriodSnapshots(commanderIds),
+  async (commanderIds: string[]) =>
+    withTiming("commanders:period-snapshots", () => getCommanderPeriodSnapshots(commanderIds)),
   ["commander-period-snapshots-v1"],
   { revalidate: COMMANDERS_CACHE_REVALIDATE_SECONDS }
 );
 
 const getCachedWeeklyEntries = unstable_cache(
-  async (commanderIds: string[], weeks: number) => getWeeklyEntries(commanderIds, weeks),
+  async (commanderIds: string[], weeks: number) =>
+    withTiming("commanders:weekly-entries", () => getWeeklyEntries(commanderIds, weeks)),
   ["commander-weekly-entries-v1"],
   { revalidate: COMMANDERS_CACHE_REVALIDATE_SECONDS }
 );
 
 const getCachedGlobalTrendSeries = unstable_cache(
-  getGlobalTrendSeries,
+  () => withTiming("commanders:global-trends", getGlobalTrendSeries),
   ["commander-global-trends-v3"],
   { revalidate: COMMANDERS_CACHE_REVALIDATE_SECONDS }
 );
