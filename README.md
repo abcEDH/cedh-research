@@ -2,9 +2,12 @@
 
 Unified backend ingestion + frontend app for tedh.gg.
 
+**[Read our Philosophy & Positioning](docs/philosophy-and-positioning.md)** — Core differentiators, interview strategy, and project mission.
+
 ## Structure
 - apps/web: Next.js dashboard (App Router, Tailwind, Recharts)
 - packages/backend: Python ingestion + analysis + Supabase migrations
+- **[Documentation Index](docs/README.md)**: Full archive of methodology, ADRs, and guides.
 
 ## Requirements
 - Node.js 20+

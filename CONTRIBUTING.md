@@ -2,6 +2,7 @@
 
 ## Principles
 
+- **Align with our [Philosophy & Positioning](docs/philosophy-and-positioning.md)**: Every change should serve the core mission of result-driven analytics.
 - Keep PRs small enough for a human reviewer to understand in one sitting.
 - Link every PR to the issue or issue cluster it implements.
 - If a surface is retired, remove its code, docs, tests, and CI references together.
