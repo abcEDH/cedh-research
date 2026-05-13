@@ -1,3 +1,23 @@
+## [1.17.1](https://github.com/abcEDH/cedh-research/compare/v1.17.0...v1.17.1) (2026-05-12)
+
+
+### Bug Fixes
+
+* **migrations:** guard DROP POLICY for commander elo tables behind existence check ([2dd2e8a](https://github.com/abcEDH/cedh-research/commit/2dd2e8a0ef11847125b75751754e3cc33d4808a5))
+* **migrations:** guard topdeck-elo cron schedule behind to_regclass check ([f0d9b4f](https://github.com/abcEDH/cedh-research/commit/f0d9b4fd4085b8e57575520aacb5499616304e7e))
+
+# [1.17.0](https://github.com/abcEDH/cedh-research/compare/v1.16.0...v1.17.0) (2026-05-12)
+
+
+### Bug Fixes
+
+* **supabase:** guard cron migrations when extension is absent ([8b6dfb8](https://github.com/abcEDH/cedh-research/commit/8b6dfb8cd584c1b2d1883cd68716e35653c20a20))
+
+
+### Features
+
+* unify site header across all pages ([5df6870](https://github.com/abcEDH/cedh-research/commit/5df68702013255ec3c2c189c6031a97950e094c0))
+
 # [1.16.0](https://github.com/abcEDH/cedh-research/compare/v1.15.0...v1.16.0) (2026-05-09)
 
 

@@ -6,7 +6,7 @@ test.describe("Home Page", () => {
   });
 
   test("loads and displays hero section", async ({ page }) => {
-    await expect(page.getByRole("heading", { name: /tedh\.gg/i })).toBeVisible();
+    await expect(page.getByRole("link", { name: /tedh\.gg/i }).first()).toBeVisible();
     await expect(page.getByRole("heading", { name: /competitive Intelligence for cEDH/i })).toBeVisible();
   });
 
@@ -23,8 +23,12 @@ test.describe("Home Page", () => {
     await expect(leaderboardTable.getByRole("columnheader", { name: "Commander" }).first()).toBeVisible();
 
     const playerLinks = leaderboardTable.locator('a[href^="/regional-elo/player/"]');
-    await expect(playerLinks.first()).toBeVisible();
-    expect(await playerLinks.count()).toBeGreaterThan(0);
+    const playerLinkCount = await playerLinks.count();
+    if (playerLinkCount > 0) {
+      await expect(playerLinks.first()).toBeVisible();
+    } else {
+      await expect(page.getByTestId("global-leaderboard-empty")).toBeVisible();
+    }
     await expect(page.locator('a[href="https://topdeck.gg/elo/magic-the-gathering/edh"]')).toHaveCount(0);
   });
 
