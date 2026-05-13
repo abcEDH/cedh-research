@@ -75,7 +75,7 @@ async function getTopRisingCommandersByTwoWeekTrend(): Promise<RisingCommander[]
 
   const { data: trendRows, error: trendErr } = await supabase
     .from("commander_weekly_trends")
-    .select("commander_id, commander_name, week_start_date, entries")
+    .select("commander_id, commander_name, week_start_date, entries, wins, losses, draws")
     .not("commander_name", "ilike", "unknown commander")
     .not("commander_name", "is", null)
     .neq("commander_name", "")
@@ -108,14 +108,19 @@ async function getTopRisingCommandersByTwoWeekTrend(): Promise<RisingCommander[]
 
   let recentTotal = 0;
   let priorTotal = 0;
-  const totals = new Map<string, { name: string; recent: number; prior: number }>();
+  const totals = new Map<string, { name: string; recent: number; prior: number; recentWins: number; recentGames: number }>();
   for (const row of trendRows) {
     const id = row.commander_id as string;
     const wk = row.week_start_date as string;
     const n = row.entries ?? 0;
-    const cur = totals.get(id) ?? { name: row.commander_name as string, recent: 0, prior: 0 };
+    const w = (row.wins as number | null) ?? 0;
+    const l = (row.losses as number | null) ?? 0;
+    const d = (row.draws as number | null) ?? 0;
+    const cur = totals.get(id) ?? { name: row.commander_name as string, recent: 0, prior: 0, recentWins: 0, recentGames: 0 };
     if (recentKey.has(wk)) {
       cur.recent += n;
+      cur.recentWins += w;
+      cur.recentGames += w + l + d;
       recentTotal += n;
     }
     if (priorKey.has(wk)) {
@@ -133,6 +138,7 @@ async function getTopRisingCommandersByTwoWeekTrend(): Promise<RisingCommander[]
       meta_share_delta: (v.recent / recentTotal) - (v.prior / priorTotal),
       recent_entries: v.recent,
       prior_entries: v.prior,
+      avg_win_rate: v.recentGames > 0 ? v.recentWins / v.recentGames : 0,
     }))
     .filter((x) => x.meta_share_delta > 0)
     .sort((a, b) => b.meta_share_delta - a.meta_share_delta)
@@ -142,7 +148,7 @@ async function getTopRisingCommandersByTwoWeekTrend(): Promise<RisingCommander[]
 
   const { data: metaRows, error: metaErr } = await supabase
     .from("commander_stats")
-    .select("commander_id, color_identity, avg_win_rate, total_entries")
+    .select("commander_id, color_identity, total_entries")
     .in(
       "commander_id",
       scored.map((s) => s.commander_id)
@@ -156,15 +162,12 @@ async function getTopRisingCommandersByTwoWeekTrend(): Promise<RisingCommander[]
 
   return scored.map((s) => {
     const meta = metaById.get(s.commander_id);
-    const wr = meta?.avg_win_rate;
-    const avg_win_rate = typeof wr === "number" ? wr : Number(wr ?? 0);
     const te = meta?.total_entries;
     const total_entries = typeof te === "number" ? te : Number(te ?? 0);
     return {
       ...s,
       total_entries: Number.isFinite(total_entries) ? total_entries : 0,
       color_identity: (meta?.color_identity as string[] | null) ?? null,
-      avg_win_rate: Number.isFinite(avg_win_rate) ? avg_win_rate : 0,
     };
   });
 }
