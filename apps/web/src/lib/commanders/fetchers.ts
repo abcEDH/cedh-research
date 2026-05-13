@@ -294,12 +294,28 @@ export async function getCommanderTrendSeries(commanderId: string): Promise<Comm
   const weeklyTable: CommanderTrendTableRow[] = weeklyRows
     .filter(hasGames)
     .slice(-52)
-    .map((row) => ({ ...toMetricPoint(row, normalizeDateKey(row.week_start_date) || row.week_key || "") }));
+    .map((row) => {
+      const games = row.wins + row.losses + row.draws;
+      return {
+        period: normalizeDateKey(row.week_start_date) || row.week_key || "",
+        entries: row.entries,
+        winRate: games ? (row.wins / games) * 100 : 0,
+        pointsPerGame: games ? (row.wins * 5 + row.draws) / games : 0,
+      };
+    });
 
   const monthlyTable: CommanderTrendTableRow[] = monthlyRows
     .filter(hasGames)
     .slice(-52)
-    .map((row) => ({ ...toMetricPoint(row, row.month_key) }));
+    .map((row) => {
+      const games = row.wins + row.losses + row.draws;
+      return {
+        period: row.month_key,
+        entries: row.entries,
+        winRate: games ? (row.wins / games) * 100 : 0,
+        pointsPerGame: games ? (row.wins * 5 + row.draws) / games : 0,
+      };
+    });
 
   return { weekly, monthly, weeklyTable, monthlyTable };
 }

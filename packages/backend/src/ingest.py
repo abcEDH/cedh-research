@@ -11,46 +11,36 @@ import argparse
 import json
 import logging
 import os
-import re
 import sys
 import time
 from collections import defaultdict
-from functools import lru_cache
 from datetime import datetime, timedelta
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-import requests
+import requests  # noqa: F401 (re-exported; test patches target ingest.requests)
+
 from dateutil import parser as date_parser
 
 # Optional: psycopg2 for direct connection
 try:
-    import psycopg2
-    import psycopg2.extras
+    import psycopg2  # noqa: F401
 
     PSYCOPG2_AVAILABLE = True
 except ImportError:
     PSYCOPG2_AVAILABLE = False
 
+from supabase_client import (
+    SUPABASE_REST_BASE,  # noqa: F401 (re-exported for existing importers)
+    DirectPostgresClient,  # noqa: F401 (re-exported for existing importers)
+    SupabaseClient,  # noqa: F401 (re-exported for existing importers)
+    _describe_request_failure,  # noqa: F401 (re-exported for existing importers)
+    fetch_existing_tids,
+)
 from topdeck_client import (
     TopDeckClient,  # noqa: F401 (re-exported for existing importers)
-    should_use_firestore_tournament_fallback,
-    decode_firestore_value,
-    firestore_bracket_name,
-    firestore_status,
-    firestore_tournament_to_topdeck_payload,
-    firestore_timestamp_seconds,
     is_placeholder_player_name,
-    normalize_standing_row,
-    flat_firestore_league_to_topdeck_payload,
-    merge_firestore_flat_league_rounds,
-    normalize_topdeck_tournament_payload,
-)
-from supabase_client import (
-    DirectPostgresClient,  # noqa: F401 (re-exported for existing importers)
-    SUPABASE_REST_BASE,  # noqa: F401 (re-exported for existing importers)
-    SupabaseClient,  # noqa: F401 (re-exported for existing importers)
-    fetch_existing_tids,
 )
 
 TOPDECK_STANDING_RATE_FIELDS = [
@@ -284,11 +274,7 @@ PARTNER_ORDER_OVERRIDES: dict[tuple[str, str], tuple[str, str]] = {
 
 def normalize_partner_order(names: list[str]) -> list[str]:
     """Return canonical partner ordering for a list of commander names."""
-    clean_names = [
-        clean_commander_card_name(value)
-        for value in names
-        if clean_commander_card_name(value)
-    ]
+    clean_names = [clean_commander_card_name(value) for value in names if clean_commander_card_name(value)]
     if len(clean_names) != 2:
         return clean_names
     pair_key = tuple(sorted(clean_names))
@@ -516,7 +502,8 @@ def sanitize_commander_payload(
         if cleaned:
             clean_names.append(cleaned)
     if not clean_names and name:
-        clean_names = [part.strip() for part in normalize_commander_name(name.split(" / ")).split(" / ") if part.strip()]
+        normalized = normalize_commander_name(name.split(" / "))
+        clean_names = [part.strip() for part in normalized.split(" / ") if part.strip()]
 
     canonical_name = normalize_commander_name(clean_names)
     if len(clean_names) == 2 and canonical_name not in load_legal_commander_pair_names():
@@ -539,9 +526,7 @@ class DataIngester:
         self.commander_cache: dict[str, str] = {}  # name -> id
         self.player_cache: dict[str, str] = {}  # topdeck_id -> id
 
-    def get_or_create_commander(
-        self, name: str, commander_names: list[str]
-    ) -> str | None:
+    def get_or_create_commander(self, name: str, commander_names: list[str]) -> str | None:
         """Get or create a commander entry, return UUID. (Legacy - use batch method)"""
         canonical_name, canonical_names = sanitize_commander_payload(name, commander_names)
         name = canonical_name
@@ -587,9 +572,7 @@ class DataIngester:
             return result[0]["id"]
         return None
 
-    def batch_upsert_commanders(
-        self, commander_data: dict[str, list[str]]
-    ) -> dict[str, str]:
+    def batch_upsert_commanders(self, commander_data: dict[str, list[str]]) -> dict[str, str]:
         """Batch upsert commanders and return name -> id mapping."""
         if not commander_data:
             return {}
@@ -612,9 +595,7 @@ class DataIngester:
             return {}
 
         unknown_topdeck_ids = [
-            topdeck_id
-            for topdeck_id, name in player_data.items()
-            if is_placeholder_player_name(name)
+            topdeck_id for topdeck_id, name in player_data.items() if is_placeholder_player_name(name)
         ]
         for start in range(0, len(unknown_topdeck_ids), 100):
             chunk = unknown_topdeck_ids[start : start + 100]
@@ -640,9 +621,7 @@ class DataIngester:
 
         return {r["topdeck_id"]: r["id"] for r in result}
 
-    def batch_upsert_entries(
-        self, entries: list[dict[str, Any]]
-    ) -> dict[str, str]:
+    def batch_upsert_entries(self, entries: list[dict[str, Any]]) -> dict[str, str]:
         """Batch upsert tournament entries and return topdeck entry id -> db id mapping."""
         if not entries:
             return {}
@@ -659,9 +638,7 @@ class DataIngester:
 
         result: list[dict[str, Any]] = []
         for db_entries in entries_by_keys.values():
-            upserted = self.supabase.upsert(
-                "tournament_entries", db_entries, on_conflict="tournament_id,player_id"
-            )
+            upserted = self.supabase.upsert("tournament_entries", db_entries, on_conflict="tournament_id,player_id")
             if upserted:
                 result.extend(upserted)
 
@@ -697,9 +674,7 @@ class DataIngester:
         if player_count <= 34:
             effective_top_cut = 4
 
-        logger.info(
-            f"Processing: {name} ({player_count} players, {len(rounds)} rounds)"
-        )
+        logger.info(f"Processing: {name} ({player_count} players, {len(rounds)} rounds)")
 
         # Convert timestamp to ISO format
         if isinstance(start_date, (int, float)):
@@ -717,19 +692,9 @@ class DataIngester:
             "player_count": player_count,
             "swiss_rounds": swiss_rounds,
             "top_cut": effective_top_cut,
-            "average_elo": (
-                int(tournament.get("averageElo"))
-                if tournament.get("averageElo")
-                else None
-            ),
-            "median_elo": (
-                int(tournament.get("medianElo"))
-                if tournament.get("medianElo")
-                else None
-            ),
-            "top_elo": (
-                int(tournament.get("topElo")) if tournament.get("topElo") else None
-            ),
+            "average_elo": (int(tournament.get("averageElo")) if tournament.get("averageElo") else None),
+            "median_elo": (int(tournament.get("medianElo")) if tournament.get("medianElo") else None),
+            "top_elo": (int(tournament.get("topElo")) if tournament.get("topElo") else None),
             "city": event_data.get("city"),
             "state": normalize_region_name(
                 event_data.get("state"),
@@ -744,9 +709,7 @@ class DataIngester:
             "tier": tier,
         }
 
-        result = self.supabase.upsert(
-            "tournaments", tournament_data, on_conflict="topdeck_tid"
-        )
+        result = self.supabase.upsert("tournaments", tournament_data, on_conflict="topdeck_tid")
         if not result:
             logger.error(f"Failed to upsert tournament: {tid}")
             return None
@@ -761,9 +724,7 @@ class DataIngester:
         # Step 1: Extract all unique commanders and players (local processing)
         commander_data: dict[str, list[str]] = {}  # name -> [individual_commander_names]
         player_data: dict[str, str] = {}  # topdeck_id -> name
-        standing_info: list[dict[str, Any]] = (
-            []
-        )  # [{idx, topdeck_id, commander_name, decklist, ...}]
+        standing_info: list[dict[str, Any]] = []  # [{idx, topdeck_id, commander_name, decklist, ...}]
 
         for idx, standing in enumerate(standings):
             player_topdeck_id = standing.get("id")
@@ -813,11 +774,7 @@ class DataIngester:
         # who are absent from standings. If we only build tournament_entries from
         # standings, later game ingest drops those players and leaves partial
         # game rows with only losses recorded.
-        known_standing_topdeck_ids = {
-            str(info["topdeck_id"])
-            for info in standing_info
-            if info.get("topdeck_id")
-        }
+        known_standing_topdeck_ids = {str(info["topdeck_id"]) for info in standing_info if info.get("topdeck_id")}
         next_idx = len(standing_info)
         for round_data in rounds:
             for table in round_data.get("tables", []) or []:
@@ -891,10 +848,7 @@ class DataIngester:
                 continue
 
             if player_id in seen_entry_player_ids:
-                logger.warning(
-                    f"Skipping duplicate standing for player {info['topdeck_id']} "
-                    f"in tournament {tid}"
-                )
+                logger.warning(f"Skipping duplicate standing for player {info['topdeck_id']} in tournament {tid}")
                 continue
             seen_entry_player_ids.add(player_id)
 
@@ -931,10 +885,7 @@ class DataIngester:
         games_processed = 0
         entries_by_topdeck_id = {
             e.get("topdeck_entry_id", "").removeprefix(f"{tid}_"): (e, db_id)
-            for e, db_id in (
-                (entry, entry_id_map.get(entry.get("topdeck_entry_id")))
-                for entry in entries
-            )
+            for e, db_id in ((entry, entry_id_map.get(entry.get("topdeck_entry_id"))) for entry in entries)
             if e.get("topdeck_entry_id") and db_id
         }
         entries_by_rank = sorted(
@@ -1014,9 +965,7 @@ class DataIngester:
                     }
 
                     try:
-                        game_result = self.supabase.upsert(
-                            "games", game_record, on_conflict="game_key"
-                        )
+                        game_result = self.supabase.upsert("games", game_record, on_conflict="game_key")
                         if game_result:
                             games_processed += 1
                             participant_records: list[dict[str, Any]] = []
@@ -1026,10 +975,7 @@ class DataIngester:
                                 if not entry_id:
                                     continue
 
-                                is_winner = (
-                                    not is_draw
-                                    and participant.get("topdeck_id") == winner_topdeck_id
-                                )
+                                is_winner = not is_draw and participant.get("topdeck_id") == winner_topdeck_id
                                 result_text = "draw" if is_draw else "win" if is_winner else "loss"
 
                                 participant_record = {
@@ -1084,9 +1030,7 @@ class DataIngester:
 
                     # Upsert game
                     try:
-                        game_result = self.supabase.upsert(
-                            "games", game_record, on_conflict="game_key"
-                        )
+                        game_result = self.supabase.upsert("games", game_record, on_conflict="game_key")
                         if game_result:
                             games_processed += 1
                             participant_records: list[dict[str, Any]] = []
@@ -1118,9 +1062,7 @@ class DataIngester:
                     except Exception as e:
                         logger.warning(f"Failed to upsert game {game_key}: {e}")
 
-        logger.info(
-            f"Completed {name}: {len(entries)} entries, {games_processed} games"
-        )
+        logger.info(f"Completed {name}: {len(entries)} entries, {games_processed} games")
         return {
             "tournament_id": tournament_id,
             "name": name,
@@ -1245,33 +1187,275 @@ def fail_ingestion_job(client: SupabaseClient, job_id: str, error: str) -> None:
         logger.error(f"Failed to record ingestion failure for {job_id}: {exc}")
 
 
+def utc_now_iso() -> str:
+    """Return current UTC time as ISO 8601 string."""
+    return datetime.utcnow().isoformat() + "Z"
+
+
+def load_tids(path: Path) -> list[str]:
+    """Load unique tournament IDs from a file, skipping blanks and comments."""
+    seen: set[str] = set()
+    result: list[str] = []
+    for line in path.read_text().splitlines():
+        tid = line.strip()
+        if not tid or tid.startswith("#"):
+            continue
+        if tid not in seen:
+            seen.add(tid)
+            result.append(tid)
+    return result
+
+
+def write_tids(path: Path, tids: list[str], header_lines: list[str] | None = None) -> None:
+    """Write tournament IDs to a file, one per line, with optional comment header."""
+    lines = [f"# {h}" for h in (header_lines or [])] + tids
+    path.write_text("\n".join(lines) + "\n")
+
+
+def chunk_items(items: list[Any], size: int) -> list[list[Any]]:
+    """Split a list into chunks of at most *size* items."""
+    return [items[i : i + size] for i in range(0, len(items), size)]
+
+
+def default_backfill_run_key(path: Path, batch_size: int) -> str:
+    """Generate a default run key from the manifest path and current timestamp."""
+    stem = path.stem
+    ts = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
+    return f"{stem}-bs{batch_size}-{ts}"
+
+
+def fetch_failed_tids_for_run(client: SupabaseClient, run_key: str) -> list[str]:
+    """Return TIDs marked as failed for a given backfill run key."""
+    runs = client.select(
+        "ingestion_backfill_runs",
+        {"select": "id", "run_key": f"eq.{run_key}"},
+    )
+    if not runs:
+        return []
+    run_id = runs[0]["id"]
+    events = client.select(
+        "ingestion_backfill_events",
+        {
+            "select": "tid",
+            "run_id": f"eq.{run_id}",
+            "event_type": "eq.process_failed",
+            "tid": "not.is.null",
+        },
+    )
+    seen: set[str] = set()
+    result: list[str] = []
+    for row in events:
+        tid = row.get("tid")
+        if tid and tid not in seen:
+            seen.add(tid)
+            result.append(tid)
+    return result
+
+
+def upsert_backfill_run(
+    client: SupabaseClient,
+    run_key: str,
+    tids_path: Path,
+    batch_size: int,
+    total_tournaments: int,
+    total_batches: int,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    status: str = "running",
+) -> dict[str, Any] | None:
+    """Upsert a row in ingestion_backfill_runs and return it."""
+    import hashlib
+
+    manifest_sha256 = hashlib.sha256(tids_path.read_bytes()).hexdigest()
+    rows = client.upsert(
+        "ingestion_backfill_runs",
+        {
+            "run_key": run_key,
+            "manifest_path": str(tids_path),
+            "manifest_sha256": manifest_sha256,
+            "batch_size": batch_size,
+            "discovered_tournament_count": total_tournaments,
+            "total_batches": total_batches,
+            "requested_start_date": start_date,
+            "requested_end_date": end_date,
+            "status": status,
+            "updated_at": utc_now_iso(),
+        },
+        on_conflict="run_key",
+    )
+    if isinstance(rows, list) and rows:
+        return rows[0]
+    if isinstance(rows, dict):
+        return rows
+    return None
+
+
+def upsert_backfill_batch(
+    client: SupabaseClient,
+    run_id: str,
+    batch_index: int,
+    batch_start: int,
+    batch_end: int,
+    tournament_count: int,
+    status: str = "running",
+    error_text: str | None = None,
+) -> dict[str, Any] | None:
+    """Upsert a row in ingestion_backfill_batches and return it."""
+    payload: dict[str, Any] = {
+        "run_id": run_id,
+        "batch_index": batch_index,
+        "batch_start": batch_start,
+        "batch_end": batch_end,
+        "tournament_count": tournament_count,
+        "status": status,
+        "updated_at": utc_now_iso(),
+    }
+    if status == "running":
+        payload["started_at"] = utc_now_iso()
+    if status in ("completed", "failed"):
+        payload["finished_at"] = utc_now_iso()
+    if error_text is not None:
+        payload["error_text"] = error_text
+    rows = client.upsert(
+        "ingestion_backfill_batches",
+        payload,
+        on_conflict="run_id,batch_index",
+    )
+    if isinstance(rows, list) and rows:
+        return rows[0]
+    if isinstance(rows, dict):
+        return rows
+    return None
+
+
+def append_backfill_event(
+    client: SupabaseClient,
+    run_id: str,
+    batch_index: int,
+    event_type: str,
+    tid: str | None = None,
+    payload: dict[str, Any] | None = None,
+) -> None:
+    """Insert a row into ingestion_backfill_events."""
+    client.upsert(
+        "ingestion_backfill_events",
+        {
+            "run_id": run_id,
+            "batch_index": batch_index,
+            "tid": tid,
+            "event_type": event_type,
+            "payload": payload or {},
+        },
+    )
+
+
+def update_backfill_run_progress(
+    client: SupabaseClient,
+    run_row: dict[str, Any],
+    processed_count: int,
+    succeeded_count: int,
+    failed_count: int,
+    status: str = "running",
+    current_batch_index: int | None = None,
+    current_tid: str | None = None,
+    last_completed_tid: str | None = None,
+    current_batch_processed_count: int = 0,
+    current_batch_succeeded_count: int = 0,
+    current_batch_failed_count: int = 0,
+    last_success_at: str | None = None,
+) -> None:
+    """Update progress columns on an ingestion_backfill_runs row."""
+    data: dict[str, Any] = {
+        "processed_tournament_count": processed_count,
+        "succeeded_tournament_count": succeeded_count,
+        "failed_tournament_count": failed_count,
+        "status": status,
+        "current_batch_processed_count": current_batch_processed_count,
+        "current_batch_succeeded_count": current_batch_succeeded_count,
+        "current_batch_failed_count": current_batch_failed_count,
+        "updated_at": utc_now_iso(),
+        "heartbeat_at": utc_now_iso(),
+    }
+    if current_batch_index is not None:
+        data["current_batch_index"] = current_batch_index
+    if current_tid is not None:
+        data["current_tid"] = current_tid
+    if last_completed_tid is not None:
+        data["last_completed_tid"] = last_completed_tid
+    if last_success_at is not None:
+        data["last_success_at"] = last_success_at
+    client.update(
+        "ingestion_backfill_runs",
+        data,
+        {"id": f"eq.{run_row['id']}"},
+    )
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     """Return the argument parser for the ingestion CLI."""
     parser = argparse.ArgumentParser(description="cEDH Analytics Data Ingestion")
     parser.add_argument("--tournament-id", type=str, help="TopDeck tournament ID (slug) to ingest")
     parser.add_argument("--days", type=int, default=7, help="Number of recent days to search for tournaments")
-    parser.add_argument("--stop-on-error", action="store_true", help="Fail fast instead of continuing to later tournaments after an error in --tids-file mode")
+    parser.add_argument(
+        "--stop-on-error",
+        action="store_true",
+        help="Fail fast instead of continuing to later tournaments after an error in --tids-file mode",
+    )
     parser.add_argument("--tids-file", type=str, help="Path to file with one TopDeck tournament ID per line")
     parser.add_argument("--names-file", type=str, help="Path to file with one tournament name per line")
     parser.add_argument("--resolve-days", type=int, default=120, help="Days back to search when resolving names to IDs")
     parser.add_argument("--tids-out", type=str, help="Write resolved tournament IDs to this file")
     parser.add_argument("--selected-tids-out", type=str, help="Write filtered manifest TIDs to this file")
-    parser.add_argument("--skip-existing-tids", action="store_true", help="Skip manifest TIDs already present in Supabase")
-    parser.add_argument("--only-failed-from-run-key", type=str, help="Restrict manifest TIDs to those marked failed for a recorded backfill run")
+    parser.add_argument(
+        "--skip-existing-tids",
+        action="store_true",
+        help="Skip manifest TIDs already present in Supabase",
+    )
+    parser.add_argument(
+        "--only-failed-from-run-key",
+        type=str,
+        help="Restrict manifest TIDs to those marked failed for a recorded backfill run",
+    )
     parser.add_argument("--batch-size", type=int, default=250, help="Batch size for --tids-file mode")
-    parser.add_argument("--batch-index", type=int, help="Only run the selected zero-based batch index from --tids-file mode")
+    parser.add_argument(
+        "--batch-index", type=int, help="Only run the selected zero-based batch index from --tids-file mode"
+    )
     parser.add_argument("--run-key", type=str, help="Logical run key for recorded --tids-file backfills")
-    parser.add_argument("--record-backfill", action="store_true", help="Record backfill run/batch progress in Supabase metadata tables")
-    parser.add_argument("--start-date", type=str, help="Optional lower bound used when recording --tids-file backfill metadata")
-    parser.add_argument("--end-date", type=str, help="Optional upper bound used when recording --tids-file backfill metadata")
-    parser.add_argument("--resolve-include-ambiguous", action="store_true", help="Include all candidate IDs for ambiguous name matches")
+    parser.add_argument(
+        "--record-backfill",
+        action="store_true",
+        help="Record backfill run/batch progress in Supabase metadata tables",
+    )
+    parser.add_argument(
+        "--start-date", type=str, help="Optional lower bound used when recording --tids-file backfill metadata"
+    )
+    parser.add_argument(
+        "--end-date", type=str, help="Optional upper bound used when recording --tids-file backfill metadata"
+    )
+    parser.add_argument(
+        "--resolve-include-ambiguous",
+        action="store_true",
+        help="Include all candidate IDs for ambiguous name matches",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Don't write to database")
     parser.add_argument("--limit", type=int, default=0, help="Maximum number of tournaments to process")
-    parser.add_argument("--leagues", "--league", dest="leagues", action="store_true", help="Include leagues=true in the TopDeck tournament search payload")
+    parser.add_argument(
+        "--leagues",
+        "--league",
+        dest="leagues",
+        action="store_true",
+        help="Include leagues=true in the TopDeck tournament search payload",
+    )
     parser.add_argument("--direct", action="store_true", help="Use direct Postgres connection for faster ingestion")
-    parser.add_argument("--skip-existing-tournaments", action="store_true", help="Skip tournaments whose topdeck_tid already exists in Supabase")
+    parser.add_argument(
+        "--skip-existing-tournaments",
+        action="store_true",
+        help="Skip tournaments whose topdeck_tid already exists in Supabase",
+    )
     parser.add_argument("--job-id", type=str, default="", help="ingestion_jobs UUID for cron-dispatched runs")
-    parser.add_argument("--min-players", type=int, default=0, help="Minimum number of players required to process a tournament")
+    parser.add_argument(
+        "--min-players", type=int, default=0, help="Minimum number of players required to process a tournament"
+    )
     return parser
 
 
@@ -1296,7 +1480,7 @@ def main():
     ingester = DataIngester(topdeck, supabase)
 
     # Job lifecycle management
-    job_id = getattr(args, 'job_id', '') or ''
+    job_id = getattr(args, "job_id", "") or ""
     github_run_id = int(os.environ.get("GITHUB_RUN_ID", 0))
     start_time = time.time()
 
@@ -1320,9 +1504,13 @@ def main():
 
     duration = round(time.time() - start_time, 2)
     if job_id:
-        complete_ingestion_job(supabase, job_id, {
-            "duration_seconds": duration,
-        })
+        complete_ingestion_job(
+            supabase,
+            job_id,
+            {
+                "duration_seconds": duration,
+            },
+        )
 
     # Cleanup direct Postgres connection
     db_client = None
@@ -1335,7 +1523,7 @@ def main():
 
 def _run_ingestion(args, topdeck, supabase, ingester, job_id):
     """Core ingestion logic, extracted for job lifecycle wrapping."""
-    min_players = getattr(args, 'min_players', 0) or 0
+    min_players = getattr(args, "min_players", 0) or 0
 
     if args.tournament_id:
         # Ingest single tournament
@@ -1717,7 +1905,9 @@ def _run_ingestion(args, topdeck, supabase, ingester, job_id):
                         if args.stop_on_error:
                             break
                 else:
-                    logger.info(f"Would process: {tournament.get('tournamentName')} ({len(tournament.get('standings', []))} players)")
+                    t_name = tournament.get("tournamentName")
+                    t_players = len(tournament.get("standings", []))
+                    logger.info(f"Would process: {t_name} ({t_players} players)")
                 update_ingestion_heartbeat(supabase, job_id)
 
             if args.record_backfill and run_row:
@@ -1780,31 +1970,21 @@ def _run_ingestion(args, topdeck, supabase, ingester, job_id):
         start_date = (datetime.now() - timedelta(days=args.days)).date().isoformat()
         end_date = datetime.now().date().isoformat()
         logger.info(f"Searching for tournaments from {start_date} through {end_date} ({args.days} days)")
-        tournaments = topdeck.search_tournaments(
-            start_date=start_date, end_date=end_date, leagues=args.leagues
-        )
+        tournaments = topdeck.search_tournaments(start_date=start_date, end_date=end_date, leagues=args.leagues)
         logger.info(f"Found {len(tournaments)} tournaments to process")
 
         if min_players > 0:
             original_count = len(tournaments)
-            tournaments = [
-                t for t in tournaments
-                if len(t.get("standings", [])) >= min_players
-            ]
+            tournaments = [t for t in tournaments if len(t.get("standings", [])) >= min_players]
             logger.info(
-                f"Filtered to {len(tournaments)} tournaments with >= {min_players} players "
-                f"(from {original_count})"
+                f"Filtered to {len(tournaments)} tournaments with >= {min_players} players (from {original_count})"
             )
 
         if args.skip_existing_tournaments:
             search_tids = [tid for t in tournaments if (tid := t.get("id") or t.get("TID"))]
             existing_tids = fetch_existing_tids(ingester.supabase, search_tids)
             original_count = len(tournaments)
-            tournaments = [
-                t
-                for t in tournaments
-                if (t.get("id") or t.get("TID")) not in existing_tids
-            ]
+            tournaments = [t for t in tournaments if (t.get("id") or t.get("TID")) not in existing_tids]
             logger.info(
                 f"Skipped {original_count - len(tournaments)} existing tournaments because "
                 f"--skip-existing-tournaments was set; {len(tournaments)} remaining"

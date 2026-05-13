@@ -22,9 +22,7 @@ logger = logging.getLogger(__name__)
 SUPABASE_REST_BASE = "https://msjjihqbxtgjdtapywrj.supabase.co"
 
 
-def _describe_request_failure(
-    exc: BaseException, *, table: str, body_chars: int = 200
-) -> str:
+def _describe_request_failure(exc: BaseException, *, table: str, body_chars: int = 200) -> str:
     """Build a one-line diagnostic for a failed HTTP attempt: class, status, body excerpt."""
     response = getattr(exc, "response", None)
     status = getattr(response, "status_code", None)
@@ -43,7 +41,7 @@ def _describe_request_failure(
 
 
 def fetch_existing_tids(
-    client: "SupabaseClient",
+    client: SupabaseClient,
     tids: list[str] | None = None,
 ) -> set[str]:
     """Return existing TopDeck tournament IDs from Supabase.
@@ -65,9 +63,7 @@ def fetch_existing_tids(
                     "topdeck_tid": f"in.({','.join(chunk)})",
                 },
             )
-            existing_tids.update(
-                row["topdeck_tid"] for row in page if row.get("topdeck_tid")
-            )
+            existing_tids.update(row["topdeck_tid"] for row in page if row.get("topdeck_tid"))
         return existing_tids
 
     rows: list[dict[str, Any]] = []
@@ -127,9 +123,7 @@ class SupabaseClient:
 
         for attempt in range(max_retries):
             try:
-                response = requests.post(
-                    endpoint, json=data, headers=headers, params=params, timeout=90
-                )
+                response = requests.post(endpoint, json=data, headers=headers, params=params, timeout=90)
                 if response.status_code >= 400:
                     logger.error(f"Supabase error: {response.text}")
                     response.raise_for_status()
@@ -141,9 +135,7 @@ class SupabaseClient:
             ) as e:
                 if attempt < max_retries - 1:
                     wait_time = 2**attempt  # Exponential backoff: 1s, 2s, 4s
-                    logger.warning(
-                        f"Connection error, retrying in {wait_time}s... ({attempt + 1}/{max_retries})"
-                    )
+                    logger.warning(f"Connection error, retrying in {wait_time}s... ({attempt + 1}/{max_retries})")
                     time.sleep(wait_time)
                 else:
                     logger.error(f"Failed after {max_retries} retries: {e}")
@@ -151,9 +143,7 @@ class SupabaseClient:
 
         return None
 
-    def select(
-        self, table: str, filters: dict[str, str] | None = None, max_retries: int = 8
-    ) -> list[dict[str, Any]]:
+    def select(self, table: str, filters: dict[str, str] | None = None, max_retries: int = 8) -> list[dict[str, Any]]:
         """Select data from a table with retry logic."""
         if max_retries <= 0:
             return []
@@ -162,13 +152,9 @@ class SupabaseClient:
 
         for attempt in range(max_retries):
             try:
-                response = requests.get(
-                    endpoint, headers=self.headers, params=params, timeout=90
-                )
+                response = requests.get(endpoint, headers=self.headers, params=params, timeout=90)
                 if response.status_code >= 500:
-                    raise requests.exceptions.HTTPError(
-                        f"{response.status_code} Server Error", response=response
-                    )
+                    raise requests.exceptions.HTTPError(f"{response.status_code} Server Error", response=response)
                 response.raise_for_status()
                 return response.json()
             except (
@@ -180,15 +166,10 @@ class SupabaseClient:
                 diag = _describe_request_failure(e, table=table)
                 if attempt < max_retries - 1:
                     wait_time = 2**attempt
-                    logger.warning(
-                        f"Query failed: {diag}; retrying in {wait_time}s "
-                        f"({attempt + 1}/{max_retries})"
-                    )
+                    logger.warning(f"Query failed: {diag}; retrying in {wait_time}s ({attempt + 1}/{max_retries})")
                     time.sleep(wait_time)
                 else:
-                    logger.error(
-                        f"Query failed after {max_retries} retries: {diag}"
-                    )
+                    logger.error(f"Query failed after {max_retries} retries: {diag}")
                     raise
         # This is a safety net; the loop above either returns or raises
         return []
@@ -208,9 +189,7 @@ class SupabaseClient:
 
         for attempt in range(max_retries):
             try:
-                response = requests.patch(
-                    endpoint, json=data, headers=self.headers, params=params, timeout=90
-                )
+                response = requests.patch(endpoint, json=data, headers=self.headers, params=params, timeout=90)
                 if response.status_code >= 400:
                     logger.error(f"Supabase update error: {response.text}")
                     response.raise_for_status()
@@ -342,17 +321,13 @@ class DirectPostgresClient:
 
         self.connect()
         with self._conn.cursor() as cursor:
-            psycopg2.extras.execute_values(
-                cursor, sql, [(tuple(d.values()) for d in data)], page_size=1000
-            )
+            psycopg2.extras.execute_values(cursor, sql, [(tuple(d.values()) for d in data)], page_size=1000)
             self._conn.commit()
             results = cursor.fetchall()
             col_names = [desc[0] for desc in cursor.description]
-            return [dict(zip(col_names, row)) for row in results]
+            return [dict(zip(col_names, row, strict=False)) for row in results]
 
-    def select(
-        self, table: str, filters: dict[str, str] | None = None
-    ) -> list[dict[str, Any]]:
+    def select(self, table: str, filters: dict[str, str] | None = None) -> list[dict[str, Any]]:
         """Select data from a table."""
         self.connect()
 
@@ -378,4 +353,4 @@ class DirectPostgresClient:
             if not results:
                 return []
             col_names = [desc[0] for desc in cursor.description]
-            return [dict(zip(col_names, row)) for row in results]
+            return [dict(zip(col_names, row, strict=False)) for row in results]

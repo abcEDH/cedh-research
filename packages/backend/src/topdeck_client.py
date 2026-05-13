@@ -81,15 +81,9 @@ def decode_firestore_value(value: dict[str, Any]) -> Any:
     if "timestampValue" in value:
         return value["timestampValue"]
     if "arrayValue" in value:
-        return [
-            decode_firestore_value(item)
-            for item in value.get("arrayValue", {}).get("values", [])
-        ]
+        return [decode_firestore_value(item) for item in value.get("arrayValue", {}).get("values", [])]
     if "mapValue" in value:
-        return {
-            key: decode_firestore_value(item)
-            for key, item in value.get("mapValue", {}).get("fields", {}).items()
-        }
+        return {key: decode_firestore_value(item) for key, item in value.get("mapValue", {}).get("fields", {}).items()}
     return None
 
 
@@ -119,9 +113,7 @@ def firestore_status(round_data: dict[str, Any], pod: dict[str, Any]) -> str:
     return "Pending"
 
 
-def firestore_tournament_to_topdeck_payload(
-    tid: str, data: dict[str, Any]
-) -> dict[str, Any] | None:
+def firestore_tournament_to_topdeck_payload(tid: str, data: dict[str, Any]) -> dict[str, Any] | None:
     """Convert a legacy TopDeck Firestore tournament document to v2-like data."""
     players = data.get("Players") or {}
     rounds = data.get("Rounds") or []
@@ -154,7 +146,7 @@ def firestore_tournament_to_topdeck_payload(
     table_start = config.get("TableStart") or 1
     converted_rounds: list[dict[str, Any]] = []
     swiss_round_count = 0
-    for round_index, round_data in enumerate(rounds, start=1):
+    for _round_index, round_data in enumerate(rounds, start=1):
         if not isinstance(round_data, dict):
             continue
 
@@ -192,11 +184,7 @@ def firestore_tournament_to_topdeck_payload(
                     "table": table_start + pod_index,
                     "players": pod_players,
                     "winner_id": winner_id,
-                    "winner": (
-                        None
-                        if winner_id in (None, "Draw")
-                        else (players.get(winner_id) or {}).get("name")
-                    ),
+                    "winner": (None if winner_id in (None, "Draw") else (players.get(winner_id) or {}).get("name")),
                     "status": firestore_status(round_data, pod),
                 }
             )
@@ -357,8 +345,7 @@ def flat_firestore_league_to_topdeck_payload(
         )
 
     converted_rounds = [
-        {"round": round_number, "tables": tables}
-        for round_number, tables in sorted(rounds_by_number.items())
+        {"round": round_number, "tables": tables} for round_number, tables in sorted(rounds_by_number.items())
     ]
     if not converted_rounds:
         return None
@@ -411,14 +398,18 @@ def merge_firestore_flat_league_rounds(
         int(primary_tournament.get("swissNum") or 0),
         int(flat_league_tournament.get("swissNum") or 0),
     )
-    merged["_source"] = "+".join(
-        source
-        for source in (
-            primary_tournament.get("_source"),
-            flat_league_tournament.get("_source"),
+    merged["_source"] = (
+        "+".join(
+            source
+            for source in (
+                primary_tournament.get("_source"),
+                flat_league_tournament.get("_source"),
+            )
+            if source
         )
-        if source
-    ) or primary_tournament.get("_source") or flat_league_tournament.get("_source")
+        or primary_tournament.get("_source")
+        or flat_league_tournament.get("_source")
+    )
     return merged
 
 
@@ -452,9 +443,7 @@ class TopDeckClient:
                 if method == "GET":
                     response = requests.get(url, headers=headers, timeout=90)
                 elif method == "POST":
-                    response = requests.post(
-                        url, json=json_payload, headers=headers, timeout=90
-                    )
+                    response = requests.post(url, json=json_payload, headers=headers, timeout=90)
                 else:
                     raise ValueError(f"Unsupported HTTP method: {method}")
 
@@ -488,9 +477,7 @@ class TopDeckClient:
             except requests.exceptions.RequestException as e:
                 if attempt < max_retries - 1:
                     wait_time = 2**attempt
-                    logger.warning(
-                        f"Request failed, retrying in {wait_time}s... ({attempt + 1}/{max_retries})"
-                    )
+                    logger.warning(f"Request failed, retrying in {wait_time}s... ({attempt + 1}/{max_retries})")
                     time.sleep(wait_time)
                 else:
                     logger.error(f"Failed after {max_retries} retries: {e}")
@@ -522,10 +509,7 @@ class TopDeckClient:
         tournaments = response if isinstance(response, list) else response.get("tournaments", [])
         logger.info(f"Found {len(tournaments)} tournaments in search")
 
-        return [
-            normalize_topdeck_tournament_payload(t)
-            for t in tournaments
-        ]
+        return [normalize_topdeck_tournament_payload(t) for t in tournaments]
 
     def get_tournament(self, tid: str) -> dict[str, Any]:
         """Get detailed tournament data including standings."""
@@ -575,9 +559,7 @@ class TopDeckClient:
         if response.status_code == 404:
             return None
         if response.status_code >= 400:
-            logger.warning(
-                f"TopDeck Firestore fallback failed for {tid}: {response.text}"
-            )
+            logger.warning(f"TopDeck Firestore fallback failed for {tid}: {response.text}")
             response.raise_for_status()
 
         document = response.json()
