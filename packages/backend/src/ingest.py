@@ -20,24 +20,35 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-import requests  # noqa: F401 (re-exported; test patches target ingest.requests)
 from dateutil import parser as date_parser
 
 from supabase_client import (
-    SUPABASE_REST_BASE,  # noqa: F401 (re-exported for existing importers)
-    DirectPostgresClient,  # noqa: F401 (re-exported for existing importers)
-    SupabaseClient,  # noqa: F401 (re-exported for existing importers)
-    _describe_request_failure,  # noqa: F401 (re-exported for existing importers)
+    SUPABASE_REST_BASE,
+    DirectPostgresClient,
+    SupabaseClient,
+    _describe_request_failure,
     fetch_existing_tids,
 )
 from topdeck_client import (
-    TOPDECK_FIRESTORE_PROJECT,  # noqa: F401 (re-exported for existing importers)
-    TopDeckClient,  # noqa: F401 (re-exported for existing importers)
-    decode_firestore_value,  # noqa: F401 (re-exported for existing importers)
+    TOPDECK_FIRESTORE_PROJECT,
+    TopDeckClient,
+    decode_firestore_value,
     is_placeholder_player_name,
 )
 
 PSYCOPG2_AVAILABLE = importlib.util.find_spec("psycopg2") is not None
+
+# Explicit re-exports — these names are imported from sub-modules so that
+# existing scripts which do `from ingest import X` continue to work unchanged.
+__all__ = [
+    "SUPABASE_REST_BASE",
+    "DirectPostgresClient",
+    "SupabaseClient",
+    "_describe_request_failure",
+    "TOPDECK_FIRESTORE_PROJECT",
+    "TopDeckClient",
+    "decode_firestore_value",
+]
 
 TOPDECK_STANDING_RATE_FIELDS = [
     ("primaryWinRate", "opponentWinRate"),
