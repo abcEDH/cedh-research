@@ -22,3 +22,6 @@ dev = [
 
 [tool.uv]
 package = false
+# Exclude packages published within the last 7 days to reduce supply chain attack exposure.
+# Update this date intentionally when upgrading dependencies.
+exclude-newer = "2026-05-06"
