@@ -8,6 +8,7 @@ Fetches tournament data from TopDeck.gg API and loads into Supabase.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import logging
 import os
@@ -20,16 +21,7 @@ from pathlib import Path
 from typing import Any
 
 import requests  # noqa: F401 (re-exported; test patches target ingest.requests)
-
 from dateutil import parser as date_parser
-
-# Optional: psycopg2 for direct connection
-try:
-    import psycopg2  # noqa: F401
-
-    PSYCOPG2_AVAILABLE = True
-except ImportError:
-    PSYCOPG2_AVAILABLE = False
 
 from supabase_client import (
     SUPABASE_REST_BASE,  # noqa: F401 (re-exported for existing importers)
@@ -39,9 +31,13 @@ from supabase_client import (
     fetch_existing_tids,
 )
 from topdeck_client import (
+    TOPDECK_FIRESTORE_PROJECT,  # noqa: F401 (re-exported for existing importers)
     TopDeckClient,  # noqa: F401 (re-exported for existing importers)
+    decode_firestore_value,  # noqa: F401 (re-exported for existing importers)
     is_placeholder_player_name,
 )
+
+PSYCOPG2_AVAILABLE = importlib.util.find_spec("psycopg2") is not None
 
 TOPDECK_STANDING_RATE_FIELDS = [
     ("primaryWinRate", "opponentWinRate"),
