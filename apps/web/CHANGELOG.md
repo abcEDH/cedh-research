@@ -1,3 +1,10 @@
+## [1.17.2](https://github.com/abcEDH/cedh-research/compare/v1.17.1...v1.17.2) (2026-05-13)
+
+
+### Bug Fixes
+
+* log status code and response body on Supabase select retry ([#181](https://github.com/abcEDH/cedh-research/issues/181)) ([90a7328](https://github.com/abcEDH/cedh-research/commit/90a73280c827288cbe21bd3a1572f9c597eeb8f2))
+
 ## [1.17.1](https://github.com/abcEDH/cedh-research/compare/v1.17.0...v1.17.1) (2026-05-12)
 
 
