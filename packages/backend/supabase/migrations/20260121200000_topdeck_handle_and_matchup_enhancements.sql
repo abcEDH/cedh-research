@@ -77,8 +77,11 @@ BEGIN
         0.25::NUMERIC AS expected_win_rate,
         -- Difference from expected
         ROUND((md.total_wins::NUMERIC / md.total_games) - 0.25, 4) AS win_rate_vs_expected,
-        -- Statistical significance (simplified: >20 games = more reliable)
-        -- Using Wilson score interval approximation
+        -- Tiered significance heuristic for 4-player cEDH (expected win rate = 0.25):
+        --   >= 30 games : always significant (Law of Large Numbers)
+        --   20-29 games : significant if win rate deviates > 10% from 0.25 (i.e. >35% or <15%)
+        --   10-19 games : significant only for extreme outliers (deviation > 15%, i.e. >40% or <10%)
+        --   < 10 games  : never significant (insufficient data)
         CASE
             WHEN md.total_games >= 30 THEN TRUE
             WHEN md.total_games >= 20 AND ABS((md.total_wins::NUMERIC / md.total_games) - 0.25) > 0.10 THEN TRUE

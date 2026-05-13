@@ -292,6 +292,14 @@ export default function AboutPage() {
               >
                 View on GitHub
               </Link>
+              <Link
+                href="https://lnk.bio/tedh_gg"
+                className="px-4 py-2 bg-muted/30 border border-border/60 rounded-md hover:border-primary/40 transition-colors"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Discord &amp; Contact
+              </Link>
             </div>
           </CardContent>
         </Card>
