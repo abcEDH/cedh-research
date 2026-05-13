@@ -35,12 +35,6 @@ preview-deploy-frontend:
 	npm run preview:frontend
 
 # Backend targets
-
-# Regenerate the uv lockfile, excluding packages published in the last 7 days
-# to reduce supply chain attack exposure.
-backend-lock:
-	uv lock --project packages/backend --exclude-newer "$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)"
-
 backend-deps:
 	python -m pip install -r packages/backend/requirements.txt
 
