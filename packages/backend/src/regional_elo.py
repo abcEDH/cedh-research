@@ -11,11 +11,11 @@ import argparse
 import os
 import sys
 import time
+import traceback
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
-UTC = timezone.utc
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import requests
@@ -1094,22 +1094,22 @@ if __name__ == "__main__":
         main()
     except Exception as exc:
         import traceback
+
         traceback.print_exc()
         # Best-effort: mark the job as failed in the DB so the queue doesn't
         # leave it stuck in 'running' until the stale-cleanup cron fires.
-        _job_id = None
+        job_id_arg = None
         try:
-            import sys as _sys
-            for _i, _arg in enumerate(_sys.argv):
-                if _arg == "--job-id" and _i + 1 < len(_sys.argv):
-                    _job_id = _sys.argv[_i + 1]
+            for _i, _arg in enumerate(sys.argv):
+                if _arg == "--job-id" and _i + 1 < len(sys.argv):
+                    job_id_arg = sys.argv[_i + 1]
                     break
-            if _job_id:
+            if job_id_arg:
                 _url = os.environ.get("SUPABASE_URL", "")
                 _key = os.environ.get("SUPABASE_SERVICE_KEY", "")
                 if _url and _key:
                     _client = SupabaseClient(_url, _key)
-                    fail_job(_client, _job_id, str(exc))
+                    fail_job(_client, job_id_arg, str(exc))
         except Exception:
             pass
-        _sys.exit(1)
+        sys.exit(1)
