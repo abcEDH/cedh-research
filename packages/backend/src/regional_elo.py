@@ -1093,8 +1093,6 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as exc:
-        import traceback
-
         traceback.print_exc()
         # Best-effort: mark the job as failed in the DB so the queue doesn't
         # leave it stuck in 'running' until the stale-cleanup cron fires.
@@ -1110,6 +1108,7 @@ if __name__ == "__main__":
                 if _url and _key:
                     _client = SupabaseClient(_url, _key)
                     fail_job(_client, job_id_arg, str(exc))
-        except Exception:
-            pass
+        except Exception as report_exc:
+            # Best-effort reporting failed; don't mask the original traceback.
+            sys.stderr.write(f"[warn] fail_job reporting failed: {report_exc}\n")
         sys.exit(1)
