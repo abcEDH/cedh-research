@@ -1,3 +1,10 @@
+## [1.17.3](https://github.com/abcEDH/cedh-research/compare/v1.17.2...v1.17.3) (2026-05-25)
+
+
+### Bug Fixes
+
+* remove duplicate Date column in Achievements table ([36bf347](https://github.com/abcEDH/cedh-research/commit/36bf347d92f72cd13cbb17d8e2d7a716faeb7858))
+
 ## [1.17.2](https://github.com/abcEDH/cedh-research/compare/v1.17.1...v1.17.2) (2026-05-13)
 
 
