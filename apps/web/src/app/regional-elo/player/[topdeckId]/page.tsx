@@ -1267,7 +1267,7 @@ export async function PlayerProfileBody({
                   <thead className="text-left text-xs uppercase tracking-[0.2em] text-muted-foreground">
                     <tr>
                       <th className="px-2 py-3">Tournament</th>
-                      <th className="px-2 py-3">
+                      <th className="px-2 py-3 hidden sm:table-cell">
                         <Link
                           href={buildPlayerProfileHref(
                             topdeckId,
@@ -1284,7 +1284,6 @@ export async function PlayerProfileBody({
                           Date
                         </Link>
                       </th>
-                      <th className="px-2 py-3 hidden sm:table-cell">Date</th>
                       <th className="px-2 py-3">Commander</th>
                       <th className="px-2 py-3 text-right">Finish</th>
                       <th className="px-2 py-3 text-right hidden md:table-cell">W-L-D</th>
