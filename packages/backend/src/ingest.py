@@ -8,7 +8,6 @@ Fetches tournament data from TopDeck.gg API and loads into Supabase.
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
 import logging
 import os
@@ -35,8 +34,6 @@ from topdeck_client import (
     decode_firestore_value,
     is_placeholder_player_name,
 )
-
-PSYCOPG2_AVAILABLE = importlib.util.find_spec("psycopg2") is not None
 
 # Explicit re-exports — these names are imported from sub-modules so that
 # existing scripts which do `from ingest import X` continue to work unchanged.
