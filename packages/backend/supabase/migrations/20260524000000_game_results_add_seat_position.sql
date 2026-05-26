@@ -33,3 +33,10 @@ JOIN tournaments t ON g.tournament_id = t.id;
 -- Refresh alias so SELECT * picks up seat_position.
 CREATE OR REPLACE VIEW global_elo_game_results AS
 SELECT * FROM regional_elo_game_results;
+
+-- Restore security_invoker on both views (CREATE OR REPLACE resets view options).
+-- Both were marked security_invoker in prior migrations:
+--   regional_elo_game_results: 20260408010000_include_unknown_state_global_elo_games.sql
+--   global_elo_game_results:   20260408020000_global_elo_table_names.sql
+ALTER VIEW regional_elo_game_results SET (security_invoker = true);
+ALTER VIEW global_elo_game_results SET (security_invoker = true);
