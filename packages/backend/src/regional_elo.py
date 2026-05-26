@@ -11,11 +11,11 @@ import argparse
 import os
 import sys
 import time
+import traceback
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
-UTC = timezone.utc
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import requests
@@ -271,9 +271,9 @@ def process_results(
         entry_id = p.get("entry_id") or ""
         standing: dict[str, Any] = {
             "id": entry_id,
-            "wins": p.get("wins", 0) or 0,
-            "draws": p.get("draws", 0) or 0,
-            "losses": p.get("losses", 0) or 0,
+            "wins": 1 if p.get("result") == "win" else 0,
+            "draws": 1 if p.get("result") == "draw" else 0,
+            "losses": 1 if p.get("result") == "loss" else 0,
         }
         rating = p.get("rating", DEFAULT_RATING) or DEFAULT_RATING
         seat = p.get("seat_position") or 0
@@ -469,12 +469,11 @@ def fetch_participants_for_leaderboard(
     cutoff = get_past_months_cutoff(lookback_months)
     return fetch_all(
         client,
-        "game_participants",
+        "global_elo_game_results",
         {
-            "select": "entry_id,player_id,tournament_id,seat_position,wins,draws,losses",
-            "tournament_id.start_date": f"gte.{cutoff}",
-            "entries.tournament_id": "not.is.null",
-            "entries.player_id": "not.is.null",
+            "select": "entry_id,player_id,tournament_id,seat_position,result",
+            "start_date": f"gte.{cutoff}",
+            "result": "neq.bye",
         },
     )
 
@@ -485,12 +484,11 @@ def fetch_commander_participants(
     cutoff = get_past_months_cutoff(lookback_months)
     return fetch_all(
         client,
-        "game_participants",
+        "global_elo_game_results",
         {
-            "select": "entry_id,player_id,tournament_id,seat_position,wins,draws,losses",
-            "tournament_id.start_date": "gte." + str(cutoff),
-            "entries.tournament_id": "not.is.null",
-            "entries.player_id": "not.is.null",
+            "select": "entry_id,player_id,tournament_id,seat_position,result",
+            "start_date": "gte." + str(cutoff),
+            "result": "neq.bye",
         },
     )
 
@@ -499,12 +497,10 @@ def fetch_distinct_entry_ids(client: SupabaseClient, lookback_months: int = ACTI
     cutoff = get_past_months_cutoff(lookback_months)
     rows = fetch_all(
         client,
-        "game_participants",
+        "global_elo_game_results",
         {
             "select": "entry_id",
-            "tournament_id.start_date": f"gte.{cutoff}",
-            "entries.tournament_id": "not.is.null",
-            "entries.player_id": "not.is.null",
+            "start_date": f"gte.{cutoff}",
         },
     )
     return {r["entry_id"] for r in rows}
@@ -554,12 +550,11 @@ def detect_active_players(
     cutoff = get_past_months_cutoff(lookback_months)
     rows = fetch_all(
         client,
-        "game_participants",
+        "global_elo_game_results",
         {
             "select": "player_id",
-            "tournament_id.start_date": f"gte.{cutoff}",
-            "entries.tournament_id": "not.is.null",
-            "entries.player_id": "not.is.null",
+            "start_date": f"gte.{cutoff}",
+            "result": "neq.bye",
         },
     )
     seen: set[str] = set()
@@ -1095,4 +1090,25 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as exc:
+        traceback.print_exc()
+        # Best-effort: mark the job as failed in the DB so the queue doesn't
+        # leave it stuck in 'running' until the stale-cleanup cron fires.
+        job_id_arg = None
+        try:
+            for _i, _arg in enumerate(sys.argv):
+                if _arg == "--job-id" and _i + 1 < len(sys.argv):
+                    job_id_arg = sys.argv[_i + 1]
+                    break
+            if job_id_arg:
+                _url = os.environ.get("SUPABASE_URL", "")
+                _key = os.environ.get("SUPABASE_SERVICE_KEY", "")
+                if _url and _key:
+                    _client = SupabaseClient(_url, _key)
+                    fail_job(_client, job_id_arg, str(exc))
+        except Exception as report_exc:
+            # Best-effort reporting failed; don't mask the original traceback.
+            sys.stderr.write(f"[warn] fail_job reporting failed: {report_exc}\n")
+        sys.exit(1)
