@@ -13,11 +13,13 @@
 
 ```
 src/
-  ingest.py        # Main ingestion pipeline (TopDeckClient, SupabaseClient, DataIngester)
+  ingest.py           # Orchestration: arg parsing, pipeline flow, re-exports for backward compat
+  supabase_client.py  # SupabaseClient, DirectPostgresClient, all Supabase/Postgres I/O
+  topdeck_client.py   # TopDeckClient, Firestore helpers, all TopDeck API I/O
 supabase/
-  migrations/      # SQL migrations (apply via MCP or Supabase dashboard)
+  migrations/         # SQL migrations (apply via MCP or Supabase dashboard)
 .github/
-  workflows/       # GitHub Actions for weekly ingestion
+  workflows/          # GitHub Actions for weekly ingestion
 ```
 
 ## Running Ingestion
