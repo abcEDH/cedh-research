@@ -139,7 +139,7 @@ class SupabaseClientUpdateTests(unittest.TestCase):
     def setUp(self) -> None:
         self.client = SupabaseClient("https://test.supabase.co", "test-service-key")
 
-    @patch("ingest.requests.patch")
+    @patch("supabase_client.requests.patch")
     def test_update_sends_patch_request(self, mock_patch: Mock) -> None:
         mock_response = Mock()
         mock_response.status_code = 200
@@ -161,7 +161,7 @@ class SupabaseClientUpdateTests(unittest.TestCase):
         )
         self.assertEqual(result, [{"id": "row-1", "status": "running"}])
 
-    @patch("ingest.requests.patch")
+    @patch("supabase_client.requests.patch")
     def test_update_retries_on_connection_error(self, mock_patch: Mock) -> None:
         mock_response = Mock()
         mock_response.status_code = 200
@@ -171,7 +171,7 @@ class SupabaseClientUpdateTests(unittest.TestCase):
             mock_response,
         ]
 
-        with patch("ingest.time.sleep"):
+        with patch("supabase_client.time.sleep"):
             result = self.client.update(
                 "elo_maintenance_jobs",
                 {"status": "running"},
@@ -180,7 +180,7 @@ class SupabaseClientUpdateTests(unittest.TestCase):
         self.assertEqual(mock_patch.call_count, 2)
         self.assertEqual(result, [{"id": "row-1"}])
 
-    @patch("ingest.requests.patch")
+    @patch("supabase_client.requests.patch")
     def test_update_retries_on_transient_http_error(self, mock_patch: Mock) -> None:
         first_response = Mock()
         first_response.status_code = 503
@@ -195,7 +195,7 @@ class SupabaseClientUpdateTests(unittest.TestCase):
 
         mock_patch.side_effect = [first_response, second_response]
 
-        with patch("ingest.time.sleep"):
+        with patch("supabase_client.time.sleep"):
             result = self.client.update(
                 "elo_maintenance_jobs",
                 {"status": "running"},
@@ -204,7 +204,7 @@ class SupabaseClientUpdateTests(unittest.TestCase):
         self.assertEqual(mock_patch.call_count, 2)
         self.assertEqual(result, [{"id": "row-1"}])
 
-    @patch("ingest.requests.patch")
+    @patch("supabase_client.requests.patch")
     def test_update_returns_empty_list_on_no_match(self, mock_patch: Mock) -> None:
         mock_response = Mock()
         mock_response.status_code = 200
@@ -224,7 +224,7 @@ class SupabaseClientRpcTests(unittest.TestCase):
     def setUp(self) -> None:
         self.client = SupabaseClient("https://test.supabase.co", "test-service-key")
 
-    @patch("ingest.requests.post")
+    @patch("supabase_client.requests.post")
     def test_rpc_sends_post_to_correct_endpoint(self, mock_post: Mock) -> None:
         mock_response = Mock()
         mock_response.status_code = 204
@@ -240,7 +240,7 @@ class SupabaseClientRpcTests(unittest.TestCase):
         )
         self.assertIsNone(result)
 
-    @patch("ingest.requests.post")
+    @patch("supabase_client.requests.post")
     def test_rpc_uses_higher_timeout(self, mock_post: Mock) -> None:
         mock_response = Mock()
         mock_response.status_code = 200
@@ -406,8 +406,8 @@ class SupabaseClientSelectDiagnosticsTests(unittest.TestCase):
         # The body excerpt is wrapped in repr() (adds quotes); cap with slack for quoting.
         self.assertLess(len(diag), 400)
 
-    @patch("ingest.time.sleep")
-    @patch("ingest.requests.get")
+    @patch("supabase_client.time.sleep")
+    @patch("supabase_client.requests.get")
     def test_select_logs_status_and_body_on_retry(
         self, mock_get: Mock, _mock_sleep: Mock
     ) -> None:
@@ -421,7 +421,7 @@ class SupabaseClientSelectDiagnosticsTests(unittest.TestCase):
 
         mock_get.side_effect = [failing, succeeding]
 
-        with self.assertLogs("ingest", level="WARNING") as captured:
+        with self.assertLogs("supabase_client", level="WARNING") as captured:
             result = self.client.select("tournaments", {"id": "eq.row-1"})
 
         self.assertEqual(result, [{"id": "row-1"}])

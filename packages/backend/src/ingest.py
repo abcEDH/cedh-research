@@ -11,31 +11,42 @@ import argparse
 import json
 import logging
 import os
-import re
 import sys
 import time
 from collections import defaultdict
-from functools import lru_cache
 from datetime import datetime, timedelta
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-import requests
 from dateutil import parser as date_parser
 
-# Optional: psycopg2 for direct connection
-try:
-    import psycopg2
-    import psycopg2.extras
+from supabase_client import (
+    SUPABASE_REST_BASE,
+    DirectPostgresClient,
+    SupabaseClient,
+    _describe_request_failure,
+    fetch_existing_tids,
+)
+from topdeck_client import (
+    TOPDECK_FIRESTORE_PROJECT,
+    TopDeckClient,
+    decode_firestore_value,
+    is_placeholder_player_name,
+)
 
-    PSYCOPG2_AVAILABLE = True
-except ImportError:
-    PSYCOPG2_AVAILABLE = False
+# Explicit re-exports — these names are imported from sub-modules so that
+# existing scripts which do `from ingest import X` continue to work unchanged.
+__all__ = [
+    "SUPABASE_REST_BASE",
+    "DirectPostgresClient",
+    "SupabaseClient",
+    "_describe_request_failure",
+    "TOPDECK_FIRESTORE_PROJECT",
+    "TopDeckClient",
+    "decode_firestore_value",
+]
 
-
-# TopDeck API constants
-TOPDECK_API_BASE = "https://topdeck.gg/api/v2"
-TOPDECK_FIRESTORE_PROJECT = "eminence-1b40b"
 TOPDECK_STANDING_RATE_FIELDS = [
     ("primaryWinRate", "opponentWinRate"),
     ("primaryWinRateElo", "opponentWinRateElo"),
@@ -44,39 +55,6 @@ TOPDECK_STANDING_RATE_FIELDS = [
     ("successRate", "opponentSuccessRate"),
 ]
 
-
-def normalize_topdeck_tournament_payload(
-    tournament: dict[str, Any],
-    tid: str | None = None,
-) -> dict[str, Any]:
-    """Flatten current TopDeck v2 tournament payloads into the ingester shape."""
-    if not isinstance(tournament, dict):
-        return tournament
-
-    if isinstance(tournament.get("data"), dict):
-        normalized = dict(tournament["data"])
-        for key in ("standings", "rounds", "eventData"):
-            if key in tournament and key not in normalized:
-                normalized[key] = tournament[key]
-    else:
-        normalized = dict(tournament)
-
-    topdeck_tid = tid or normalized.get("id") or normalized.get("TID")
-    if topdeck_tid:
-        normalized["id"] = topdeck_tid
-        normalized["TID"] = topdeck_tid
-
-    if "name" not in normalized and normalized.get("tournamentName"):
-        normalized["name"] = normalized["tournamentName"]
-
-    normalized.setdefault("standings", [])
-    normalized.setdefault("rounds", [])
-    normalized.setdefault("eventData", {})
-    return normalized
-
-
-# Supabase constants
-SUPABASE_REST_BASE = "https://msjjihqbxtgjdtapywrj.supabase.co"
 
 # Ensure logs directory exists
 _log_dir = Path(__file__).parent.parent.parent / "logs"
@@ -300,11 +278,7 @@ PARTNER_ORDER_OVERRIDES: dict[tuple[str, str], tuple[str, str]] = {
 
 def normalize_partner_order(names: list[str]) -> list[str]:
     """Return canonical partner ordering for a list of commander names."""
-    clean_names = [
-        clean_commander_card_name(value)
-        for value in names
-        if clean_commander_card_name(value)
-    ]
+    clean_names = [clean_commander_card_name(value) for value in names if clean_commander_card_name(value)]
     if len(clean_names) != 2:
         return clean_names
     pair_key = tuple(sorted(clean_names))
@@ -466,995 +440,6 @@ def normalize_region_name(
     return normalized
 
 
-def should_use_firestore_tournament_fallback(tournament: Any) -> bool:
-    """Return true for legacy TopDeck events where v2 returns an empty shell."""
-    if not isinstance(tournament, dict):
-        return False
-
-    rounds = tournament.get("rounds")
-    standings = tournament.get("standings")
-    if rounds or standings:
-        return False
-
-    data = tournament.get("data")
-    if isinstance(data, dict):
-        name = data.get("name")
-        start_date = data.get("startDate")
-        return not start_date or name in (None, "", "Unknown Name")
-
-    return not tournament.get("startDate")
-
-
-def decode_firestore_value(value: dict[str, Any]) -> Any:
-    """Decode Firestore REST typed values into plain Python values."""
-    if "stringValue" in value:
-        return value["stringValue"]
-    if "integerValue" in value:
-        return int(value["integerValue"])
-    if "doubleValue" in value:
-        return float(value["doubleValue"])
-    if "booleanValue" in value:
-        return value["booleanValue"]
-    if "nullValue" in value:
-        return None
-    if "timestampValue" in value:
-        return value["timestampValue"]
-    if "arrayValue" in value:
-        return [
-            decode_firestore_value(item)
-            for item in value.get("arrayValue", {}).get("values", [])
-        ]
-    if "mapValue" in value:
-        return {
-            key: decode_firestore_value(item)
-            for key, item in value.get("mapValue", {}).get("fields", {}).items()
-        }
-    return None
-
-
-def firestore_bracket_name(round_data: dict[str, Any]) -> str | None:
-    """Map TopDeck's legacy bracket codes to stable round labels."""
-    bracket = round_data.get("Bracket")
-    if not bracket:
-        return None
-
-    bracket_name_map = {
-        "Quart": "Quarterfinals",
-        "Semi": "Semifinals",
-        "Fin": "Finals",
-    }
-    if bracket in bracket_name_map:
-        return bracket_name_map[bracket]
-    return f"Top {bracket}" if isinstance(bracket, str) else str(bracket)
-
-
-def firestore_status(round_data: dict[str, Any], pod: dict[str, Any]) -> str:
-    """Normalize legacy round/pod state to the games.status values we store."""
-    state = str(round_data.get("State") or "").lower()
-    if pod.get("Locked") or state == "complete":
-        return "Completed"
-    if state == "active":
-        return "Active"
-    return "Pending"
-
-
-def firestore_tournament_to_topdeck_payload(
-    tid: str, data: dict[str, Any]
-) -> dict[str, Any] | None:
-    """Convert a legacy TopDeck Firestore tournament document to v2-like data."""
-    players = data.get("Players") or {}
-    rounds = data.get("Rounds") or []
-    config = data.get("Config") or {}
-    metadata = data.get("Metadata") or {}
-
-    if not isinstance(players, dict) or not isinstance(rounds, list):
-        return None
-    if not players and not rounds:
-        return None
-
-    standings: list[dict[str, Any]] = []
-    for player_id, player in players.items():
-        if not isinstance(player, dict):
-            continue
-        standings.append(
-            {
-                "id": player_id,
-                "name": player.get("name") or player.get("discord") or "Unknown",
-                "decklist": player.get("decklist") or "",
-                "rank": player.get("standing"),
-                "points": player.get("points"),
-                "wins": player.get("gamesWon"),
-                "draws": player.get("gamesDrawn"),
-                "losses": player.get("gamesLost"),
-            }
-        )
-    standings.sort(key=lambda row: row.get("rank") or 999999)
-
-    table_start = config.get("TableStart") or 1
-    converted_rounds: list[dict[str, Any]] = []
-    swiss_round_count = 0
-    for round_index, round_data in enumerate(rounds, start=1):
-        if not isinstance(round_data, dict):
-            continue
-
-        round_name = firestore_bracket_name(round_data)
-        round_value: int | str
-        if round_name:
-            round_value = round_name
-        else:
-            swiss_round_count += 1
-            round_value = swiss_round_count
-
-        tables: list[dict[str, Any]] = []
-        pods = round_data.get("Pods") or []
-        if not isinstance(pods, list):
-            pods = []
-        for pod_index, pod in enumerate(pods):
-            if not isinstance(pod, dict):
-                continue
-
-            winner = pod.get("Winner")
-            winner_id = "Draw" if winner == "_DRAW_" else winner
-            pod_players = []
-            for player_topdeck_id in pod.get("Players") or []:
-                player = players.get(player_topdeck_id) or {}
-                pod_players.append(
-                    {
-                        "id": player_topdeck_id,
-                        "name": player.get("name") or player.get("discord") or "Unknown",
-                        "decklist": player.get("decklist"),
-                    }
-                )
-
-            tables.append(
-                {
-                    "table": table_start + pod_index,
-                    "players": pod_players,
-                    "winner_id": winner_id,
-                    "winner": (
-                        None
-                        if winner_id in (None, "Draw")
-                        else (players.get(winner_id) or {}).get("name")
-                    ),
-                    "status": firestore_status(round_data, pod),
-                }
-            )
-
-        converted_rounds.append({"round": round_value, "tables": tables})
-
-    start_date = None
-    for round_data in rounds:
-        if isinstance(round_data, dict) and round_data.get("StartTime"):
-            start_date = int(round_data["StartTime"]) / 1000
-            break
-    if not start_date:
-        start_date = config.get("DateCreated")
-
-    return {
-        "id": tid,
-        "TID": tid,
-        "name": config.get("Name") or metadata.get("Name") or tid,
-        "game": metadata.get("Game"),
-        "startDate": start_date,
-        "swissNum": swiss_round_count,
-        "topCut": len(rounds) - swiss_round_count,
-        "standings": standings,
-        "rounds": converted_rounds,
-        "eventData": {},
-        "_source": "topdeck_firestore",
-    }
-
-
-def firestore_timestamp_seconds(value: Any) -> int | float | None:
-    """Convert Firestore millisecond timestamps to TopDeck's second timestamps."""
-    if not isinstance(value, (int, float)):
-        return None
-    if value > 10_000_000_000:
-        return value / 1000
-    return value
-
-
-def normalize_standing_row(standing: dict[str, Any]) -> dict[str, Any]:
-    """Preserve current TopDeck standing fields in the legacy ingester shape."""
-    normalized = dict(standing)
-    normalized["rank"] = standing.get("rank") or standing.get("standing")
-    return normalized
-
-
-def is_placeholder_player_name(name: Any) -> bool:
-    """Return true for names synthesized when TopDeck only exposes a player id."""
-    return not name or str(name).strip().lower() == "unknown"
-
-
-def fetch_existing_tids(
-    client: "SupabaseClient",
-    tids: list[str] | None = None,
-) -> set[str]:
-    """Return existing TopDeck tournament IDs from Supabase.
-
-    When tids are provided, query only those IDs in chunks instead of scanning the
-    whole tournaments table.
-    """
-    if tids is not None:
-        existing_tids: set[str] = set()
-        chunk_size = 200
-        for start in range(0, len(tids), chunk_size):
-            chunk = [tid for tid in tids[start : start + chunk_size] if tid]
-            if not chunk:
-                continue
-            page = client.select(
-                "tournaments",
-                {
-                    "select": "topdeck_tid",
-                    "topdeck_tid": f"in.({','.join(chunk)})",
-                },
-            )
-            existing_tids.update(
-                row["topdeck_tid"] for row in page if row.get("topdeck_tid")
-            )
-        return existing_tids
-
-    rows: list[dict[str, Any]] = []
-    offset = 0
-    limit = 1000
-    while True:
-        page = client.select(
-            "tournaments",
-            {
-                "select": "topdeck_tid",
-                "topdeck_tid": "not.is.null",
-                "order": "start_date.desc,topdeck_tid.asc",
-                "limit": str(limit),
-                "offset": str(offset),
-            },
-        )
-        if not page:
-            break
-        rows.extend(page)
-        if len(page) < limit:
-            break
-        offset += limit
-    return {row["topdeck_tid"] for row in rows if row.get("topdeck_tid")}
-
-
-def flat_firestore_league_to_topdeck_payload(
-    tid: str,
-    data: dict[str, Any],
-    base_tournament: dict[str, Any] | None = None,
-) -> dict[str, Any] | None:
-    """Convert TopDeck's flat league bracket document to v2-like data."""
-    table_rows: list[tuple[int, int, dict[str, Any]]] = []
-    entry_to_player_id: dict[int, str] = {}
-
-    for key, value in data.items():
-        table_match = re.fullmatch(r"S(\d+):T(\d+)", key)
-        if table_match and isinstance(value, dict):
-            table_rows.append((int(table_match.group(1)), int(table_match.group(2)), value))
-            continue
-
-        entry_match = re.fullmatch(r"E(\d+):P\d+", key)
-        if entry_match and value:
-            entry_to_player_id[int(entry_match.group(1))] = str(value)
-
-    if not table_rows or not entry_to_player_id:
-        return None
-
-    base_tournament = base_tournament or {}
-    base_standings = base_tournament.get("standings") or []
-    standing_by_player_id = {
-        str(standing.get("id")): normalize_standing_row(standing)
-        for standing in base_standings
-        if isinstance(standing, dict) and standing.get("id")
-    }
-
-    players_by_id: dict[str, dict[str, Any]] = {}
-    for player_id in entry_to_player_id.values():
-        standing = standing_by_player_id.get(player_id, {})
-        players_by_id[player_id] = {
-            "id": player_id,
-            "name": standing.get("name") or "Unknown",
-            "decklist": standing.get("decklist") or "",
-        }
-
-    if standing_by_player_id:
-        standings = list(standing_by_player_id.values())
-        for player_id in players_by_id:
-            if player_id in standing_by_player_id:
-                continue
-            standings.append(
-                {
-                    "id": player_id,
-                    "name": players_by_id[player_id]["name"],
-                    "decklist": players_by_id[player_id]["decklist"],
-                    "rank": None,
-                    "points": 0,
-                }
-            )
-    else:
-        standings = [
-            {
-                "id": player_id,
-                "name": players_by_id[player_id]["name"],
-                "decklist": players_by_id[player_id]["decklist"],
-                "rank": None,
-            }
-            for player_id in sorted(players_by_id)
-        ]
-    standings.sort(key=lambda row: row.get("rank") or 999999)
-
-    rounds_by_number: dict[int, list[dict[str, Any]]] = {}
-    for stage_number, table_number, table_data in sorted(table_rows):
-        if table_data.get("Mute"):
-            continue
-
-        winner_entry = table_data.get("Winner")
-        if winner_entry is None:
-            continue
-
-        entry_numbers = table_data.get("Es") or []
-        if not isinstance(entry_numbers, list):
-            continue
-
-        players: list[dict[str, Any]] = []
-        for entry_number in entry_numbers:
-            try:
-                player_id = entry_to_player_id.get(int(entry_number))
-            except (TypeError, ValueError):
-                player_id = None
-            if not player_id:
-                continue
-            players.append(players_by_id[player_id])
-
-        if not players:
-            continue
-
-        if winner_entry == "_DRAW_":
-            winner_id = "Draw"
-            winner_name = None
-        else:
-            try:
-                winner_player_id = entry_to_player_id.get(int(winner_entry))
-            except (TypeError, ValueError):
-                winner_player_id = None
-            if not winner_player_id:
-                continue
-            winner_id = winner_player_id
-            winner_name = players_by_id.get(winner_player_id, {}).get("name")
-
-        rounds_by_number.setdefault(stage_number, []).append(
-            {
-                "table": table_number,
-                "players": players,
-                "winner_id": winner_id,
-                "winner": winner_name,
-                "status": "Completed" if table_data.get("End") else "Active",
-            }
-        )
-
-    converted_rounds = [
-        {"round": round_number, "tables": tables}
-        for round_number, tables in sorted(rounds_by_number.items())
-    ]
-    if not converted_rounds:
-        return None
-
-    start_date = (
-        firestore_timestamp_seconds(data.get("StartDate"))
-        or firestore_timestamp_seconds(data.get("DateCreated"))
-        or base_tournament.get("startDate")
-    )
-
-    return {
-        "id": tid,
-        "TID": tid,
-        "name": data.get("Name") or base_tournament.get("name") or tid,
-        "game": data.get("Game") or base_tournament.get("game"),
-        "format": data.get("Format") or base_tournament.get("format"),
-        "startDate": start_date,
-        "swissNum": max(rounds_by_number) if rounds_by_number else 0,
-        "topCut": base_tournament.get("topCut") or 0,
-        "standings": standings,
-        "rounds": converted_rounds,
-        "eventData": base_tournament.get("eventData") or {},
-        "_source": "topdeck_firestore_flat_league",
-    }
-
-
-def merge_firestore_flat_league_rounds(
-    primary_tournament: dict[str, Any] | None,
-    flat_league_tournament: dict[str, Any] | None,
-) -> dict[str, Any] | None:
-    """Merge flat Firestore league pods into another TopDeck-like payload."""
-    if not primary_tournament:
-        return flat_league_tournament
-    if not flat_league_tournament:
-        return primary_tournament
-
-    existing_rounds = list(primary_tournament.get("rounds") or [])
-    existing_round_keys = {str(round_row.get("round")) for round_row in existing_rounds}
-    flat_rounds = [
-        round_row
-        for round_row in flat_league_tournament.get("rounds") or []
-        if str(round_row.get("round")) not in existing_round_keys
-    ]
-    if not flat_rounds:
-        return primary_tournament
-
-    merged = dict(primary_tournament)
-    merged["rounds"] = flat_rounds + existing_rounds
-    merged["swissNum"] = max(
-        int(primary_tournament.get("swissNum") or 0),
-        int(flat_league_tournament.get("swissNum") or 0),
-    )
-    merged["_source"] = "+".join(
-        source
-        for source in (
-            primary_tournament.get("_source"),
-            flat_league_tournament.get("_source"),
-        )
-        if source
-    ) or primary_tournament.get("_source") or flat_league_tournament.get("_source")
-    return merged
-
-
-class TopDeckClient:
-    """Client for TopDeck.gg API v2."""
-
-    def __init__(self, api_key: str):
-        self.api_key = api_key
-        self.base_url = TOPDECK_API_BASE
-
-    def _request(
-        self,
-        method: str,
-        url: str,
-        *,
-        json_payload: dict[str, Any] | None = None,
-        max_retries: int = 3,
-    ) -> dict[str, Any] | list[dict[str, Any]] | None:
-        """Make an authenticated request to the TopDeck API."""
-        if max_retries <= 0:
-            return None
-        headers = {"Authorization": self.api_key}
-
-        for attempt in range(max_retries):
-            try:
-                if method == "GET":
-                    response = requests.get(url, headers=headers, timeout=90)
-                elif method == "POST":
-                    response = requests.post(
-                        url, json=json_payload, headers=headers, timeout=90
-                    )
-                else:
-                    raise ValueError(f"Unsupported HTTP method: {method}")
-
-                if response.status_code == 429:
-                    retry_after = 60
-                    try:
-                        retry_after = int(response.json().get("retryAfterSeconds", retry_after))
-                    except (
-                        TypeError,
-                        ValueError,
-                        requests.exceptions.JSONDecodeError,
-                    ) as e:
-                        logger.debug(
-                            "Unable to parse TopDeck retryAfterSeconds; using default %ss (%s)",
-                            retry_after,
-                            e,
-                        )
-                    if attempt < max_retries - 1:
-                        wait_time = max(retry_after, 1)
-                        logger.warning(
-                            f"TopDeck rate limited, retrying in {wait_time}s... ({attempt + 1}/{max_retries})"
-                        )
-                        time.sleep(wait_time)
-                        continue
-
-                if response.status_code >= 400:
-                    logger.error(f"TopDeck API error: {response.text}")
-                    response.raise_for_status()
-
-                return response.json()
-            except requests.exceptions.RequestException as e:
-                if attempt < max_retries - 1:
-                    wait_time = 2**attempt
-                    logger.warning(
-                        f"Request failed, retrying in {wait_time}s... ({attempt + 1}/{max_retries})"
-                    )
-                    time.sleep(wait_time)
-                else:
-                    logger.error(f"Failed after {max_retries} retries: {e}")
-                    raise
-
-        return None
-
-    def search_tournaments(
-        self,
-        start_date: str | None = None,
-        end_date: str | None = None,
-        leagues: bool = False,
-    ) -> list[dict[str, Any]]:
-        """Search for tournaments within a date range."""
-        params: dict[str, Any] = {
-            "game": "Magic: The Gathering",
-            "format": "EDH",
-        }
-        if start_date:
-            params["start"] = int(date_parser.parse(start_date).timestamp())
-        if end_date:
-            params["end"] = int(date_parser.parse(end_date).timestamp())
-        if leagues:
-            params["leagues"] = True
-
-        url = f"{self.base_url}/tournaments"
-        response = self._request("POST", url, json_payload=params)
-
-        tournaments = response if isinstance(response, list) else response.get("tournaments", [])
-        logger.info(f"Found {len(tournaments)} tournaments in search")
-
-        return [
-            normalize_topdeck_tournament_payload(t)
-            for t in tournaments
-        ]
-
-    def get_tournament(self, tid: str) -> dict[str, Any]:
-        """Get detailed tournament data including standings."""
-        url = f"{self.base_url}/tournaments/{tid}"
-        tournament = normalize_topdeck_tournament_payload(self._request("GET", url), tid=tid)
-        
-        # If standings are empty, try PublicPData (common for upcoming events)
-        if not tournament.get("standings"):
-            public_players = self.get_public_player_data(tid)
-            if public_players:
-                tournament["standings"] = [
-                    {
-                        "id": p.get("uid"),
-                        "name": p.get("name"),
-                        "username": p.get("username"),
-                        "decklist": p.get("decklist"),
-                        "standing": i + 1,
-                    }
-                    for i, p in enumerate(public_players)
-                    if p.get("uid")
-                ]
-
-        if should_use_firestore_tournament_fallback(tournament) or not tournament.get("rounds"):
-            firestore_tournament = self.get_firestore_tournament(tid, tournament)
-            if firestore_tournament:
-                return firestore_tournament
-        elif flat_firestore_tournament := self.get_firestore_flat_tournament(tid, tournament):
-            return merge_firestore_flat_league_rounds(tournament, flat_firestore_tournament) or tournament
-        return tournament
-
-    def get_firestore_tournament(
-        self,
-        tid: str,
-        base_tournament: dict[str, Any] | None = None,
-    ) -> dict[str, Any] | None:
-        """Fetch a legacy bracket tournament from TopDeck's Firestore document."""
-        firestore_api_key = os.environ.get("TOPDECK_FIRESTORE_API_KEY")
-        url = (
-            "https://firestore.googleapis.com/v1/projects/"
-            f"{TOPDECK_FIRESTORE_PROJECT}/databases/(default)/documents/"
-            f"tournaments/{tid}"
-        )
-        if firestore_api_key:
-            url = f"{url}?key={firestore_api_key}"
-
-        response = requests.get(url, timeout=30)
-        if response.status_code == 404:
-            return None
-        if response.status_code >= 400:
-            logger.warning(
-                f"TopDeck Firestore fallback failed for {tid}: {response.text}"
-            )
-            response.raise_for_status()
-
-        document = response.json()
-        fields = document.get("fields")
-        if not isinstance(fields, dict):
-            return None
-
-        data = {key: decode_firestore_value(value) for key, value in fields.items()}
-        firestore_tournament = firestore_tournament_to_topdeck_payload(tid, data)
-        flat_league_tournament = flat_firestore_league_to_topdeck_payload(
-            tid,
-            data,
-            base_tournament or firestore_tournament,
-        )
-        return merge_firestore_flat_league_rounds(
-            firestore_tournament,
-            flat_league_tournament,
-        )
-
-    def get_firestore_flat_tournament(
-        self,
-        tid: str,
-        base_tournament: dict[str, Any],
-    ) -> dict[str, Any] | None:
-        """Load only TopDeck's flat Firestore pod rows for API payload augmentation."""
-        firestore_api_key = os.environ.get("TOPDECK_FIRESTORE_API_KEY")
-        url = (
-            "https://firestore.googleapis.com/v1/projects/"
-            f"{TOPDECK_FIRESTORE_PROJECT}/databases/(default)/documents/"
-            f"tournaments/{tid}"
-        )
-        if firestore_api_key:
-            url = f"{url}?key={firestore_api_key}"
-
-        response = requests.get(url, timeout=30)
-        if response.status_code == 404:
-            return None
-        if response.status_code >= 400:
-            logger.warning(
-                "TopDeck Firestore flat tournament fetch failed for %s: %s %s",
-                tid,
-                response.status_code,
-                response.text[:200],
-            )
-            return None
-
-        fields = response.json().get("fields")
-        if not isinstance(fields, dict):
-            return None
-
-        data = {key: decode_firestore_value(value) for key, value in fields.items()}
-        return flat_firestore_league_to_topdeck_payload(tid, data, base_tournament)
-
-    def get_public_player_data(self, tid: str) -> list[dict[str, Any]]:
-        """Fetch public player registration data from TopDeck.gg."""
-        url = f"https://topdeck.gg/PublicPData/{tid}"
-        try:
-            response = requests.get(url, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                if isinstance(data, dict):
-                    return list(data.values())
-        except Exception as e:
-            logger.warning(f"Failed to fetch public player data for {tid}: {e}")
-        return []
-
-    def get_tournament_tier(self, tid: str) -> str | None:
-        """Fetch the tournament tier (Platinum, Diamond, etc.) from Firestore otherEvents."""
-        firestore_api_key = os.environ.get("TOPDECK_FIRESTORE_API_KEY")
-        url = (
-            "https://firestore.googleapis.com/v1/projects/"
-            f"{TOPDECK_FIRESTORE_PROJECT}/databases/(default)/documents/"
-            f"otherEvents/{tid}"
-        )
-        if firestore_api_key:
-            url = f"{url}?key={firestore_api_key}"
-
-        try:
-            response = requests.get(url, timeout=10)
-            if response.status_code == 200:
-                fields = response.json().get("fields", {})
-                if "tier" in fields:
-                    return decode_firestore_value(fields["tier"])
-        except Exception as e:
-            logger.warning(f"Failed to fetch tier for {tid}: {e}")
-        return None
-
-
-def _describe_request_failure(
-    exc: BaseException, *, table: str, body_chars: int = 200
-) -> str:
-    """Build a one-line diagnostic for a failed HTTP attempt: class, status, body excerpt."""
-    response = getattr(exc, "response", None)
-    status = getattr(response, "status_code", None)
-    body = getattr(response, "text", "") or ""
-    body_excerpt = body[:body_chars].replace("\n", " ").strip()
-    parts = [f"table={table}", type(exc).__name__]
-    if status is not None:
-        parts.append(f"status={status}")
-    if body_excerpt:
-        parts.append(f"body={body_excerpt!r}")
-    msg = str(exc).strip()
-    # Avoid duplicating "{status} Server Error" when we already have status separately.
-    if msg and not (status is not None and msg.startswith(f"{status} ")):
-        parts.append(f"err={msg}")
-    return " ".join(parts)
-
-
-class SupabaseClient:
-    """Client for Supabase REST API."""
-
-    def __init__(self, url: str, service_key: str):
-        self.url = url
-        self.headers = {
-            "apikey": service_key,
-            "Authorization": f"Bearer {service_key}",
-            "Content-Type": "application/json",
-            "Prefer": "return=representation",
-        }
-
-    def upsert(
-        self,
-        table: str,
-        data: dict[str, Any] | list[dict[str, Any]],
-        on_conflict: str | None = None,
-        max_retries: int = 3,
-    ) -> dict[str, Any] | None:
-        """Upsert data into a table with retry logic."""
-        if max_retries <= 0:
-            return None
-        endpoint = f"{self.url}/rest/v1/{table}"
-
-        headers = self.headers.copy()
-        if on_conflict:
-            headers["Prefer"] = "resolution=merge-duplicates,return=representation"
-
-        params: dict[str, str] = {}
-        if on_conflict:
-            params["on_conflict"] = on_conflict
-
-        for attempt in range(max_retries):
-            try:
-                response = requests.post(
-                    endpoint, json=data, headers=headers, params=params, timeout=90
-                )
-                if response.status_code >= 400:
-                    logger.error(f"Supabase error: {response.text}")
-                    response.raise_for_status()
-                return response.json()
-            except (
-                requests.exceptions.ConnectionError,
-                requests.exceptions.Timeout,
-                requests.exceptions.ReadTimeout,
-            ) as e:
-                if attempt < max_retries - 1:
-                    wait_time = 2**attempt  # Exponential backoff: 1s, 2s, 4s
-                    logger.warning(
-                        f"Connection error, retrying in {wait_time}s... ({attempt + 1}/{max_retries})"
-                    )
-                    time.sleep(wait_time)
-                else:
-                    logger.error(f"Failed after {max_retries} retries: {e}")
-                    raise
-
-        return None
-
-    def select(
-        self, table: str, filters: dict[str, str] | None = None, max_retries: int = 8
-    ) -> list[dict[str, Any]]:
-        """Select data from a table with retry logic."""
-        if max_retries <= 0:
-            return []
-        endpoint = f"{self.url}/rest/v1/{table}"
-        params = filters or {}
-
-        for attempt in range(max_retries):
-            try:
-                response = requests.get(
-                    endpoint, headers=self.headers, params=params, timeout=90
-                )
-                if response.status_code >= 500:
-                    raise requests.exceptions.HTTPError(
-                        f"{response.status_code} Server Error", response=response
-                    )
-                response.raise_for_status()
-                return response.json()
-            except (
-                requests.exceptions.ConnectionError,
-                requests.exceptions.Timeout,
-                requests.exceptions.ReadTimeout,
-                requests.exceptions.HTTPError,
-            ) as e:
-                diag = _describe_request_failure(e, table=table)
-                if attempt < max_retries - 1:
-                    wait_time = 2**attempt
-                    logger.warning(
-                        f"Query failed: {diag}; retrying in {wait_time}s "
-                        f"({attempt + 1}/{max_retries})"
-                    )
-                    time.sleep(wait_time)
-                else:
-                    logger.error(
-                        f"Query failed after {max_retries} retries: {diag}"
-                    )
-                    raise
-        # This is a safety net; the loop above either returns or raises
-        return []
-
-    def update(
-        self,
-        table: str,
-        data: dict[str, Any],
-        filters: dict[str, str] | None = None,
-        max_retries: int = 3,
-    ) -> list[dict[str, Any]]:
-        """Update rows in a table matching filters. Uses PATCH (PostgREST convention)."""
-        if max_retries <= 0:
-            return []
-        endpoint = f"{self.url}/rest/v1/{table}"
-        params = filters or {}
-
-        for attempt in range(max_retries):
-            try:
-                response = requests.patch(
-                    endpoint, json=data, headers=self.headers, params=params, timeout=90
-                )
-                if response.status_code >= 400:
-                    logger.error(f"Supabase update error: {response.text}")
-                    response.raise_for_status()
-                return response.json()
-            except requests.exceptions.HTTPError as e:
-                status_code = getattr(getattr(e, "response", None), "status_code", None)
-                if status_code is None:
-                    status_code = getattr(response, "status_code", None)
-
-                if status_code is not None and status_code >= 500 and attempt < max_retries - 1:
-                    wait_time = 2**attempt
-                    logger.warning(
-                        f"Update HTTP {status_code}, retrying in {wait_time}s... ({attempt + 1}/{max_retries})"
-                    )
-                    time.sleep(wait_time)
-                    continue
-
-                logger.error(f"Update failed after HTTP error: {e}")
-                raise
-            except (
-                requests.exceptions.ConnectionError,
-                requests.exceptions.Timeout,
-                requests.exceptions.ReadTimeout,
-            ) as e:
-                if attempt < max_retries - 1:
-                    wait_time = 2**attempt
-                    logger.warning(
-                        f"Update connection error, retrying in {wait_time}s... ({attempt + 1}/{max_retries})"
-                    )
-                    time.sleep(wait_time)
-                else:
-                    logger.error(f"Update failed after {max_retries} retries: {e}")
-                    raise
-        return []
-
-    def rpc(
-        self,
-        function_name: str,
-        payload: dict[str, Any] | None = None,
-        max_retries: int = 3,
-        timeout: int = 120,
-    ) -> Any:
-        """Call a Supabase stored procedure via POST /rest/v1/rpc/{function_name}."""
-        if max_retries <= 0:
-            return None
-        endpoint = f"{self.url}/rest/v1/rpc/{function_name}"
-
-        for attempt in range(max_retries):
-            try:
-                response = requests.post(
-                    endpoint,
-                    json=payload or {},
-                    headers=self.headers,
-                    timeout=timeout,
-                )
-                if response.status_code >= 400:
-                    logger.error(f"Supabase RPC error ({function_name}): {response.text}")
-                    response.raise_for_status()
-                if response.status_code == 204:
-                    return None
-                return response.json()
-            except (
-                requests.exceptions.ConnectionError,
-                requests.exceptions.Timeout,
-                requests.exceptions.ReadTimeout,
-            ) as e:
-                if attempt < max_retries - 1:
-                    wait_time = 2**attempt
-                    logger.warning(
-                        f"RPC {function_name} failed, retrying in {wait_time}s... ({attempt + 1}/{max_retries})"
-                    )
-                    time.sleep(wait_time)
-                else:
-                    logger.error(f"RPC {function_name} failed after {max_retries} retries: {e}")
-                    raise
-        return None
-
-
-class DirectPostgresClient:
-    """Client for direct Postgres connection using psycopg2 (faster for large batches)."""
-
-    def __init__(self, db_url: str):
-        self.db_url = db_url
-        self._conn = None
-
-    def connect(self):
-        """Establish database connection."""
-        if self._conn is None or self._conn.closed:
-            self._conn = psycopg2.connect(self.db_url)
-
-    def close(self):
-        """Close database connection."""
-        if self._conn and not self._conn.closed:
-            self._conn.close()
-
-    def upsert(
-        self,
-        table: str,
-        data: dict[str, Any] | list[dict[str, Any]],
-        on_conflict: str | None = None,
-    ) -> list[dict[str, Any]]:
-        """Upsert data using execute_values for high performance.
-
-        Args:
-            table: Target table name
-            data: Dict or list of dicts to upsert
-            on_conflict: Comma-separated column names for ON CONFLICT clause
-
-        Returns:
-            List of inserted/updated records with IDs
-        """
-        if not data:
-            return []
-
-        if isinstance(data, dict):
-            data = [data]
-
-        if not data:
-            return []
-
-        # Get columns from first record
-        columns = list(data[0].keys())
-        cols_str = ", ".join(columns)
-
-        # Build ON CONFLICT clause
-        if on_conflict:
-            conflict_cols = on_conflict.replace(" ", "").split(",")
-            update_cols = [c for c in columns if c not in conflict_cols]
-            update_str = ", ".join([f"{c} = EXCLUDED.{c}" for c in update_cols])
-            conflict_clause = f"ON CONFLICT ({on_conflict}) DO UPDATE SET {update_str}"
-        else:
-            conflict_clause = ""
-
-        sql = f"""
-            INSERT INTO {table} ({cols_str})
-            VALUES %s
-            {conflict_clause}
-            RETURNING *
-        """
-
-        self.connect()
-        with self._conn.cursor() as cursor:
-            psycopg2.extras.execute_values(
-                cursor, sql, [(tuple(d.values()) for d in data)], page_size=1000
-            )
-            self._conn.commit()
-            results = cursor.fetchall()
-            col_names = [desc[0] for desc in cursor.description]
-            return [dict(zip(col_names, row)) for row in results]
-
-    def select(
-        self, table: str, filters: dict[str, str] | None = None
-    ) -> list[dict[str, Any]]:
-        """Select data from a table."""
-        self.connect()
-
-        where_clauses: list[str] = []
-        params: list[Any] = []
-
-        if filters:
-            for col, val in filters.items():
-                if val.startswith("eq."):
-                    where_clauses.append(f"{col} = %s")
-                    params.append(val[3:])
-                elif val.startswith("ilike."):
-                    where_clauses.append(f"{col} ILIKE %s")
-                    params.append(val[6:])
-
-        sql = f"SELECT * FROM {table}"
-        if where_clauses:
-            sql += " WHERE " + " AND ".join(where_clauses)
-
-        with self._conn.cursor() as cursor:
-            cursor.execute(sql, params)
-            results = cursor.fetchall()
-            if not results:
-                return []
-            col_names = [desc[0] for desc in cursor.description]
-            return [dict(zip(col_names, row)) for row in results]
-
-
 def extract_commanders(decklist: str) -> list[str]:
     """Extract commander names from a decklist.
 
@@ -1521,7 +506,8 @@ def sanitize_commander_payload(
         if cleaned:
             clean_names.append(cleaned)
     if not clean_names and name:
-        clean_names = [part.strip() for part in normalize_commander_name(name.split(" / ")).split(" / ") if part.strip()]
+        normalized = normalize_commander_name(name.split(" / "))
+        clean_names = [part.strip() for part in normalized.split(" / ") if part.strip()]
 
     canonical_name = normalize_commander_name(clean_names)
     if len(clean_names) == 2 and canonical_name not in load_legal_commander_pair_names():
@@ -1544,9 +530,7 @@ class DataIngester:
         self.commander_cache: dict[str, str] = {}  # name -> id
         self.player_cache: dict[str, str] = {}  # topdeck_id -> id
 
-    def get_or_create_commander(
-        self, name: str, commander_names: list[str]
-    ) -> str | None:
+    def get_or_create_commander(self, name: str, commander_names: list[str]) -> str | None:
         """Get or create a commander entry, return UUID. (Legacy - use batch method)"""
         canonical_name, canonical_names = sanitize_commander_payload(name, commander_names)
         name = canonical_name
@@ -1592,9 +576,7 @@ class DataIngester:
             return result[0]["id"]
         return None
 
-    def batch_upsert_commanders(
-        self, commander_data: dict[str, list[str]]
-    ) -> dict[str, str]:
+    def batch_upsert_commanders(self, commander_data: dict[str, list[str]]) -> dict[str, str]:
         """Batch upsert commanders and return name -> id mapping."""
         if not commander_data:
             return {}
@@ -1617,9 +599,7 @@ class DataIngester:
             return {}
 
         unknown_topdeck_ids = [
-            topdeck_id
-            for topdeck_id, name in player_data.items()
-            if is_placeholder_player_name(name)
+            topdeck_id for topdeck_id, name in player_data.items() if is_placeholder_player_name(name)
         ]
         for start in range(0, len(unknown_topdeck_ids), 100):
             chunk = unknown_topdeck_ids[start : start + 100]
@@ -1645,9 +625,7 @@ class DataIngester:
 
         return {r["topdeck_id"]: r["id"] for r in result}
 
-    def batch_upsert_entries(
-        self, entries: list[dict[str, Any]]
-    ) -> dict[str, str]:
+    def batch_upsert_entries(self, entries: list[dict[str, Any]]) -> dict[str, str]:
         """Batch upsert tournament entries and return topdeck entry id -> db id mapping."""
         if not entries:
             return {}
@@ -1664,9 +642,7 @@ class DataIngester:
 
         result: list[dict[str, Any]] = []
         for db_entries in entries_by_keys.values():
-            upserted = self.supabase.upsert(
-                "tournament_entries", db_entries, on_conflict="tournament_id,player_id"
-            )
+            upserted = self.supabase.upsert("tournament_entries", db_entries, on_conflict="tournament_id,player_id")
             if upserted:
                 result.extend(upserted)
 
@@ -1702,9 +678,7 @@ class DataIngester:
         if player_count <= 34:
             effective_top_cut = 4
 
-        logger.info(
-            f"Processing: {name} ({player_count} players, {len(rounds)} rounds)"
-        )
+        logger.info(f"Processing: {name} ({player_count} players, {len(rounds)} rounds)")
 
         # Convert timestamp to ISO format
         if isinstance(start_date, (int, float)):
@@ -1722,19 +696,9 @@ class DataIngester:
             "player_count": player_count,
             "swiss_rounds": swiss_rounds,
             "top_cut": effective_top_cut,
-            "average_elo": (
-                int(tournament.get("averageElo"))
-                if tournament.get("averageElo")
-                else None
-            ),
-            "median_elo": (
-                int(tournament.get("medianElo"))
-                if tournament.get("medianElo")
-                else None
-            ),
-            "top_elo": (
-                int(tournament.get("topElo")) if tournament.get("topElo") else None
-            ),
+            "average_elo": (int(tournament.get("averageElo")) if tournament.get("averageElo") else None),
+            "median_elo": (int(tournament.get("medianElo")) if tournament.get("medianElo") else None),
+            "top_elo": (int(tournament.get("topElo")) if tournament.get("topElo") else None),
             "city": event_data.get("city"),
             "state": normalize_region_name(
                 event_data.get("state"),
@@ -1749,9 +713,7 @@ class DataIngester:
             "tier": tier,
         }
 
-        result = self.supabase.upsert(
-            "tournaments", tournament_data, on_conflict="topdeck_tid"
-        )
+        result = self.supabase.upsert("tournaments", tournament_data, on_conflict="topdeck_tid")
         if not result:
             logger.error(f"Failed to upsert tournament: {tid}")
             return None
@@ -1766,9 +728,7 @@ class DataIngester:
         # Step 1: Extract all unique commanders and players (local processing)
         commander_data: dict[str, list[str]] = {}  # name -> [individual_commander_names]
         player_data: dict[str, str] = {}  # topdeck_id -> name
-        standing_info: list[dict[str, Any]] = (
-            []
-        )  # [{idx, topdeck_id, commander_name, decklist, ...}]
+        standing_info: list[dict[str, Any]] = []  # [{idx, topdeck_id, commander_name, decklist, ...}]
 
         for idx, standing in enumerate(standings):
             player_topdeck_id = standing.get("id")
@@ -1818,11 +778,7 @@ class DataIngester:
         # who are absent from standings. If we only build tournament_entries from
         # standings, later game ingest drops those players and leaves partial
         # game rows with only losses recorded.
-        known_standing_topdeck_ids = {
-            str(info["topdeck_id"])
-            for info in standing_info
-            if info.get("topdeck_id")
-        }
+        known_standing_topdeck_ids = {str(info["topdeck_id"]) for info in standing_info if info.get("topdeck_id")}
         next_idx = len(standing_info)
         for round_data in rounds:
             for table in round_data.get("tables", []) or []:
@@ -1896,10 +852,7 @@ class DataIngester:
                 continue
 
             if player_id in seen_entry_player_ids:
-                logger.warning(
-                    f"Skipping duplicate standing for player {info['topdeck_id']} "
-                    f"in tournament {tid}"
-                )
+                logger.warning(f"Skipping duplicate standing for player {info['topdeck_id']} in tournament {tid}")
                 continue
             seen_entry_player_ids.add(player_id)
 
@@ -1936,10 +889,7 @@ class DataIngester:
         games_processed = 0
         entries_by_topdeck_id = {
             e.get("topdeck_entry_id", "").removeprefix(f"{tid}_"): (e, db_id)
-            for e, db_id in (
-                (entry, entry_id_map.get(entry.get("topdeck_entry_id")))
-                for entry in entries
-            )
+            for e, db_id in ((entry, entry_id_map.get(entry.get("topdeck_entry_id"))) for entry in entries)
             if e.get("topdeck_entry_id") and db_id
         }
         entries_by_rank = sorted(
@@ -2019,9 +969,7 @@ class DataIngester:
                     }
 
                     try:
-                        game_result = self.supabase.upsert(
-                            "games", game_record, on_conflict="game_key"
-                        )
+                        game_result = self.supabase.upsert("games", game_record, on_conflict="game_key")
                         if game_result:
                             games_processed += 1
                             participant_records: list[dict[str, Any]] = []
@@ -2031,10 +979,7 @@ class DataIngester:
                                 if not entry_id:
                                     continue
 
-                                is_winner = (
-                                    not is_draw
-                                    and participant.get("topdeck_id") == winner_topdeck_id
-                                )
+                                is_winner = not is_draw and participant.get("topdeck_id") == winner_topdeck_id
                                 result_text = "draw" if is_draw else "win" if is_winner else "loss"
 
                                 participant_record = {
@@ -2089,9 +1034,7 @@ class DataIngester:
 
                     # Upsert game
                     try:
-                        game_result = self.supabase.upsert(
-                            "games", game_record, on_conflict="game_key"
-                        )
+                        game_result = self.supabase.upsert("games", game_record, on_conflict="game_key")
                         if game_result:
                             games_processed += 1
                             participant_records: list[dict[str, Any]] = []
@@ -2123,9 +1066,7 @@ class DataIngester:
                     except Exception as e:
                         logger.warning(f"Failed to upsert game {game_key}: {e}")
 
-        logger.info(
-            f"Completed {name}: {len(entries)} entries, {games_processed} games"
-        )
+        logger.info(f"Completed {name}: {len(entries)} entries, {games_processed} games")
         return {
             "tournament_id": tournament_id,
             "name": name,
@@ -2250,20 +1191,215 @@ def fail_ingestion_job(client: SupabaseClient, job_id: str, error: str) -> None:
         logger.error(f"Failed to record ingestion failure for {job_id}: {exc}")
 
 
-def main():
-    """Main entry point for ingestion."""
+def utc_now_iso() -> str:
+    """Return current UTC time as ISO 8601 string."""
+    return datetime.utcnow().isoformat() + "Z"
+
+
+def load_tids(path: Path) -> list[str]:
+    """Load unique tournament IDs from a file, skipping blanks and comments."""
+    seen: set[str] = set()
+    result: list[str] = []
+    for line in path.read_text().splitlines():
+        tid = line.strip()
+        if not tid or tid.startswith("#"):
+            continue
+        if tid not in seen:
+            seen.add(tid)
+            result.append(tid)
+    return result
+
+
+def write_tids(path: Path, tids: list[str], header_lines: list[str] | None = None) -> None:
+    """Write tournament IDs to a file, one per line, with optional comment header."""
+    lines = [f"# {h}" for h in (header_lines or [])] + tids
+    path.write_text("\n".join(lines) + "\n")
+
+
+def chunk_items(items: list[Any], size: int) -> list[list[Any]]:
+    """Split a list into chunks of at most *size* items."""
+    return [items[i : i + size] for i in range(0, len(items), size)]
+
+
+def default_backfill_run_key(path: Path, batch_size: int) -> str:
+    """Generate a default run key from the manifest path and current timestamp."""
+    stem = path.stem
+    ts = datetime.utcnow().strftime("%Y%m%dT%H%M%S")
+    return f"{stem}-bs{batch_size}-{ts}"
+
+
+def fetch_failed_tids_for_run(client: SupabaseClient, run_key: str) -> list[str]:
+    """Return TIDs marked as failed for a given backfill run key."""
+    runs = client.select(
+        "ingestion_backfill_runs",
+        {"select": "id", "run_key": f"eq.{run_key}"},
+    )
+    if not runs:
+        return []
+    run_id = runs[0]["id"]
+    events = client.select(
+        "ingestion_backfill_events",
+        {
+            "select": "tid",
+            "run_id": f"eq.{run_id}",
+            "event_type": "eq.process_failed",
+            "tid": "not.is.null",
+        },
+    )
+    seen: set[str] = set()
+    result: list[str] = []
+    for row in events:
+        tid = row.get("tid")
+        if tid and tid not in seen:
+            seen.add(tid)
+            result.append(tid)
+    return result
+
+
+def upsert_backfill_run(
+    client: SupabaseClient,
+    run_key: str,
+    tids_path: Path,
+    batch_size: int,
+    total_tournaments: int,
+    total_batches: int,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    status: str = "running",
+) -> dict[str, Any] | None:
+    """Upsert a row in ingestion_backfill_runs and return it."""
+    import hashlib
+
+    manifest_sha256 = hashlib.sha256(tids_path.read_bytes()).hexdigest()
+    rows = client.upsert(
+        "ingestion_backfill_runs",
+        {
+            "run_key": run_key,
+            "manifest_path": str(tids_path),
+            "manifest_sha256": manifest_sha256,
+            "batch_size": batch_size,
+            "discovered_tournament_count": total_tournaments,
+            "total_batches": total_batches,
+            "requested_start_date": start_date,
+            "requested_end_date": end_date,
+            "status": status,
+            "updated_at": utc_now_iso(),
+        },
+        on_conflict="run_key",
+    )
+    if isinstance(rows, list) and rows:
+        return rows[0]
+    if isinstance(rows, dict):
+        return rows
+    return None
+
+
+def upsert_backfill_batch(
+    client: SupabaseClient,
+    run_id: str,
+    batch_index: int,
+    batch_start: int,
+    batch_end: int,
+    tournament_count: int,
+    status: str = "running",
+    error_text: str | None = None,
+) -> dict[str, Any] | None:
+    """Upsert a row in ingestion_backfill_batches and return it."""
+    payload: dict[str, Any] = {
+        "run_id": run_id,
+        "batch_index": batch_index,
+        "batch_start": batch_start,
+        "batch_end": batch_end,
+        "tournament_count": tournament_count,
+        "status": status,
+        "updated_at": utc_now_iso(),
+    }
+    if status == "running":
+        payload["started_at"] = utc_now_iso()
+    if status in ("completed", "failed"):
+        payload["finished_at"] = utc_now_iso()
+    if error_text is not None:
+        payload["error_text"] = error_text
+    rows = client.upsert(
+        "ingestion_backfill_batches",
+        payload,
+        on_conflict="run_id,batch_index",
+    )
+    if isinstance(rows, list) and rows:
+        return rows[0]
+    if isinstance(rows, dict):
+        return rows
+    return None
+
+
+def append_backfill_event(
+    client: SupabaseClient,
+    run_id: str,
+    batch_index: int,
+    event_type: str,
+    tid: str | None = None,
+    payload: dict[str, Any] | None = None,
+) -> None:
+    """Insert a row into ingestion_backfill_events."""
+    client.upsert(
+        "ingestion_backfill_events",
+        {
+            "run_id": run_id,
+            "batch_index": batch_index,
+            "tid": tid,
+            "event_type": event_type,
+            "payload": payload or {},
+        },
+    )
+
+
+def update_backfill_run_progress(
+    client: SupabaseClient,
+    run_row: dict[str, Any],
+    processed_count: int,
+    succeeded_count: int,
+    failed_count: int,
+    status: str = "running",
+    current_batch_index: int | None = None,
+    current_tid: str | None = None,
+    last_completed_tid: str | None = None,
+    current_batch_processed_count: int = 0,
+    current_batch_succeeded_count: int = 0,
+    current_batch_failed_count: int = 0,
+    last_success_at: str | None = None,
+) -> None:
+    """Update progress columns on an ingestion_backfill_runs row."""
+    data: dict[str, Any] = {
+        "processed_tournament_count": processed_count,
+        "succeeded_tournament_count": succeeded_count,
+        "failed_tournament_count": failed_count,
+        "status": status,
+        "current_batch_processed_count": current_batch_processed_count,
+        "current_batch_succeeded_count": current_batch_succeeded_count,
+        "current_batch_failed_count": current_batch_failed_count,
+        "updated_at": utc_now_iso(),
+        "heartbeat_at": utc_now_iso(),
+    }
+    if current_batch_index is not None:
+        data["current_batch_index"] = current_batch_index
+    if current_tid is not None:
+        data["current_tid"] = current_tid
+    if last_completed_tid is not None:
+        data["last_completed_tid"] = last_completed_tid
+    if last_success_at is not None:
+        data["last_success_at"] = last_success_at
+    client.update(
+        "ingestion_backfill_runs",
+        data,
+        {"id": f"eq.{run_row['id']}"},
+    )
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    """Return the argument parser for the ingestion CLI."""
     parser = argparse.ArgumentParser(description="cEDH Analytics Data Ingestion")
-    parser.add_argument(
-        "--tournament-id",
-        type=str,
-        help="TopDeck tournament ID (slug) to ingest",
-    )
-    parser.add_argument(
-        "--days",
-        type=int,
-        default=7,
-        help="Number of recent days to search for tournaments",
-    )
+    parser.add_argument("--tournament-id", type=str, help="TopDeck tournament ID (slug) to ingest")
+    parser.add_argument("--days", type=int, default=7, help="Number of recent days to search for tournaments")
     parser.add_argument(
         "--stop-on-error",
         action="store_true",
@@ -2274,14 +1410,32 @@ def main():
     parser.add_argument("--resolve-days", type=int, default=120, help="Days back to search when resolving names to IDs")
     parser.add_argument("--tids-out", type=str, help="Write resolved tournament IDs to this file")
     parser.add_argument("--selected-tids-out", type=str, help="Write filtered manifest TIDs to this file")
-    parser.add_argument("--skip-existing-tids", action="store_true", help="Skip manifest TIDs already present in Supabase")
-    parser.add_argument("--only-failed-from-run-key", type=str, help="Restrict manifest TIDs to those marked failed for a recorded backfill run")
+    parser.add_argument(
+        "--skip-existing-tids",
+        action="store_true",
+        help="Skip manifest TIDs already present in Supabase",
+    )
+    parser.add_argument(
+        "--only-failed-from-run-key",
+        type=str,
+        help="Restrict manifest TIDs to those marked failed for a recorded backfill run",
+    )
     parser.add_argument("--batch-size", type=int, default=250, help="Batch size for --tids-file mode")
-    parser.add_argument("--batch-index", type=int, help="Only run the selected zero-based batch index from --tids-file mode")
+    parser.add_argument(
+        "--batch-index", type=int, help="Only run the selected zero-based batch index from --tids-file mode"
+    )
     parser.add_argument("--run-key", type=str, help="Logical run key for recorded --tids-file backfills")
-    parser.add_argument("--record-backfill", action="store_true", help="Record backfill run/batch progress in Supabase metadata tables")
-    parser.add_argument("--start-date", type=str, help="Optional lower bound used when recording --tids-file backfill metadata")
-    parser.add_argument("--end-date", type=str, help="Optional upper bound used when recording --tids-file backfill metadata")
+    parser.add_argument(
+        "--record-backfill",
+        action="store_true",
+        help="Record backfill run/batch progress in Supabase metadata tables",
+    )
+    parser.add_argument(
+        "--start-date", type=str, help="Optional lower bound used when recording --tids-file backfill metadata"
+    )
+    parser.add_argument(
+        "--end-date", type=str, help="Optional upper bound used when recording --tids-file backfill metadata"
+    )
     parser.add_argument(
         "--resolve-include-ambiguous",
         action="store_true",
@@ -2296,30 +1450,22 @@ def main():
         action="store_true",
         help="Include leagues=true in the TopDeck tournament search payload",
     )
-    parser.add_argument(
-        "--direct",
-        action="store_true",
-        help="Use direct Postgres connection for faster ingestion",
-    )
+    parser.add_argument("--direct", action="store_true", help="Use direct Postgres connection for faster ingestion")
     parser.add_argument(
         "--skip-existing-tournaments",
         action="store_true",
         help="Skip tournaments whose topdeck_tid already exists in Supabase",
     )
+    parser.add_argument("--job-id", type=str, default="", help="ingestion_jobs UUID for cron-dispatched runs")
     parser.add_argument(
-        "--job-id",
-        type=str,
-        default="",
-        help="ingestion_jobs UUID for cron-dispatched runs",
+        "--min-players", type=int, default=0, help="Minimum number of players required to process a tournament"
     )
-    parser.add_argument(
-        "--min-players",
-        type=int,
-        default=0,
-        help="Minimum number of players required to process a tournament",
-    )
+    return parser
 
-    args = parser.parse_args()
+
+def main():
+    """Main entry point for ingestion."""
+    args = build_arg_parser().parse_args()
 
     # Load environment variables
     load_local_env()
@@ -2338,7 +1484,7 @@ def main():
     ingester = DataIngester(topdeck, supabase)
 
     # Job lifecycle management
-    job_id = getattr(args, 'job_id', '') or ''
+    job_id = getattr(args, "job_id", "") or ""
     github_run_id = int(os.environ.get("GITHUB_RUN_ID", 0))
     start_time = time.time()
 
@@ -2362,9 +1508,13 @@ def main():
 
     duration = round(time.time() - start_time, 2)
     if job_id:
-        complete_ingestion_job(supabase, job_id, {
-            "duration_seconds": duration,
-        })
+        complete_ingestion_job(
+            supabase,
+            job_id,
+            {
+                "duration_seconds": duration,
+            },
+        )
 
     # Cleanup direct Postgres connection
     db_client = None
@@ -2377,7 +1527,7 @@ def main():
 
 def _run_ingestion(args, topdeck, supabase, ingester, job_id):
     """Core ingestion logic, extracted for job lifecycle wrapping."""
-    min_players = getattr(args, 'min_players', 0) or 0
+    min_players = getattr(args, "min_players", 0) or 0
 
     if args.tournament_id:
         # Ingest single tournament
@@ -2759,7 +1909,9 @@ def _run_ingestion(args, topdeck, supabase, ingester, job_id):
                         if args.stop_on_error:
                             break
                 else:
-                    logger.info(f"Would process: {tournament.get('tournamentName')} ({len(tournament.get('standings', []))} players)")
+                    t_name = tournament.get("tournamentName")
+                    t_players = len(tournament.get("standings", []))
+                    logger.info(f"Would process: {t_name} ({t_players} players)")
                 update_ingestion_heartbeat(supabase, job_id)
 
             if args.record_backfill and run_row:
@@ -2822,31 +1974,21 @@ def _run_ingestion(args, topdeck, supabase, ingester, job_id):
         start_date = (datetime.now() - timedelta(days=args.days)).date().isoformat()
         end_date = datetime.now().date().isoformat()
         logger.info(f"Searching for tournaments from {start_date} through {end_date} ({args.days} days)")
-        tournaments = topdeck.search_tournaments(
-            start_date=start_date, end_date=end_date, leagues=args.leagues
-        )
+        tournaments = topdeck.search_tournaments(start_date=start_date, end_date=end_date, leagues=args.leagues)
         logger.info(f"Found {len(tournaments)} tournaments to process")
 
         if min_players > 0:
             original_count = len(tournaments)
-            tournaments = [
-                t for t in tournaments
-                if len(t.get("standings", [])) >= min_players
-            ]
+            tournaments = [t for t in tournaments if len(t.get("standings", [])) >= min_players]
             logger.info(
-                f"Filtered to {len(tournaments)} tournaments with >= {min_players} players "
-                f"(from {original_count})"
+                f"Filtered to {len(tournaments)} tournaments with >= {min_players} players (from {original_count})"
             )
 
         if args.skip_existing_tournaments:
             search_tids = [tid for t in tournaments if (tid := t.get("id") or t.get("TID"))]
             existing_tids = fetch_existing_tids(ingester.supabase, search_tids)
             original_count = len(tournaments)
-            tournaments = [
-                t
-                for t in tournaments
-                if (t.get("id") or t.get("TID")) not in existing_tids
-            ]
+            tournaments = [t for t in tournaments if (t.get("id") or t.get("TID")) not in existing_tids]
             logger.info(
                 f"Skipped {original_count - len(tournaments)} existing tournaments because "
                 f"--skip-existing-tournaments was set; {len(tournaments)} remaining"
