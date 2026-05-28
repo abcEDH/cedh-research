@@ -1,3 +1,11 @@
+## [1.17.4](https://github.com/abcEDH/cedh-research/compare/v1.17.3...v1.17.4) (2026-05-28)
+
+
+### Bug Fixes
+
+* **deps:** pin exclude-newer to absolute date to prevent CI re-resolution ([#191](https://github.com/abcEDH/cedh-research/issues/191)) ([2259881](https://github.com/abcEDH/cedh-research/commit/225988101e3066eb257b075dfc453f236105000e))
+* **regional-elo:** fix PGRST108 by routing queries through global_elo_game_results ([#190](https://github.com/abcEDH/cedh-research/issues/190)) ([138a307](https://github.com/abcEDH/cedh-research/commit/138a3070178a6d43d77260287b90edc6532aea22))
+
 ## [1.17.3](https://github.com/abcEDH/cedh-research/compare/v1.17.2...v1.17.3) (2026-05-25)
 
 
