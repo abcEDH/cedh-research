@@ -22,4 +22,4 @@ dev = [
 
 [tool.uv]
 package = false
-exclude-newer = "7 days"
+exclude-newer = "2026-05-28T00:00:00Z"
