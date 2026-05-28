@@ -31,7 +31,7 @@ grep -r "from ingest import\|import ingest" packages/backend/src packages/backen
 grep -r "@patch.*ingest\." packages/backend/tests
 ```
 
-Skipping this audit caused 4 follow-up fix commits in PR #188.
+Skipping this step results in a cascade of follow-up fix commits.
 
 ---
 
