@@ -510,6 +510,8 @@ def fetch_distinct_commander_ids(
     client: SupabaseClient, lookback_months: int = COMMANDER_PRIMARY_LOOKBACK_MONTHS
 ) -> set[str]:
     cutoff = get_past_months_cutoff(lookback_months)
+    # Uses PostgREST FK dot-filter: tournament_id is a FK to tournaments.start_date.
+    # Tracked in issue #193 for verification before this function is activated.
     rows = fetch_all(
         client,
         "tournament_entries",
@@ -898,6 +900,11 @@ def main() -> None:
         action="store_true",
         help="Force full refresh even when job_id is specified",
     )
+    parser.add_argument(
+        "--include-game-events",
+        action="store_true",
+        help="Also upsert game events to global_elo_game_events (expensive; off by default)",
+    )
     args = parser.parse_args()
 
     apply = args.apply
@@ -1034,22 +1041,26 @@ def main() -> None:
 
     update_job_heartbeat(client, job_id)
 
-    # Record game events
-    print("Recording game events...")
-    event_rows = [
-        {
-            "entry_id": e["entry_id"],
-            "opp_entry_id": e["opp_entry_id"],
-            "outcome": e["outcome"],
-        }
-        for e in game_events
-    ]
-    if event_rows:
-        client.upsert(
-            "global_elo_game_events",
-            event_rows,
-            on_conflict="",
-        )
+    # Record game events (skipped by default — 1M+ row upsert via REST is too slow for daily runs)
+    if args.include_game_events:
+        print("Recording game events...")
+        event_rows = [
+            {
+                "entry_id": e["entry_id"],
+                "opp_entry_id": e["opp_entry_id"],
+                "outcome": e["outcome"],
+            }
+            for e in game_events
+        ]
+        if event_rows:
+            client.upsert(
+                "global_elo_game_events",
+                event_rows,
+                on_conflict="",
+            )
+    else:
+        event_rows = []
+        print("Skipping game events upsert (use --include-game-events to enable)")
 
     update_job_heartbeat(client, job_id)
 
