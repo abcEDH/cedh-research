@@ -118,5 +118,95 @@ class RegionalEloCliValidationTests(TestCase):
         self.assertEqual(ctx.exception.code, 1)
 
 
+class FetchDistinctCommanderIdsTests(TestCase):
+    """Validates the query used by fetch_distinct_commander_ids.
+
+    Previously used an invalid PostgREST filter on game_participants
+    (entries.tournament_id / entries.player_id) that caused 400 errors.
+    The fix queries tournament_entries with a FK dot-filter on tournament_id.start_date.
+    """
+
+    @patch("regional_elo.fetch_all")
+    def test_queries_tournament_entries_not_game_participants(self, mock_fetch_all: Mock) -> None:
+        mock_fetch_all.return_value = []
+        client = Mock()
+
+        regional_elo.fetch_distinct_commander_ids(client, lookback_months=6)
+
+        table_arg = mock_fetch_all.call_args[0][1]
+        self.assertEqual(table_arg, "tournament_entries")
+
+    @patch("regional_elo.fetch_all")
+    def test_filters_by_tournament_start_date_via_fk(self, mock_fetch_all: Mock) -> None:
+        mock_fetch_all.return_value = []
+        client = Mock()
+
+        regional_elo.fetch_distinct_commander_ids(client, lookback_months=6)
+
+        params = mock_fetch_all.call_args[0][2]
+        self.assertIn("tournament_id.start_date", params)
+        self.assertTrue(params["tournament_id.start_date"].startswith("gte."))
+
+    @patch("regional_elo.fetch_all")
+    def test_excludes_rows_with_no_commander_id(self, mock_fetch_all: Mock) -> None:
+        mock_fetch_all.return_value = [
+            {"commander_id": "abc123"},
+            {"commander_id": None},
+            {"commander_id": ""},
+        ]
+        client = Mock()
+
+        result = regional_elo.fetch_distinct_commander_ids(client)
+
+        self.assertEqual(result, {"abc123"})
+
+
+class GameEventsUpsertFlagTests(TestCase):
+    """--include-game-events guards the 1M+ row upsert that was timing out the cron runner.
+
+    Without the flag, global_elo_game_events must NOT be written. With the flag, it must be.
+    """
+
+    _ENV = {"SUPABASE_URL": "https://test.supabase.co", "SUPABASE_SERVICE_KEY": "test-key"}
+
+    def _run_main(self, extra_argv: list) -> Mock:
+        """Run main() with --apply and return the SupabaseClient mock."""
+        argv = ["regional_elo.py", "--apply"] + extra_argv
+        with patch.object(sys, "argv", argv):
+            with patch.dict(os.environ, self._ENV, clear=False):
+                with patch("regional_elo.SupabaseClient") as mock_cls:
+                    mock_client = Mock()
+                    mock_cls.return_value = mock_client
+                    mock_client.upsert.return_value = None
+                    mock_client.update.return_value = []
+                    with patch("regional_elo.fetch_participants_for_leaderboard", return_value=[]):
+                        with patch("regional_elo.fetch_distinct_entry_ids", return_value=set()):
+                            with patch("regional_elo.process_results", return_value=[{"entry_id": "e1", "opp_entry_id": "e2", "outcome": "win"}]):
+                                with patch("regional_elo.update_ratings_with_games"):
+                                    with patch("regional_elo.fetch_player_index", return_value={}):
+                                        with patch("regional_elo.fetch_topdeck_elo_by_topdeck_id", return_value={}):
+                                            with patch("regional_elo.fetch_primary_state_stats", return_value={}):
+                                                with patch("regional_elo.build_active_leaderboard_rows", return_value=[]):
+                                                    with patch("regional_elo.upsert_active_leaderboard_rows"):
+                                                        with patch("regional_elo.delete_stale_active_leaderboard_rows"):
+                                                            with patch("regional_elo.build_player_profiles", return_value=[]):
+                                                                with patch("regional_elo.detect_active_players", return_value=[]):
+                                                                    with patch("regional_elo.refresh_materialized_views", return_value=0):
+                                                                        regional_elo.main()
+                    return mock_client
+
+    def test_game_events_upsert_skipped_by_default(self) -> None:
+        mock_client = self._run_main([])
+
+        upsert_tables = [call.args[0] for call in mock_client.upsert.call_args_list]
+        self.assertNotIn("global_elo_game_events", upsert_tables)
+
+    def test_game_events_upsert_runs_with_flag(self) -> None:
+        mock_client = self._run_main(["--include-game-events"])
+
+        upsert_tables = [call.args[0] for call in mock_client.upsert.call_args_list]
+        self.assertIn("global_elo_game_events", upsert_tables)
+
+
 if __name__ == "__main__":
     main()

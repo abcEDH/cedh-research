@@ -39,6 +39,9 @@ jobs:
       - name: Install dependencies (locked)
         run: uv sync --frozen --project packages/backend
 
+      - name: Validate DB connection
+        run: uv run --project packages/backend python -m pytest packages/backend/tests/test_supabase_db_url.py -v
+
       - name: Import snapshot
         run: |
           URL_FLAG=""
