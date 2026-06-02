@@ -395,6 +395,8 @@ def claim_job(client: SupabaseClient, job_id: str, github_run_id: int) -> bool:
 
 def update_job_heartbeat(client: SupabaseClient, job_id: str) -> None:
     """Best-effort heartbeat so stale-job detection knows we are alive."""
+    if not job_id:
+        return
     try:
         client.update(
             MAINTENANCE_JOBS_TABLE,
