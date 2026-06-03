@@ -339,6 +339,15 @@ class DirectPostgresClient:
                 if val.startswith("eq."):
                     where_clauses.append(f"{col} = %s")
                     params.append(val[3:])
+                elif val.startswith("neq."):
+                    where_clauses.append(f"{col} != %s")
+                    params.append(val[4:])
+                elif val.startswith("gte."):
+                    where_clauses.append(f"{col} >= %s")
+                    params.append(val[4:])
+                elif val.startswith("lte."):
+                    where_clauses.append(f"{col} <= %s")
+                    params.append(val[4:])
                 elif val.startswith("ilike."):
                     where_clauses.append(f"{col} ILIKE %s")
                     params.append(val[6:])

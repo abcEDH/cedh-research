@@ -21,6 +21,7 @@ from typing import Any
 import requests
 
 from ingest import SupabaseClient
+from supabase_client import DirectPostgresClient
 
 K_FACTOR = 48
 DEFAULT_RATING = 1500.0
@@ -466,9 +467,19 @@ def fetch_all(
 
 
 def fetch_participants_for_leaderboard(
-    client: SupabaseClient, lookback_months: int = ACTIVE_PLAYER_LOOKBACK_MONTHS
+    client: SupabaseClient,
+    lookback_months: int = ACTIVE_PLAYER_LOOKBACK_MONTHS,
+    direct: DirectPostgresClient | None = None,
 ) -> list[dict[str, Any]]:
     cutoff = get_past_months_cutoff(lookback_months)
+    if direct is not None:
+        return direct.select(
+            "global_elo_game_results",
+            {
+                "start_date": f"gte.{cutoff}",
+                "result": "neq.bye",
+            },
+        )
     return fetch_all(
         client,
         "global_elo_game_results",
@@ -495,8 +506,18 @@ def fetch_commander_participants(
     )
 
 
-def fetch_distinct_entry_ids(client: SupabaseClient, lookback_months: int = ACTIVE_PLAYER_LOOKBACK_MONTHS) -> set[str]:
+def fetch_distinct_entry_ids(
+    client: SupabaseClient,
+    lookback_months: int = ACTIVE_PLAYER_LOOKBACK_MONTHS,
+    direct: DirectPostgresClient | None = None,
+) -> set[str]:
     cutoff = get_past_months_cutoff(lookback_months)
+    if direct is not None:
+        rows = direct.select(
+            "global_elo_game_results",
+            {"start_date": f"gte.{cutoff}"},
+        )
+        return {r["entry_id"] for r in rows}
     rows = fetch_all(
         client,
         "global_elo_game_results",
@@ -920,6 +941,8 @@ def main() -> None:
         sys.exit(1)
 
     client = SupabaseClient(supabase_url, supabase_key)
+    db_url = os.environ.get("SUPABASE_DB_URL")
+    direct: DirectPostgresClient | None = DirectPostgresClient(db_url) if db_url else None
     job_id = args.job_id
     github_run_id = int(os.environ.get("GITHUB_RUN_ID", 0))
 
@@ -949,12 +972,12 @@ def main() -> None:
 
     print("Fetching participants for leaderboard...")
     update_job_heartbeat(client, job_id)
-    participant_rows = fetch_participants_for_leaderboard(client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS)
+    participant_rows = fetch_participants_for_leaderboard(client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS, direct=direct)
     update_job_heartbeat(client, job_id)
     print(f"Found {len(participant_rows)} participant rows")
 
     print("Fetching distinct entries for global ratings...")
-    entry_ids = fetch_distinct_entry_ids(client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS)
+    entry_ids = fetch_distinct_entry_ids(client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS, direct=direct)
     print(f"Found {len(entry_ids)} distinct entries")
 
     # Build ratings dict
