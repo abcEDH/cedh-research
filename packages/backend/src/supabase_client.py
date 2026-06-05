@@ -1,29 +1,52 @@
-"""Supabase REST API and direct Postgres clients."""
+"""Supabase clients: supabase-py REST wrapper and direct Postgres."""
 
 from __future__ import annotations
 
 import logging
-import time
+import os
 from typing import Any
 
-import requests
+from supabase import Client, create_client
 
 # Optional: psycopg2 for direct connection
-try:
+import importlib.util
+
+PSYCOPG2_AVAILABLE = importlib.util.find_spec("psycopg2") is not None
+if PSYCOPG2_AVAILABLE:
     import psycopg2
     import psycopg2.extras
-
-    PSYCOPG2_AVAILABLE = True
-except ImportError:
-    PSYCOPG2_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
 SUPABASE_REST_BASE = "https://msjjihqbxtgjdtapywrj.supabase.co"
 
+# Maps PostgREST-style filter prefixes to (SQL operator, prefix length).
+# Used only by DirectPostgresClient.select() to translate shared filter dicts.
+_FILTER_OPS: dict[str, tuple[str, int]] = {
+    "eq.":    ("=",     3),
+    "neq.":   ("!=",    4),
+    "gte.":   (">=",    4),
+    "lte.":   ("<=",    4),
+    "ilike.": ("ILIKE", 6),
+}
+
+# Params that control query structure, not row filtering.
+_STRUCTURAL_PARAMS = frozenset({"select", "limit", "offset", "order"})
+
+
+def get_supabase_client(
+    url: str | None = None,
+    key: str | None = None,
+) -> Client:
+    """Return a supabase-py Client. Falls back to env vars when args are omitted."""
+    return create_client(
+        url or os.environ["SUPABASE_URL"],
+        key or os.environ["SUPABASE_SERVICE_KEY"],
+    )
+
 
 def _describe_request_failure(exc: BaseException, *, table: str, body_chars: int = 200) -> str:
-    """Build a one-line diagnostic for a failed HTTP attempt: class, status, body excerpt."""
+    """Build a one-line diagnostic string for a failed request."""
     response = getattr(exc, "response", None)
     status = getattr(response, "status_code", None)
     body = getattr(response, "text", "") or ""
@@ -34,10 +57,34 @@ def _describe_request_failure(exc: BaseException, *, table: str, body_chars: int
     if body_excerpt:
         parts.append(f"body={body_excerpt!r}")
     msg = str(exc).strip()
-    # Avoid duplicating "{status} Server Error" when we already have status separately.
     if msg and not (status is not None and msg.startswith(f"{status} ")):
         parts.append(f"err={msg}")
     return " ".join(parts)
+
+
+def _apply_filter(q: Any, col: str, val: str) -> Any:
+    """Apply one PostgREST-style predicate to a supabase-py query builder."""
+    if val.startswith("eq."):
+        return q.eq(col, val[3:])
+    if val.startswith("neq."):
+        return q.neq(col, val[4:])
+    if val.startswith("gte."):
+        return q.gte(col, val[4:])
+    if val.startswith("lte."):
+        return q.lte(col, val[4:])
+    if val.startswith("gt."):
+        return q.gt(col, val[3:])
+    if val.startswith("lt."):
+        return q.lt(col, val[3:])
+    if val.startswith("ilike."):
+        return q.ilike(col, val[6:])
+    if val.startswith("in.(") and val.endswith(")"):
+        items = [v.strip() for v in val[4:-1].split(",") if v.strip()]
+        return q.in_(col, items)
+    if val == "not.is.null":
+        return q.not_.is_(col, "null")
+    logger.warning("Unknown PostgREST filter for column %s: %r — skipped", col, val)
+    return q
 
 
 def fetch_existing_tids(
@@ -46,39 +93,34 @@ def fetch_existing_tids(
 ) -> set[str]:
     """Return existing TopDeck tournament IDs from Supabase.
 
-    When tids are provided, query only those IDs in chunks instead of scanning the
-    whole tournaments table.
+    When tids are provided, query only those IDs in chunks instead of scanning
+    the whole tournaments table.
     """
     if tids is not None:
-        existing_tids: set[str] = set()
+        existing: set[str] = set()
         chunk_size = 200
         for start in range(0, len(tids), chunk_size):
-            chunk = [tid for tid in tids[start : start + chunk_size] if tid]
+            chunk = [t for t in tids[start : start + chunk_size] if t]
             if not chunk:
                 continue
-            page = client.select(
-                "tournaments",
-                {
-                    "select": "topdeck_tid",
-                    "topdeck_tid": f"in.({','.join(chunk)})",
-                },
-            )
-            existing_tids.update(row["topdeck_tid"] for row in page if row.get("topdeck_tid"))
-        return existing_tids
+            rows = client._client.table("tournaments").select("topdeck_tid").in_("topdeck_tid", chunk).execute().data
+            existing.update(r["topdeck_tid"] for r in rows if r.get("topdeck_tid"))
+        return existing
 
     rows: list[dict[str, Any]] = []
     offset = 0
     limit = 1000
     while True:
-        page = client.select(
-            "tournaments",
-            {
-                "select": "topdeck_tid",
-                "topdeck_tid": "not.is.null",
-                "order": "start_date.desc,topdeck_tid.asc",
-                "limit": str(limit),
-                "offset": str(offset),
-            },
+        page = (
+            client._client.table("tournaments")
+            .select("topdeck_tid")
+            .not_.is_("topdeck_tid", "null")
+            .order("start_date", desc=True)
+            .order("topdeck_tid", desc=False)
+            .limit(limit)
+            .offset(offset)
+            .execute()
+            .data
         )
         if not page:
             break
@@ -86,20 +128,22 @@ def fetch_existing_tids(
         if len(page) < limit:
             break
         offset += limit
-    return {row["topdeck_tid"] for row in rows if row.get("topdeck_tid")}
+    return {r["topdeck_tid"] for r in rows if r.get("topdeck_tid")}
 
 
 class SupabaseClient:
-    """Client for Supabase REST API."""
+    """Supabase REST client backed by supabase-py.
+
+    Maintains the same select/upsert/update/rpc interface as the former
+    hand-rolled requests client so all existing call sites remain unchanged.
+    """
 
     def __init__(self, url: str, service_key: str):
-        self.url = url
-        self.headers = {
-            "apikey": service_key,
-            "Authorization": f"Bearer {service_key}",
-            "Content-Type": "application/json",
-            "Prefer": "return=representation",
-        }
+        self._client: Client = create_client(url, service_key)
+
+    # ------------------------------------------------------------------
+    # Public interface (unchanged signatures)
+    # ------------------------------------------------------------------
 
     def upsert(
         self,
@@ -107,72 +151,53 @@ class SupabaseClient:
         data: dict[str, Any] | list[dict[str, Any]],
         on_conflict: str | None = None,
         max_retries: int = 3,
-    ) -> dict[str, Any] | None:
-        """Upsert data into a table with retry logic."""
-        if max_retries <= 0:
-            return None
-        endpoint = f"{self.url}/rest/v1/{table}"
-
-        headers = self.headers.copy()
+    ) -> list[dict[str, Any]] | None:
+        kwargs: dict[str, Any] = {}
         if on_conflict:
-            headers["Prefer"] = "resolution=merge-duplicates,return=representation"
+            kwargs["on_conflict"] = on_conflict
+        try:
+            result = self._client.table(table).upsert(data, **kwargs).execute()
+            return result.data
+        except Exception as e:
+            logger.error("upsert failed on %s: %s", table, e)
+            raise
 
-        params: dict[str, str] = {}
-        if on_conflict:
-            params["on_conflict"] = on_conflict
-
-        for attempt in range(max_retries):
-            try:
-                response = requests.post(endpoint, json=data, headers=headers, params=params, timeout=90)
-                if response.status_code >= 400:
-                    logger.error(f"Supabase error: {response.text}")
-                    response.raise_for_status()
-                return response.json()
-            except (
-                requests.exceptions.ConnectionError,
-                requests.exceptions.Timeout,
-                requests.exceptions.ReadTimeout,
-            ) as e:
-                if attempt < max_retries - 1:
-                    wait_time = 2**attempt  # Exponential backoff: 1s, 2s, 4s
-                    logger.warning(f"Connection error, retrying in {wait_time}s... ({attempt + 1}/{max_retries})")
-                    time.sleep(wait_time)
-                else:
-                    logger.error(f"Failed after {max_retries} retries: {e}")
-                    raise
-
-        return None
-
-    def select(self, table: str, filters: dict[str, str] | None = None, max_retries: int = 8) -> list[dict[str, Any]]:
-        """Select data from a table with retry logic."""
-        if max_retries <= 0:
-            return []
-        endpoint = f"{self.url}/rest/v1/{table}"
+    def select(
+        self,
+        table: str,
+        filters: dict[str, Any] | None = None,
+        max_retries: int = 8,
+    ) -> list[dict[str, Any]]:
         params = filters or {}
+        columns = str(params.get("select", "*"))
+        limit_raw = params.get("limit")
+        offset_raw = params.get("offset")
+        order_raw = params.get("order")
 
-        for attempt in range(max_retries):
-            try:
-                response = requests.get(endpoint, headers=self.headers, params=params, timeout=90)
-                if response.status_code >= 500:
-                    raise requests.exceptions.HTTPError(f"{response.status_code} Server Error", response=response)
-                response.raise_for_status()
-                return response.json()
-            except (
-                requests.exceptions.ConnectionError,
-                requests.exceptions.Timeout,
-                requests.exceptions.ReadTimeout,
-                requests.exceptions.HTTPError,
-            ) as e:
-                diag = _describe_request_failure(e, table=table)
-                if attempt < max_retries - 1:
-                    wait_time = 2**attempt
-                    logger.warning(f"Query failed: {diag}; retrying in {wait_time}s ({attempt + 1}/{max_retries})")
-                    time.sleep(wait_time)
-                else:
-                    logger.error(f"Query failed after {max_retries} retries: {diag}")
-                    raise
-        # This is a safety net; the loop above either returns or raises
-        return []
+        q = self._client.table(table).select(columns)
+
+        for col, val in params.items():
+            if col in _STRUCTURAL_PARAMS:
+                continue
+            q = _apply_filter(q, col, str(val))
+
+        if order_raw:
+            for part in str(order_raw).split(","):
+                segments = part.strip().split(".")
+                col_name = segments[0]
+                desc = len(segments) > 1 and segments[-1] == "desc"
+                q = q.order(col_name, desc=desc)
+
+        if limit_raw is not None:
+            q = q.limit(int(limit_raw))
+        if offset_raw is not None:
+            q = q.offset(int(offset_raw))
+
+        try:
+            return q.execute().data
+        except Exception as e:
+            logger.error("select failed on %s: %s", table, e)
+            raise
 
     def update(
         self,
@@ -181,49 +206,14 @@ class SupabaseClient:
         filters: dict[str, str] | None = None,
         max_retries: int = 3,
     ) -> list[dict[str, Any]]:
-        """Update rows in a table matching filters. Uses PATCH (PostgREST convention)."""
-        if max_retries <= 0:
-            return []
-        endpoint = f"{self.url}/rest/v1/{table}"
-        params = filters or {}
-
-        for attempt in range(max_retries):
-            try:
-                response = requests.patch(endpoint, json=data, headers=self.headers, params=params, timeout=90)
-                if response.status_code >= 400:
-                    logger.error(f"Supabase update error: {response.text}")
-                    response.raise_for_status()
-                return response.json()
-            except requests.exceptions.HTTPError as e:
-                status_code = getattr(getattr(e, "response", None), "status_code", None)
-                if status_code is None:
-                    status_code = getattr(response, "status_code", None)
-
-                if status_code is not None and status_code >= 500 and attempt < max_retries - 1:
-                    wait_time = 2**attempt
-                    logger.warning(
-                        f"Update HTTP {status_code}, retrying in {wait_time}s... ({attempt + 1}/{max_retries})"
-                    )
-                    time.sleep(wait_time)
-                    continue
-
-                logger.error(f"Update failed after HTTP error: {e}")
-                raise
-            except (
-                requests.exceptions.ConnectionError,
-                requests.exceptions.Timeout,
-                requests.exceptions.ReadTimeout,
-            ) as e:
-                if attempt < max_retries - 1:
-                    wait_time = 2**attempt
-                    logger.warning(
-                        f"Update connection error, retrying in {wait_time}s... ({attempt + 1}/{max_retries})"
-                    )
-                    time.sleep(wait_time)
-                else:
-                    logger.error(f"Update failed after {max_retries} retries: {e}")
-                    raise
-        return []
+        q = self._client.table(table).update(data)
+        for col, val in (filters or {}).items():
+            q = _apply_filter(q, col, str(val))
+        try:
+            return q.execute().data
+        except Exception as e:
+            logger.error("update failed on %s: %s", table, e)
+            raise
 
     def rpc(
         self,
@@ -232,56 +222,26 @@ class SupabaseClient:
         max_retries: int = 3,
         timeout: int = 120,
     ) -> Any:
-        """Call a Supabase stored procedure via POST /rest/v1/rpc/{function_name}."""
-        if max_retries <= 0:
-            return None
-        endpoint = f"{self.url}/rest/v1/rpc/{function_name}"
-
-        for attempt in range(max_retries):
-            try:
-                response = requests.post(
-                    endpoint,
-                    json=payload or {},
-                    headers=self.headers,
-                    timeout=timeout,
-                )
-                if response.status_code >= 400:
-                    logger.error(f"Supabase RPC error ({function_name}): {response.text}")
-                    response.raise_for_status()
-                if response.status_code == 204:
-                    return None
-                return response.json()
-            except (
-                requests.exceptions.ConnectionError,
-                requests.exceptions.Timeout,
-                requests.exceptions.ReadTimeout,
-            ) as e:
-                if attempt < max_retries - 1:
-                    wait_time = 2**attempt
-                    logger.warning(
-                        f"RPC {function_name} failed, retrying in {wait_time}s... ({attempt + 1}/{max_retries})"
-                    )
-                    time.sleep(wait_time)
-                else:
-                    logger.error(f"RPC {function_name} failed after {max_retries} retries: {e}")
-                    raise
-        return None
+        try:
+            result = self._client.rpc(function_name, payload or {}).execute()
+            return result.data if result.data else None
+        except Exception as e:
+            logger.error("rpc %s failed: %s", function_name, e)
+            raise
 
 
 class DirectPostgresClient:
-    """Client for direct Postgres connection using psycopg2 (faster for large batches)."""
+    """Direct Postgres connection via psycopg2 — ~50× faster than REST for bulk ops."""
 
     def __init__(self, db_url: str):
         self.db_url = db_url
         self._conn = None
 
     def connect(self):
-        """Establish database connection."""
         if self._conn is None or self._conn.closed:
             self._conn = psycopg2.connect(self.db_url)
 
     def close(self):
-        """Close database connection."""
         if self._conn and not self._conn.closed:
             self._conn.close()
 
@@ -291,13 +251,10 @@ class DirectPostgresClient:
         data: dict[str, Any] | list[dict[str, Any]],
         on_conflict: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Upsert data using execute_values for high performance."""
         if not data:
             return []
-
         if isinstance(data, dict):
             data = [data]
-
         if not data:
             return []
 
@@ -328,7 +285,6 @@ class DirectPostgresClient:
             return [dict(zip(col_names, row, strict=False)) for row in results]
 
     def select(self, table: str, filters: dict[str, str] | None = None) -> list[dict[str, Any]]:
-        """Select data from a table."""
         self.connect()
 
         where_clauses: list[str] = []
@@ -336,12 +292,11 @@ class DirectPostgresClient:
 
         if filters:
             for col, val in filters.items():
-                if val.startswith("eq."):
-                    where_clauses.append(f"{col} = %s")
-                    params.append(val[3:])
-                elif val.startswith("ilike."):
-                    where_clauses.append(f"{col} ILIKE %s")
-                    params.append(val[6:])
+                for prefix, (op, length) in _FILTER_OPS.items():
+                    if val.startswith(prefix):
+                        where_clauses.append(f"{col} {op} %s")
+                        params.append(val[length:])
+                        break
 
         sql = f"SELECT * FROM {table}"
         if where_clauses:

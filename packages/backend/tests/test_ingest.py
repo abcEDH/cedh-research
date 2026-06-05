@@ -135,122 +135,76 @@ class CommanderNormalizationTests(unittest.TestCase):
         )
 
 
+def _make_sb_client(data: list | None = None) -> tuple[Mock, Mock]:
+    """Return (mock_inner, SupabaseClient) with the inner supabase Client mocked.
+
+    The mock chain supports chaining for table().select/update/upsert/rpc()
+    and returns *data* from .execute().data.
+    """
+    mock_inner = Mock()
+    chain = Mock()
+    chain.execute.return_value.data = data or []
+    for method in ("select", "eq", "neq", "gte", "lte", "gt", "lt",
+                   "ilike", "in_", "order", "limit", "offset"):
+        getattr(chain, method).return_value = chain
+    chain.not_ = Mock()
+    chain.not_.is_.return_value = chain
+    mock_inner.table.return_value.select.return_value = chain
+    mock_inner.table.return_value.update.return_value = chain
+    mock_inner.table.return_value.upsert.return_value = chain
+    mock_inner.rpc.return_value = chain
+
+    with patch("supabase_client.create_client", return_value=mock_inner):
+        client = SupabaseClient("https://test.supabase.co", "test-service-key")
+    return mock_inner, client
+
+
 class SupabaseClientUpdateTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.client = SupabaseClient("https://test.supabase.co", "test-service-key")
+        self.mock_inner, self.client = _make_sb_client([{"id": "row-1", "status": "running"}])
 
-    @patch("supabase_client.requests.patch")
-    def test_update_sends_patch_request(self, mock_patch: Mock) -> None:
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = [{"id": "row-1", "status": "running"}]
-        mock_patch.return_value = mock_response
-
+    def test_update_delegates_to_supabase_table(self) -> None:
         result = self.client.update(
             "elo_maintenance_jobs",
             {"status": "running"},
-            {"id": "eq.job-123", "status": "eq.pending"},
+            {"id": "eq.job-123"},
         )
-
-        mock_patch.assert_called_once_with(
-            "https://test.supabase.co/rest/v1/elo_maintenance_jobs",
-            json={"status": "running"},
-            headers=self.client.headers,
-            params={"id": "eq.job-123", "status": "eq.pending"},
-            timeout=90,
-        )
+        self.mock_inner.table.assert_called_once_with("elo_maintenance_jobs")
+        self.mock_inner.table.return_value.update.assert_called_once_with({"status": "running"})
         self.assertEqual(result, [{"id": "row-1", "status": "running"}])
 
-    @patch("supabase_client.requests.patch")
-    def test_update_retries_on_connection_error(self, mock_patch: Mock) -> None:
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = [{"id": "row-1"}]
-        mock_patch.side_effect = [
-            requests_module.exceptions.ConnectionError("Connection refused"),
-            mock_response,
-        ]
+    def test_update_applies_eq_filter(self) -> None:
+        chain = self.mock_inner.table.return_value.update.return_value
+        self.client.update("t", {"col": "val"}, {"id": "eq.abc"})
+        chain.eq.assert_called_once_with("id", "abc")
 
-        with patch("supabase_client.time.sleep"):
-            result = self.client.update(
-                "elo_maintenance_jobs",
-                {"status": "running"},
-            )
-
-        self.assertEqual(mock_patch.call_count, 2)
-        self.assertEqual(result, [{"id": "row-1"}])
-
-    @patch("supabase_client.requests.patch")
-    def test_update_retries_on_transient_http_error(self, mock_patch: Mock) -> None:
-        first_response = Mock()
-        first_response.status_code = 503
-        first_response.text = "service unavailable"
-        http_error = requests_module.exceptions.HTTPError("503")
-        http_error.response = first_response
-        first_response.raise_for_status.side_effect = http_error
-
-        second_response = Mock()
-        second_response.status_code = 200
-        second_response.json.return_value = [{"id": "row-1"}]
-
-        mock_patch.side_effect = [first_response, second_response]
-
-        with patch("supabase_client.time.sleep"):
-            result = self.client.update(
-                "elo_maintenance_jobs",
-                {"status": "running"},
-            )
-
-        self.assertEqual(mock_patch.call_count, 2)
-        self.assertEqual(result, [{"id": "row-1"}])
-
-    @patch("supabase_client.requests.patch")
-    def test_update_returns_empty_list_on_no_match(self, mock_patch: Mock) -> None:
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = []
-        mock_patch.return_value = mock_response
-
-        result = self.client.update(
-            "elo_maintenance_jobs",
-            {"status": "running"},
-            {"id": "eq.nonexistent"},
-        )
-
+    def test_update_returns_empty_list_on_no_match(self) -> None:
+        _, client = _make_sb_client([])
+        result = client.update("elo_maintenance_jobs", {"status": "running"}, {"id": "eq.nonexistent"})
         self.assertEqual(result, [])
+
+    def test_update_propagates_exception(self) -> None:
+        self.mock_inner.table.return_value.update.return_value.execute.side_effect = RuntimeError("db error")
+        self.client._client = self.mock_inner
+        with self.assertRaises(RuntimeError):
+            self.client.update("t", {"col": "val"})
 
 
 class SupabaseClientRpcTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.client = SupabaseClient("https://test.supabase.co", "test-service-key")
+        self.mock_inner, self.client = _make_sb_client(None)
 
-    @patch("supabase_client.requests.post")
-    def test_rpc_sends_post_to_correct_endpoint(self, mock_post: Mock) -> None:
-        mock_response = Mock()
-        mock_response.status_code = 204
-        mock_post.return_value = mock_response
-
+    def test_rpc_calls_correct_function(self) -> None:
+        self.mock_inner.rpc.return_value.execute.return_value.data = None
         result = self.client.rpc("refresh_commander_trends")
-
-        mock_post.assert_called_once_with(
-            "https://test.supabase.co/rest/v1/rpc/refresh_commander_trends",
-            json={},
-            headers=self.client.headers,
-            timeout=120,
-        )
+        self.mock_inner.rpc.assert_called_once_with("refresh_commander_trends", {})
         self.assertIsNone(result)
 
-    @patch("supabase_client.requests.post")
-    def test_rpc_uses_higher_timeout(self, mock_post: Mock) -> None:
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"ok": True}
-        mock_post.return_value = mock_response
-
-        self.client.rpc("refresh_card_frequencies", timeout=120)
-
-        call_kwargs = mock_post.call_args.kwargs
-        self.assertEqual(call_kwargs["timeout"], 120)
+    def test_rpc_returns_data_when_present(self) -> None:
+        self.mock_inner.rpc.return_value.execute.return_value.data = [{"ok": True}]
+        result = self.client.rpc("get_stats", {"p": "v"})
+        self.mock_inner.rpc.assert_called_once_with("get_stats", {"p": "v"})
+        self.assertEqual(result, [{"ok": True}])
 
 
 class IngestionJobLifecycleTests(unittest.TestCase):
@@ -366,7 +320,7 @@ class IngestionJobLifecycleTests(unittest.TestCase):
 
 class SupabaseClientSelectDiagnosticsTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.client = SupabaseClient("https://test.supabase.co", "test-service-key")
+        _, self.client = _make_sb_client()
 
     def test_describe_request_failure_includes_status_and_body(self) -> None:
         response = Mock()
@@ -406,29 +360,11 @@ class SupabaseClientSelectDiagnosticsTests(unittest.TestCase):
         # The body excerpt is wrapped in repr() (adds quotes); cap with slack for quoting.
         self.assertLess(len(diag), 400)
 
-    @patch("supabase_client.time.sleep")
-    @patch("supabase_client.requests.get")
-    def test_select_logs_status_and_body_on_retry(
-        self, mock_get: Mock, _mock_sleep: Mock
-    ) -> None:
-        failing = Mock()
-        failing.status_code = 503
-        failing.text = "service unavailable: db is recovering"
-
-        succeeding = Mock()
-        succeeding.status_code = 200
-        succeeding.json.return_value = [{"id": "row-1"}]
-
-        mock_get.side_effect = [failing, succeeding]
-
-        with self.assertLogs("supabase_client", level="WARNING") as captured:
-            result = self.client.select("tournaments", {"id": "eq.row-1"})
-
+    def test_select_delegates_to_supabase_table(self) -> None:
+        mock_inner, client = _make_sb_client([{"id": "row-1"}])
+        result = client.select("tournaments", {"id": "eq.row-1"})
+        mock_inner.table.assert_called_once_with("tournaments")
         self.assertEqual(result, [{"id": "row-1"}])
-        warning_text = "\n".join(captured.output)
-        self.assertIn("table=tournaments", warning_text)
-        self.assertIn("status=503", warning_text)
-        self.assertIn("service unavailable", warning_text)
 
 
 if __name__ == "__main__":
