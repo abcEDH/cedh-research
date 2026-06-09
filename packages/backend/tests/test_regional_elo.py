@@ -208,5 +208,58 @@ class GameEventsUpsertFlagTests(TestCase):
         self.assertIn("global_elo_game_events", upsert_tables)
 
 
+class ProcessResultsTests(TestCase):
+    def test_groups_by_game_id(self) -> None:
+        rows = [
+            {"game_id": "g1", "entry_id": "e1", "result": "win",  "seat_position": 1, "rating": 1500},
+            {"game_id": "g1", "entry_id": "e2", "result": "loss", "seat_position": 2, "rating": 1500},
+            {"game_id": "g2", "entry_id": "e3", "result": "win",  "seat_position": 1, "rating": 1500},
+            {"game_id": "g2", "entry_id": "e4", "result": "loss", "seat_position": 2, "rating": 1500},
+        ]
+        events = regional_elo.process_results(rows)
+        self.assertEqual(len(events), 2)
+        pairs = {frozenset([e["entry_id"], e["opp_entry_id"]]) for e in events}
+        self.assertIn(frozenset(["e1", "e2"]), pairs)
+        self.assertIn(frozenset(["e3", "e4"]), pairs)
+        # No cross-game pairs
+        self.assertNotIn(frozenset(["e1", "e3"]), pairs)
+        self.assertNotIn(frozenset(["e1", "e4"]), pairs)
+
+    def test_does_not_explode_at_scale(self) -> None:
+        # 1000 rows across 250 4-player games → ~750 events (3 per game), not millions
+        rows = [
+            {
+                "game_id": f"g{i // 4}",
+                "entry_id": f"e{i}",
+                "result": "win" if i % 4 == 0 else "loss",
+                "seat_position": i % 4 + 1,
+                "rating": 1500,
+            }
+            for i in range(1000)
+        ]
+        events = regional_elo.process_results(rows)
+        self.assertLess(len(events), 2000)
+
+    def test_fallback_no_game_id(self) -> None:
+        rows = [
+            {"entry_id": "e1", "result": "win",  "seat_position": 1, "rating": 1500},
+            {"entry_id": "e2", "result": "loss", "seat_position": 2, "rating": 1500},
+        ]
+        events = regional_elo.process_results(rows)
+        self.assertEqual(len(events), 1)
+
+
+class UpdateRatingsTests(TestCase):
+    def test_reverse_lookup_updates_correctly(self) -> None:
+        ratings = {
+            ("global", "global", "e1"): regional_elo.create_empty_ratings_row("e1", "global", "global"),
+            ("global", "global", "e2"): regional_elo.create_empty_ratings_row("e2", "global", "global"),
+        }
+        events = [{"entry_id": "e1", "opp_entry_id": "e2", "outcome": "win"}]
+        regional_elo.update_ratings_with_games(ratings, events)
+        self.assertEqual(ratings[("global", "global", "e1")]["wins"], 1)
+        self.assertEqual(ratings[("global", "global", "e2")]["losses"], 1)
+
+
 if __name__ == "__main__":
     main()

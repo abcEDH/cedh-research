@@ -21,6 +21,7 @@ from typing import Any
 import requests
 
 from ingest import SupabaseClient
+from supabase_client import DirectPostgresClient
 
 K_FACTOR = 48
 DEFAULT_RATING = 1500.0
@@ -260,44 +261,25 @@ def create_empty_ratings_row(
     }
 
 
-def process_results(
-    participant_records: Iterable[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    """Process participant records into ratings updates."""
-    game_events: list[dict[str, Any]] = []
-
-    standings: list[tuple[float, int, dict[str, Any]]] = []
-    for p in participant_records:
-        entry_id = p.get("entry_id") or ""
-        standing: dict[str, Any] = {
-            "id": entry_id,
-            "wins": 1 if p.get("result") == "win" else 0,
-            "draws": 1 if p.get("result") == "draw" else 0,
-            "losses": 1 if p.get("result") == "loss" else 0,
-        }
-        rating = p.get("rating", DEFAULT_RATING) or DEFAULT_RATING
-        seat = p.get("seat_position") or 0
-        standings.append((rating, seat, standing))
-
+def _process_one_game(standings: list[tuple[float, int, dict[str, Any]]]) -> list[dict[str, Any]]:
+    """Produce pairwise Elo events for the players in one game."""
     if len(standings) < 2:
         return []
 
-    # Sort by rating descending, then seat ascending to break ties
+    # Sort by rating descending, seat ascending to break ties
     standings.sort(key=lambda x: (x[0], -x[1]), reverse=True)
 
-    # Process each seat vs higher-rated seats (players who should be favored)
+    events: list[dict[str, Any]] = []
     for rating, seat, standing in standings:
         entry_id = standing["id"]
         is_winner = standing["wins"] >= 1
         is_draw = standing["draws"] >= 1
 
-        # Find higher/equal rated opponents
         for opp_rating, opp_seat, opp_standing in standings:
             if opp_rating > rating or (opp_rating == rating and opp_seat < seat):
                 opp_entry_id = opp_standing["id"]
                 opp_is_winner = opp_standing["wins"] >= 1
 
-                # Determine game outcome from perspective of current player
                 if is_winner and not opp_is_winner:
                     outcome = "win"
                 elif opp_is_winner and not is_winner:
@@ -308,13 +290,50 @@ def process_results(
                     outcome = "unknown"
 
                 if outcome in ("win", "loss", "draw"):
-                    game_events.append(
+                    events.append(
                         {
                             "entry_id": entry_id,
                             "opp_entry_id": opp_entry_id,
                             "outcome": outcome,
                         }
                     )
+    return events
+
+
+def process_results(
+    participant_records: Iterable[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Process participant records into pairwise Elo events, grouped by game."""
+    # Group rows by game_id so we only compare players who actually played together.
+    # Without grouping, process_results would produce O(n²) pairs across all 300k+
+    # rows — ~57 billion comparisons instead of ~500k.
+    games: dict[str, list[tuple[float, int, dict[str, Any]]]] = {}
+    ungrouped: list[tuple[float, int, dict[str, Any]]] = []
+
+    for p in participant_records:
+        entry_id = p.get("entry_id") or ""
+        standing: dict[str, Any] = {
+            "id": entry_id,
+            "wins": 1 if p.get("result") == "win" else 0,
+            "draws": 1 if p.get("result") == "draw" else 0,
+            "losses": 1 if p.get("result") == "loss" else 0,
+        }
+        rating = p.get("rating", DEFAULT_RATING) or DEFAULT_RATING
+        seat = p.get("seat_position") or 0
+        game_id = p.get("game_id") or ""
+
+        if game_id:
+            games.setdefault(game_id, []).append((rating, seat, standing))
+        else:
+            ungrouped.append((rating, seat, standing))
+
+    game_events: list[dict[str, Any]] = []
+    for standings in games.values():
+        game_events.extend(_process_one_game(standings))
+
+    # Fallback: rows without game_id get processed as one group (legacy behaviour).
+    if ungrouped:
+        game_events.extend(_process_one_game(ungrouped))
 
     return game_events
 
@@ -324,6 +343,9 @@ def update_ratings_with_games(
     game_events: Iterable[dict[str, Any]],
 ) -> None:
     """Update ratings based on game results."""
+    # Build a reverse lookup once so each event is O(1) instead of O(n).
+    pid_to_key: dict[str, tuple[str, str, str]] = {v["player_id"]: k for k, v in player_ratings.items()}
+
     for event in game_events:
         entry_id = event["entry_id"]
         opp_entry_id = event["opp_entry_id"]
@@ -332,15 +354,8 @@ def update_ratings_with_games(
         if outcome == "unknown":
             continue
 
-        key = None
-        opp_key = None
-        for k, v in player_ratings.items():
-            if v["player_id"] == entry_id:
-                key = k
-            if v["player_id"] == opp_entry_id:
-                opp_key = k
-            if key and opp_key:
-                break
+        key = pid_to_key.get(entry_id)
+        opp_key = pid_to_key.get(opp_entry_id)
 
         if not key or not opp_key:
             continue
@@ -466,14 +481,24 @@ def fetch_all(
 
 
 def fetch_participants_for_leaderboard(
-    client: SupabaseClient, lookback_months: int = ACTIVE_PLAYER_LOOKBACK_MONTHS
+    client: SupabaseClient,
+    lookback_months: int = ACTIVE_PLAYER_LOOKBACK_MONTHS,
+    direct: DirectPostgresClient | None = None,
 ) -> list[dict[str, Any]]:
     cutoff = get_past_months_cutoff(lookback_months)
+    if direct is not None:
+        return direct.select(
+            "global_elo_game_results",
+            {
+                "start_date": f"gte.{cutoff}",
+                "result": "neq.bye",
+            },
+        )
     return fetch_all(
         client,
         "global_elo_game_results",
         {
-            "select": "entry_id,player_id,tournament_id,seat_position,result",
+            "select": "game_id,entry_id,player_id,tournament_id,seat_position,result",
             "start_date": f"gte.{cutoff}",
             "result": "neq.bye",
         },
@@ -488,15 +513,25 @@ def fetch_commander_participants(
         client,
         "global_elo_game_results",
         {
-            "select": "entry_id,player_id,tournament_id,seat_position,result",
+            "select": "game_id,entry_id,player_id,tournament_id,seat_position,result",
             "start_date": "gte." + str(cutoff),
             "result": "neq.bye",
         },
     )
 
 
-def fetch_distinct_entry_ids(client: SupabaseClient, lookback_months: int = ACTIVE_PLAYER_LOOKBACK_MONTHS) -> set[str]:
+def fetch_distinct_entry_ids(
+    client: SupabaseClient,
+    lookback_months: int = ACTIVE_PLAYER_LOOKBACK_MONTHS,
+    direct: DirectPostgresClient | None = None,
+) -> set[str]:
     cutoff = get_past_months_cutoff(lookback_months)
+    if direct is not None:
+        rows = direct.select(
+            "global_elo_game_results",
+            {"start_date": f"gte.{cutoff}"},
+        )
+        return {r["entry_id"] for r in rows}
     rows = fetch_all(
         client,
         "global_elo_game_results",
@@ -920,6 +955,8 @@ def main() -> None:
         sys.exit(1)
 
     client = SupabaseClient(supabase_url, supabase_key)
+    db_url = os.environ.get("SUPABASE_DB_URL")
+    direct: DirectPostgresClient | None = DirectPostgresClient(db_url) if db_url else None
     job_id = args.job_id
     github_run_id = int(os.environ.get("GITHUB_RUN_ID", 0))
 
@@ -949,12 +986,12 @@ def main() -> None:
 
     print("Fetching participants for leaderboard...")
     update_job_heartbeat(client, job_id)
-    participant_rows = fetch_participants_for_leaderboard(client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS)
+    participant_rows = fetch_participants_for_leaderboard(client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS, direct=direct)
     update_job_heartbeat(client, job_id)
     print(f"Found {len(participant_rows)} participant rows")
 
     print("Fetching distinct entries for global ratings...")
-    entry_ids = fetch_distinct_entry_ids(client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS)
+    entry_ids = fetch_distinct_entry_ids(client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS, direct=direct)
     print(f"Found {len(entry_ids)} distinct entries")
 
     # Build ratings dict
