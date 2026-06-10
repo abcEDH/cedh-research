@@ -311,9 +311,9 @@ def process_results(
     ungrouped: list[tuple[float, int, dict[str, Any]]] = []
 
     for p in participant_records:
-        entry_id = p.get("entry_id") or ""
+        player_id = p.get("player_id") or p.get("entry_id") or ""
         standing: dict[str, Any] = {
-            "id": entry_id,
+            "id": player_id,
             "wins": 1 if p.get("result") == "win" else 0,
             "draws": 1 if p.get("result") == "draw" else 0,
             "losses": 1 if p.get("result") == "loss" else 0,
@@ -531,16 +531,16 @@ def fetch_distinct_entry_ids(
             "global_elo_game_results",
             {"start_date": f"gte.{cutoff}"},
         )
-        return {r["entry_id"] for r in rows}
+        return {r["player_id"] for r in rows}
     rows = fetch_all(
         client,
         "global_elo_game_results",
         {
-            "select": "entry_id",
+            "select": "player_id",
             "start_date": f"gte.{cutoff}",
         },
     )
-    return {r["entry_id"] for r in rows}
+    return {r["player_id"] for r in rows}
 
 
 def fetch_distinct_commander_ids(
@@ -998,15 +998,15 @@ def main() -> None:
     update_job_heartbeat(client, job_id)
     print(f"Found {len(participant_rows)} participant rows")
 
-    print("Fetching distinct entries for global ratings...")
-    entry_ids = fetch_distinct_entry_ids(client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS, direct=direct)
-    print(f"Found {len(entry_ids)} distinct entries")
+    print("Fetching distinct players for global ratings...")
+    player_ids = fetch_distinct_entry_ids(client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS, direct=direct)
+    print(f"Found {len(player_ids)} distinct players")
 
     # Build ratings dict
     player_ratings: dict[tuple[str, str, str], dict[str, Any]] = {}
-    for entry_id in entry_ids:
-        key = (GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY, entry_id)
-        player_ratings[key] = create_empty_ratings_row(entry_id, GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY)
+    for player_id in player_ids:
+        key = (GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY, player_id)
+        player_ratings[key] = create_empty_ratings_row(player_id, GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY)
 
     update_job_heartbeat(client, job_id)
 
