@@ -311,9 +311,9 @@ def process_results(
     ungrouped: list[tuple[float, int, dict[str, Any]]] = []
 
     for p in participant_records:
-        entry_id = p.get("entry_id") or ""
+        player_id = p.get("player_id") or p.get("entry_id") or ""
         standing: dict[str, Any] = {
-            "id": entry_id,
+            "id": player_id,
             "wins": 1 if p.get("result") == "win" else 0,
             "draws": 1 if p.get("result") == "draw" else 0,
             "losses": 1 if p.get("result") == "loss" else 0,
@@ -531,16 +531,16 @@ def fetch_distinct_entry_ids(
             "global_elo_game_results",
             {"start_date": f"gte.{cutoff}"},
         )
-        return {r["entry_id"] for r in rows}
+        return {r["player_id"] for r in rows}
     rows = fetch_all(
         client,
         "global_elo_game_results",
         {
-            "select": "entry_id",
+            "select": "player_id",
             "start_date": f"gte.{cutoff}",
         },
     )
-    return {r["entry_id"] for r in rows}
+    return {r["player_id"] for r in rows}
 
 
 def fetch_distinct_commander_ids(
@@ -956,7 +956,15 @@ def main() -> None:
 
     client = SupabaseClient(supabase_url, supabase_key)
     db_url = os.environ.get("SUPABASE_DB_URL")
-    direct: DirectPostgresClient | None = DirectPostgresClient(db_url) if db_url else None
+    direct: DirectPostgresClient | None = None
+    if db_url:
+        try:
+            candidate = DirectPostgresClient(db_url)
+            candidate.connect()
+            direct = candidate
+            print("DirectPostgres connection established")
+        except Exception as e:
+            print(f"DirectPostgres unavailable ({e}); falling back to REST")
     job_id = args.job_id
     github_run_id = int(os.environ.get("GITHUB_RUN_ID", 0))
 
@@ -990,15 +998,15 @@ def main() -> None:
     update_job_heartbeat(client, job_id)
     print(f"Found {len(participant_rows)} participant rows")
 
-    print("Fetching distinct entries for global ratings...")
-    entry_ids = fetch_distinct_entry_ids(client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS, direct=direct)
-    print(f"Found {len(entry_ids)} distinct entries")
+    print("Fetching distinct players for global ratings...")
+    player_ids = fetch_distinct_entry_ids(client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS, direct=direct)
+    print(f"Found {len(player_ids)} distinct players")
 
     # Build ratings dict
     player_ratings: dict[tuple[str, str, str], dict[str, Any]] = {}
-    for entry_id in entry_ids:
-        key = (GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY, entry_id)
-        player_ratings[key] = create_empty_ratings_row(entry_id, GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY)
+    for player_id in player_ids:
+        key = (GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY, player_id)
+        player_ratings[key] = create_empty_ratings_row(player_id, GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY)
 
     update_job_heartbeat(client, job_id)
 
@@ -1070,12 +1078,14 @@ def main() -> None:
     active = detect_active_players(client)
     for a in active:
         a["last_active"] = str(utc_now().date())
+        a["region_type"] = GLOBAL_REGION_TYPE
+        a["region_key"] = GLOBAL_REGION_KEY
 
     if active:
         client.upsert(
             "global_elo_state_activity",
             active,
-            on_conflict="player_id",
+            on_conflict="region_type,region_key,player_id",
         )
 
     update_job_heartbeat(client, job_id)

@@ -239,7 +239,7 @@ class DirectPostgresClient:
 
     def connect(self):
         if self._conn is None or self._conn.closed:
-            self._conn = psycopg2.connect(self.db_url)
+            self._conn = psycopg2.connect(self.db_url, connect_timeout=15)
 
     def close(self):
         if self._conn and not self._conn.closed:
