@@ -1078,12 +1078,14 @@ def main() -> None:
     active = detect_active_players(client)
     for a in active:
         a["last_active"] = str(utc_now().date())
+        a["region_type"] = GLOBAL_REGION_TYPE
+        a["region_key"] = GLOBAL_REGION_KEY
 
     if active:
         client.upsert(
             "global_elo_state_activity",
             active,
-            on_conflict="player_id",
+            on_conflict="region_type,region_key,player_id",
         )
 
     update_job_heartbeat(client, job_id)
