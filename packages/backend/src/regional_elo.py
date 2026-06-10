@@ -956,7 +956,15 @@ def main() -> None:
 
     client = SupabaseClient(supabase_url, supabase_key)
     db_url = os.environ.get("SUPABASE_DB_URL")
-    direct: DirectPostgresClient | None = DirectPostgresClient(db_url) if db_url else None
+    direct: DirectPostgresClient | None = None
+    if db_url:
+        try:
+            candidate = DirectPostgresClient(db_url)
+            candidate.connect()
+            direct = candidate
+            print("DirectPostgres connection established")
+        except Exception as e:
+            print(f"DirectPostgres unavailable ({e}); falling back to REST")
     job_id = args.job_id
     github_run_id = int(os.environ.get("GITHUB_RUN_ID", 0))
 
