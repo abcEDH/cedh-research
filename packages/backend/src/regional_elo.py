@@ -261,7 +261,12 @@ def create_empty_ratings_row(
     }
 
 
-def _process_one_game(standings: list[tuple[float, int, dict[str, Any]]]) -> list[dict[str, Any]]:
+def _process_one_game(
+    standings: list[tuple[float, int, dict[str, Any]]],
+    game_id: str = "",
+    tournament_id: str = "",
+    game_date: str | None = None,
+) -> list[dict[str, Any]]:
     """Produce pairwise Elo events for the players in one game."""
     if len(standings) < 2:
         return []
@@ -269,20 +274,21 @@ def _process_one_game(standings: list[tuple[float, int, dict[str, Any]]]) -> lis
     # Sort by rating descending, seat ascending to break ties
     standings.sort(key=lambda x: (x[0], -x[1]), reverse=True)
 
+    opponent_count = len(standings) - 1
     events: list[dict[str, Any]] = []
     for rating, seat, standing in standings:
-        entry_id = standing["id"]
+        player_id = standing["id"]
+        entry_id = standing.get("entry_id", player_id)
         is_winner = standing["wins"] >= 1
         is_draw = standing["draws"] >= 1
 
         for opp_rating, opp_seat, opp_standing in standings:
             if opp_rating > rating or (opp_rating == rating and opp_seat < seat):
-                opp_entry_id = opp_standing["id"]
-                opp_is_winner = opp_standing["wins"] >= 1
+                opp_player_id = opp_standing["id"]
 
-                if is_winner and not opp_is_winner:
+                if is_winner and not opp_standing["wins"] >= 1:
                     outcome = "win"
-                elif opp_is_winner and not is_winner:
+                elif opp_standing["wins"] >= 1 and not is_winner:
                     outcome = "loss"
                 elif is_draw:
                     outcome = "draw"
@@ -292,9 +298,15 @@ def _process_one_game(standings: list[tuple[float, int, dict[str, Any]]]) -> lis
                 if outcome in ("win", "loss", "draw"):
                     events.append(
                         {
+                            "player_id": player_id,
+                            "opp_player_id": opp_player_id,
                             "entry_id": entry_id,
-                            "opp_entry_id": opp_entry_id,
                             "outcome": outcome,
+                            "is_draw": is_draw,
+                            "game_id": game_id,
+                            "tournament_id": tournament_id,
+                            "game_date": game_date,
+                            "opponent_count": opponent_count,
                         }
                     )
     return events
@@ -308,12 +320,15 @@ def process_results(
     # Without grouping, process_results would produce O(n²) pairs across all 300k+
     # rows — ~57 billion comparisons instead of ~500k.
     games: dict[str, list[tuple[float, int, dict[str, Any]]]] = {}
+    game_meta: dict[str, dict[str, Any]] = {}
     ungrouped: list[tuple[float, int, dict[str, Any]]] = []
 
     for p in participant_records:
         player_id = p.get("player_id") or p.get("entry_id") or ""
+        entry_id = p.get("entry_id") or player_id
         standing: dict[str, Any] = {
             "id": player_id,
+            "entry_id": entry_id,
             "wins": 1 if p.get("result") == "win" else 0,
             "draws": 1 if p.get("result") == "draw" else 0,
             "losses": 1 if p.get("result") == "loss" else 0,
@@ -324,12 +339,20 @@ def process_results(
 
         if game_id:
             games.setdefault(game_id, []).append((rating, seat, standing))
+            if game_id not in game_meta:
+                game_meta[game_id] = {
+                    "tournament_id": p.get("tournament_id") or "",
+                    "game_date": p.get("start_date"),
+                }
         else:
             ungrouped.append((rating, seat, standing))
 
     game_events: list[dict[str, Any]] = []
-    for standings in games.values():
-        game_events.extend(_process_one_game(standings))
+    for gid, standings in games.items():
+        meta = game_meta.get(gid, {})
+        game_events.extend(
+            _process_one_game(standings, game_id=gid, **meta)
+        )
 
     # Fallback: rows without game_id get processed as one group (legacy behaviour).
     if ungrouped:
@@ -341,52 +364,164 @@ def process_results(
 def update_ratings_with_games(
     player_ratings: dict[tuple[str, str, str], dict[str, Any]],
     game_events: Iterable[dict[str, Any]],
-) -> None:
-    """Update ratings based on game results."""
+) -> list[dict[str, Any]]:
+    """Update ratings based on game results and return game event rows for DB write.
+
+    Groups events by game_id to capture per-game rating_before / rating_after so the
+    returned rows can be upserted into global_elo_game_events (one row per player per game).
+    """
     # Build a reverse lookup once so each event is O(1) instead of O(n).
     pid_to_key: dict[str, tuple[str, str, str]] = {v["player_id"]: k for k, v in player_ratings.items()}
 
+    # Group all events by game_id to process one game at a time.
+    events_by_game: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    no_game_id: list[dict[str, Any]] = []
     for event in game_events:
-        entry_id = event["entry_id"]
-        opp_entry_id = event["opp_entry_id"]
-        outcome = event["outcome"]
+        gid = event.get("game_id") or ""
+        if gid:
+            events_by_game[gid].append(event)
+        else:
+            no_game_id.append(event)
 
-        if outcome == "unknown":
-            continue
+    db_event_rows: list[dict[str, Any]] = []
 
-        key = pid_to_key.get(entry_id)
-        opp_key = pid_to_key.get(opp_entry_id)
+    def _apply_game(events: list[dict[str, Any]], emit_db_rows: bool) -> None:
+        # All players whose rating_before we need to snapshot.
+        players_in_game: set[str] = set()
+        for e in events:
+            if e["outcome"] != "unknown":
+                players_in_game.add(e["player_id"])
+                players_in_game.add(e["opp_player_id"])
 
-        if not key or not opp_key:
-            continue
+        # Capture pre-game ratings.
+        rating_before: dict[str, float] = {}
+        for pid in players_in_game:
+            key = pid_to_key.get(pid)
+            if key:
+                rating_before[pid] = float(player_ratings[key]["rating"])
 
-        player_row = player_ratings[key]
-        opp_row = player_ratings[opp_key]
+        # Apply pairwise events sequentially.
+        for event in events:
+            player_id = event["player_id"]
+            opp_player_id = event["opp_player_id"]
+            outcome = event["outcome"]
 
-        if outcome == "win":
-            new_player, new_opp = update_elo(player_row["rating"], opp_row["rating"])
-            player_row["wins"] += 1
-            player_row["win_streak"] += 1
-            player_row["loss_streak"] = 0
-            opp_row["losses"] += 1
-            opp_row["win_streak"] = 0
-            opp_row["loss_streak"] += 1
-        elif outcome == "loss":
-            new_opp, new_player = update_elo(opp_row["rating"], player_row["rating"])
-            player_row["losses"] += 1
-            player_row["loss_streak"] += 1
-            player_row["win_streak"] = 0
-            opp_row["wins"] += 1
-            opp_row["win_streak"] += 1
-            opp_row["loss_streak"] = 0
-        else:  # draw
-            player_row["draws"] += 1
-            opp_row["draws"] += 1
+            if outcome == "unknown":
+                continue
 
-        player_row["rating"] = new_player
-        opp_row["rating"] = new_opp
-        player_row["games_played"] += 1
-        opp_row["games_played"] += 1
+            key = pid_to_key.get(player_id)
+            opp_key = pid_to_key.get(opp_player_id)
+            if not key or not opp_key:
+                continue
+
+            player_row = player_ratings[key]
+            opp_row = player_ratings[opp_key]
+
+            if outcome == "win":
+                new_player, new_opp = update_elo(player_row["rating"], opp_row["rating"])
+                player_row["wins"] += 1
+                player_row["win_streak"] += 1
+                player_row["loss_streak"] = 0
+                opp_row["losses"] += 1
+                opp_row["win_streak"] = 0
+                opp_row["loss_streak"] += 1
+            elif outcome == "loss":
+                new_opp, new_player = update_elo(opp_row["rating"], player_row["rating"])
+                player_row["losses"] += 1
+                player_row["loss_streak"] += 1
+                player_row["win_streak"] = 0
+                opp_row["wins"] += 1
+                opp_row["win_streak"] += 1
+                opp_row["loss_streak"] = 0
+            else:  # draw
+                new_player = player_row["rating"]
+                new_opp = opp_row["rating"]
+                player_row["draws"] += 1
+                opp_row["draws"] += 1
+
+            player_row["rating"] = new_player
+            opp_row["rating"] = new_opp
+            player_row["games_played"] += 1
+            opp_row["games_played"] += 1
+
+        if not emit_db_rows:
+            return
+
+        # Emit one DB row per player per game.
+        # Use first event for game-level metadata; per-player outcome from their events.
+        first = events[0] if events else None
+        if not first:
+            return
+        game_id = first["game_id"]
+        tournament_id = first.get("tournament_id") or ""
+        game_date = first.get("game_date")
+        opponent_count = first.get("opponent_count") or (len(players_in_game) - 1)
+
+        # Collect per-player outcome from the events (win > draw > loss).
+        player_outcomes: dict[str, str] = {}
+        for e in events:
+            pid = e["player_id"]
+            if e["outcome"] in ("win",):
+                player_outcomes[pid] = "win"
+            elif e["outcome"] == "draw" and player_outcomes.get(pid) != "win":
+                player_outcomes[pid] = "draw"
+            elif e["outcome"] == "loss" and pid not in player_outcomes:
+                player_outcomes[pid] = "loss"
+
+        # Collect entry_id per player (first occurrence wins).
+        player_entry_ids: dict[str, str] = {}
+        for e in events:
+            pid = e["player_id"]
+            if pid not in player_entry_ids:
+                player_entry_ids[pid] = e.get("entry_id") or pid
+
+        # region_type/region_key from the first matched key.
+        sample_key = next((pid_to_key[p] for p in players_in_game if p in pid_to_key), None)
+        region_type = sample_key[0] if sample_key else GLOBAL_REGION_TYPE
+        region_key = sample_key[1] if sample_key else GLOBAL_REGION_KEY
+
+        for pid in players_in_game:
+            key = pid_to_key.get(pid)
+            if not key or pid not in rating_before:
+                continue
+            before = rating_before[pid]
+            after = float(player_ratings[key]["rating"])
+            result = player_outcomes.get(pid, "loss")
+            actual = 1.0 if result == "win" else (0.5 if result == "draw" else 0.0)
+            # Expected score = sum of pairwise win probabilities vs each opponent
+            expected = sum(
+                elo_probability(before, rating_before[opp])
+                for opp in players_in_game
+                if opp != pid and opp in rating_before
+            )
+            db_event_rows.append(
+                {
+                    "region_type": region_type,
+                    "region_key": region_key,
+                    "game_id": game_id,
+                    "tournament_id": tournament_id,
+                    "player_id": pid,
+                    "entry_id": player_entry_ids.get(pid, pid),
+                    "game_date": game_date,
+                    "game_result": result,
+                    "is_draw": result == "draw",
+                    "opponent_count": opponent_count,
+                    "expected_score": round(expected, 6),
+                    "actual_score": round(actual, 6),
+                    "rating_before": round(before, 6),
+                    "rating_delta": round(after - before, 6),
+                    "rating_after": round(after, 6),
+                }
+            )
+
+    for gid, events in events_by_game.items():
+        _apply_game(events, emit_db_rows=bool(gid))
+
+    # Legacy/fallback: rows without game_id — apply but don't emit DB rows (missing required columns).
+    if no_game_id:
+        _apply_game(no_game_id, emit_db_rows=False)
+
+    return db_event_rows
 
 
 def claim_job(client: SupabaseClient, job_id: str, github_run_id: int) -> bool:
@@ -541,6 +676,102 @@ def fetch_distinct_entry_ids(
         },
     )
     return {r["player_id"] for r in rows}
+
+
+def _rpc_fetch_all(
+    client: SupabaseClient,
+    function_name: str,
+    payload: dict[str, Any] | None = None,
+    limit: int = 1000,
+) -> list[dict[str, Any]]:
+    """Paginate through a PostgREST RPC that accepts p_limit / p_offset."""
+    rows: list[dict[str, Any]] = []
+    offset = 0
+    endpoint = f"{client.url}/rest/v1/rpc/{function_name}"
+    while True:
+        page_payload = {**(payload or {}), "p_limit": limit, "p_offset": offset}
+        response = requests.post(endpoint, json=page_payload, headers=client.headers, timeout=600)
+        if response.status_code >= 400:
+            raise RuntimeError(f"RPC {function_name} failed: {response.status_code} {response.text}")
+        page = response.json()
+        if not page:
+            break
+        rows.extend(page)
+        if len(page) < limit:
+            break
+        offset += limit
+        print(f"Fetched {len(rows):,} rows from {function_name}", flush=True)
+    return rows
+
+
+def fetch_elo_watermark(client: SupabaseClient) -> str | None:
+    """Return the max game_date in global_elo_game_events, or None if the table is empty."""
+    rows = client.select(
+        "global_elo_game_events",
+        {
+            "select": "game_date",
+            "region_type": "eq.global",
+            "order": "game_date.desc",
+            "limit": "1",
+        },
+    )
+    return rows[0]["game_date"] if rows else None
+
+
+def load_ratings_from_snapshot(
+    client: SupabaseClient,
+    watermark: str,
+) -> dict[tuple[str, str, str], dict[str, Any]]:
+    """Load per-player Elo ratings as they stood just before *watermark* using the snapshot RPC."""
+    rows = _rpc_fetch_all(
+        client,
+        "get_global_elo_snapshot_before",
+        {"cutoff": watermark},
+    )
+    ratings: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for row in rows:
+        player_id = row.get("player_id")
+        if not player_id:
+            continue
+        key: tuple[str, str, str] = (GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY, str(player_id))
+        ratings[key] = {
+            "player_id": str(player_id),
+            "region_type": GLOBAL_REGION_TYPE,
+            "region_key": GLOBAL_REGION_KEY,
+            "rating": float(row.get("rating") or DEFAULT_RATING),
+            "games_played": int(row.get("games_played") or 0),
+            "wins": int(row.get("wins") or 0),
+            "draws": int(row.get("draws") or 0),
+            "losses": int(row.get("losses") or 0),
+            "win_streak": 0,
+            "loss_streak": 0,
+        }
+    return ratings
+
+
+def fetch_participants_since(
+    client: SupabaseClient,
+    since: str,
+    direct: DirectPostgresClient | None = None,
+) -> list[dict[str, Any]]:
+    """Fetch game participants for games played on or after *since* (ISO date/datetime string)."""
+    if direct is not None:
+        return direct.select(
+            "global_elo_game_results",
+            {
+                "start_date": f"gte.{since}",
+                "result": "neq.bye",
+            },
+        )
+    return fetch_all(
+        client,
+        "global_elo_game_results",
+        {
+            "select": "game_id,entry_id,player_id,tournament_id,start_date,seat_position,result,is_draw",
+            "start_date": f"gte.{since}",
+            "result": "neq.bye",
+        },
+    )
 
 
 def fetch_distinct_commander_ids(
@@ -937,11 +1168,6 @@ def main() -> None:
         action="store_true",
         help="Force full refresh even when job_id is specified",
     )
-    parser.add_argument(
-        "--include-game-events",
-        action="store_true",
-        help="Also upsert game events to global_elo_game_events (expensive; off by default)",
-    )
     args = parser.parse_args()
 
     apply = args.apply
@@ -992,28 +1218,39 @@ def main() -> None:
             fail_job(client, job_id, "Dry-run mode")
         sys.exit(0)
 
-    print("Fetching participants for leaderboard...")
-    update_job_heartbeat(client, job_id)
-    participant_rows = fetch_participants_for_leaderboard(client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS, direct=direct)
-    update_job_heartbeat(client, job_id)
-    print(f"Found {len(participant_rows)} participant rows")
-
-    print("Fetching distinct players for global ratings...")
-    player_ids = fetch_distinct_entry_ids(client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS, direct=direct)
-    print(f"Found {len(player_ids)} distinct players")
-
-    # Build ratings dict
-    player_ratings: dict[tuple[str, str, str], dict[str, Any]] = {}
-    for player_id in player_ids:
-        key = (GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY, player_id)
-        player_ratings[key] = create_empty_ratings_row(player_id, GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY)
-
+    # Incremental or cold-start: choose participant fetch strategy based on watermark.
+    print("Checking event-log watermark for incremental mode...")
+    watermark = fetch_elo_watermark(client)
     update_job_heartbeat(client, job_id)
 
-    # Process results and update ratings
+    if watermark:
+        print(f"Watermark found: {watermark} — loading snapshot and fetching new games only")
+        player_ratings = load_ratings_from_snapshot(client, watermark)
+        print(f"Loaded {len(player_ratings):,} player ratings from snapshot")
+        update_job_heartbeat(client, job_id)
+        print(f"Fetching new participants since {watermark}...")
+        participant_rows = fetch_participants_since(client, watermark, direct=direct)
+    else:
+        print("No watermark — cold start: building ratings from full game history")
+        participant_rows = fetch_participants_for_leaderboard(
+            client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS, direct=direct
+        )
+        update_job_heartbeat(client, job_id)
+        player_ids = fetch_distinct_entry_ids(
+            client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS, direct=direct
+        )
+        player_ratings = {}
+        for pid in player_ids:
+            key = (GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY, pid)
+            player_ratings[key] = create_empty_ratings_row(pid, GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY)
+
+    print(f"Found {len(participant_rows):,} participant rows to process")
+    update_job_heartbeat(client, job_id)
+
+    # Process results and update ratings; collect game event rows for upsert.
     print("Processing results for global ratings...")
     game_events = process_results(participant_rows)
-    update_ratings_with_games(player_ratings, game_events)
+    db_event_rows = update_ratings_with_games(player_ratings, game_events)
 
     update_job_heartbeat(client, job_id)
 
@@ -1090,26 +1327,21 @@ def main() -> None:
 
     update_job_heartbeat(client, job_id)
 
-    # Record game events (skipped by default — 1M+ row upsert via REST is too slow for daily runs)
-    if args.include_game_events:
-        print("Recording game events...")
-        event_rows = [
-            {
-                "entry_id": e["entry_id"],
-                "opp_entry_id": e["opp_entry_id"],
-                "outcome": e["outcome"],
-            }
-            for e in game_events
-        ]
-        if event_rows:
+    # Upsert game events — always written; uses DirectPostgres bulk path when available.
+    print(f"Recording {len(db_event_rows):,} game events...")
+    if db_event_rows:
+        if direct is not None:
+            direct.upsert(
+                "global_elo_game_events",
+                db_event_rows,
+                on_conflict="region_type,region_key,game_id,player_id",
+            )
+        else:
             client.upsert(
                 "global_elo_game_events",
-                event_rows,
-                on_conflict="",
+                db_event_rows,
+                on_conflict="region_type,region_key,game_id,player_id",
             )
-    else:
-        event_rows = []
-        print("Skipping game events upsert (use --include-game-events to enable)")
 
     update_job_heartbeat(client, job_id)
 
@@ -1125,7 +1357,7 @@ def main() -> None:
     metrics = JobMetrics(
         ratings_count=len(ratings_to_upsert),
         state_activity_count=len(active),
-        game_events_count=len(event_rows),
+        game_events_count=len(db_event_rows),
         leaderboard_count=len(all_leaderboard_rows),
         profile_count=len(profiles),
         commander_profile_count=0,
