@@ -161,17 +161,16 @@ class FetchDistinctCommanderIdsTests(TestCase):
         self.assertEqual(result, {"abc123"})
 
 
-class GameEventsUpsertFlagTests(TestCase):
-    """--include-game-events guards the 1M+ row upsert that was timing out the cron runner.
-
-    Without the flag, global_elo_game_events must NOT be written. With the flag, it must be.
-    """
+class GameEventsAlwaysWrittenTests(TestCase):
+    """Game events are always written to global_elo_game_events (no flag required)."""
 
     _ENV = {"SUPABASE_URL": "https://test.supabase.co", "SUPABASE_SERVICE_KEY": "test-key"}
 
-    def _run_main(self, extra_argv: list) -> Mock:
+    def _run_main(self) -> Mock:
         """Run main() with --apply and return the SupabaseClient mock."""
-        argv = ["regional_elo.py", "--apply"] + extra_argv
+        argv = ["regional_elo.py", "--apply"]
+        # update_ratings_with_games now returns db_event_rows
+        fake_db_rows = [{"region_type": "global", "region_key": "ALL", "game_id": "g1", "player_id": "p1"}]
         with patch.object(sys, "argv", argv):
             with patch.dict(os.environ, self._ENV, clear=False):
                 with patch("regional_elo.SupabaseClient") as mock_cls:
@@ -179,30 +178,25 @@ class GameEventsUpsertFlagTests(TestCase):
                     mock_cls.return_value = mock_client
                     mock_client.upsert.return_value = None
                     mock_client.update.return_value = []
-                    with patch("regional_elo.fetch_participants_for_leaderboard", return_value=[]):
-                        with patch("regional_elo.fetch_distinct_entry_ids", return_value=set()):
-                            with patch("regional_elo.process_results", return_value=[{"entry_id": "e1", "opp_entry_id": "e2", "outcome": "win"}]):
-                                with patch("regional_elo.update_ratings_with_games"):
-                                    with patch("regional_elo.fetch_player_index", return_value={}):
-                                        with patch("regional_elo.fetch_topdeck_elo_by_topdeck_id", return_value={}):
-                                            with patch("regional_elo.fetch_primary_state_stats", return_value={}):
-                                                with patch("regional_elo.build_active_leaderboard_rows", return_value=[]):
-                                                    with patch("regional_elo.upsert_active_leaderboard_rows"):
-                                                        with patch("regional_elo.delete_stale_active_leaderboard_rows"):
-                                                            with patch("regional_elo.build_player_profiles", return_value=[]):
-                                                                with patch("regional_elo.detect_active_players", return_value=[]):
-                                                                    with patch("regional_elo.refresh_materialized_views", return_value=0):
-                                                                        regional_elo.main()
+                    with patch("regional_elo.fetch_elo_watermark", return_value=None):
+                        with patch("regional_elo.fetch_participants_for_leaderboard", return_value=[]):
+                            with patch("regional_elo.fetch_distinct_entry_ids", return_value=set()):
+                                with patch("regional_elo.process_results", return_value=[]):
+                                    with patch("regional_elo.update_ratings_with_games", return_value=fake_db_rows):
+                                        with patch("regional_elo.fetch_player_index", return_value={}):
+                                            with patch("regional_elo.fetch_topdeck_elo_by_topdeck_id", return_value={}):
+                                                with patch("regional_elo.fetch_primary_state_stats", return_value={}):
+                                                    with patch("regional_elo.build_active_leaderboard_rows", return_value=[]):
+                                                        with patch("regional_elo.upsert_active_leaderboard_rows"):
+                                                            with patch("regional_elo.delete_stale_active_leaderboard_rows"):
+                                                                with patch("regional_elo.build_player_profiles", return_value=[]):
+                                                                    with patch("regional_elo.detect_active_players", return_value=[]):
+                                                                        with patch("regional_elo.refresh_materialized_views", return_value=0):
+                                                                            regional_elo.main()
                     return mock_client
 
-    def test_game_events_upsert_skipped_by_default(self) -> None:
-        mock_client = self._run_main([])
-
-        upsert_tables = [call.args[0] for call in mock_client.upsert.call_args_list]
-        self.assertNotIn("global_elo_game_events", upsert_tables)
-
-    def test_game_events_upsert_runs_with_flag(self) -> None:
-        mock_client = self._run_main(["--include-game-events"])
+    def test_game_events_always_upserted(self) -> None:
+        mock_client = self._run_main()
 
         upsert_tables = [call.args[0] for call in mock_client.upsert.call_args_list]
         self.assertIn("global_elo_game_events", upsert_tables)
@@ -218,12 +212,28 @@ class ProcessResultsTests(TestCase):
         ]
         events = regional_elo.process_results(rows)
         self.assertEqual(len(events), 2)
-        pairs = {frozenset([e["entry_id"], e["opp_entry_id"]]) for e in events}
+        # player_id falls back to entry_id when player_id is absent
+        pairs = {frozenset([e["player_id"], e["opp_player_id"]]) for e in events}
         self.assertIn(frozenset(["e1", "e2"]), pairs)
         self.assertIn(frozenset(["e3", "e4"]), pairs)
         # No cross-game pairs
         self.assertNotIn(frozenset(["e1", "e3"]), pairs)
         self.assertNotIn(frozenset(["e1", "e4"]), pairs)
+
+    def test_events_carry_game_metadata(self) -> None:
+        rows = [
+            {"game_id": "g1", "tournament_id": "t1", "start_date": "2026-01-01",
+             "entry_id": "e1", "result": "win",  "seat_position": 1, "rating": 1500},
+            {"game_id": "g1", "tournament_id": "t1", "start_date": "2026-01-01",
+             "entry_id": "e2", "result": "loss", "seat_position": 2, "rating": 1500},
+        ]
+        events = regional_elo.process_results(rows)
+        self.assertEqual(len(events), 1)
+        e = events[0]
+        self.assertEqual(e["game_id"], "g1")
+        self.assertEqual(e["tournament_id"], "t1")
+        self.assertEqual(e["game_date"], "2026-01-01")
+        self.assertEqual(e["opponent_count"], 1)
 
     def test_does_not_explode_at_scale(self) -> None:
         # 1000 rows across 250 4-player games → ~750 events (3 per game), not millions
@@ -252,13 +262,127 @@ class ProcessResultsTests(TestCase):
 class UpdateRatingsTests(TestCase):
     def test_reverse_lookup_updates_correctly(self) -> None:
         ratings = {
-            ("global", "global", "e1"): regional_elo.create_empty_ratings_row("e1", "global", "global"),
-            ("global", "global", "e2"): regional_elo.create_empty_ratings_row("e2", "global", "global"),
+            ("global", "ALL", "p1"): regional_elo.create_empty_ratings_row("p1", "global", "ALL"),
+            ("global", "ALL", "p2"): regional_elo.create_empty_ratings_row("p2", "global", "ALL"),
         }
-        events = [{"entry_id": "e1", "opp_entry_id": "e2", "outcome": "win"}]
-        regional_elo.update_ratings_with_games(ratings, events)
-        self.assertEqual(ratings[("global", "global", "e1")]["wins"], 1)
-        self.assertEqual(ratings[("global", "global", "e2")]["losses"], 1)
+        events = [
+            {
+                "player_id": "p1", "opp_player_id": "p2", "entry_id": "e1",
+                "outcome": "win", "game_id": "g1", "tournament_id": "t1",
+                "game_date": "2026-01-01", "is_draw": False, "opponent_count": 1,
+            }
+        ]
+        db_rows = regional_elo.update_ratings_with_games(ratings, events)
+        self.assertEqual(ratings[("global", "ALL", "p1")]["wins"], 1)
+        self.assertEqual(ratings[("global", "ALL", "p2")]["losses"], 1)
+
+    def test_returns_game_event_rows_with_rating_fields(self) -> None:
+        ratings = {
+            ("global", "ALL", "p1"): regional_elo.create_empty_ratings_row("p1", "global", "ALL"),
+            ("global", "ALL", "p2"): regional_elo.create_empty_ratings_row("p2", "global", "ALL"),
+        }
+        events = [
+            {
+                "player_id": "p1", "opp_player_id": "p2", "entry_id": "e1",
+                "outcome": "win", "game_id": "g1", "tournament_id": "t1",
+                "game_date": "2026-01-01", "is_draw": False, "opponent_count": 1,
+            }
+        ]
+        db_rows = regional_elo.update_ratings_with_games(ratings, events)
+        self.assertEqual(len(db_rows), 2)
+        by_player = {r["player_id"]: r for r in db_rows}
+        self.assertIn("p1", by_player)
+        self.assertIn("p2", by_player)
+        winner = by_player["p1"]
+        loser = by_player["p2"]
+        self.assertEqual(winner["game_result"], "win")
+        self.assertEqual(loser["game_result"], "loss")
+        self.assertGreater(winner["rating_after"], winner["rating_before"])
+        self.assertLess(loser["rating_after"], loser["rating_before"])
+        self.assertAlmostEqual(winner["rating_delta"], winner["rating_after"] - winner["rating_before"], places=5)
+        self.assertEqual(winner["game_id"], "g1")
+        self.assertEqual(winner["region_type"], "global")
+
+
+class FetchEloWatermarkTests(TestCase):
+    def test_returns_game_date_when_rows_exist(self) -> None:
+        client = Mock()
+        client.select.return_value = [{"game_date": "2026-05-11T16:00:00+00:00"}]
+
+        result = regional_elo.fetch_elo_watermark(client)
+
+        self.assertEqual(result, "2026-05-11T16:00:00+00:00")
+        client.select.assert_called_once_with(
+            "global_elo_game_events",
+            {
+                "select": "game_date",
+                "region_type": "eq.global",
+                "order": "game_date.desc",
+                "limit": "1",
+            },
+        )
+
+    def test_returns_none_when_table_empty(self) -> None:
+        client = Mock()
+        client.select.return_value = []
+
+        result = regional_elo.fetch_elo_watermark(client)
+
+        self.assertIsNone(result)
+
+
+class LoadRatingsFromSnapshotTests(TestCase):
+    @patch("regional_elo._rpc_fetch_all")
+    def test_builds_ratings_dict_from_rpc_rows(self, mock_rpc: Mock) -> None:
+        mock_rpc.return_value = [
+            {"player_id": "abc-123", "rating": 1650.5, "games_played": 20,
+             "wins": 10, "draws": 2, "losses": 8, "last_game_date": "2026-01-01"},
+        ]
+        client = Mock()
+
+        result = regional_elo.load_ratings_from_snapshot(client, "2026-01-02T00:00:00Z")
+
+        key = (regional_elo.GLOBAL_REGION_TYPE, regional_elo.GLOBAL_REGION_KEY, "abc-123")
+        self.assertIn(key, result)
+        row = result[key]
+        self.assertAlmostEqual(row["rating"], 1650.5)
+        self.assertEqual(row["wins"], 10)
+        self.assertEqual(row["games_played"], 20)
+
+    @patch("regional_elo._rpc_fetch_all")
+    def test_skips_rows_without_player_id(self, mock_rpc: Mock) -> None:
+        mock_rpc.return_value = [
+            {"player_id": None, "rating": 1500},
+            {"player_id": "p1", "rating": 1500},
+        ]
+        client = Mock()
+
+        result = regional_elo.load_ratings_from_snapshot(client, "2026-01-01T00:00:00Z")
+
+        self.assertEqual(len(result), 1)
+
+
+class FetchParticipantsSinceTests(TestCase):
+    @patch("regional_elo.fetch_all")
+    def test_rest_path_uses_gte_filter(self, mock_fetch_all: Mock) -> None:
+        mock_fetch_all.return_value = []
+        client = Mock()
+
+        regional_elo.fetch_participants_since(client, "2026-05-11T16:00:00+00:00", direct=None)
+
+        params = mock_fetch_all.call_args[0][2]
+        self.assertIn("start_date", params)
+        self.assertTrue(params["start_date"].startswith("gte."))
+        self.assertIn("neq.bye", params.get("result", ""))
+
+    def test_direct_path_uses_gte_filter(self) -> None:
+        direct = Mock()
+        direct.select.return_value = []
+
+        regional_elo.fetch_participants_since(Mock(), "2026-05-11", direct=direct)
+
+        params = direct.select.call_args[0][1]
+        self.assertTrue(params["start_date"].startswith("gte."))
 
 
 if __name__ == "__main__":
