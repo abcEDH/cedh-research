@@ -813,6 +813,53 @@ def build_player_profiles(
     return [r for r in player_rows if r.get("player_id") in recent_set]
 
 
+UNKNOWN_COMMANDER_NAME = "Unknown Commander"
+
+
+def build_primary_commanders(client: SupabaseClient) -> dict[str, tuple[str, float]]:
+    """Return {player_id: (commander_name, known_pct)} for players where known_pct >= 0.5.
+
+    Queries tournament_entries joined to commanders, groups by player_id +
+    commander_name, picks the most-played known commander per player, and
+    computes known_pct = known_entries / total_entries.  Players whose
+    known_pct falls below 0.5 are omitted from the result.
+    """
+    # Fetch all entries with their joined commander name
+    rows = fetch_all(
+        client,
+        "tournament_entries",
+        {"select": "player_id,commander_id,commanders(name)"},
+    )
+
+    # Tally per-player counts
+    total_by_player: dict[str, int] = defaultdict(int)
+    known_by_player: dict[str, int] = defaultdict(int)
+    commander_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+
+    for row in rows:
+        pid = row.get("player_id")
+        if not pid:
+            continue
+        total_by_player[pid] += 1
+        commander_data = row.get("commanders") or {}
+        name = commander_data.get("name") if isinstance(commander_data, dict) else None
+        if name and name != UNKNOWN_COMMANDER_NAME:
+            known_by_player[pid] += 1
+            commander_counts[pid][name] += 1
+
+    result: dict[str, tuple[str, float]] = {}
+    for pid, known_count in known_by_player.items():
+        total = total_by_player[pid]
+        known_pct = known_count / total if total > 0 else 0.0
+        if known_pct < 0.5:
+            continue
+        # Pick the most-played known commander; break ties alphabetically
+        primary = max(commander_counts[pid].items(), key=lambda kv: (kv[1], kv[0]))[0]
+        result[pid] = (primary, round(known_pct, 4))
+
+    return result
+
+
 def detect_active_players(
     client: SupabaseClient, lookback_months: int = ACTIVE_PLAYER_LOOKBACK_MONTHS
 ) -> list[dict[str, Any]]:
@@ -1301,6 +1348,22 @@ def main() -> None:
     # Build player profiles
     print("Building player profiles...")
     profiles = build_player_profiles(ratings_to_upsert)
+
+    # Enrich profiles with primary commander data
+    print("Building primary commanders...")
+    primary_commanders = build_primary_commanders(client)
+    commander_profile_count = 0
+    for profile in profiles:
+        pid = profile.get("player_id")
+        if pid and pid in primary_commanders:
+            name, known_pct = primary_commanders[pid]
+            profile["primary_commander_name"] = name
+            profile["primary_commander_known_pct"] = known_pct
+            commander_profile_count += 1
+        else:
+            profile["primary_commander_name"] = None
+            profile["primary_commander_known_pct"] = None
+
     if profiles:
         client.upsert(
             "global_elo_player_profile_summaries",
@@ -1360,7 +1423,7 @@ def main() -> None:
         game_events_count=len(db_event_rows),
         leaderboard_count=len(all_leaderboard_rows),
         profile_count=len(profiles),
-        commander_profile_count=0,
+        commander_profile_count=commander_profile_count,
         duration_seconds=duration,
     )
 

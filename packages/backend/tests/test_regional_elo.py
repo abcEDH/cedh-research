@@ -190,9 +190,10 @@ class GameEventsAlwaysWrittenTests(TestCase):
                                                         with patch("regional_elo.upsert_active_leaderboard_rows"):
                                                             with patch("regional_elo.delete_stale_active_leaderboard_rows"):
                                                                 with patch("regional_elo.build_player_profiles", return_value=[]):
-                                                                    with patch("regional_elo.detect_active_players", return_value=[]):
-                                                                        with patch("regional_elo.refresh_materialized_views", return_value=0):
-                                                                            regional_elo.main()
+                                                                    with patch("regional_elo.build_primary_commanders", return_value={}):
+                                                                        with patch("regional_elo.detect_active_players", return_value=[]):
+                                                                            with patch("regional_elo.refresh_materialized_views", return_value=0):
+                                                                                regional_elo.main()
                     return mock_client
 
     def test_game_events_always_upserted(self) -> None:
@@ -383,6 +384,106 @@ class FetchParticipantsSinceTests(TestCase):
 
         params = direct.select.call_args[0][1]
         self.assertTrue(params["start_date"].startswith("gte."))
+
+
+class BuildPrimaryCommandersTests(TestCase):
+    """Tests for build_primary_commanders()."""
+
+    def _make_row(self, player_id: str, commander_name: str | None) -> dict:
+        return {
+            "player_id": player_id,
+            "commander_id": "some-uuid",
+            "commanders": {"name": commander_name} if commander_name else None,
+        }
+
+    @patch("regional_elo.fetch_all")
+    def test_returns_most_played_known_commander(self, mock_fetch_all: Mock) -> None:
+        """Player with 3 known entries (2 A, 1 B) → primary is A."""
+        mock_fetch_all.return_value = [
+            self._make_row("p1", "Thrasios, Triton Hero"),
+            self._make_row("p1", "Thrasios, Triton Hero"),
+            self._make_row("p1", "Najeela, the Blade-Blossom"),
+        ]
+        result = regional_elo.build_primary_commanders(Mock())
+        self.assertIn("p1", result)
+        self.assertEqual(result["p1"][0], "Thrasios, Triton Hero")
+
+    @patch("regional_elo.fetch_all")
+    def test_known_pct_computed_correctly(self, mock_fetch_all: Mock) -> None:
+        """4 entries, 3 known → known_pct = 0.75."""
+        mock_fetch_all.return_value = [
+            self._make_row("p1", "Najeela, the Blade-Blossom"),
+            self._make_row("p1", "Najeela, the Blade-Blossom"),
+            self._make_row("p1", "Najeela, the Blade-Blossom"),
+            self._make_row("p1", regional_elo.UNKNOWN_COMMANDER_NAME),
+        ]
+        result = regional_elo.build_primary_commanders(Mock())
+        self.assertIn("p1", result)
+        self.assertAlmostEqual(result["p1"][1], 0.75)
+
+    @patch("regional_elo.fetch_all")
+    def test_excludes_players_below_0_5_threshold(self, mock_fetch_all: Mock) -> None:
+        """Player with only 1 known out of 3 total (0.33) should be omitted."""
+        mock_fetch_all.return_value = [
+            self._make_row("p1", "Najeela, the Blade-Blossom"),
+            self._make_row("p1", regional_elo.UNKNOWN_COMMANDER_NAME),
+            self._make_row("p1", regional_elo.UNKNOWN_COMMANDER_NAME),
+        ]
+        result = regional_elo.build_primary_commanders(Mock())
+        self.assertNotIn("p1", result)
+
+    @patch("regional_elo.fetch_all")
+    def test_excludes_unknown_commander_from_primary(self, mock_fetch_all: Mock) -> None:
+        """Unknown Commander entries are never chosen as the primary commander."""
+        mock_fetch_all.return_value = [
+            self._make_row("p1", regional_elo.UNKNOWN_COMMANDER_NAME),
+            self._make_row("p1", regional_elo.UNKNOWN_COMMANDER_NAME),
+            self._make_row("p1", "Tymna the Weaver"),
+        ]
+        # known_pct = 1/3 ≈ 0.33 → below threshold, omitted
+        result = regional_elo.build_primary_commanders(Mock())
+        self.assertNotIn("p1", result)
+
+    @patch("regional_elo.fetch_all")
+    def test_excludes_entries_with_null_commander(self, mock_fetch_all: Mock) -> None:
+        """Entries with no commander data do not count as known."""
+        mock_fetch_all.return_value = [
+            self._make_row("p1", None),
+            self._make_row("p1", None),
+            self._make_row("p1", "Kenrith, the Returned King"),
+        ]
+        # known_pct = 1/3 → below 0.5, omitted
+        result = regional_elo.build_primary_commanders(Mock())
+        self.assertNotIn("p1", result)
+
+    @patch("regional_elo.fetch_all")
+    def test_multiple_players_independent(self, mock_fetch_all: Mock) -> None:
+        """Each player's primary commander is computed independently."""
+        mock_fetch_all.return_value = [
+            self._make_row("p1", "Thrasios, Triton Hero"),
+            self._make_row("p1", "Thrasios, Triton Hero"),
+            self._make_row("p2", "Najeela, the Blade-Blossom"),
+            self._make_row("p2", "Najeela, the Blade-Blossom"),
+        ]
+        result = regional_elo.build_primary_commanders(Mock())
+        self.assertEqual(result["p1"][0], "Thrasios, Triton Hero")
+        self.assertEqual(result["p2"][0], "Najeela, the Blade-Blossom")
+
+    @patch("regional_elo.fetch_all")
+    def test_passes_correct_table_and_select(self, mock_fetch_all: Mock) -> None:
+        """fetch_all is called with tournament_entries and the right select param."""
+        mock_fetch_all.return_value = []
+        regional_elo.build_primary_commanders(Mock())
+        table_arg = mock_fetch_all.call_args[0][1]
+        params_arg = mock_fetch_all.call_args[0][2]
+        self.assertEqual(table_arg, "tournament_entries")
+        self.assertIn("commanders(name)", params_arg.get("select", ""))
+
+    @patch("regional_elo.fetch_all")
+    def test_empty_input_returns_empty_dict(self, mock_fetch_all: Mock) -> None:
+        mock_fetch_all.return_value = []
+        result = regional_elo.build_primary_commanders(Mock())
+        self.assertEqual(result, {})
 
 
 if __name__ == "__main__":
