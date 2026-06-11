@@ -141,6 +141,11 @@ class SupabaseClient:
     def __init__(self, url: str, service_key: str):
         self._client: Client = create_client(url, service_key)
         self.url = url
+        self.headers = {
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+            "Content-Type": "application/json",
+        }
 
     # ------------------------------------------------------------------
     # Public interface (unchanged signatures)
