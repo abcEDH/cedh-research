@@ -284,7 +284,7 @@ class DirectPostgresClient:
 
         self.connect()
         with self._conn.cursor() as cursor:
-            psycopg2.extras.execute_values(cursor, sql, [(tuple(d.values()) for d in data)], page_size=1000)
+            psycopg2.extras.execute_values(cursor, sql, [tuple(d.values()) for d in data], page_size=1000)
             self._conn.commit()
             results = cursor.fetchall()
             col_names = [desc[0] for desc in cursor.description]
