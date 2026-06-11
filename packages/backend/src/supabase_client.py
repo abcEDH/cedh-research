@@ -140,6 +140,7 @@ class SupabaseClient:
 
     def __init__(self, url: str, service_key: str):
         self._client: Client = create_client(url, service_key)
+        self.url = url
 
     # ------------------------------------------------------------------
     # Public interface (unchanged signatures)
