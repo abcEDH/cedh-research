@@ -285,6 +285,7 @@ def _process_one_game(
         for opp_rating, opp_seat, opp_standing in standings:
             if opp_rating > rating or (opp_rating == rating and opp_seat < seat):
                 opp_player_id = opp_standing["id"]
+                opp_entry_id = opp_standing.get("entry_id", opp_player_id)
 
                 if is_winner and not opp_standing["wins"] >= 1:
                     outcome = "win"
@@ -301,6 +302,7 @@ def _process_one_game(
                             "player_id": player_id,
                             "opp_player_id": opp_player_id,
                             "entry_id": entry_id,
+                            "opp_entry_id": opp_entry_id,
                             "outcome": outcome,
                             "is_draw": is_draw,
                             "game_id": game_id,
@@ -469,11 +471,16 @@ def update_ratings_with_games(
                 player_outcomes[pid] = "loss"
 
         # Collect entry_id per player (first occurrence wins).
+        # Both player_id and opp_player_id need entry_ids — the top-rated player in a
+        # game only ever appears as opp_player_id and would otherwise fall back to pid.
         player_entry_ids: dict[str, str] = {}
         for e in events:
             pid = e["player_id"]
             if pid not in player_entry_ids:
                 player_entry_ids[pid] = e.get("entry_id") or pid
+            opp_pid = e["opp_player_id"]
+            if opp_pid not in player_entry_ids:
+                player_entry_ids[opp_pid] = e.get("opp_entry_id") or opp_pid
 
         # region_type/region_key from the first matched key.
         sample_key = next((pid_to_key[p] for p in players_in_game if p in pid_to_key), None)
