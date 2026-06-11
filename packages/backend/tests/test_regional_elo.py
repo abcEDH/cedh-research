@@ -186,7 +186,8 @@ class GameEventsAlwaysWrittenTests(TestCase):
                                         with patch("regional_elo.fetch_player_index", return_value={}):
                                             with patch("regional_elo.fetch_topdeck_elo_by_topdeck_id", return_value={}):
                                                 with patch("regional_elo.fetch_primary_state_stats", return_value={}):
-                                                    with patch("regional_elo.build_active_leaderboard_rows", return_value=[]):
+                                                    with patch("regional_elo.fetch_canonical_event_counts", return_value={}):
+                                                      with patch("regional_elo.build_active_leaderboard_rows", return_value=[]):
                                                         with patch("regional_elo.upsert_active_leaderboard_rows"):
                                                             with patch("regional_elo.delete_stale_active_leaderboard_rows"):
                                                                 with patch("regional_elo.build_player_profiles", return_value=[]):
@@ -484,6 +485,93 @@ class BuildPrimaryCommandersTests(TestCase):
         mock_fetch_all.return_value = []
         result = regional_elo.build_primary_commanders(Mock())
         self.assertEqual(result, {})
+
+
+class CanonicalEventCountsTests(TestCase):
+    """Tests for fetch_canonical_event_counts and canonical path in build_active_leaderboard_rows."""
+
+    @patch("regional_elo.fetch_all")
+    def test_fetch_canonical_event_counts_queries_leaderboard_view(self, mock_fetch_all: Mock) -> None:
+        mock_fetch_all.return_value = [
+            {"player_id": "p1", "games_played": 10, "wins": 5, "losses": 3, "draws": 2},
+        ]
+        result = regional_elo.fetch_canonical_event_counts(Mock())
+        table_arg = mock_fetch_all.call_args[0][1]
+        params_arg = mock_fetch_all.call_args[0][2]
+        self.assertEqual(table_arg, "regional_elo_leaderboard")
+        self.assertIn("games_played", params_arg.get("select", ""))
+        self.assertIn(regional_elo.GLOBAL_REGION_TYPE, str(params_arg.get("region_type", "")))
+        self.assertEqual(result["p1"]["wins"], 5)
+        self.assertEqual(result["p1"]["losses"], 3)
+        self.assertEqual(result["p1"]["draws"], 2)
+
+    @patch("regional_elo.fetch_all")
+    def test_fetch_canonical_event_counts_skips_rows_without_player_id(self, mock_fetch_all: Mock) -> None:
+        mock_fetch_all.return_value = [
+            {"player_id": None, "games_played": 5, "wins": 2, "losses": 2, "draws": 1},
+            {"player_id": "p1", "games_played": 3, "wins": 1, "losses": 1, "draws": 1},
+        ]
+        result = regional_elo.fetch_canonical_event_counts(Mock())
+        self.assertEqual(list(result.keys()), ["p1"])
+
+    def test_build_active_leaderboard_rows_uses_canonical_counts_over_rating_row(self) -> None:
+        rating_row = {
+            "region_type": "global",
+            "region_key": "ALL",
+            "player_id": "p1",
+            "rating": 1600,
+            "games_played": 500,  # stale/overcounted
+            "wins": 300,
+            "losses": 100,
+            "draws": 100,
+        }
+        canonical_counts = {
+            "p1": {"games_played": 50, "wins": 25, "losses": 15, "draws": 10},
+        }
+        player_index = {"p1": {"id": "p1", "name": "Test Player", "topdeck_id": None}}
+
+        rows = regional_elo.build_active_leaderboard_rows(
+            [rating_row],
+            player_index,
+            {},
+            {},
+            "2026-01-01T00:00:00",
+            canonical_counts,
+        )
+
+        global_row = next((r for r in rows if r["region_type"] == "global"), None)
+        self.assertIsNotNone(global_row)
+        self.assertEqual(global_row["games_played"], 50)
+        self.assertEqual(global_row["wins"], 25)
+        self.assertEqual(global_row["losses"], 15)
+        self.assertEqual(global_row["draws"], 10)
+
+    def test_build_active_leaderboard_rows_falls_back_to_rating_row_when_no_canonical(self) -> None:
+        rating_row = {
+            "region_type": "global",
+            "region_key": "ALL",
+            "player_id": "p1",
+            "rating": 1600,
+            "games_played": 42,
+            "wins": 20,
+            "losses": 12,
+            "draws": 10,
+        }
+        player_index = {"p1": {"id": "p1", "name": "Test Player", "topdeck_id": None}}
+
+        rows = regional_elo.build_active_leaderboard_rows(
+            [rating_row],
+            player_index,
+            {},
+            {},
+            "2026-01-01T00:00:00",
+            canonical_counts_by_player=None,
+        )
+
+        global_row = next((r for r in rows if r["region_type"] == "global"), None)
+        self.assertIsNotNone(global_row)
+        self.assertEqual(global_row["games_played"], 42)
+        self.assertEqual(global_row["wins"], 20)
 
 
 if __name__ == "__main__":

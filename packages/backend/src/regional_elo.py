@@ -988,6 +988,7 @@ def build_active_leaderboard_rows(
     topdeck_elo_by_topdeck_id: Mapping[str, float],
     state_stats_by_player: Mapping[str, Mapping[str, Any]],
     updated_at: str,
+    canonical_counts_by_player: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Materialise active leaderboard rows for global, country, and state slices.
 
@@ -1010,10 +1011,17 @@ def build_active_leaderboard_rows(
             continue
 
         rating = _coerce_float(rating_row.get("rating")) or DEFAULT_RATING
-        games_played = int(rating_row.get("games_played") or 0)
-        wins = int(rating_row.get("wins") or 0)
-        draws = int(rating_row.get("draws") or 0)
-        losses = int(rating_row.get("losses") or 0)
+        canonical = (canonical_counts_by_player or {}).get(player_id)
+        if canonical is not None:
+            games_played = int(canonical.get("games_played") or 0)
+            wins = int(canonical.get("wins") or 0)
+            draws = int(canonical.get("draws") or 0)
+            losses = int(canonical.get("losses") or 0)
+        else:
+            games_played = int(rating_row.get("games_played") or 0)
+            wins = int(rating_row.get("wins") or 0)
+            draws = int(rating_row.get("draws") or 0)
+            losses = int(rating_row.get("losses") or 0)
         topdeck_id = player.get("topdeck_id")
         topdeck_elo = topdeck_elo_by_topdeck_id.get(str(topdeck_id)) if topdeck_id else None
 
@@ -1142,6 +1150,36 @@ def fetch_primary_state_stats(client: SupabaseClient) -> dict[str, dict[str, Any
                 row["country_key"] = inferred_country
         by_player[player_id] = row
     return by_player
+
+
+def fetch_canonical_event_counts(client: SupabaseClient) -> dict[str, dict[str, int]]:
+    """Return per-player canonical game counts from the leaderboard view.
+
+    The view aggregates from global_elo_game_events, which is the ground-truth
+    source. Bypasses the stale accumulator columns in global_elo_ratings that
+    drift when full recomputes run multiple times.
+
+    Must be called after game events for the current run have been upserted.
+    """
+    rows = fetch_all(
+        client,
+        "regional_elo_leaderboard",
+        {
+            "select": "player_id,games_played,wins,losses,draws",
+            "region_type": f"eq.{GLOBAL_REGION_TYPE}",
+            "region_key": f"eq.{GLOBAL_REGION_KEY}",
+        },
+    )
+    return {
+        row["player_id"]: {
+            "games_played": int(row.get("games_played") or 0),
+            "wins": int(row.get("wins") or 0),
+            "losses": int(row.get("losses") or 0),
+            "draws": int(row.get("draws") or 0),
+        }
+        for row in rows
+        if row.get("player_id")
+    }
 
 
 def delete_stale_active_leaderboard_rows(client: SupabaseClient, run_marker: str) -> None:
@@ -1313,38 +1351,6 @@ def main() -> None:
 
     update_job_heartbeat(client, job_id)
 
-    # Compute leaderboard - persist global, country, and state slices so
-    # /regional-elo can serve sorted reads (including TopDeck Elo) without a
-    # second query against topdeck_player_elos.
-    print("Computing leaderboard...")
-    print("Loading player directory...")
-    player_index = fetch_player_index(client)
-    print(f"Loaded {len(player_index)} player rows")
-
-    print("Loading TopDeck Elo snapshot...")
-    topdeck_elo_by_topdeck_id = fetch_topdeck_elo_by_topdeck_id(client)
-    print(f"Loaded {len(topdeck_elo_by_topdeck_id)} TopDeck Elo entries")
-
-    print("Loading primary-state activity stats...")
-    state_stats_by_player = fetch_primary_state_stats(client)
-    print(f"Loaded {len(state_stats_by_player)} primary-state stat rows")
-
-    leaderboard_run_marker = utc_now().isoformat()
-    all_leaderboard_rows = build_active_leaderboard_rows(
-        ratings_to_upsert,
-        player_index,
-        topdeck_elo_by_topdeck_id,
-        state_stats_by_player,
-        leaderboard_run_marker,
-    )
-
-    if all_leaderboard_rows:
-        print(f"Upserting {len(all_leaderboard_rows)} active leaderboard rows (global + country + state)...")
-        upsert_active_leaderboard_rows(client, all_leaderboard_rows)
-    delete_stale_active_leaderboard_rows(client, leaderboard_run_marker)
-
-    update_job_heartbeat(client, job_id)
-
     # Build player profiles
     print("Building player profiles...")
     profiles = build_player_profiles(ratings_to_upsert)
@@ -1412,6 +1418,44 @@ def main() -> None:
     print("Refreshing materialized views...")
     mv_count = refresh_materialized_views(client)
     print(f"Refreshed {mv_count}/{len(MATERIALIZED_VIEW_REFRESH_FUNCTIONS)} materialized views.")
+
+    update_job_heartbeat(client, job_id)
+
+    # Compute leaderboard after game events are committed so the view's canonical
+    # counts include the current run. Persist global, country, and state slices so
+    # /regional-elo can serve sorted reads (including TopDeck Elo) without a
+    # second query against topdeck_player_elos.
+    print("Computing leaderboard...")
+    print("Loading player directory...")
+    player_index = fetch_player_index(client)
+    print(f"Loaded {len(player_index)} player rows")
+
+    print("Loading TopDeck Elo snapshot...")
+    topdeck_elo_by_topdeck_id = fetch_topdeck_elo_by_topdeck_id(client)
+    print(f"Loaded {len(topdeck_elo_by_topdeck_id)} TopDeck Elo entries")
+
+    print("Loading primary-state activity stats...")
+    state_stats_by_player = fetch_primary_state_stats(client)
+    print(f"Loaded {len(state_stats_by_player)} primary-state stat rows")
+
+    print("Loading canonical game event counts...")
+    canonical_counts = fetch_canonical_event_counts(client)
+    print(f"Loaded canonical counts for {len(canonical_counts)} players")
+
+    leaderboard_run_marker = utc_now().isoformat()
+    all_leaderboard_rows = build_active_leaderboard_rows(
+        ratings_to_upsert,
+        player_index,
+        topdeck_elo_by_topdeck_id,
+        state_stats_by_player,
+        leaderboard_run_marker,
+        canonical_counts,
+    )
+
+    if all_leaderboard_rows:
+        print(f"Upserting {len(all_leaderboard_rows)} active leaderboard rows (global + country + state)...")
+        upsert_active_leaderboard_rows(client, all_leaderboard_rows)
+    delete_stale_active_leaderboard_rows(client, leaderboard_run_marker)
 
     update_job_heartbeat(client, job_id)
 
