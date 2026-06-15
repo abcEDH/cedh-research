@@ -3,18 +3,28 @@ import types
 from datetime import date, datetime, timezone
 from pathlib import Path
 from unittest import TestCase, main
+from unittest.mock import MagicMock
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.modules["psycopg2"] = None
 
+_real_ingest = sys.modules.get("ingest")
+
 fake_ingest = types.ModuleType("ingest")
 fake_ingest.SUPABASE_REST_BASE = "https://example.supabase.co"
-fake_ingest.SupabaseClient = object
-fake_ingest.load_local_env = lambda: None
+fake_ingest.SupabaseClient = MagicMock
+fake_ingest.load_local_env = MagicMock
 sys.modules["ingest"] = fake_ingest
 
 import rebuild_player_commander_profiles as profiles  # noqa: E402
+
+# Restore the real ingest module so @patch("ingest.X") in other test files
+# targets the real module's namespace, not this stub.
+if _real_ingest is not None:
+    sys.modules["ingest"] = _real_ingest
+else:
+    del sys.modules["ingest"]
 
 
 class RebuildPlayerCommanderProfilesTests(TestCase):
