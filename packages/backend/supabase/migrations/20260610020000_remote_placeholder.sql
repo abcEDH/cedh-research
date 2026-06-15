@@ -1,3 +1,0 @@
--- Remote compatibility placeholder.
--- Kept so databases that applied the earlier June 10 migration filename
--- can reconcile with the active migration chain after the ledger-version fix.
