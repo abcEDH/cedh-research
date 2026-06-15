@@ -77,6 +77,15 @@ def is_known_commander(commander_name: str | None) -> bool:
     return bool(normalized) and normalized != "unknown commander"
 
 
+def normalize_start_date_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    normalized = str(value).strip()
+    return normalized or None
+
+
 def chunked(values: list[Any], size: int) -> list[list[Any]]:
     return [values[index : index + size] for index in range(0, len(values), size)]
 
@@ -191,7 +200,9 @@ def normalize_usage_rows(raw_rows: list[dict[str, Any]]) -> list[dict[str, Any]]
         topdeck_id = row.get("topdeck_id") or (player.get("topdeck_id") if player else None)
         commander_name = row.get("commander_name") or (commander.get("name") if commander else None)
         player_name = row.get("player_name") or (player.get("name") if player else None)
-        start_date = row.get("start_date") or (tournament.get("start_date") if tournament else None)
+        start_date = normalize_start_date_value(
+            row.get("start_date") or (tournament.get("start_date") if tournament else None)
+        )
         topdeck_tid = row.get("topdeck_tid") or (tournament.get("topdeck_tid") if tournament else None)
         tournament_id = row.get("tournament_id") or (tournament.get("id") if tournament else None)
         tournament_name = row.get("tournament_name") or (tournament.get("name") if tournament else None)
@@ -230,7 +241,13 @@ def select_commander_forecast_rows(
     selected: dict[str, list[dict[str, Any]]] = {}
 
     for topdeck_id, player_rows in rows_by_topdeck_id.items():
-        player_rows = [row for row in player_rows if row.get("commander_name") and row.get("start_date")]
+        normalized_rows = []
+        for row in player_rows:
+            start_date = normalize_start_date_value(row.get("start_date"))
+            if row.get("commander_name") and start_date:
+                normalized_rows.append({**row, "start_date": start_date})
+
+        player_rows = normalized_rows
         primary_rows = [row for row in player_rows if row["start_date"] and row["start_date"] >= primary_lookback_start]
         chosen_rows = list(primary_rows)
 
