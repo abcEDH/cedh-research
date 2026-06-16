@@ -8,11 +8,102 @@ on:
       - ".github/workflows/ci-backend.yml"
       - ".github/workflows/ci-backend-maintenance.yml"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   lint-and-test:
     name: Backend quality and unit tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Dummy step
-        run: echo "Hello"
+
+      - name: Set fallback secrets
+        run: |
+          {
+            echo "SUPABASE_URL=${{ secrets.SUPABASE_URL || 'https://placeholder.supabase.co' }}"
+            echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY || 'placeholder' }}"
+          } >> "$GITHUB_ENV"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install dependencies (locked)
+        run: uv sync --frozen --project packages/backend
+
+      - name: Install Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Start local Supabase database
+        working-directory: packages/backend
+        run: supabase start --exclude gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor --ignore-health-check
+
+      - name: Replay Supabase migrations locally
+        working-directory: packages/backend
+        run: supabase db reset --local --no-seed --yes
+
+      - name: Run Ruff check
+        run: |
+          set -euo pipefail
+          changed_files=$(git diff --name-only "origin/${{ github.base_ref }}"...HEAD -- packages/backend/src | grep '\.py$' || true)
+          if [ -z "$changed_files" ]; then
+            echo "No backend source Python files changed."
+            exit 0
+          fi
+          uv run --project packages/backend ruff check $changed_files
+
+      - name: Run Ruff format
+        run: |
+          set -euo pipefail
+          changed_files=$(git diff --name-only "origin/${{ github.base_ref }}"...HEAD -- packages/backend/src | grep '\.py$' || true)
+          if [ -z "$changed_files" ]; then
+            echo "No backend source Python files changed."
+            exit 0
+          fi
+          uv run --project packages/backend ruff format --check $changed_files
+
+      - name: Run unit tests
+        run: |
+          PYTHONPATH=packages/backend/src uv run --project packages/backend python -m unittest discover packages/backend/tests
+
+  backend-validation:
+    name: Backend validation and consistency checks
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && secrets.SUPABASE_URL != '')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install dependencies (locked)
+        run: uv sync --frozen --project packages/backend
+
+      - name: Validate backend views and functions
+        run: uv run --project packages/backend python packages/backend/src/ci_backend_checks.py views --allow-statement-timeouts
+
+      - name: Check data integrity
+        run: uv run --project packages/backend python packages/backend/src/ci_backend_checks.py data-integrity
+
+      - name: Check regional Elo aggregate consistency
+        run: uv run --project packages/backend python packages/backend/src/ci_backend_checks.py regional-elo
+
+      - name: Smoke-test analytics benchmarks
+        run: |
+          uv run --project packages/backend python packages/backend/src/ci_backend_checks.py benchmark \
+            --runs 1 --warmups 0 --smoke-only
+
+      - name: Smoke-test leaderboard recompute
+        run: uv run --project packages/backend python packages/backend/src/regional_elo.py --smoke-days 30 --dry-run
