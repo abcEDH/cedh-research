@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --background: oklch(0.14 0.03 258); --foreground: oklch(0.96 0.02 250);
+    --card: oklch(0.2 0.04 258); --primary: oklch(0.78 0.17 200);
+    --muted: oklch(0.24 0.03 258); --muted-foreground: oklch(0.78 0.02 255);
+    --accent: oklch(0.32 0.04 260); --border: oklch(0.34 0.02 255 / 0.6);
+    --font-sans: "Space Grotesk","Segoe UI",Arial,sans-serif;
+    --font-mono: "JetBrains Mono",Menlo,Consolas,monospace;
+    --knd-cyan: 195 95% 55%; --knd-magenta: 305 85% 65%; --knd-amber: 38 80% 60%;
+    --knd-line: 210 18% 32%; --knd-surface: 228 28% 11%;
+    --mtg-w-bg: rgb(254 230 138/.8); --mtg-w-fg: rgb(69 26 3);
+    --mtg-u-bg: rgb(14 165 233/.9); --mtg-u-fg: #fff;
+    --mtg-b-bg: rgb(88 28 135/.9); --mtg-b-fg: rgb(243 232 255);
+    --mtg-r-bg: rgb(239 68 68/.9); --mtg-r-fg: #fff;
+    --mtg-g-bg: rgb(16 185 129/.9); --mtg-g-fg: #fff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { background: var(--background); color: var(--foreground); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+  .tl-line { position: absolute; left: 23px; top: 0; bottom: 0; width: 1px; background: linear-gradient(to bottom, hsl(var(--knd-cyan)/0.4), hsl(var(--knd-cyan)/0.1)); }
+</style>
+</helmet>
+
+<div style="min-height:100vh; padding-bottom:80px; background-color:var(--background); background-image:radial-gradient(circle at 12% 18%,hsl(var(--knd-cyan)/.12),transparent 42%),radial-gradient(circle at 88% 0%,hsl(var(--knd-magenta)/.08),transparent 46%),linear-gradient(90deg,hsl(var(--knd-line)/.12) 1px,transparent 1px),linear-gradient(0deg,hsl(var(--knd-line)/.10) 1px,transparent 1px); background-size:auto,auto,120px 120px,120px 120px; background-attachment:fixed;">
+
+  <header style="position:sticky;top:0;z-index:30;border-bottom:1px solid var(--border);background:oklch(0.14 0.03 258/.78);backdrop-filter:blur(12px);">
+    <div style="max-width:1100px;margin:0 auto;padding:14px 24px;display:flex;align-items:center;gap:28px;">
+      <a href="#" style="display:flex;align-items:baseline;gap:1px;font-size:20px;font-weight:600;letter-spacing:-0.02em;color:var(--foreground);text-decoration:none;">tedh<span style="display:inline-block;width:5px;height:5px;border-radius:999px;background:var(--primary);transform:translateY(-9px);"></span>gg</a>
+      <nav style="display:flex;gap:4px;">
+        <a href="Latest Tournaments.dc.html" style="padding:8px 14px;border-radius:10px;font-size:13px;font-weight:600;color:var(--foreground);background:oklch(0.32 0.04 260/.45);text-decoration:none;">Tournaments</a>
+        <a href="#" style="padding:8px 14px;border-radius:10px;font-size:13px;color:var(--muted-foreground);text-decoration:none;">Commanders</a>
+        <a href="#" style="padding:8px 14px;border-radius:10px;font-size:13px;color:var(--muted-foreground);text-decoration:none;">Players</a>
+        <a href="#" style="padding:8px 14px;border-radius:10px;font-size:13px;color:var(--muted-foreground);text-decoration:none;">Cards</a>
+        <a href="#" style="padding:8px 14px;border-radius:10px;font-size:13px;color:var(--muted-foreground);text-decoration:none;">Methodology</a>
+      </nav>
+      <div style="flex:1;"></div>
+      <span style="font-family:var(--font-mono);font-size:11px;text-transform:uppercase;letter-spacing:0.2em;color:var(--muted-foreground);">UPDATED · JUN 15</span>
+    </div>
+  </header>
+
+  <main style="max-width:1100px;margin:0 auto;padding:32px 24px 0;">
+
+    <a href="Latest Tournaments.dc.html" style="display:inline-flex;align-items:center;gap:7px;font-size:13px;color:var(--muted-foreground);text-decoration:none;margin-bottom:24px;transition:color 120ms ease;" style-hover="{color:'var(--primary)'}">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"></path></svg>
+      Tournaments
+    </a>
+
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:24px;">
+      <div>
+        <div style="font-family:var(--font-mono);font-size:12px;font-weight:500;text-transform:uppercase;letter-spacing:0.2em;color:hsl(var(--knd-cyan));margin-bottom:8px;">SIEGE cEDH · June 13th 2026</div>
+        <h1 style="margin:0 0 10px;font-size:36px;font-weight:600;letter-spacing:-0.015em;color:var(--foreground);">SIEGE cEDH 10K</h1>
+        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;font-size:13px;color:var(--muted-foreground);">
+          <span style="display:inline-flex;align-items:center;gap:6px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>308 players</span>
+          <span style="color:var(--border);">·</span>
+          <span>8 Swiss rounds</span>
+          <span style="color:var(--border);">·</span>
+          <span>Top 40 cut</span>
+          <span style="color:var(--border);">·</span>
+          <a href="https://topdeck.gg/bracket/level-7s-siege-at-the-castle-10k" target="_blank" style="display:inline-flex;align-items:center;gap:5px;color:var(--primary);text-decoration:none;font-size:13px;">View Bracket <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg></a>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:28px;">
+      <div style="background:oklch(0.2 0.04 258/.7);border:1px solid var(--border);border-radius:14px;padding:16px 18px;backdrop-filter:blur(8px);">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.2em;color:var(--muted-foreground);font-weight:500;font-family:var(--font-mono);">PLAYERS</div>
+        <div style="font-family:var(--font-mono);font-size:28px;font-weight:600;color:var(--foreground);margin-top:5px;">308</div>
+      </div>
+      <div style="background:oklch(0.2 0.04 258/.7);border:1px solid var(--border);border-radius:14px;padding:16px 18px;backdrop-filter:blur(8px);">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.2em;color:var(--muted-foreground);font-weight:500;font-family:var(--font-mono);">TOP CUT</div>
+        <div style="font-family:var(--font-mono);font-size:28px;font-weight:600;color:var(--foreground);margin-top:5px;">40 <span style="font-size:14px;color:var(--muted-foreground);">13%</span></div>
+      </div>
+      <div style="background:oklch(0.2 0.04 258/.7);border:1px solid var(--border);border-radius:14px;padding:16px 18px;backdrop-filter:blur(8px);">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.2em;color:var(--muted-foreground);font-weight:500;font-family:var(--font-mono);">WINNER</div>
+        <div style="font-size:14px;font-weight:600;color:hsl(var(--knd-amber));margin-top:6px;line-height:1.25;">Jason D. // CriticalEDH</div>
+      </div>
+      <div style="background:oklch(0.2 0.04 258/.7);border:1px solid var(--border);border-radius:14px;padding:16px 18px;backdrop-filter:blur(8px);">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.2em;color:var(--muted-foreground);font-weight:500;font-family:var(--font-mono);">WIN CMD.</div>
+        <div style="font-size:13px;font-weight:600;color:var(--primary);margin-top:6px;line-height:1.25;">Kinnan, Bonder Prodigy</div>
+      </div>
+    </div>
+
+    <div style="position:relative;z-index:1;border-bottom:1px solid var(--border);display:flex;gap:0;margin-bottom:24px;">
+      <button onClick="{{ setStandings }}" style="{{ tabStandings }}">Standings</button>
+      <button onClick="{{ setRounds }}" style="{{ tabRounds }}">Rounds Story</button>
+      <button onClick="{{ setCommanders }}" style="{{ tabCommanders }}">Commander Breakdown</button>
+    </div>
+
+    <sc-if value="{{ isStandings }}" hint-placeholder-val="{{ true }}">
+      <div style="background:oklch(0.2 0.04 258/.7);border:1px solid var(--border);border-radius:16px;backdrop-filter:blur(10px);overflow:hidden;">
+        <div style="overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;font-size:14px;">
+            <thead>
+              <tr style="border-bottom:1px solid var(--border);">
+                <th style="padding:13px 18px;text-align:left;font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:0.2em;color:var(--muted-foreground);font-family:var(--font-mono);width:52px;">#</th>
+                <th style="padding:13px 12px;text-align:left;font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:0.2em;color:var(--muted-foreground);font-family:var(--font-mono);">Player</th>
+                <th style="padding:13px 12px;text-align:left;font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:0.2em;color:var(--muted-foreground);font-family:var(--font-mono);">Commander</th>
+                <th style="padding:13px 12px;text-align:center;font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:0.2em;color:var(--muted-foreground);font-family:var(--font-mono);">Record</th>
+                <th style="padding:13px 12px;text-align:right;font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:0.2em;color:var(--muted-foreground);font-family:var(--font-mono);">Pts</th>
+                <th style="padding:13px 18px 13px 12px;text-align:right;font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:0.2em;color:var(--muted-foreground);font-family:var(--font-mono);">Cut</th>
+              </tr>
+            </thead>
+            <tbody>
+              <sc-for list="{{ standingsRows }}" as="row" hint-placeholder-count="8">
+                <tr style="{{ row.rowStyle }}" style-hover="{{ rowHover }}">
+                  <td style="{{ row.rankCellStyle }}">{{ row.rankLabel }}</td>
+                  <td style="padding:13px 12px;">
+                    <div style="font-size:14px;font-weight:500;color:var(--foreground);">{{ row.player }}</div>
+                    <sc-if value="{{ row.hasTeam }}" hint-placeholder-val="{{ false }}">
+                      <div style="font-size:11px;color:var(--muted-foreground);font-family:var(--font-mono);margin-top:2px;">{{ row.team }}</div>
+                    </sc-if>
+                  </td>
+                  <td style="padding:13px 12px;">
+                    <div style="display:flex;align-items:center;gap:7px;">
+                      <div style="display:flex;gap:2px;">
+                        <sc-for list="{{ row.pips }}" as="pip" hint-placeholder-count="2">
+                          <span style="{{ pip.style }}">{{ pip.letter }}</span>
+                        </sc-for>
+                      </div>
+                      <span style="font-size:13px;color:var(--muted-foreground);">{{ row.commander }}</span>
+                    </div>
+                  </td>
+                  <td style="padding:13px 12px;text-align:center;">
+                    <span style="display:inline-flex;align-items:center;gap:5px;font-family:var(--font-mono);font-size:13px;">
+                      <span style="{{ row.wStyle }}">{{ row.wins }}W</span>
+                      <span style="color:var(--border);">·</span>
+                      <span style="{{ row.lStyle }}">{{ row.losses }}L</span>
+                      <span style="color:var(--border);">·</span>
+                      <span style="{{ row.dStyle }}">{{ row.draws }}D</span>
+                    </span>
+                  </td>
+                  <td style="padding:13px 12px;text-align:right;font-family:var(--font-mono);font-size:14px;font-weight:600;color:var(--foreground);">{{ row.pts }}</td>
+                  <td style="padding:13px 18px 13px 12px;text-align:right;"><span style="{{ row.cutStyle }}">{{ row.cut }}</span></td>
+                </tr>
+              </sc-for>
+            </tbody>
+          </table>
+        </div>
+        <div style="padding:12px 18px;border-top:1px solid var(--border);">
+          <span style="font-family:var(--font-mono);font-size:11px;color:var(--muted-foreground);">Showing top 16 of 308 · Pts = 1 per win + 0.3 per draw</span>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isRounds }}" hint-placeholder-val="{{ false }}">
+      <div style="display:grid;grid-template-columns:1fr 320px;gap:20px;align-items:start;">
+
+        <div style="position:relative;padding-left:48px;">
+          <div class="tl-line"></div>
+          <sc-for list="{{ rounds }}" as="stage" hint-placeholder-count="4">
+            <div style="{{ stage.wrapStyle }}">
+              <div style="{{ stage.dotStyle }}">{{ stage.stageNum }}</div>
+              <div style="{{ stage.cardStyle }}">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:10px;">
+                  <div>
+                    <div style="{{ stage.labelStyle }}">{{ stage.stageLabel }}</div>
+                    <div style="font-size:12px;color:var(--muted-foreground);margin-top:3px;font-family:var(--font-mono);">{{ stage.roundRange }}</div>
+                  </div>
+                  <div style="text-align:right;flex-shrink:0;">
+                    <div style="{{ stage.statNumStyle }}">{{ stage.stat }}</div>
+                    <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.18em;color:var(--muted-foreground);margin-top:2px;font-family:var(--font-mono);">{{ stage.statLabel }}</div>
+                  </div>
+                </div>
+                <p style="margin:0 0 12px;font-size:14px;line-height:1.6;color:var(--muted-foreground);text-wrap:pretty;">{{ stage.narrative }}</p>
+                <sc-if value="{{ stage.hasSpotlight }}" hint-placeholder-val="{{ false }}">
+                  <div style="{{ stage.spotlightStyle }}">
+                    <span style="{{ stage.spotlightIconStyle }}">{{ stage.spotlightIcon }}</span>
+                    <p style="margin:0;font-size:13px;line-height:1.55;color:var(--foreground);text-wrap:pretty;">{{ stage.spotlight }}</p>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ stage.isCut }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:flex;align-items:center;gap:8px;margin-top:12px;">
+                    <div style="flex:1;height:1px;background:linear-gradient(to right,var(--primary),transparent);opacity:0.4;"></div>
+                    <span style="font-family:var(--font-mono);font-size:10px;text-transform:uppercase;letter-spacing:0.2em;color:var(--primary);opacity:0.7;">CUT</span>
+                    <div style="flex:1;height:1px;background:linear-gradient(to left,var(--primary),transparent);opacity:0.4;"></div>
+                  </div>
+                </sc-if>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="position:sticky;top:80px;">
+          <div style="background:oklch(0.2 0.04 258/.8);border:1px solid hsl(var(--knd-amber)/.35);border-radius:16px;backdrop-filter:blur(10px);padding:22px 20px;">
+            <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.2em;color:hsl(var(--knd-amber));font-weight:500;font-family:var(--font-mono);margin-bottom:14px;">CHAMPION'S PATH</div>
+            <div style="font-size:16px;font-weight:600;color:var(--foreground);margin-bottom:3px;">Jason D. // CriticalEDH</div>
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:18px;">
+              <span style="display:inline-flex;gap:3px;">
+                <span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:999px;background:var(--mtg-u-bg);color:var(--mtg-u-fg);font-size:10px;font-weight:600;">U</span>
+                <span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:999px;background:var(--mtg-g-bg);color:var(--mtg-g-fg);font-size:10px;font-weight:600;">G</span>
+              </span>
+              <span style="font-size:13px;color:var(--muted-foreground);">Kinnan, Bonder Prodigy</span>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:oklch(0.24 0.03 258/.5);border-radius:8px;">
+                <span style="font-size:12px;color:var(--muted-foreground);">Swiss (8 rounds)</span>
+                <span style="font-family:var(--font-mono);font-size:13px;font-weight:600;color:hsl(var(--knd-amber));">5 — 0 — 3</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:oklch(0.24 0.03 258/.5);border-radius:8px;">
+                <span style="font-size:12px;color:var(--muted-foreground);">Top 40 Pod</span>
+                <span style="font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--primary);">Win</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:oklch(0.24 0.03 258/.5);border-radius:8px;">
+                <span style="font-size:12px;color:var(--muted-foreground);">Top 16 Pod</span>
+                <span style="font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--primary);">Win</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:oklch(0.24 0.03 258/.5);border-radius:8px;">
+                <span style="font-size:12px;color:var(--muted-foreground);">Top 4 Final</span>
+                <span style="font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--primary);">Win</span>
+              </div>
+            </div>
+            <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
+              <span style="font-size:12px;color:var(--muted-foreground);">Final record</span>
+              <span style="font-family:var(--font-mono);font-size:15px;font-weight:700;color:hsl(var(--knd-amber));">5W — 0L — 3D</span>
+            </div>
+          </div>
+          <div style="margin-top:12px;background:oklch(0.2 0.04 258/.7);border:1px solid var(--border);border-radius:14px;padding:16px 18px;backdrop-filter:blur(8px);">
+            <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.2em;color:var(--muted-foreground);font-weight:500;font-family:var(--font-mono);margin-bottom:10px;">FINAL POD</div>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <div style="display:flex;align-items:center;gap:8px;"><span style="font-family:var(--font-mono);font-size:12px;color:hsl(var(--knd-amber));width:24px;">1st</span><span style="font-size:13px;color:var(--foreground);">Jason D. // CriticalEDH</span></div>
+              <div style="display:flex;align-items:center;gap:8px;"><span style="font-family:var(--font-mono);font-size:12px;color:var(--muted-foreground);width:24px;">2nd</span><span style="font-size:13px;color:var(--foreground);">Logan Doan // CriticalEDH</span></div>
+              <div style="display:flex;align-items:center;gap:8px;"><span style="font-family:var(--font-mono);font-size:12px;color:var(--muted-foreground);width:24px;">3rd</span><span style="font-size:13px;color:var(--foreground);">pigeonize (Level 7)</span></div>
+              <div style="display:flex;align-items:center;gap:8px;"><span style="font-family:var(--font-mono);font-size:12px;color:var(--muted-foreground);width:24px;">4th</span><span style="font-size:13px;color:var(--foreground);">Justin Johnson</span></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isCommanders }}" hint-placeholder-val="{{ false }}">
+      <div style="background:oklch(0.2 0.04 258/.7);border:1px solid var(--border);border-radius:16px;backdrop-filter:blur(10px);overflow:hidden;">
+        <div style="padding:20px 22px;border-bottom:1px solid var(--border);">
+          <div style="font-size:16px;font-weight:600;color:var(--foreground);">Top 40 Commander Distribution</div>
+          <div style="font-size:13px;color:var(--muted-foreground);margin-top:4px;">40 seats · how the meta showed up at this event</div>
+        </div>
+        <div style="padding:8px 0;">
+          <sc-for list="{{ commanderBars }}" as="cmd" hint-placeholder-count="6">
+            <div style="{{ cmd.rowStyle }}" style-hover="{{ rowHover }}">
+              <div style="display:flex;align-items:center;gap:10px;width:260px;flex-shrink:0;">
+                <div style="display:flex;gap:2px;flex-shrink:0;">
+                  <sc-for list="{{ cmd.pips }}" as="pip" hint-placeholder-count="2">
+                    <span style="{{ pip.style }}">{{ pip.letter }}</span>
+                  </sc-for>
+                </div>
+                <span style="font-size:13px;color:var(--foreground);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ cmd.name }}</span>
+              </div>
+              <div style="flex:1;display:flex;align-items:center;gap:12px;">
+                <div style="flex:1;height:6px;background:oklch(0.24 0.03 258/.5);border-radius:3px;overflow:hidden;">
+                  <div style="{{ cmd.barStyle }}"></div>
+                </div>
+                <span style="font-family:var(--font-mono);font-size:12px;color:var(--muted-foreground);width:30px;text-align:right;">{{ cmd.count }}</span>
+                <span style="font-family:var(--font-mono);font-size:12px;color:var(--primary);width:44px;text-align:right;">{{ cmd.pctLabel }}</span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="padding:12px 22px;border-top:1px solid var(--border);">
+          <span style="font-family:var(--font-mono);font-size:11px;color:var(--muted-foreground);">40 total seats · note: sample size is one event</span>
+        </div>
+      </div>
+    </sc-if>
+
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;$preview&quot;: { &quot;width&quot;: 1200, &quot;height&quot;: 900 }
+}">
+class Component extends DCLogic {
+  state = { tab: 'standings' };
+
+  PIP_BG = { W:'var(--mtg-w-bg)',U:'var(--mtg-u-bg)',B:'var(--mtg-b-bg)',R:'var(--mtg-r-bg)',G:'var(--mtg-g-bg)' };
+  PIP_FG = { W:'var(--mtg-w-fg)',U:'var(--mtg-u-fg)',B:'var(--mtg-b-fg)',R:'var(--mtg-r-fg)',G:'var(--mtg-g-fg)' };
+
+  mkPips(str) {
+    return (str || '').split('').map(c => ({
+      letter: c,
+      style: { display:'inline-flex',alignItems:'center',justifyContent:'center',width:18,height:18,borderRadius:999,background:this.PIP_BG[c]||'#444',color:this.PIP_FG[c]||'#fff',fontSize:10,fontWeight:600,fontFamily:'var(--font-sans)' }
+    }));
+  }
+
+  RAW_STANDINGS = [
+    { rank:1,  player:'Jason D. // CriticalEDH',        team:'[ZEN] Team Zenith', commander:'Kinnan, Bonder Prodigy',            colors:'UG',    wins:5, losses:0, draws:3, cut:'Champion' },
+    { rank:2,  player:'Logan Doan // CriticalEDH',      team:'',                  commander:'Kinnan, Bonder Prodigy',            colors:'UG',    wins:4, losses:1, draws:3, cut:'Top 2' },
+    { rank:3,  player:'pigeonize (Level 7)',             team:'[ZEN] Team Zenith', commander:'Ral, Monsoon Mage',                 colors:'UR',    wins:4, losses:1, draws:3, cut:'Top 4' },
+    { rank:4,  player:'Justin Johnson',                 team:'',                  commander:'Thrasios / Tymna the Weaver',       colors:'WUBG',  wins:3, losses:2, draws:3, cut:'Top 4' },
+    { rank:5,  player:'Sarah K.',                       team:'',                  commander:'Sisay, Weatherlight Captain',       colors:'WUBRG', wins:4, losses:1, draws:1, cut:'Top 16' },
+    { rank:6,  player:'Marcus T.',                      team:'[504]',             commander:'Kraum / Tymna the Weaver',          colors:'WUBR',  wins:3, losses:2, draws:2, cut:'Top 16' },
+    { rank:7,  player:'Devon R.',                       team:'',                  commander:'Rograkh / Silas Renn',              colors:'UBR',   wins:4, losses:2, draws:0, cut:'Top 16' },
+    { rank:8,  player:'Alex W.',                        team:'[Monolith]',        commander:'Dargo / Tymna the Weaver',          colors:'WBR',   wins:3, losses:3, draws:0, cut:'Top 16' },
+    { rank:9,  player:'Chris M.',                       team:'',                  commander:'Kinnan, Bonder Prodigy',            colors:'UG',    wins:3, losses:2, draws:1, cut:'Top 40' },
+    { rank:10, player:'Pat L.',                         team:'',                  commander:'Etali, Primal Conqueror',           colors:'R',     wins:4, losses:2, draws:0, cut:'Top 40' },
+    { rank:11, player:'Jordan H.',                      team:'[SALT]',            commander:'Ishai / Rograkh, Son of Rohgahh',   colors:'WUBR',  wins:3, losses:3, draws:0, cut:'Top 40' },
+    { rank:12, player:'Taylor S.',                      team:'',                  commander:'Vivi Ornitier',                     colors:'WUBRG', wins:3, losses:3, draws:0, cut:'Top 40' },
+    { rank:13, player:'Morgan B.',                      team:'',                  commander:'Thrasios / Yoshimaru',              colors:'WUG',   wins:3, losses:3, draws:0, cut:'Top 40' },
+    { rank:14, player:'Riley C.',                       team:'',                  commander:'Magda, Brazen Outlaw',              colors:'R',     wins:3, losses:3, draws:0, cut:'Top 40' },
+    { rank:15, player:'Casey F.',                       team:'[ZEN]',             commander:'Kefka, Court Mage',                 colors:'WUBR',  wins:3, losses:3, draws:0, cut:'Top 40' },
+    { rank:16, player:'Jamie V.',                       team:'',                  commander:'Tivit, Seller of Secrets',          colors:'WUB',   wins:3, losses:3, draws:0, cut:'Top 40' },
+  ];
+
+  RAW_ROUNDS = [
+    {
+      stageNum: '01', stageLabel: 'Swiss Rounds', roundRange: 'Rounds 1–8 · 308 players', isCut: false, isChamp: false,
+      stat: '5–0–3', statLabel: 'Top Record',
+      narrative: 'All 308 players compete across 8 rounds of Swiss pairings in pods of 4. With $10k on the line at this flagship SIEGE event, the field is stacked — regional grinders alongside established cEDH names from across the country.',
+      spotlight: 'Jason D. // CriticalEDH finishes Swiss 5–0–3 — the only undefeated record in the room. His three intentional draws with table allies lock in maximum points and the #1 seed going into the cut.',
+      spotlightIcon: '★',
+    },
+    {
+      stageNum: '02', stageLabel: 'Top 40 Cut', roundRange: '308 → 40 players · 13% advance', isCut: true, isChamp: false,
+      stat: '8 / 40', statLabel: 'Kinnan seats',
+      narrative: 'After 8 rounds, the field narrows hard: only players with 4+ wins, or 3 wins with strong draw records, survive. 40 players advance into 10 pods of 4 for the elimination bracket.',
+      spotlight: 'Kinnan, Bonder Prodigy claims 8 of the 40 cut seats — 20% of the field, far above its 7% meta share. The UG shell\'s speed and resilience rewards steady pilots over 8 long rounds.',
+      spotlightIcon: '↑',
+    },
+    {
+      stageNum: '03', stageLabel: 'Top 16', roundRange: '40 → 16 players · 4 pods of 4', isCut: true, isChamp: false,
+      stat: '4', statLabel: 'Ral in Top 16',
+      narrative: 'Ten pods narrow to sixteen. The Ral, Monsoon Mage pilots — a meta-call from several West Coast teams — show up in force in the top cut, putting unexpected pressure on the Kinnan-heavy metagame.',
+      spotlight: 'pigeonize (Level 7) of Team Zenith advances cleanly on Ral, Monsoon Mage, proving the new Bloomburrow-era combo-control line competes with the established speed-tier on a large stage.',
+      spotlightIcon: '↑',
+    },
+    {
+      stageNum: '04', stageLabel: 'Top 4 Final Pod', roundRange: '4 players · one decisive table', isCut: false, isChamp: false,
+      stat: 'R7', statLabel: 'Turn won',
+      narrative: 'The final four — Jason D., Logan Doan, pigeonize, and Justin Johnson — sit down at the last table. Two Kinnan pilots, a Ral pilot, and a Thrasios/Tymna control shell. A study in the current meta.',
+      spotlight: 'On turn 7, Jason D. threads Demonic Consultation into Thassa\'s Oracle through a table with open mana and full grip. No one can stop it. The pod ends cleanly.',
+      spotlightIcon: '⚡',
+    },
+    {
+      stageNum: '05', stageLabel: 'Champion', roundRange: 'Final record: 5W — 0L — 3D', isCut: false, isChamp: true,
+      stat: '$10K', statLabel: 'Prize',
+      narrative: 'Jason D. // CriticalEDH takes the SIEGE cEDH 10K title — the only player in the room to finish Swiss without a single loss. A complete, dominant run from first round to last.',
+      spotlight: '',
+      spotlightIcon: '',
+    },
+  ];
+
+  RAW_COMMANDERS = [
+    { name:'Kinnan, Bonder Prodigy',           colors:'UG',    count:8,  pct:20   },
+    { name:'Kraum / Tymna',                    colors:'WUBR',  count:5,  pct:12.5 },
+    { name:'Rograkh / Silas Renn',             colors:'UBR',   count:4,  pct:10   },
+    { name:'Ral, Monsoon Mage',                colors:'UR',    count:4,  pct:10   },
+    { name:'Thrasios / Tymna',                 colors:'WUBG',  count:3,  pct:7.5  },
+    { name:'Sisay, Weatherlight Captain',      colors:'WUBRG', count:3,  pct:7.5  },
+    { name:'Dargo / Tymna',                    colors:'WBR',   count:2,  pct:5    },
+    { name:'Etali, Primal Conqueror',          colors:'R',     count:2,  pct:5    },
+    { name:'Others (13 commanders)',           colors:'',      count:9,  pct:22.5 },
+  ];
+
+  renderVals() {
+    const { tab } = this.state;
+    const set = (t) => () => this.setState({ tab: t });
+
+    const tabBtn = (t) => ({
+      padding:'10px 22px', fontSize:14, fontFamily:'var(--font-sans)', cursor:'pointer', border:'none',
+      borderBottom: tab===t ? '2px solid var(--primary)' : '2px solid transparent',
+      background:'transparent',
+      color: tab===t ? 'var(--foreground)' : 'var(--muted-foreground)',
+      fontWeight: tab===t ? 600 : 400,
+      transition:'color 120ms ease, border-color 120ms ease',
+    });
+
+    const cutStyles = {
+      'Champion': { bg:'oklch(0.26 0.05 75/.45)', color:'hsl(var(--knd-amber))' },
+      'Top 2':    { bg:'oklch(0.26 0.02 250/.4)', color:'oklch(0.86 0.01 250)' },
+      'Top 4':    { bg:'oklch(0.22 0.04 200/.35)', color:'var(--primary)' },
+      'Top 16':   { bg:'oklch(0.22 0.02 258/.3)', color:'var(--muted-foreground)' },
+      'Top 40':   { bg:'transparent', color:'var(--muted-foreground)' },
+    };
+
+    const standingsRows = this.RAW_STANDINGS.map((s, i) => {
+      const pts = (s.wins + s.draws * 0.3).toFixed(1);
+      const cs = cutStyles[s.cut] || cutStyles['Top 40'];
+      return {
+        ...s,
+        pts,
+        pips: this.mkPips(s.colors),
+        hasTeam: !!s.team,
+        rankLabel: s.rank === 1 ? '★ 1' : s.rank === 2 ? '★ 2' : s.rank === 3 ? '★ 3' : String(s.rank),
+        rankCellStyle: { padding:'13px 18px', textAlign:'left', fontFamily:'var(--font-mono)', fontSize:13, fontWeight:600, color: s.rank<=3 ? ['hsl(38 80% 65%)','oklch(0.84 0.01 250)','oklch(0.67 0.08 35)'][s.rank-1] : 'var(--muted-foreground)', whiteSpace:'nowrap' },
+        rowStyle: { background: s.rank===1 ? 'oklch(0.22 0.04 75/.15)' : 'transparent', borderBottom: i===this.RAW_STANDINGS.length-1 ? 'none' : '1px solid var(--border)', cursor:'pointer', transition:'background 120ms ease' },
+        cutStyle: { padding:'3px 9px', borderRadius:999, fontSize:11, fontWeight:500, fontFamily:'var(--font-mono)', background:cs.bg, color:cs.color, letterSpacing:'0.04em', whiteSpace:'nowrap' },
+        wStyle: { color:'var(--primary)', fontWeight:600 },
+        lStyle: { color:'oklch(0.65 0.15 25)', fontWeight:400 },
+        dStyle: { color:'hsl(var(--knd-amber))', fontWeight:400 },
+      };
+    });
+
+    const rounds = this.RAW_ROUNDS.map((r, i) => ({
+      ...r,
+      hasSpotlight: !!r.spotlight,
+      wrapStyle: { position:'relative', display:'flex', gap:'16px', paddingBottom: i===this.RAW_ROUNDS.length-1 ? '0' : '24px' },
+      dotStyle: { position:'absolute', left:'-36px', width:26, height:26, borderRadius:999, background: r.isChamp ? 'hsl(var(--knd-amber))' : 'oklch(0.2 0.04 258)', border: r.isChamp ? '2px solid hsl(var(--knd-amber))' : '2px solid hsl(var(--knd-cyan)/.5)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, fontFamily:'var(--font-mono)', color: r.isChamp ? 'oklch(0.14 0.03 258)' : 'hsl(var(--knd-cyan))', fontWeight:700, flexShrink:0, zIndex:1, top:'2px' },
+      cardStyle: { flex:1, background: r.isChamp ? 'oklch(0.22 0.05 75/.2)' : 'oklch(0.2 0.04 258/.7)', border: r.isChamp ? '1px solid hsl(var(--knd-amber)/.4)' : '1px solid var(--border)', borderRadius:14, padding:'18px 20px', backdropFilter:'blur(8px)' },
+      labelStyle: { fontSize:16, fontWeight:600, color: r.isChamp ? 'hsl(var(--knd-amber))' : 'var(--foreground)' },
+      statNumStyle: { fontFamily:'var(--font-mono)', fontSize:22, fontWeight:700, color: r.isChamp ? 'hsl(var(--knd-amber))' : 'var(--primary)', lineHeight:1 },
+      spotlightStyle: { display:'flex', gap:'10px', alignItems:'flex-start', padding:'12px 14px', background: r.isChamp ? 'oklch(0.24 0.04 75/.2)' : 'oklch(0.24 0.04 200/.2)', borderLeft: '3px solid ' + (r.isChamp ? 'hsl(var(--knd-amber))' : 'var(--primary)'), borderRadius:'0 8px 8px 0', marginTop:0 },
+      spotlightIconStyle: { fontFamily:'var(--font-mono)', fontSize:14, color: r.isChamp ? 'hsl(var(--knd-amber))' : 'var(--primary)', flexShrink:0, marginTop:2 },
+    }));
+
+    const commanderBars = this.RAW_COMMANDERS.map(c => ({
+      ...c,
+      pips: this.mkPips(c.colors),
+      pctLabel: c.pct.toFixed(1) + '%',
+      rowStyle: { display:'flex', alignItems:'center', gap:'16px', padding:'13px 22px', borderBottom:'1px solid oklch(0.34 0.02 255/.3)', cursor:'pointer', transition:'background 120ms ease' },
+      barStyle: { height:'100%', width:c.pct + '%', background:'hsl(var(--knd-cyan)/.55)', borderRadius:'0 3px 3px 0', transition:'width 600ms ease' },
+    }));
+    // remove last borderBottom
+    if (commanderBars.length) commanderBars[commanderBars.length-1].rowStyle = { ...commanderBars[commanderBars.length-1].rowStyle, borderBottom:'none' };
+
+    return {
+      tab,
+      setStandings: set('standings'), setRounds: set('rounds'), setCommanders: set('commanders'),
+      tabStandings: tabBtn('standings'), tabRounds: tabBtn('rounds'), tabCommanders: tabBtn('commanders'),
+      isStandings: tab === 'standings', isRounds: tab === 'rounds', isCommanders: tab === 'commanders',
+      standingsRows,
+      rounds,
+      commanderBars,
+      rowHover: { background:'oklch(0.32 0.04 260/.22)' },
+    };
+  }
+}
+</script>
+</body>
+</html>
