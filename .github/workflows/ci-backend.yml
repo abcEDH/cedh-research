@@ -8,10 +8,6 @@ on:
       - ".github/workflows/ci-backend.yml"
       - ".github/workflows/ci-backend-maintenance.yml"
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
