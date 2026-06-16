@@ -1,3 +1,12 @@
+## [1.18.3](https://github.com/abcEDH/cedh-research/compare/v1.18.2...v1.18.3) (2026-06-16)
+
+
+### Bug Fixes
+
+* **ci:** use minimal safe workflow syntax to avoid startup errors ([7059969](https://github.com/abcEDH/cedh-research/commit/705996992033551b9d855730c31d45fd42141d78))
+* **ci:** use safe Step-level secrets and actor check for preview deploy ([e02f22b](https://github.com/abcEDH/cedh-research/commit/e02f22ba7a2d3f38c1f67e3abbd535c33ecb7bf3))
+* **ci:** use safer step-level environment overrides to unblock dependabot without startup errors ([cc2b053](https://github.com/abcEDH/cedh-research/commit/cc2b0533efe7b4e8fa77281fa0742cfdbe1f4fac))
+
 ## [1.18.2](https://github.com/abcEDH/cedh-research/compare/v1.18.1...v1.18.2) (2026-06-16)
 
 
