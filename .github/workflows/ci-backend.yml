@@ -9,12 +9,10 @@ on:
       - ".github/workflows/ci-backend-maintenance.yml"
 
 concurrency:
-  group: backend-pr-${{ github.event.pull_request.number }}
+  group: backend-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-  SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
@@ -23,6 +21,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set fallback secrets
+        run: |
+          {
+            echo "SUPABASE_URL=${{ secrets.SUPABASE_URL || 'https://placeholder.supabase.co' }}"
+            echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY || 'placeholder' }}"
+          } >> "$GITHUB_ENV"
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
@@ -73,6 +78,7 @@ jobs:
   backend-validation:
     name: Backend validation and consistency checks
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && secrets.SUPABASE_URL != '')
     steps:
       - uses: actions/checkout@v4
 
