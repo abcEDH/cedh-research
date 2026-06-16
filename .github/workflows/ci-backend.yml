@@ -70,3 +70,36 @@ jobs:
       - name: Run unit tests
         run: |
           PYTHONPATH=packages/backend/src uv run --project packages/backend python -m unittest discover packages/backend/tests
+
+  backend-validation:
+    name: Backend validation and consistency checks
+    runs-on: ubuntu-latest
+    if: github.actor != 'dependabot[bot]'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install dependencies (locked)
+        run: uv sync --frozen --project packages/backend
+
+      - name: Validate backend views and functions
+        run: uv run --project packages/backend python packages/backend/src/ci_backend_checks.py views --allow-statement-timeouts
+
+      - name: Check data integrity
+        run: uv run --project packages/backend python packages/backend/src/ci_backend_checks.py data-integrity
+
+      - name: Check regional Elo aggregate consistency
+        run: uv run --project packages/backend python packages/backend/src/ci_backend_checks.py regional-elo
+
+      - name: Smoke-test analytics benchmarks
+        run: |
+          uv run --project packages/backend python packages/backend/src/ci_backend_checks.py benchmark \
+            --runs 1 --warmups 0 --smoke-only
+
+      - name: Smoke-test leaderboard recompute
+        run: uv run --project packages/backend python packages/backend/src/regional_elo.py --smoke-days 30 --dry-run
