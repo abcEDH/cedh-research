@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --background: oklch(0.14 0.03 258);
+    --foreground: oklch(0.96 0.02 250);
+    --card: oklch(0.2 0.04 258);
+    --primary: oklch(0.78 0.17 200);
+    --muted: oklch(0.24 0.03 258);
+    --muted-foreground: oklch(0.78 0.02 255);
+    --accent: oklch(0.32 0.04 260);
+    --border: oklch(0.34 0.02 255 / 0.6);
+    --font-sans: "Space Grotesk", "Segoe UI", Arial, sans-serif;
+    --font-mono: "JetBrains Mono", Menlo, Consolas, monospace;
+    --knd-cyan: 195 95% 55%;
+    --knd-magenta: 305 85% 65%;
+    --knd-line: 210 18% 32%;
+    --knd-surface: 228 28% 11%;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { background: var(--background); color: var(--foreground); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+</style>
+</helmet>
+<div style="min-height: 100vh; font-family: var(--font-sans); color: var(--foreground); padding-bottom: 80px; background-color: var(--background); background-image: radial-gradient(circle at 12% 18%, hsl(var(--knd-cyan) / 0.12), transparent 42%), radial-gradient(circle at 88% 0%, hsl(var(--knd-magenta) / 0.08), transparent 46%), linear-gradient(180deg, hsl(var(--knd-surface) / 0.35), transparent 28%), linear-gradient(90deg, hsl(var(--knd-line) / 0.12) 1px, transparent 1px), linear-gradient(0deg, hsl(var(--knd-line) / 0.10) 1px, transparent 1px); background-size: auto, auto, auto, 120px 120px, 120px 120px; background-attachment: fixed;">
+
+  <header style="position: sticky; top: 0; z-index: 30; border-bottom: 1px solid var(--border); background: oklch(0.14 0.03 258 / 0.78); backdrop-filter: blur(12px);">
+    <div style="max-width: 1100px; margin: 0 auto; padding: 14px 24px; display: flex; align-items: center; gap: 28px;">
+      <a href="#" style="display: flex; align-items: baseline; gap: 1px; font-size: 20px; font-weight: 600; letter-spacing: -0.02em; color: var(--foreground); text-decoration: none;">
+        tedh<span style="display: inline-block; width: 5px; height: 5px; border-radius: 999px; background: var(--primary); transform: translateY(-9px);"></span>gg
+      </a>
+      <nav style="display: flex; gap: 4px;">
+        <a href="#" style="padding: 8px 14px; border-radius: 10px; font-size: 13px; font-weight: 600; color: var(--foreground); background: oklch(0.32 0.04 260 / 0.45); text-decoration: none;">Tournaments</a>
+        <a href="#" style="padding: 8px 14px; border-radius: 10px; font-size: 13px; color: var(--muted-foreground); text-decoration: none;">Commanders</a>
+        <a href="#" style="padding: 8px 14px; border-radius: 10px; font-size: 13px; color: var(--muted-foreground); text-decoration: none;">Players</a>
+        <a href="#" style="padding: 8px 14px; border-radius: 10px; font-size: 13px; color: var(--muted-foreground); text-decoration: none;">Cards</a>
+        <a href="#" style="padding: 8px 14px; border-radius: 10px; font-size: 13px; color: var(--muted-foreground); text-decoration: none;">Methodology</a>
+      </nav>
+      <div style="flex: 1;"></div>
+      <span style="font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.2em; color: var(--muted-foreground);">UPDATED · JUN 15</span>
+    </div>
+  </header>
+
+  <sc-if value="{{ anyOpen }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeMenus }}" style="position: fixed; inset: 0; z-index: 35;"></div>
+  </sc-if>
+
+  <main style="max-width: 1100px; margin: 0 auto; padding: 40px 24px 0;">
+
+    <div style="margin-bottom: 28px;">
+      <div style="font-family: var(--font-mono); font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.2em; color: hsl(var(--knd-cyan)); margin-bottom: 10px;">TOURNAMENTS</div>
+      <h1 style="margin: 0; font-size: 38px; font-weight: 600; letter-spacing: -0.015em; color: var(--foreground);">Latest Tournaments</h1>
+      <p style="margin: 10px 0 0; font-size: 15px; line-height: 1.55; color: var(--muted-foreground); max-width: 620px;">Recent competitive events, newest first. Filter by recency and field size, then open any event for the full standings.</p>
+    </div>
+
+    <div style="position: relative; z-index: 41; display: flex; align-items: flex-end; gap: 22px; flex-wrap: wrap; padding: 16px 20px; margin-bottom: 18px; background: oklch(0.2 0.04 258 / 0.7); border: 1px solid var(--border); border-radius: 16px; box-shadow: 0 20px 50px rgba(2,10,26,0.35); backdrop-filter: blur(10px);">
+
+      <div style="position: relative; display: flex; flex-direction: column; gap: 7px;">
+        <span style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.2em; color: var(--muted-foreground); font-weight: 500;">Sort By</span>
+        <button onClick="{{ toggleSort }}" style-hover="{{ chipHover }}" style="display: inline-flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 132px; padding: 9px 13px; border: 1px solid var(--border); border-radius: 10px; background: oklch(0.24 0.03 258 / 0.55); color: var(--foreground); font-size: 13px; font-family: var(--font-sans); cursor: pointer; transition: border-color 120ms ease;">
+          <span>{{ sortBy }}</span>
+          <span style="color: var(--muted-foreground); font-size: 10px;">▾</span>
+        </button>
+        <sc-if value="{{ sortOpen }}" hint-placeholder-val="{{ false }}">
+          <div style="position: absolute; top: 100%; left: 0; margin-top: 6px; min-width: 150px; z-index: 40; padding: 6px; background: oklch(0.2 0.04 258 / 0.98); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 20px 50px rgba(2,10,26,0.55); backdrop-filter: blur(12px); display: flex; flex-direction: column; gap: 2px;">
+            <sc-for list="{{ sortOptions }}" as="opt" hint-placeholder-count="2">
+              <button onClick="{{ opt.pick }}" style="{{ opt.style }}">
+                <span>{{ opt.label }}</span>
+                <sc-if value="{{ opt.active }}" hint-placeholder-val="{{ false }}"><span style="{{ accentStyle }}">★</span></sc-if>
+              </button>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+
+      <div style="position: relative; display: flex; flex-direction: column; gap: 7px;">
+        <span style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.2em; color: var(--muted-foreground); font-weight: 500;">Field Size</span>
+        <button onClick="{{ toggleSize }}" style-hover="{{ chipHover }}" style="display: inline-flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 132px; padding: 9px 13px; border: 1px solid var(--border); border-radius: 10px; background: oklch(0.24 0.03 258 / 0.55); color: var(--foreground); font-size: 13px; font-family: var(--font-sans); cursor: pointer; transition: border-color 120ms ease;">
+          <span>{{ size }}</span>
+          <span style="color: var(--muted-foreground); font-size: 10px;">▾</span>
+        </button>
+        <sc-if value="{{ sizeOpen }}" hint-placeholder-val="{{ false }}">
+          <div style="position: absolute; top: 100%; left: 0; margin-top: 6px; min-width: 150px; z-index: 40; padding: 6px; background: oklch(0.2 0.04 258 / 0.98); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 20px 50px rgba(2,10,26,0.55); backdrop-filter: blur(12px); display: flex; flex-direction: column; gap: 2px;">
+            <sc-for list="{{ sizeOptions }}" as="opt" hint-placeholder-count="4">
+              <button onClick="{{ opt.pick }}" style="{{ opt.style }}">
+                <span>{{ opt.label }}</span>
+                <sc-if value="{{ opt.active }}" hint-placeholder-val="{{ false }}"><span style="{{ accentStyle }}">★</span></sc-if>
+              </button>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+
+      <div style="position: relative; display: flex; flex-direction: column; gap: 7px;">
+        <span style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.2em; color: var(--muted-foreground); font-weight: 500;">Time Period</span>
+        <button onClick="{{ togglePeriod }}" style-hover="{{ chipHover }}" style="display: inline-flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 132px; padding: 9px 13px; border: 1px solid var(--border); border-radius: 10px; background: oklch(0.24 0.03 258 / 0.55); color: var(--foreground); font-size: 13px; font-family: var(--font-sans); cursor: pointer; transition: border-color 120ms ease;">
+          <span>{{ period }}</span>
+          <span style="color: var(--muted-foreground); font-size: 10px;">▾</span>
+        </button>
+        <sc-if value="{{ periodOpen }}" hint-placeholder-val="{{ false }}">
+          <div style="position: absolute; top: 100%; left: 0; margin-top: 6px; min-width: 150px; z-index: 40; padding: 6px; background: oklch(0.2 0.04 258 / 0.98); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 20px 50px rgba(2,10,26,0.55); backdrop-filter: blur(12px); display: flex; flex-direction: column; gap: 2px;">
+            <sc-for list="{{ periodOptions }}" as="opt" hint-placeholder-count="4">
+              <button onClick="{{ opt.pick }}" style="{{ opt.style }}">
+                <span>{{ opt.label }}</span>
+                <sc-if value="{{ opt.active }}" hint-placeholder-val="{{ false }}"><span style="{{ accentStyle }}">★</span></sc-if>
+              </button>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+
+      <div style="flex: 1;"></div>
+      <span style="font-family: var(--font-mono); font-size: 12px; color: var(--muted-foreground); padding-bottom: 9px;">{{ countText }}</span>
+    </div>
+
+    <div style="position: relative; z-index: 1; background: oklch(0.2 0.04 258 / 0.7); border: 1px solid var(--border); border-radius: 16px; box-shadow: 0 20px 50px rgba(2,10,26,0.35); backdrop-filter: blur(10px); overflow: hidden;">
+      <sc-for list="{{ rows }}" as="row" hint-placeholder-count="8">
+        <a href="{{ row.href }}" style-hover="{{ rowHover }}" style="{{ row.rowStyle }}">
+          <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; width: 56px; flex-shrink: 0; border-right: 1px solid var(--border); padding-right: 16px;">
+            <span style="font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted-foreground); font-weight: 500;">{{ row.mon }}</span>
+            <span style="font-family: var(--font-mono); font-size: 22px; font-weight: 600; color: var(--foreground); line-height: 1.1;">{{ row.day }}</span>
+            <span style="font-family: var(--font-mono); font-size: 10px; color: var(--muted-foreground);">{{ row.year }}</span>
+          </div>
+          <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px;">
+            <span style="font-size: 17px; font-weight: 600; color: var(--foreground); line-height: 1.25;">{{ row.name }}</span>
+            <span style="display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--muted-foreground);">
+              <sc-if value="{{ row.showWinner }}" hint-placeholder-val="{{ true }}">
+                <span style="display: inline-flex; align-items: center; gap: 6px;">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="{{ row.trophyStyle }}"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"></path><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"></path><path d="M4 22h16"></path><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"></path><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"></path><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"></path></svg>
+                  <span style="color: var(--foreground);">{{ row.winner }}</span>
+                </span>
+                <span style="color: var(--border);">·</span>
+              </sc-if>
+              <span>{{ row.rel }}</span>
+            </span>
+          </div>
+          <div style="display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; gap: 1px;">
+            <span style="{{ row.numStyle }}">{{ row.players }}</span>
+            <span style="font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--muted-foreground); font-weight: 500;">Players</span>
+          </div>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--muted-foreground); flex-shrink: 0;"><path d="m9 18 6-6-6-6"></path></svg>
+        </a>
+      </sc-for>
+    </div>
+
+    <p style="margin: 20px 2px 0; font-size: 12px; color: var(--muted-foreground); font-family: var(--font-mono);">Source: TopDeck.gg · sample sizes ≥ 50 players · standings updated nightly.</p>
+
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;$preview&quot;: { &quot;width&quot;: 1200, &quot;height&quot;: 900 },
+  &quot;accent&quot;: { &quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;Cyan&quot;, &quot;Magenta&quot;, &quot;Amber&quot;], &quot;default&quot;: &quot;Cyan&quot;, &quot;tsType&quot;: &quot;string&quot; },
+  &quot;density&quot;: { &quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;Comfortable&quot;, &quot;Compact&quot;], &quot;default&quot;: &quot;Comfortable&quot;, &quot;tsType&quot;: &quot;string&quot; },
+  &quot;showWinners&quot;: { &quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot; }
+}">
+class Component extends DCLogic {
+  state = { sortBy: 'Date', size: '50+', period: '3 Months', openMenu: null };
+
+  TODAY = new Date(2026, 5, 15);
+  MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  SORTS = ['Date', 'Players'];
+  SIZES = ['50+', '100+', '200+', 'All'];
+  PERIODS = ['3 Months', '6 Months', '1 Year', 'All'];
+
+  RAW = [
+    { name: 'SIEGE cEDH 10K', date: '2026-06-13', players: 308, winner: 'Jason D. // CriticalEDH', slug: 'siege-cedh-10k' },
+    { name: 'Land, Go Presents: The Boil 2026', date: '2026-03-28', players: 268, winner: 'Zeke Maxwell [Monolith]', slug: 'the-boil-2026' },
+    { name: 'Misplay on the Lake', date: '2026-04-18', players: 264, winner: 'Andy Beach', slug: 'misplay-on-the-lake' },
+    { name: 'The Quest for a Cause — $10k cEDH Charity Main Event', date: '2026-05-16', players: 260, winner: 'Bruno Gino-Griffiths', slug: 'quest-for-a-cause' },
+    { name: 'Land, Go Open 10k cEDH Tournament', date: '2026-05-23', players: 212, winner: '[CHUDS] Shmant Shmandrew Shmeklund', slug: 'land-go-open-10k' },
+    { name: 'Braindead Fantasy Fest Commander Precon Tournament', date: '2026-04-12', players: 210, winner: 'Evan Sussell', slug: 'braindead-fantasy-fest' },
+    { name: 'Just Jam D-Grid', date: '2026-05-30', players: 200, winner: 'Matt Hayes', slug: 'just-jam-d-grid' },
+    { name: "Commandergeddon 10: Jene's MTG & Irresistible Force", date: '2026-06-05', players: 173, winner: 'Katie Giefer', slug: 'commandergeddon-10' },
+    { name: 'Twisted Power — Midwest Gaming Classic TimeTwister', date: '2026-04-25', players: 172, winner: 'JoeyTwoAnkles', slug: 'twisted-power' },
+    { name: 'Commander Invitational', date: '2026-05-23', players: 147, winner: 'Max Safran', slug: 'commander-invitational' },
+    { name: 'SIEGE 10K Redemption Event — Aftermath', date: '2026-06-14', players: 142, winner: '[504] Joe Holland [Pinnacle]', slug: 'siege-10k-redemption' },
+    { name: 'Jeweled Lotus Lattenkamp 2026', date: '2026-06-06', players: 142, winner: 'Manuel Zimmermann', slug: 'jeweled-lotus-lattenkamp' },
+    { name: 'The Side Quest — cEDH Redemption Event (Sunday)', date: '2026-05-17', players: 133, winner: 'Aaron Joseph', slug: 'the-side-quest' },
+    { name: 'Punt City 5', date: '2026-06-06', players: 129, winner: 'Robert R', slug: 'punt-city-5' },
+    { name: 'CCS $20,000 cEDH Invitational Qualifier #2', date: '2026-06-13', players: 125, winner: 'Jacob Rhyne', slug: 'ccs-qualifier-2' },
+    { name: 'The Decatur Deathmatch (10K guaranteed)', date: '2026-06-06', players: 118, winner: '[CHUDS] Shmant Shmandrew Shmeklund', slug: 'decatur-deathmatch' },
+    { name: 'Land Go Expo — Nashville Hot! Redemption Event', date: '2026-05-24', players: 112, winner: 'JoeyTwoAnkles', slug: 'land-go-expo-nashville' },
+    { name: 'From The Vault Anniversary 3: Mox Ruby', date: '2026-03-28', players: 110, winner: 'Theodore Montalbano', slug: 'from-the-vault-3' },
+  ];
+
+  rel(days) {
+    if (days <= 0) return 'today';
+    if (days === 1) return 'yesterday';
+    if (days < 7) return days + ' days ago';
+    if (days < 14) return 'last week';
+    if (days < 31) return Math.round(days / 7) + ' weeks ago';
+    if (days < 365) return Math.round(days / 30) + ' months ago';
+    return 'over a year ago';
+  }
+
+  renderVals() {
+    const accentMap = { Cyan: 'hsl(195 95% 55%)', Magenta: 'hsl(305 85% 65%)', Amber: 'hsl(38 80% 60%)' };
+    const accent = accentMap[this.props.accent] || accentMap.Cyan;
+    const showWinner = this.props.showWinners !== false;
+    const pad = (this.props.density === 'Compact') ? '13px 22px' : '18px 22px';
+
+    const sizeThresh = { '50+': 50, '100+': 100, '200+': 200, 'All': 0 }[this.state.size];
+    const periodDays = { '3 Months': 92, '6 Months': 183, '1 Year': 365, 'All': 1e9 }[this.state.period];
+
+    let items = this.RAW.map((t) => {
+      const d = new Date(t.date + 'T00:00:00');
+      const days = Math.round((this.TODAY - d) / 86400000);
+      return { ...t, d, days };
+    }).filter((t) => t.players >= sizeThresh && t.days <= periodDays);
+
+    items.sort((a, b) => this.state.sortBy === 'Players' ? b.players - a.players : a.days - b.days);
+
+    const numStyle = { fontFamily: 'var(--font-mono)', fontSize: '20px', fontWeight: 600, color: accent, lineHeight: 1.1 };
+    const trophyStyle = { color: accent, flexShrink: 0 };
+
+    const rows = items.map((t, i) => ({
+      key: t.slug,
+      name: t.name,
+      href: '#' + t.slug,
+      mon: this.MONTHS[t.d.getMonth()],
+      day: String(t.d.getDate()),
+      year: String(t.d.getFullYear()),
+      rel: this.rel(t.days),
+      players: t.players.toLocaleString('en-US'),
+      winner: t.winner,
+      showWinner,
+      numStyle,
+      trophyStyle,
+      rowStyle: {
+        display: 'flex', alignItems: 'center', gap: '18px', padding: pad,
+        textDecoration: 'none',
+        borderBottom: i === items.length - 1 ? 'none' : '1px solid var(--border)',
+        cursor: 'pointer', transition: 'background 120ms ease',
+      },
+    }));
+
+    const mkOpts = (list, cur, key) => list.map((o) => ({
+      label: o,
+      active: o === cur,
+      pick: () => this.setState({ [key]: o, openMenu: null }),
+      style: {
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none',
+        borderRadius: '8px', fontSize: '13px', fontFamily: 'var(--font-sans)', cursor: 'pointer', whiteSpace: 'nowrap', gap: '12px',
+        background: o === cur ? 'oklch(0.32 0.04 260 / 0.5)' : 'transparent',
+        color: o === cur ? 'var(--foreground)' : 'var(--muted-foreground)',
+        fontWeight: o === cur ? 600 : 400,
+      },
+    }));
+
+    const toggle = (m) => () => this.setState((s) => ({ openMenu: s.openMenu === m ? null : m }));
+    const sizeLabel = this.state.size === 'All' ? 'all sizes' : this.state.size + ' players';
+
+    return {
+      rows,
+      countText: items.length + ' events · ' + this.state.period.toLowerCase() + ' · ' + sizeLabel,
+      sortBy: this.state.sortBy,
+      size: this.state.size,
+      period: this.state.period,
+      sortOptions: mkOpts(this.SORTS, this.state.sortBy, 'sortBy'),
+      sizeOptions: mkOpts(this.SIZES, this.state.size, 'size'),
+      periodOptions: mkOpts(this.PERIODS, this.state.period, 'period'),
+      toggleSort: toggle('sort'),
+      toggleSize: toggle('size'),
+      togglePeriod: toggle('period'),
+      sortOpen: this.state.openMenu === 'sort',
+      sizeOpen: this.state.openMenu === 'size',
+      periodOpen: this.state.openMenu === 'period',
+      anyOpen: this.state.openMenu !== null,
+      closeMenus: () => this.setState({ openMenu: null }),
+      accentStyle: { color: accent },
+      chipHover: { borderColor: 'oklch(0.78 0.17 200 / 0.5)' },
+      rowHover: { background: 'oklch(0.32 0.04 260 / 0.25)' },
+    };
+  }
+}
+</script>
+</body>
+</html>
