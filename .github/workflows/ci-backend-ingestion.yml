@@ -40,10 +40,10 @@ jobs:
     outputs:
       claimed: ${{ steps.run-ingestion.outputs.claimed }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
 
@@ -76,7 +76,7 @@ jobs:
           exit "$status"
 
       - name: Upload logs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: ingestion-logs
