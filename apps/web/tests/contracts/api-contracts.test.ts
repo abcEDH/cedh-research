@@ -24,9 +24,10 @@ import {
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-// Skip tests if env vars are not available
+// Skip tests if env vars are not available or are placeholders
+const isPlaceholder = supabaseUrl?.includes("placeholder.supabase.co");
 const canRunTests = supabaseUrl && supabaseKey &&
-  supabaseUrl.startsWith("http") && supabaseKey.length > 0;
+  supabaseUrl.startsWith("http") && supabaseKey.length > 0 && !isPlaceholder;
 
 const supabase = canRunTests
   ? createClient(supabaseUrl, supabaseKey)
