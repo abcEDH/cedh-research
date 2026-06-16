@@ -9,7 +9,7 @@ on:
       - ".github/workflows/ci-backend-maintenance.yml"
 
 concurrency:
-  group: backend-pr-${{ github.event.pull_request.number }}
+  group: backend-${{ github.ref }}
   cancel-in-progress: true
 
 env:
