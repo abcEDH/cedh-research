@@ -8,6 +8,10 @@ on:
       - ".github/workflows/ci-backend.yml"
       - ".github/workflows/ci-backend-maintenance.yml"
 
+concurrency:
+  group: backend-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 env:
   SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
   SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
@@ -69,7 +73,6 @@ jobs:
   backend-validation:
     name: Backend validation and consistency checks
     runs-on: ubuntu-latest
-    if: secrets.SUPABASE_URL != ''
     steps:
       - uses: actions/checkout@v4
 
