@@ -1,3 +1,30 @@
+# [1.18.0](https://github.com/abcEDH/cedh-research/compare/v1.17.4...v1.18.0) (2026-06-16)
+
+
+### Bug Fixes
+
+* align june 10 supabase migration versions with remote ledger ([#210](https://github.com/abcEDH/cedh-research/issues/210)) ([ef6808f](https://github.com/abcEDH/cedh-research/commit/ef6808ff14b3329617de3c51f712822edb074c68))
+* **ci:** bump elo recompute timeout to 60m, add PYTHONUNBUFFERED ([#195](https://github.com/abcEDH/cedh-research/issues/195)) ([18ee2ee](https://github.com/abcEDH/cedh-research/commit/18ee2ee35401816a7b49f569be3b621d6dc07a81))
+* **client:** convert generator to list comprehension in execute_values call ([#207](https://github.com/abcEDH/cedh-research/issues/207)) ([14e74aa](https://github.com/abcEDH/cedh-research/commit/14e74aa9f769c8257cf9189e260332d7ac6cc758))
+* **client:** restore headers attribute on SupabaseClient after supabase-py migration ([#206](https://github.com/abcEDH/cedh-research/issues/206)) ([09bd6ac](https://github.com/abcEDH/cedh-research/commit/09bd6ac5cc4fe8ee9ac691bb3595d3bf145ca043))
+* **client:** restore url attribute on SupabaseClient ([#205](https://github.com/abcEDH/cedh-research/issues/205)) ([05ec272](https://github.com/abcEDH/cedh-research/commit/05ec272c515cd34dc287255c6c427537ac295dc9))
+* **crons:** guard game_events upsert, add job timeout — unblocks daily Elo recompute ([#194](https://github.com/abcEDH/cedh-research/issues/194)) ([8c8a5d4](https://github.com/abcEDH/cedh-research/commit/8c8a5d40bdc07043156338a5c662e4b4d9dacd7c)), closes [#188](https://github.com/abcEDH/cedh-research/issues/188) [#193](https://github.com/abcEDH/cedh-research/issues/193) [#193](https://github.com/abcEDH/cedh-research/issues/193)
+* **elo:** fix Elo recompute schema gaps, FK bug, and DirectPostgres reliability ([#201](https://github.com/abcEDH/cedh-research/issues/201)) ([6df69c7](https://github.com/abcEDH/cedh-research/commit/6df69c71af1f0e920dc014afaf39115c8cf8d0fe))
+* **elo:** populate entry_id for top-rated player in game event rows ([#208](https://github.com/abcEDH/cedh-research/issues/208)) ([5c4a0d3](https://github.com/abcEDH/cedh-research/commit/5c4a0d341e22ee67e1f8933cbd3475026a02a9ea))
+* **elo:** use canonical event counts for leaderboard W-L-D stats ([#204](https://github.com/abcEDH/cedh-research/issues/204)) ([3cdb4b6](https://github.com/abcEDH/cedh-research/commit/3cdb4b6e579197ea6cdf12327ec7dbd4c291a3a8))
+* normalize commander profile start dates ([#211](https://github.com/abcEDH/cedh-research/issues/211)) ([6f0f6ee](https://github.com/abcEDH/cedh-research/commit/6f0f6ee288049e20a3fbba3a0cac96c544d7f1f3))
+
+
+### Features
+
+* **elo:** add primary commander per player to profile summaries ([#203](https://github.com/abcEDH/cedh-research/issues/203)) ([23d881c](https://github.com/abcEDH/cedh-research/commit/23d881c3e2f2de970a84bd9ad87dfe8f3b0a4ff6))
+* **elo:** switch to incremental Elo from event-log watermark ([#202](https://github.com/abcEDH/cedh-research/issues/202)) ([6cad41c](https://github.com/abcEDH/cedh-research/commit/6cad41c04e5940e3342db82965a29ee846084fd3))
+
+
+### Performance Improvements
+
+* **elo:** fix O(n²) Elo recompute + merge PR [#196](https://github.com/abcEDH/cedh-research/issues/196) DirectPostgres path ([#199](https://github.com/abcEDH/cedh-research/issues/199)) ([d18bb8f](https://github.com/abcEDH/cedh-research/commit/d18bb8fe4a7648c29f6e2f2fefa17c175416d131))
+
 ## [1.17.4](https://github.com/abcEDH/cedh-research/compare/v1.17.3...v1.17.4) (2026-05-28)
 
 
