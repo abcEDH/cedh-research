@@ -32,16 +32,27 @@ const SUPABASE_IN_CHUNK_SIZE = 100;
 const ACHIEVEMENTS_PAGE_SIZE = 10;
 
 export async function generateStaticParams() {
-  const { data } = await supabase
-    .from("global_elo_active_leaderboard")
-    .select("topdeck_id, rank")
-    .eq("region_type", "global")
-    .eq("region_key", "ALL")
-    .order("rank", { ascending: true })
-    .limit(500);
-  return (data ?? [])
-    .filter((row): row is { topdeck_id: string; rank: number } => Boolean(row?.topdeck_id))
-    .map((row) => ({ topdeckId: String(row.topdeck_id) }));
+  try {
+    const { data, error } = await supabase
+      .from("global_elo_active_leaderboard")
+      .select("topdeck_id, rank")
+      .eq("region_type", "global")
+      .eq("region_key", "ALL")
+      .order("rank", { ascending: true })
+      .limit(500);
+
+    if (error) {
+      console.warn("generateStaticParams: Failed to fetch leaderboard data", error);
+      return [];
+    }
+
+    return (data ?? [])
+      .filter((row): row is { topdeck_id: string; rank: number } => Boolean(row?.topdeck_id))
+      .map((row) => ({ topdeckId: String(row.topdeck_id) }));
+  } catch (err) {
+    console.warn("generateStaticParams: Unexpected error during fetch", err);
+    return [];
+  }
 }
 
 export type PlayerRow = {
