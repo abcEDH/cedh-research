@@ -8,13 +8,9 @@ on:
       - ".github/workflows/ci-backend.yml"
       - ".github/workflows/ci-backend-maintenance.yml"
 
-concurrency:
-  group: backend-${{ github.ref }}
-  cancel-in-progress: true
-
 env:
-  SUPABASE_URL: ${{ secrets.SUPABASE_URL || 'https://placeholder.supabase.co' }}
-  SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY || 'placeholder' }}
+  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+  SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
@@ -73,7 +69,7 @@ jobs:
   backend-validation:
     name: Backend validation and consistency checks
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && secrets.SUPABASE_URL != '')
+    if: secrets.SUPABASE_URL != ''
     steps:
       - uses: actions/checkout@v4
 
