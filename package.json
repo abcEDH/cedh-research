@@ -23,5 +23,10 @@
     "web:test:e2e:prod": "cd apps/web && BASE_URL=${BASE_URL:-https://tedh.gg} playwright test",
     "backend:install": "python -m pip install -r packages/backend/requirements.txt",
     "backend:ingest": "python packages/backend/src/ingest.py"
+  },
+  "overrides": {
+    "next": {
+      "postcss": "^8.5.15"
+    }
   }
 }
