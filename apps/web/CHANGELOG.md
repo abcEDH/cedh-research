@@ -1,3 +1,10 @@
+## [1.18.1](https://github.com/abcEDH/cedh-research/compare/v1.18.0...v1.18.1) (2026-06-16)
+
+
+### Bug Fixes
+
+* **ci:** unblock dependabot by providing fallback build secrets ([#221](https://github.com/abcEDH/cedh-research/issues/221)) ([4211ae6](https://github.com/abcEDH/cedh-research/commit/4211ae605da064c2989f8a1af053ec9959c5752d))
+
 # [1.18.0](https://github.com/abcEDH/cedh-research/compare/v1.17.4...v1.18.0) (2026-06-16)
 
 
