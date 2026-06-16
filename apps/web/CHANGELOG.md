@@ -1,3 +1,13 @@
+## [1.18.2](https://github.com/abcEDH/cedh-research/compare/v1.18.1...v1.18.2) (2026-06-16)
+
+
+### Bug Fixes
+
+* **ci:** avoid pull_request object access on push events to prevent workflow startup errors ([aff9274](https://github.com/abcEDH/cedh-research/commit/aff927465d5ae523dfe86c26a499f4e09b479ada))
+* **ci:** simplify workflows to resolve startup errors ([bfbca55](https://github.com/abcEDH/cedh-research/commit/bfbca55bcde8d586560129219494d34cdd0c26c0))
+* **ci:** skip preview deploy and backend validation when secrets are missing ([186df66](https://github.com/abcEDH/cedh-research/commit/186df66b5ac84d3a2429c1774798b0c4ac673f5a))
+* **deps:** force postcss deduplication to remediate GHSA-qx2v-qp2m-jg93 ([1931246](https://github.com/abcEDH/cedh-research/commit/1931246d63cc207f90a9a78d7f99bd50671244d0))
+
 ## [1.18.1](https://github.com/abcEDH/cedh-research/compare/v1.18.0...v1.18.1) (2026-06-16)
 
 
