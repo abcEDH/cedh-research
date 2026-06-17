@@ -8,6 +8,10 @@
 -- views during the recompute. The query body is unchanged; only the storage and
 -- refresh strategy change.
 
+-- global_elo_data_validity is a thin public alias (security_invoker view) over
+-- regional_elo_data_validity. Drop it first so the base view can be replaced,
+-- then recreate it unchanged over the new materialized view.
+DROP VIEW IF EXISTS global_elo_data_validity;
 DROP VIEW IF EXISTS regional_elo_data_validity;
 DROP MATERIALIZED VIEW IF EXISTS regional_elo_data_validity;
 
@@ -136,6 +140,14 @@ GRANT SELECT ON regional_elo_data_validity TO anon, authenticated, service_role;
 
 COMMENT ON MATERIALIZED VIEW regional_elo_data_validity IS
   'State leaderboard coverage stats (global + per-region). Materialized; refreshed during the Elo recompute via refresh_regional_elo_data_validity().';
+
+-- Recreate the public alias view over the materialized base.
+CREATE OR REPLACE VIEW global_elo_data_validity AS
+SELECT * FROM regional_elo_data_validity;
+
+ALTER VIEW global_elo_data_validity SET (security_invoker = true);
+
+GRANT SELECT ON global_elo_data_validity TO anon, authenticated;
 
 -- ============================================================================
 -- FUNCTION: Refresh regional_elo_data_validity
