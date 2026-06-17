@@ -1,3 +1,10 @@
+## [1.18.4](https://github.com/abcEDH/cedh-research/compare/v1.18.3...v1.18.4) (2026-06-17)
+
+
+### Bug Fixes
+
+* **benchmark:** materialize regional_elo_data_validity, drop retired survival_summary ([#224](https://github.com/abcEDH/cedh-research/issues/224)) ([e51ac93](https://github.com/abcEDH/cedh-research/commit/e51ac93fc79028c16b55e2117ed92e46db3f9e5d))
+
 ## [1.18.3](https://github.com/abcEDH/cedh-research/compare/v1.18.2...v1.18.3) (2026-06-16)
 
 
