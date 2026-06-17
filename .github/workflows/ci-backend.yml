@@ -78,6 +78,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Set fallback secrets
+        run: |
+          {
+            echo "SUPABASE_URL=${{ secrets.SUPABASE_URL || 'https://placeholder.supabase.co' }}"
+            echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY || 'placeholder' }}"
+          } >> "$GITHUB_ENV"
+
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
         with:

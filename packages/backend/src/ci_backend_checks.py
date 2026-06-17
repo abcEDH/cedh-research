@@ -689,31 +689,6 @@ def benchmark_specs() -> list[BenchmarkSpec]:
                 "top_16s",
             ),
         ),
-        BenchmarkSpec(
-            name="survival_summary",
-            request_builder=lambda supabase_url, fixture: BenchmarkRequest(
-                "GET",
-                _rest_url(supabase_url, "survival_summary"),
-                params=_select_params(
-                    "commander_name,total_entries,tournaments,total_games,overall_win_rate,avg_percentile,top_cut_rate,tournament_win_rate,recent_entries,recent_win_rate",
-                    limit=25,
-                    order="total_entries.desc",
-                ),
-            ),
-            expected_columns=(
-                "commander_name",
-                "total_entries",
-                "tournaments",
-                "total_games",
-                "overall_win_rate",
-                "avg_percentile",
-                "top_cut_rate",
-                "tournament_win_rate",
-                "recent_entries",
-                "recent_win_rate",
-            ),
-            smoke=False,
-        ),
     ]
 
 

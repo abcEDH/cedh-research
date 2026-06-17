@@ -81,11 +81,12 @@ class RefreshMaterializedViewsTests(TestCase):
 
         result = regional_elo.refresh_materialized_views(client)
 
-        self.assertEqual(client.rpc.call_count, 3)
+        self.assertEqual(client.rpc.call_count, 4)
         client.rpc.assert_any_call("refresh_commander_trends")
         client.rpc.assert_any_call("refresh_card_frequencies")
         client.rpc.assert_any_call("refresh_card_performance")
-        self.assertEqual(result, 3)
+        client.rpc.assert_any_call("refresh_regional_elo_data_validity")
+        self.assertEqual(result, 4)
 
     def test_refresh_materialized_views_continues_on_failure(self) -> None:
         client = Mock()
@@ -93,19 +94,20 @@ class RefreshMaterializedViewsTests(TestCase):
             Exception("first function failed"),
             None,
             None,
+            None,
         ]
 
         result = regional_elo.refresh_materialized_views(client)
 
-        self.assertEqual(client.rpc.call_count, 3)
-        self.assertEqual(result, 2)
+        self.assertEqual(client.rpc.call_count, 4)
+        self.assertEqual(result, 3)
 
     def test_refresh_materialized_views_returns_success_count(self) -> None:
         client = Mock()
 
         result = regional_elo.refresh_materialized_views(client)
 
-        self.assertEqual(result, 3)
+        self.assertEqual(result, 4)
 
 
 class RegionalEloCliValidationTests(TestCase):
