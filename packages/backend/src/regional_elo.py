@@ -905,6 +905,7 @@ MATERIALIZED_VIEW_REFRESH_FUNCTIONS = [
     "refresh_commander_trends",
     "refresh_card_frequencies",
     "refresh_card_performance",
+    "refresh_regional_elo_data_validity",
 ]
 
 ACTIVE_LEADERBOARD_TABLE = "global_elo_active_leaderboard"
