@@ -912,6 +912,11 @@ MATERIALIZED_VIEW_REFRESH_FUNCTIONS = [
     "refresh_regional_elo_data_validity",
 ]
 
+# Read timeout for MV refresh RPCs. Slightly above the 30min server-side
+# statement_timeout those functions set, so the server's own limit (a clean
+# 57014) fires before the client read timeout.
+REFRESH_RPC_TIMEOUT_SECONDS = 1860
+
 ACTIVE_LEADERBOARD_TABLE = "global_elo_active_leaderboard"
 ACTIVE_LEADERBOARD_BATCH_SIZE = 1000
 
@@ -1228,12 +1233,24 @@ def upsert_active_leaderboard_rows(
 
 
 def refresh_materialized_views(client: SupabaseClient) -> int:
-    """Refresh downstream materialized views. Returns count of successful refreshes."""
+    """Refresh downstream materialized views. Returns count of successful refreshes.
+
+    Refreshes can take minutes; the refresh functions raise statement_timeout to
+    30min server-side. SupabaseClient.rpc uses postgrest's default 120s read
+    timeout, which previously fired client-side before the refresh finished, so
+    call the RPC directly with a matching long read timeout (mirrors
+    _rpc_fetch_all).
+    """
     success_count = 0
     for fn_name in MATERIALIZED_VIEW_REFRESH_FUNCTIONS:
         try:
             print(f"Refreshing materialized views via {fn_name}()...")
-            client.rpc(fn_name)
+            endpoint = f"{client.url}/rest/v1/rpc/{fn_name}"
+            response = requests.post(
+                endpoint, json={}, headers=client.headers, timeout=REFRESH_RPC_TIMEOUT_SECONDS
+            )
+            if response.status_code >= 400:
+                raise RuntimeError(f"{response.status_code} {response.text}")
             success_count += 1
             print(f"  {fn_name}() completed.")
         except Exception as exc:

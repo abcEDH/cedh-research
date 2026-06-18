@@ -76,36 +76,49 @@ class RegionalEloJobLifecycleTests(TestCase):
 
 
 class RefreshMaterializedViewsTests(TestCase):
-    def test_refresh_materialized_views_calls_all_functions(self) -> None:
+    @staticmethod
+    def _client() -> Mock:
         client = Mock()
+        client.url = "https://example.supabase.co"
+        client.headers = {"apikey": "k"}
+        return client
 
-        result = regional_elo.refresh_materialized_views(client)
+    def test_refresh_materialized_views_calls_all_functions(self) -> None:
+        client = self._client()
+        with patch("regional_elo.requests.post") as post:
+            post.return_value = Mock(status_code=200)
+            result = regional_elo.refresh_materialized_views(client)
 
-        self.assertEqual(client.rpc.call_count, 4)
-        client.rpc.assert_any_call("refresh_commander_trends")
-        client.rpc.assert_any_call("refresh_card_frequencies")
-        client.rpc.assert_any_call("refresh_card_performance")
-        client.rpc.assert_any_call("refresh_regional_elo_data_validity")
+        # Called via direct POST (long read timeout), not client.rpc's 120s default.
+        self.assertEqual(post.call_count, 4)
+        called_endpoints = [call.args[0] for call in post.call_args_list]
+        for fn in regional_elo.MATERIALIZED_VIEW_REFRESH_FUNCTIONS:
+            self.assertIn(f"{client.url}/rest/v1/rpc/{fn}", called_endpoints)
+        # Long read timeout is applied so slow refreshes aren't cut off client-side.
+        self.assertEqual(
+            post.call_args.kwargs["timeout"], regional_elo.REFRESH_RPC_TIMEOUT_SECONDS
+        )
         self.assertEqual(result, 4)
 
     def test_refresh_materialized_views_continues_on_failure(self) -> None:
-        client = Mock()
-        client.rpc.side_effect = [
-            Exception("first function failed"),
-            None,
-            None,
-            None,
+        client = self._client()
+        responses = [
+            Mock(status_code=500, text="boom"),
+            Mock(status_code=200),
+            Mock(status_code=200),
+            Mock(status_code=200),
         ]
+        with patch("regional_elo.requests.post", side_effect=responses) as post:
+            result = regional_elo.refresh_materialized_views(client)
 
-        result = regional_elo.refresh_materialized_views(client)
-
-        self.assertEqual(client.rpc.call_count, 4)
+        self.assertEqual(post.call_count, 4)
         self.assertEqual(result, 3)
 
     def test_refresh_materialized_views_returns_success_count(self) -> None:
-        client = Mock()
-
-        result = regional_elo.refresh_materialized_views(client)
+        client = self._client()
+        with patch("regional_elo.requests.post") as post:
+            post.return_value = Mock(status_code=200)
+            result = regional_elo.refresh_materialized_views(client)
 
         self.assertEqual(result, 4)
 
