@@ -274,6 +274,20 @@ class DirectPostgresClient:
         if self._conn and not self._conn.closed:
             self._conn.close()
 
+    def call_function(self, function_name: str) -> None:
+        """Invoke a no-arg void SQL function (e.g. a materialized-view refresh).
+
+        Runs over the direct Postgres connection, bypassing the REST gateway —
+        which returns a 504 on refreshes that run longer than its request limit.
+        The function's own statement_timeout still applies.
+        """
+        if not function_name.isidentifier():
+            raise ValueError(f"unsafe function name: {function_name!r}")
+        self.connect()
+        with self._conn.cursor() as cursor:
+            cursor.execute(f"SELECT public.{function_name}()")
+        self._conn.commit()
+
     def upsert(
         self,
         table: str,

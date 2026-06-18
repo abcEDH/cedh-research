@@ -1232,25 +1232,31 @@ def upsert_active_leaderboard_rows(
         )
 
 
-def refresh_materialized_views(client: SupabaseClient) -> int:
+def refresh_materialized_views(
+    client: SupabaseClient, direct: DirectPostgresClient | None = None
+) -> int:
     """Refresh downstream materialized views. Returns count of successful refreshes.
 
-    Refreshes can take minutes; the refresh functions raise statement_timeout to
-    30min server-side. SupabaseClient.rpc uses postgrest's default 120s read
-    timeout, which previously fired client-side before the refresh finished, so
-    call the RPC directly with a matching long read timeout (mirrors
-    _rpc_fetch_all).
+    The heaviest refreshes (card_frequencies, card_performance) run for minutes
+    and the Supabase REST gateway returns a 504 before they finish, regardless of
+    the client read timeout. When a direct Postgres connection is available, call
+    the refresh functions through it to bypass the gateway entirely; the
+    functions' own statement_timeout (30min) still bounds them. Fall back to a
+    long-timeout REST POST when no direct connection is configured.
     """
     success_count = 0
     for fn_name in MATERIALIZED_VIEW_REFRESH_FUNCTIONS:
         try:
             print(f"Refreshing materialized views via {fn_name}()...")
-            endpoint = f"{client.url}/rest/v1/rpc/{fn_name}"
-            response = requests.post(
-                endpoint, json={}, headers=client.headers, timeout=REFRESH_RPC_TIMEOUT_SECONDS
-            )
-            if response.status_code >= 400:
-                raise RuntimeError(f"{response.status_code} {response.text}")
+            if direct is not None:
+                direct.call_function(fn_name)
+            else:
+                endpoint = f"{client.url}/rest/v1/rpc/{fn_name}"
+                response = requests.post(
+                    endpoint, json={}, headers=client.headers, timeout=REFRESH_RPC_TIMEOUT_SECONDS
+                )
+                if response.status_code >= 400:
+                    raise RuntimeError(f"{response.status_code} {response.text}")
             success_count += 1
             print(f"  {fn_name}() completed.")
         except Exception as exc:
@@ -1445,7 +1451,7 @@ def main() -> None:
 
     # Refresh downstream materialized views
     print("Refreshing materialized views...")
-    mv_count = refresh_materialized_views(client)
+    mv_count = refresh_materialized_views(client, direct=direct)
     print(f"Refreshed {mv_count}/{len(MATERIALIZED_VIEW_REFRESH_FUNCTIONS)} materialized views.")
 
     update_job_heartbeat(client, job_id)
