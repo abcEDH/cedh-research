@@ -20,6 +20,12 @@ logger = logging.getLogger(__name__)
 
 SUPABASE_REST_BASE = "https://msjjihqbxtgjdtapywrj.supabase.co"
 
+# Max rows per PostgREST upsert request. A single upsert is one SQL statement,
+# so very large payloads (e.g. ~88k global Elo ratings) exceed the Postgres
+# statement_timeout (error 57014). Splitting into batches keeps each statement
+# well under the limit. Mirrors the chunking in rebuild_player_commander_profiles.py.
+UPSERT_BATCH_SIZE = 500
+
 # Maps PostgREST-style filter prefixes to (SQL operator, prefix length).
 # Used only by DirectPostgresClient.select() to translate shared filter dicts.
 _FILTER_OPS: dict[str, tuple[str, int]] = {
@@ -161,9 +167,26 @@ class SupabaseClient:
         kwargs: dict[str, Any] = {}
         if on_conflict:
             kwargs["on_conflict"] = on_conflict
+
+        # A dict is a single row; lists are batched so one upsert never becomes
+        # an oversized SQL statement that trips the Postgres statement_timeout.
+        if not isinstance(data, list):
+            batches: list[list[dict[str, Any]]] = [[data]]
+        else:
+            batches = [
+                data[i : i + UPSERT_BATCH_SIZE]
+                for i in range(0, len(data), UPSERT_BATCH_SIZE)
+            ] or [[]]
+
+        collected: list[dict[str, Any]] = []
         try:
-            result = self._client.table(table).upsert(data, **kwargs).execute()
-            return result.data
+            for batch in batches:
+                if not batch:
+                    continue
+                result = self._client.table(table).upsert(batch, **kwargs).execute()
+                if result.data:
+                    collected.extend(result.data)
+            return collected
         except Exception as e:
             logger.error("upsert failed on %s: %s", table, e)
             raise
