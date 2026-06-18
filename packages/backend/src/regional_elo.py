@@ -870,23 +870,27 @@ def build_primary_commanders(client: SupabaseClient) -> dict[str, tuple[str, flo
 def detect_active_players(
     client: SupabaseClient, lookback_months: int = ACTIVE_PLAYER_LOOKBACK_MONTHS
 ) -> list[dict[str, Any]]:
-    """Identify players with recent activity."""
+    """Identify players with recent activity.
+
+    Dedup happens in Postgres via the get_active_global_elo_player_ids RPC
+    (SELECT DISTINCT) rather than paging every matching game-result row through
+    PostgREST — the latter used deep OFFSET scans that tripped statement_timeout.
+    """
     cutoff = get_past_months_cutoff(lookback_months)
-    rows = fetch_all(
+    # The RPC's DISTINCT join is computed per request, so use a large page size
+    # to fetch the (small, ~tens-of-thousands) active set in one call instead of
+    # re-running the join per page. _rpc_fetch_all still pages if it ever grows
+    # past the limit; PostgREST applies no max-rows cap on this project.
+    rows = _rpc_fetch_all(
         client,
-        "global_elo_game_results",
-        {
-            "select": "player_id",
-            "start_date": f"gte.{cutoff}",
-            "result": "neq.bye",
-        },
+        "get_active_global_elo_player_ids",
+        {"cutoff": str(cutoff)},
+        limit=50000,
     )
-    seen: set[str] = set()
     active: list[dict[str, Any]] = []
     for r in rows:
-        pid = r["player_id"]
-        if pid and pid not in seen:
-            seen.add(pid)
+        pid = r.get("player_id")
+        if pid:
             active.append({"player_id": pid})
     return active
 

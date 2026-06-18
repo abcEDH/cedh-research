@@ -206,6 +206,34 @@ class GameEventsAlwaysWrittenTests(TestCase):
         self.assertIn("global_elo_game_events", upsert_tables)
 
 
+class DetectActivePlayersTests(TestCase):
+    def test_uses_distinct_rpc_and_maps_player_ids(self) -> None:
+        client = Mock()
+        with patch.object(
+            regional_elo,
+            "_rpc_fetch_all",
+            return_value=[{"player_id": "p1"}, {"player_id": "p2"}],
+        ) as rpc:
+            active = regional_elo.detect_active_players(client, lookback_months=6)
+
+        # Dedup is delegated to the RPC, not done client-side over every row.
+        rpc.assert_called_once()
+        self.assertEqual(rpc.call_args.args[1], "get_active_global_elo_player_ids")
+        self.assertIn("cutoff", rpc.call_args.args[2])
+        self.assertEqual(active, [{"player_id": "p1"}, {"player_id": "p2"}])
+
+    def test_skips_null_player_ids(self) -> None:
+        client = Mock()
+        with patch.object(
+            regional_elo,
+            "_rpc_fetch_all",
+            return_value=[{"player_id": "p1"}, {"player_id": None}, {}],
+        ):
+            active = regional_elo.detect_active_players(client)
+
+        self.assertEqual(active, [{"player_id": "p1"}])
+
+
 class ProcessResultsTests(TestCase):
     def test_groups_by_game_id(self) -> None:
         rows = [
