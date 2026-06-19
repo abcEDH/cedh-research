@@ -122,6 +122,19 @@ class RefreshMaterializedViewsTests(TestCase):
 
         self.assertEqual(result, 4)
 
+    def test_refresh_materialized_views_uses_direct_connection_when_available(self) -> None:
+        client = self._client()
+        direct = Mock()
+        with patch("regional_elo.requests.post") as post:
+            result = regional_elo.refresh_materialized_views(client, direct=direct)
+
+        # Direct path bypasses the REST gateway (no POST) and its 504s.
+        post.assert_not_called()
+        self.assertEqual(direct.call_function.call_count, 4)
+        called = [c.args[0] for c in direct.call_function.call_args_list]
+        self.assertEqual(called, regional_elo.MATERIALIZED_VIEW_REFRESH_FUNCTIONS)
+        self.assertEqual(result, 4)
+
 
 class RegionalEloCliValidationTests(TestCase):
     def test_job_id_requires_apply(self) -> None:

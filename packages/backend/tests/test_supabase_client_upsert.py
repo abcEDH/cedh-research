@@ -7,11 +7,11 @@ Elo recompute. These tests pin the chunking behavior that prevents it.
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from supabase_client import UPSERT_BATCH_SIZE, SupabaseClient  # noqa: E402
+from supabase_client import UPSERT_BATCH_SIZE, DirectPostgresClient, SupabaseClient  # noqa: E402
 
 
 def _make_client() -> tuple[SupabaseClient, Mock]:
@@ -77,6 +77,43 @@ class TestUpsertBatching(unittest.TestCase):
 
         self.assertEqual(table.upsert.call_count, 0)
         self.assertEqual(returned, [])
+
+
+class TestDirectCallFunction(unittest.TestCase):
+    @staticmethod
+    def _client_with_conn(conn: Mock) -> DirectPostgresClient:
+        client = DirectPostgresClient.__new__(DirectPostgresClient)
+        client._conn = conn
+        # connect() is a no-op since _conn is already a live (mock) connection.
+        client.connect = lambda: None  # type: ignore[method-assign]
+        return client
+
+    def test_commits_on_success(self) -> None:
+        conn = MagicMock()  # MagicMock so cursor() supports the context manager
+        client = self._client_with_conn(conn)
+
+        client.call_function("refresh_card_frequencies")
+
+        conn.commit.assert_called_once()
+        conn.rollback.assert_not_called()
+
+    def test_rolls_back_on_failure(self) -> None:
+        conn = Mock()
+        conn.cursor.side_effect = RuntimeError("statement timeout")
+        client = self._client_with_conn(conn)
+
+        with self.assertRaises(RuntimeError):
+            client.call_function("refresh_card_performance")
+
+        # Connection must be rolled back so later refreshes aren't blocked by an
+        # aborted transaction.
+        conn.rollback.assert_called_once()
+        conn.commit.assert_not_called()
+
+    def test_rejects_unsafe_function_name(self) -> None:
+        client = self._client_with_conn(Mock())
+        with self.assertRaises(ValueError):
+            client.call_function("refresh; DROP TABLE players")
 
 
 if __name__ == "__main__":
