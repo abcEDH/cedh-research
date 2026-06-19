@@ -284,9 +284,15 @@ class DirectPostgresClient:
         if not function_name.isidentifier():
             raise ValueError(f"unsafe function name: {function_name!r}")
         self.connect()
-        with self._conn.cursor() as cursor:
-            cursor.execute(f"SELECT public.{function_name}()")
-        self._conn.commit()
+        try:
+            with self._conn.cursor() as cursor:
+                cursor.execute(f"SELECT public.{function_name}()")
+            self._conn.commit()
+        except Exception:
+            # Leave the connection usable for the next call; otherwise psycopg2
+            # keeps it in an aborted transaction and every later refresh fails.
+            self._conn.rollback()
+            raise
 
     def upsert(
         self,
