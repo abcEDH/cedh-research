@@ -98,7 +98,18 @@ function Standings({ tournament }: { tournament: TournamentDetail }) {
                 {rankLabel(row.rank)}
               </td>
               <td className="px-3 py-3">
-                <div className="font-medium text-foreground">{row.player}</div>
+                {row.decklistUrl ? (
+                  <a
+                    href={row.decklistUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-medium text-foreground transition-colors hover:text-primary"
+                  >
+                    {row.player}
+                  </a>
+                ) : (
+                  <div className="font-medium text-foreground">{row.player}</div>
+                )}
                 {row.team ? <div className="font-mono text-[11px] text-muted-foreground">{row.team}</div> : null}
               </td>
               <td className="px-3 py-3">
@@ -248,6 +259,25 @@ function Commanders({ tournament }: { tournament: TournamentDetail }) {
 }
 
 function Bracket({ tournament }: { tournament: TournamentDetail }) {
+  if (tournament.bracketAvailable === false) {
+    return (
+      <div className="knd-panel p-6">
+        <h3 className="text-lg font-semibold">Bracket data not reconstructed yet</h3>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+          Full standings and decklist links are loaded for this event. Pod-by-pod bracket reconstruction is only shown when reliable bracket data is available.
+        </p>
+        <a
+          href={tournament.source}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-4 inline-flex text-sm font-medium text-primary transition-colors hover:text-foreground"
+        >
+          Open source event
+        </a>
+      </div>
+    );
+  }
+
   return (
     <div className="overflow-x-auto pb-3">
       <div className="flex min-w-[1180px] items-start gap-4">

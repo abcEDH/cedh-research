@@ -6,6 +6,7 @@ export interface TournamentSummary {
   players: number;
   winner: string;
   slug: string;
+  topdeckTid: string;
   tier: EventTier;
   hasDetail: boolean;
 }
@@ -19,7 +20,8 @@ export interface Standing {
   wins: number;
   losses: number;
   draws: number;
-  cut: "Champion" | "Top 2" | "Top 4" | "Top 16" | "Top 32" | "Top 40";
+  cut: "Champion" | "Top 2" | "Top 4" | "Top 16" | "Top 32" | "Top 40" | "—";
+  decklistUrl?: string | null;
 }
 
 export interface RoundNarrative {
@@ -60,6 +62,7 @@ export interface TournamentDetail extends Omit<TournamentSummary, "hasDetail" | 
   winnerCmd: string;
   winnerColors: string;
   source: string;
+  bracketAvailable?: boolean;
   standings: Standing[];
   narratives: RoundNarrative[];
   cmdDist: CommanderDistEntry[];
@@ -97,24 +100,24 @@ export function tournamentPoints(wins: number, draws: number) {
 }
 
 const summaries: Omit<TournamentSummary, "tier" | "hasDetail">[] = [
-  { name: "SIEGE cEDH 10K", date: "2026-06-13", players: 308, winner: "Jason D. // CriticalEDH", slug: "siege-cedh-10k" },
-  { name: "Land, Go Presents: The Boil 2026", date: "2026-03-28", players: 268, winner: "Zeke Maxwell [Monolith]", slug: "the-boil-2026" },
-  { name: "Misplay on the Lake", date: "2026-04-18", players: 264, winner: "Andy Beach", slug: "misplay-on-the-lake" },
-  { name: "The Quest for a Cause — $10k cEDH Charity Main Event", date: "2026-05-16", players: 260, winner: "Bruno Gino-Griffiths", slug: "quest-for-a-cause" },
-  { name: "Land, Go Open 10k cEDH Tournament", date: "2026-05-23", players: 212, winner: "[CHUDS] Shmant Shmandrew Shmeklund", slug: "land-go-open-10k" },
-  { name: "Braindead Fantasy Fest Commander Precon Tournament", date: "2026-04-12", players: 210, winner: "Evan Sussell", slug: "braindead-fantasy-fest" },
-  { name: "Just Jam D-Grid", date: "2026-05-30", players: 200, winner: "Matt Hayes", slug: "just-jam-d-grid" },
-  { name: "Commandergeddon 10: Jene's MTG & Irresistible Force", date: "2026-06-05", players: 173, winner: "Katie Giefer", slug: "commandergeddon-10" },
-  { name: "Twisted Power — Midwest Gaming Classic TimeTwister", date: "2026-04-25", players: 172, winner: "JoeyTwoAnkles", slug: "twisted-power" },
-  { name: "Commander Invitational", date: "2026-05-23", players: 147, winner: "Max Safran", slug: "commander-invitational" },
-  { name: "SIEGE 10K Redemption Event — Aftermath", date: "2026-06-14", players: 142, winner: "[504] Joe Holland [Pinnacle]", slug: "siege-10k-redemption" },
-  { name: "Jeweled Lotus Lattenkamp 2026", date: "2026-06-06", players: 142, winner: "Manuel Zimmermann", slug: "jeweled-lotus-lattenkamp" },
-  { name: "The Side Quest — cEDH Redemption Event (Sunday)", date: "2026-05-17", players: 133, winner: "Aaron Joseph", slug: "the-side-quest" },
-  { name: "Punt City 5", date: "2026-06-06", players: 129, winner: "Robert R", slug: "punt-city-5" },
-  { name: "CCS $20,000 cEDH Invitational Qualifier #2", date: "2026-06-13", players: 125, winner: "Jacob Rhyne", slug: "ccs-qualifier-2" },
-  { name: "The Decatur Deathmatch (10K guaranteed)", date: "2026-06-06", players: 118, winner: "[CHUDS] Shmant Shmandrew Shmeklund", slug: "decatur-deathmatch" },
-  { name: "Land Go Expo — Nashville Hot! Redemption Event", date: "2026-05-24", players: 112, winner: "JoeyTwoAnkles", slug: "land-go-expo-nashville" },
-  { name: "From The Vault Anniversary 3: Mox Ruby", date: "2026-03-28", players: 110, winner: "Theodore Montalbano", slug: "from-the-vault-3" },
+  { name: "SIEGE cEDH 10K", date: "2026-06-13", players: 308, winner: "Jason D. // CriticalEDH", slug: "siege-cedh-10k", topdeckTid: "level-7s-siege-at-the-castle-10k" },
+  { name: "Land, Go Presents: The Boil 2026", date: "2026-03-28", players: 268, winner: "Zeke Maxwell [Monolith]", slug: "the-boil-2026", topdeckTid: "land-go-presents-the-boil-2026" },
+  { name: "Misplay on the Lake", date: "2026-04-18", players: 264, winner: "Andy Beach", slug: "misplay-on-the-lake", topdeckTid: "misplay-on-the-lake-10k" },
+  { name: "The Quest for a Cause — $10k cEDH Charity Main Event", date: "2026-05-16", players: 260, winner: "Bruno Gino-Griffiths", slug: "quest-for-a-cause", topdeckTid: "the-quest-part-1" },
+  { name: "Land, Go Open 10k cEDH Tournament", date: "2026-05-23", players: 212, winner: "[CHUDS] Shmant Shmandrew Shmeklund", slug: "land-go-open-10k", topdeckTid: "land-go-open-10k-cedh-tournament" },
+  { name: "Braindead Fantasy Fest Commander Precon Tournament", date: "2026-04-12", players: 210, winner: "Evan Sussell", slug: "braindead-fantasy-fest", topdeckTid: "braindead-fantasy-fest-commander-precon-tournament" },
+  { name: "Just Jam D-Grid", date: "2026-05-30", players: 200, winner: "Matt Hayes", slug: "just-jam-d-grid", topdeckTid: "d-grid-on-the-stack" },
+  { name: "Commandergeddon 10: Jene's MTG & Irresistible Force", date: "2026-06-05", players: 173, winner: "Katie Giefer", slug: "commandergeddon-10", topdeckTid: "commandergeddon-10-brought-to-you-by-jenes-mtg" },
+  { name: "Twisted Power — Midwest Gaming Classic TimeTwister", date: "2026-04-25", players: 172, winner: "JoeyTwoAnkles", slug: "twisted-power", topdeckTid: "twisted-power-midwest-gaming-classic-timetwister" },
+  { name: "Commander Invitational", date: "2026-05-23", players: 147, winner: "Max Safran", slug: "commander-invitational", topdeckTid: "commander-invitational-2" },
+  { name: "SIEGE 10K Redemption Event — Aftermath", date: "2026-06-14", players: 142, winner: "[504] Joe Holland [Pinnacle]", slug: "siege-10k-redemption", topdeckTid: "siege-10k-redemption-event" },
+  { name: "Jeweled Lotus Lattenkamp 2026", date: "2026-06-06", players: 142, winner: "Manuel Zimmermann", slug: "jeweled-lotus-lattenkamp", topdeckTid: "jeweled-lotus-lattenkamp-2026" },
+  { name: "The Side Quest — cEDH Redemption Event (Sunday)", date: "2026-05-17", players: 133, winner: "Aaron Joseph", slug: "the-side-quest", topdeckTid: "the-side-quest-redemption-event" },
+  { name: "Punt City 5", date: "2026-06-06", players: 129, winner: "Robert R", slug: "punt-city-5", topdeckTid: "puntcity5" },
+  { name: "CCS $20,000 cEDH Invitational Qualifier #2", date: "2026-06-13", players: 125, winner: "Jacob Rhyne", slug: "ccs-qualifier-2", topdeckTid: "css-20000-cedh-invitational-qualifier-3" },
+  { name: "The Decatur Deathmatch (10K guaranteed)", date: "2026-06-06", players: 118, winner: "[CHUDS] Shmant Shmandrew Shmeklund", slug: "decatur-deathmatch", topdeckTid: "the-decatur-deathmatch-guaranteed-10k-cash-prizing" },
+  { name: "Land Go Expo — Nashville Hot! Redemption Event", date: "2026-05-24", players: 112, winner: "JoeyTwoAnkles", slug: "land-go-expo-nashville", topdeckTid: "land-go-expo-nashville-hot-redemption-event" },
+  { name: "From The Vault Anniversary 3: Mox Ruby", date: "2026-03-28", players: 110, winner: "Theodore Montalbano", slug: "from-the-vault-3", topdeckTid: "from-the-vault-anniversary-3-mox-ruby" },
 ];
 
 export const tournamentSummaries: TournamentSummary[] = summaries.map((event) => ({
@@ -286,8 +289,10 @@ function makeDetail(input: {
   prize: string;
 }): TournamentDetail {
   const standings = input.standings ?? remapStandings(siegeStandings, input.winner, input.winnerCmd, input.winnerColors);
+  const topdeckTid = summaries.find((event) => event.slug === input.slug)?.topdeckTid ?? input.slug;
   return {
     slug: input.slug,
+    topdeckTid,
     name: input.name,
     date: input.date,
     players: input.players,
@@ -297,6 +302,7 @@ function makeDetail(input: {
     winnerCmd: input.winnerCmd,
     winnerColors: input.winnerColors,
     source: input.source,
+    bracketAvailable: true,
     standings,
     narratives: buildNarratives(input),
     cmdDist: distributionFromStandings(standings, input.cutSize),
@@ -304,39 +310,7 @@ function makeDetail(input: {
   };
 }
 
-function inferredRounds(players: number) {
-  if (players >= 180) return 8;
-  if (players >= 100) return 7;
-  return 6;
-}
-
-function inferredCutSize(players: number): 16 | 32 | 40 {
-  if (players >= 200) return 40;
-  if (players >= 100) return 32;
-  return 16;
-}
-
-function seedDetail(event: Omit<TournamentSummary, "tier" | "hasDetail">): TournamentDetail {
-  const rounds = inferredRounds(event.players);
-  const cutSize = inferredCutSize(event.players);
-  return makeDetail({
-    ...event,
-    rounds,
-    cutSize,
-    winnerCmd: "Kinnan, Bonder Prodigy",
-    winnerColors: "UG",
-    source: "https://topdeck.gg",
-    topRecord: rounds >= 8 ? "5-1-2" : "5-1-1",
-    prize: event.name.toLowerCase().includes("10k") ? "$10K" : "—",
-  });
-}
-
-const seededTournamentDetails: Record<string, TournamentDetail> = Object.fromEntries(
-  summaries.map((event) => [event.slug, seedDetail(event)])
-);
-
-export const tournamentDetails: Record<string, TournamentDetail> = {
-  ...seededTournamentDetails,
+export const curatedTournamentDetails: Record<string, TournamentDetail> = {
   "siege-cedh-10k": makeDetail({
     slug: "siege-cedh-10k",
     name: "SIEGE cEDH 10K",
@@ -397,7 +371,11 @@ export const tournamentDetails: Record<string, TournamentDetail> = {
 };
 
 export function getTournamentDetail(slug: string) {
-  return tournamentDetails[slug] ?? null;
+  return curatedTournamentDetails[slug] ?? null;
+}
+
+export function getTournamentSummary(slug: string) {
+  return tournamentSummaries.find((event) => event.slug === slug) ?? null;
 }
 
 export function getRecentTournaments(limit = 5) {

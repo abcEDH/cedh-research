@@ -475,18 +475,18 @@ export default async function Home() {
     <div className="min-h-screen">
       <main className="container mx-auto px-4 pb-24 pt-10">
         <section className="mt-8 border-b border-border/60 py-12">
-          <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(320px,520px)] lg:items-end">
+          <div className="mx-auto flex max-w-3xl flex-col items-center gap-7 text-center">
             <div className="space-y-5">
               <div className="font-mono text-xs uppercase tracking-[0.2em] text-primary">
                 LIVE · TopDeck.gg · 12,481 entries
               </div>
-              <h2 className="max-w-3xl text-4xl font-semibold leading-[1.05] tracking-tight text-foreground md:text-[46px]">
+              <h2 className="text-4xl font-semibold leading-[1.05] tracking-tight text-foreground md:text-[46px]">
                 Competitive intelligence for cEDH.
               </h2>
-              <p className="max-w-xl text-base leading-7 text-muted-foreground">
+              <p className="mx-auto max-w-xl text-base leading-7 text-muted-foreground">
                 Win rates, tournament results, and commander meta share sourced from tournament records.
               </p>
-              <div className="flex flex-wrap gap-3">
+              <div className="flex flex-wrap justify-center gap-3">
                 <Button asChild className="gap-2">
                   <Link href="/tournaments">
                     <Trophy className="h-4 w-4" />

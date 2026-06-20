@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, ExternalLink, Trophy, Users } from "lucide-react";
-import { getTournamentDetail, tournamentDetails } from "@/lib/tournaments";
+import { loadTournamentDetail, staticTournamentParams } from "@/lib/tournament-detail-loader";
 import { TournamentDetailTabs } from "./tournament-detail-tabs";
 
 type PageProps = {
@@ -11,12 +11,12 @@ type PageProps = {
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 
 export function generateStaticParams() {
-  return Object.keys(tournamentDetails).map((slug) => ({ slug }));
+  return staticTournamentParams();
 }
 
 export async function generateMetadata({ params }: PageProps) {
   const { slug } = await params;
-  const tournament = getTournamentDetail(slug);
+  const tournament = await loadTournamentDetail(slug);
   if (!tournament) return {};
   return {
     title: `${tournament.name} | tedh.gg`,
@@ -31,7 +31,7 @@ function formatDate(date: string) {
 
 export default async function TournamentDetailPage({ params }: PageProps) {
   const { slug } = await params;
-  const tournament = getTournamentDetail(slug);
+  const tournament = await loadTournamentDetail(slug);
   if (!tournament) notFound();
 
   return (
