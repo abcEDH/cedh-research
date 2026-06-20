@@ -10,7 +10,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { supabase } from "@/lib/supabase";
-import { getRecentTournaments } from "@/lib/tournaments";
 import { normalizeDisplayString } from "@/lib/utils";
 import { ChevronRight, Trophy } from "lucide-react";
 import Link from "next/link";
@@ -440,6 +439,45 @@ async function fetchHomeLeaderboardLatestTournaments(playerIds: string[]) {
   return latestByPlayerId;
 }
 
+async function getCachedRecentTournaments() {
+  return unstable_cache(
+    async () => {
+      const { data: rows } = await supabase
+        .from("tournaments")
+        .select("id, topdeck_tid, name, start_date, player_count")
+        .not("topdeck_tid", "is", null)
+        .gte("player_count", 16)
+        .order("start_date", { ascending: false })
+        .limit(10);
+
+      if (!rows?.length) return [];
+
+      const ids = rows.map((r) => r.id);
+      const { data: winners } = await supabase
+        .from("tournament_entries")
+        .select("tournament_id, players(name, topdeck_handle)")
+        .eq("final_standing", 1)
+        .in("tournament_id", ids);
+
+      const winnerMap = new Map((winners ?? []).map((w) => [w.tournament_id, w]));
+
+      return rows.slice(0, 5).map((t) => {
+        const winner = winnerMap.get(t.id);
+        const player = Array.isArray(winner?.players) ? winner?.players[0] : winner?.players;
+        return {
+          slug: t.topdeck_tid as string,
+          name: (t.name ?? "").trim(),
+          date: (t.start_date ?? "").slice(0, 10),
+          players: t.player_count ?? 0,
+          winner: player?.name ?? (player as { topdeck_handle?: string } | null)?.topdeck_handle ?? "—",
+        };
+      });
+    },
+    ["recent-tournaments"],
+    { revalidate: HOME_CACHE_REVALIDATE_SECONDS }
+  )();
+}
+
 const getCachedHomeCoreStats = unstable_cache(
   getCoreStats,
   ["home-core-stats-v7"], // Updated cache key
@@ -459,16 +497,19 @@ const getCachedHomeRisingCommanders = unstable_cache(
 );
 
 export default async function Home() {
-  const [{ topCommanders, topWinRate }, topRisingCommanders, leaderboardPlayers] = await Promise.all([
+  const [{ topCommanders, topWinRate }, topRisingCommanders, leaderboardPlayers, recentTournaments] = await Promise.all([
     getCachedHomeCoreStats(),
     getCachedHomeRisingCommanders().catch((error) => {
       console.error("Home rising commanders cache refresh failed:", error);
       return [];
     }),
     getCachedLeaderboardPreview(),
+    getCachedRecentTournaments().catch((error) => {
+      console.error("Home recent tournaments cache refresh failed:", error);
+      return [];
+    }),
   ]);
   const topThreePopular: TopCommander[] = topCommanders.slice(0, 3);
-  const recentTournaments = getRecentTournaments(5);
   const showTrendCards = topThreePopular.length > 0 || topRisingCommanders.length > 0;
 
   return (

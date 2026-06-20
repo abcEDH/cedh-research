@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import { assignEventTier, TIER_MIN, tournamentSummaries, type EventTier, type TournamentSummary, type TopCutPlayer } from "@/lib/tournaments";
+import { assignEventTier, TIER_MIN, type EventTier, type TournamentSummary, type TopCutPlayer } from "@/lib/tournaments";
 
 // ---- Types ----
 type SortOption = "Date" | "Players";
@@ -121,7 +121,7 @@ export function TournamentsList({ initialSort, initialTier, initialPeriod }: Tou
   const [tierFilter, setTierFilter] = useState<TierOption>(initialTier);
   const [period, setPeriod] = useState<PeriodOption>(initialPeriod);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
-  const [events, setEvents] = useState<TournamentSummary[]>(tournamentSummaries);
+  const [events, setEvents] = useState<TournamentSummary[]>([]);
 
   useEffect(() => {
     let cancelled = false;

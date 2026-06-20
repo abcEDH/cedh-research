@@ -1,18 +1,16 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, ExternalLink, Trophy, Users } from "lucide-react";
-import { loadTournamentDetail, staticTournamentParams } from "@/lib/tournament-detail-loader";
+import { loadTournamentDetail } from "@/lib/tournament-detail-loader";
 import { TournamentDetailTabs } from "./tournament-detail-tabs";
 
 type PageProps = {
   params: Promise<{ slug: string }>;
 };
 
-const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+export const revalidate = 86400;
 
-export function generateStaticParams() {
-  return staticTournamentParams();
-}
+const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 
 export async function generateMetadata({ params }: PageProps) {
   const { slug } = await params;

@@ -2,9 +2,6 @@ import "server-only";
 
 import { supabase } from "@/lib/supabase";
 import {
-  curatedTournamentDetails,
-  getTournamentSummary,
-  tournamentSummaries,
   distributionFromStandings,
   type Standing,
   type TournamentDetail,
@@ -46,47 +43,20 @@ type EntryRow = {
   }> | null;
 };
 
-export function staticTournamentParams() {
-  return tournamentSummaries.map((event) => ({ slug: event.slug }));
-}
-
 export async function loadTournamentDetail(slug: string): Promise<TournamentDetail | null> {
-  const summary = getTournamentSummary(slug);
-
-  const loaded = await loadSupabaseTournamentDetail(slug, summary).catch((error) => {
+  return loadSupabaseTournamentDetail(slug).catch((error) => {
     console.error(`Tournament detail load failed for ${slug}:`, error);
     return null;
   });
-
-  const curated = curatedTournamentDetails[slug];
-  if (!loaded) return curated ?? null;
-  if (!curated) return loaded;
-
-  return {
-    ...curated,
-    name: loaded.name,
-    date: loaded.date,
-    players: loaded.players,
-    rounds: loaded.rounds,
-    cutSize: loaded.cutSize,
-    winner: loaded.winner,
-    winnerCmd: loaded.winnerCmd,
-    winnerColors: loaded.winnerColors,
-    source: loaded.source,
-    standings: loaded.standings,
-    topCutDist: loaded.topCutDist,
-    overallDist: loaded.overallDist,
-  };
 }
 
 async function loadSupabaseTournamentDetail(
-  slug: string,
-  summary: ReturnType<typeof getTournamentSummary>
+  slug: string
 ): Promise<TournamentDetail | null> {
   const { data: tournament, error: tournamentError } = await supabase
     .from("tournaments")
     .select("id, topdeck_tid, name, start_date, player_count, swiss_rounds, top_cut")
-    .eq("topdeck_tid", summary?.topdeckTid ?? slug)
+    .eq("topdeck_tid", slug)
     .maybeSingle();
 
   if (tournamentError) throw tournamentError;
@@ -104,8 +74,8 @@ async function loadSupabaseTournamentDetail(
 
   if (entriesError) throw entriesError;
 
-  const topdeckTid = row.topdeck_tid ?? summary?.topdeckTid ?? slug;
-  const players = row.player_count ?? summary?.players ?? entryRows?.length ?? 0;
+  const topdeckTid = row.topdeck_tid ?? slug;
+  const players = row.player_count ?? entryRows?.length ?? 0;
   const cutSize = row.top_cut && row.top_cut > 0 ? row.top_cut : inferCutSize(players);
 
   const standings = ((entryRows ?? []) as unknown as EntryRow[])
@@ -120,11 +90,11 @@ async function loadSupabaseTournamentDetail(
   const dist = distributionFromStandings(standings);
 
   return {
-    name: (row.name ?? summary?.name ?? topdeckTid).trim(),
-    date: (row.start_date ?? summary?.date ?? "").slice(0, 10),
+    name: (row.name ?? topdeckTid).trim(),
+    date: (row.start_date ?? "").slice(0, 10),
     players,
     winner: winner.player,
-    slug: summary?.slug ?? topdeckTid,
+    slug: topdeckTid,
     topdeckTid,
     rounds,
     cutSize,
