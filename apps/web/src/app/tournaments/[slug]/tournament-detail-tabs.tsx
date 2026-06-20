@@ -81,7 +81,7 @@ export function TournamentDetailTabs({ tournament }: { tournament: TournamentDet
 function Standings({ tournament }: { tournament: TournamentDetail }) {
   return (
     <div className="knd-panel overflow-x-auto">
-      <table className="w-full min-w-[780px] text-sm">
+      <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-border/70 text-left font-mono text-[11px] uppercase tracking-[0.2em] text-muted-foreground whitespace-nowrap">
             <th className="px-4 py-3">#</th>
@@ -107,7 +107,7 @@ function Standings({ tournament }: { tournament: TournamentDetail }) {
               <td className={`px-4 py-3 font-mono text-sm font-semibold ${row.rank === 1 ? "text-[hsl(var(--knd-amber))]" : row.rank === 2 ? "text-slate-200" : row.rank === 3 ? "text-orange-300" : "text-muted-foreground"}`}>
                 {rankLabel(row.rank)}
               </td>
-              <td className="px-3 py-3 whitespace-nowrap">
+              <td className="px-3 py-3">
                 {row.topdeckId ? (
                   <Link
                     href={`/regional-elo/player/${row.topdeckId}`}
@@ -120,18 +120,18 @@ function Standings({ tournament }: { tournament: TournamentDetail }) {
                 )}
                 {row.team ? <div className="font-mono text-[11px] text-muted-foreground">{row.team}</div> : null}
               </td>
-              <td className="px-3 py-3 whitespace-nowrap">
+              <td className="px-3 py-3">
                 <div className="flex items-center gap-2">
                   <Pips colors={row.colors} small />
                   <span className="text-muted-foreground">{row.commander}</span>
                 </div>
               </td>
               <td className="px-3 py-3 font-mono text-[13px] whitespace-nowrap">
-                <span className="font-semibold text-primary">{row.wins}W</span>
-                <span className="text-muted-foreground"> · </span>
-                <span className="text-red-300">{row.losses}L</span>
-                <span className="text-muted-foreground"> · </span>
-                <span className="text-[hsl(var(--knd-amber))]">{row.draws}D</span>
+                <span className="font-semibold text-primary">{row.wins}</span>
+                <span className="text-muted-foreground">-</span>
+                <span className="text-red-300">{row.losses}</span>
+                <span className="text-muted-foreground">-</span>
+                <span className="text-[hsl(var(--knd-amber))]">{row.draws}</span>
               </td>
               <td className="px-3 py-3 text-right font-mono font-semibold whitespace-nowrap">
                 {tournamentPoints(row.wins, row.draws)}
