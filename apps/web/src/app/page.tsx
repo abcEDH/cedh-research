@@ -10,7 +10,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { supabase } from "@/lib/supabase";
+import { getRecentTournaments } from "@/lib/tournaments";
 import { normalizeDisplayString } from "@/lib/utils";
+import { ChevronRight, Trophy } from "lucide-react";
 import Link from "next/link";
 import { HomeSearchBar } from "@/components/home-search-bar";
 
@@ -466,21 +468,105 @@ export default async function Home() {
     getCachedLeaderboardPreview(),
   ]);
   const topThreePopular: TopCommander[] = topCommanders.slice(0, 3);
+  const recentTournaments = getRecentTournaments(5);
   const showTrendCards = topThreePopular.length > 0 || topRisingCommanders.length > 0;
 
   return (
     <div className="min-h-screen">
       <main className="container mx-auto px-4 pb-24 pt-10">
-        <section className="mt-8 flex flex-col items-center gap-8 py-8 text-center border-b border-border/60">
-          <div className="space-y-3">
-            <h2 className="text-3xl font-semibold leading-tight text-foreground md:text-4xl">
-              Competitive Intelligence for cEDH
-            </h2>
-            <p className="text-base text-muted-foreground">
-              Player intelligence and competition research platform.
-            </p>
+        <section className="mt-8 border-b border-border/60 py-12">
+          <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(320px,520px)] lg:items-end">
+            <div className="space-y-5">
+              <div className="font-mono text-xs uppercase tracking-[0.2em] text-primary">
+                LIVE · TopDeck.gg · 12,481 entries
+              </div>
+              <h2 className="max-w-3xl text-4xl font-semibold leading-[1.05] tracking-tight text-foreground md:text-[46px]">
+                Competitive intelligence for cEDH.
+              </h2>
+              <p className="max-w-xl text-base leading-7 text-muted-foreground">
+                Win rates, tournament results, and commander meta share sourced from tournament records.
+              </p>
+              <div className="flex flex-wrap gap-3">
+                <Button asChild className="gap-2">
+                  <Link href="/tournaments">
+                    <Trophy className="h-4 w-4" />
+                    Latest Tournaments
+                  </Link>
+                </Button>
+                <Button asChild variant="outline">
+                  <Link href="/regional-elo">Commander Rankings</Link>
+                </Button>
+              </div>
+            </div>
+            <HomeSearchBar />
           </div>
-          <HomeSearchBar />
+        </section>
+
+        <section className="mt-10 grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <div>
+            <div className="mb-3 flex items-end justify-between gap-4">
+              <div>
+                <div className="font-mono text-[11px] uppercase tracking-[0.2em] text-primary">Results</div>
+                <h2 className="text-xl font-semibold">Recent Events</h2>
+              </div>
+              <Link href="/tournaments" className="text-sm text-primary transition-colors hover:text-foreground">
+                View all →
+              </Link>
+            </div>
+            <div className="knd-panel overflow-hidden">
+              {recentTournaments.map((event) => (
+                <Link
+                  key={event.slug}
+                  href={event.hasDetail ? `/tournaments/${event.slug}` : "/tournaments"}
+                  className="group flex items-center gap-4 border-b border-border/60 px-4 py-3 transition-colors last:border-b-0 hover:bg-accent/20"
+                >
+                  <DateBlock date={event.date} />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-semibold text-foreground">{event.name}</div>
+                    <div className="truncate text-xs text-muted-foreground">
+                      {event.winner} · <span className="font-mono">{event.players.toLocaleString()}</span> players
+                    </div>
+                  </div>
+                  {event.hasDetail ? <ChevronRight className="h-4 w-4 shrink-0 text-primary/70" /> : null}
+                </Link>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div className="mb-3">
+              <div className="font-mono text-[11px] uppercase tracking-[0.2em] text-primary">Meta</div>
+              <h2 className="text-xl font-semibold">Top Commanders</h2>
+            </div>
+            <div className="knd-panel overflow-hidden">
+              {topCommanders.slice(0, 8).map((commander, index) => (
+                <Link
+                  key={commander.commander_id}
+                  href={`/commanders/${commander.commander_id}`}
+                  className="flex min-w-0 items-center gap-2 border-b border-border/60 px-4 py-3 transition-colors last:border-b-0 hover:bg-accent/20"
+                >
+                  <span className="w-6 shrink-0 font-mono text-xs text-muted-foreground">#{index + 1}</span>
+                  <span className="flex shrink-0 gap-0.5">
+                    {commander.color_identity?.filter(Boolean).map((color: string) => (
+                      <ColorBadge key={color} color={color} isSmall />
+                    ))}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                    {normalizeDisplayString(commander.commander_name)}
+                  </span>
+                  <span className="shrink-0 font-mono text-xs font-semibold text-primary">
+                    {(() => {
+                      const wr = typeof commander.avg_win_rate === "number" ? commander.avg_win_rate : parseFloat(commander.avg_win_rate || "0");
+                      return (Number.isFinite(wr) ? wr * 100 : 0).toFixed(1);
+                    })()}%
+                  </span>
+                </Link>
+              ))}
+              <Link href="/commanders" className="block px-4 py-3 text-xs text-primary transition-colors hover:bg-accent/20">
+                View all commanders →
+              </Link>
+            </div>
+          </div>
         </section>
 
         <section className="mt-12">
@@ -732,6 +818,18 @@ export default async function Home() {
 
       </main>
     </div>
+  );
+}
+
+function DateBlock({ date }: { date: string }) {
+  const d = new Date(`${date}T00:00:00`);
+  const month = d.toLocaleString("en-US", { month: "short" }).toUpperCase();
+
+  return (
+    <span className="flex w-11 shrink-0 flex-col items-center border-r border-border/70 pr-3">
+      <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">{month}</span>
+      <span className="font-mono text-xl font-semibold leading-none text-foreground">{d.getDate()}</span>
+    </span>
   );
 }
 
