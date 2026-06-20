@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { colorLetters, tournamentPoints, type PodData, type TournamentDetail } from "@/lib/tournaments";
 
-const tabs = ["Standings", "Round Story", "Commanders", "Bracket"] as const;
-type Tab = (typeof tabs)[number];
+import Link from "next/link";
+
+type Tab = "Standings" | "Round Story" | "Commanders" | "Bracket";
 
 const pipClasses: Record<string, string> = {
   W: "bg-amber-200/80 text-amber-950",
@@ -43,10 +44,15 @@ function rankLabel(rank: number) {
 export function TournamentDetailTabs({ tournament }: { tournament: TournamentDetail }) {
   const [active, setActive] = useState<Tab>("Standings");
 
+  const availableTabs: Tab[] = ["Standings"];
+  if (tournament.bracketAvailable) availableTabs.push("Round Story");
+  availableTabs.push("Commanders");
+  if (tournament.bracketAvailable) availableTabs.push("Bracket");
+
   return (
     <section className="mt-8">
       <div className="flex flex-wrap border-b border-border/70">
-        {tabs.map((tab) => (
+        {availableTabs.map((tab) => (
           <button
             key={tab}
             type="button"
@@ -90,7 +96,11 @@ function Standings({ tournament }: { tournament: TournamentDetail }) {
           {tournament.standings.map((row) => (
             <tr
               key={`${row.rank}-${row.player}`}
-              className={`border-b border-border/60 transition-colors hover:bg-accent/20 ${
+              onClick={(e) => {
+                if ((e.target as HTMLElement).closest('a')) return;
+                if (row.decklistUrl) window.open(row.decklistUrl, '_blank', 'noreferrer');
+              }}
+              className={`border-b border-border/60 transition-colors ${row.decklistUrl ? "cursor-pointer hover:bg-accent/40" : "hover:bg-accent/20"} ${
                 row.rank === 1 ? "bg-[hsl(var(--knd-amber))]/[0.06]" : ""
               }`}
             >
@@ -98,15 +108,13 @@ function Standings({ tournament }: { tournament: TournamentDetail }) {
                 {rankLabel(row.rank)}
               </td>
               <td className="px-3 py-3">
-                {row.decklistUrl ? (
-                  <a
-                    href={row.decklistUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="font-medium text-foreground transition-colors hover:text-primary"
+                {row.topdeckId ? (
+                  <Link
+                    href={`/regional-elo/player/${row.topdeckId}`}
+                    className="font-medium text-foreground transition-colors hover:text-primary relative z-10"
                   >
                     {row.player}
-                  </a>
+                  </Link>
                 ) : (
                   <div className="font-medium text-foreground">{row.player}</div>
                 )}

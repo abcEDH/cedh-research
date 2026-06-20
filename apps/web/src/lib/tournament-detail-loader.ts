@@ -166,6 +166,7 @@ function toStanding(entry: EntryRow, topdeckTid: string, index: number): Standin
     draws: entry.draws ?? 0,
     cut: cutLabel(rank, Boolean(entry.made_top_cut), Boolean(entry.made_top_16)),
     decklistUrl,
+    topdeckId,
   };
 }
 
