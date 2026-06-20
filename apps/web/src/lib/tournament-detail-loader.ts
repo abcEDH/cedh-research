@@ -105,16 +105,17 @@ async function loadSupabaseTournamentDetail(
   if (entriesError) throw entriesError;
 
   const topdeckTid = row.topdeck_tid ?? summary?.topdeckTid ?? slug;
+  const players = row.player_count ?? summary?.players ?? entryRows?.length ?? 0;
+  const cutSize = row.top_cut && row.top_cut > 0 ? row.top_cut : inferCutSize(players);
+
   const standings = ((entryRows ?? []) as unknown as EntryRow[])
     .filter((entry) => entry.final_standing !== null)
-    .map((entry, index) => toStanding(entry, topdeckTid, index));
+    .map((entry, index) => toStanding(entry, topdeckTid, index, cutSize));
 
   if (standings.length === 0) return null;
 
   const winner = standings[0];
-  const players = row.player_count ?? summary?.players ?? standings.length;
   const rounds = row.swiss_rounds && row.swiss_rounds > 0 ? row.swiss_rounds : inferRounds(players);
-  const cutSize = row.top_cut && row.top_cut > 0 ? row.top_cut : inferCutSize(players);
 
   const dist = distributionFromStandings(standings);
 
@@ -151,7 +152,7 @@ async function loadSupabaseTournamentDetail(
   };
 }
 
-function toStanding(entry: EntryRow, topdeckTid: string, index: number): Standing {
+function toStanding(entry: EntryRow, topdeckTid: string, index: number, cutSize: number): Standing {
   const rank = entry.final_standing ?? index + 1;
   const player = firstRelation(entry.players);
   const commander = firstRelation(entry.commanders);
@@ -168,7 +169,7 @@ function toStanding(entry: EntryRow, topdeckTid: string, index: number): Standin
     wins: entry.wins ?? 0,
     losses: entry.losses ?? 0,
     draws: entry.draws ?? 0,
-    cut: cutLabel(rank, Boolean(entry.made_top_cut), Boolean(entry.made_top_16)),
+    cut: cutLabel(rank, cutSize, Boolean(entry.made_top_cut), Boolean(entry.made_top_16)),
     decklistUrl,
     topdeckId,
   };
@@ -179,9 +180,16 @@ function firstRelation<T>(value: T | T[] | null | undefined): T | null {
   return Array.isArray(value) ? value[0] ?? null : value;
 }
 
-function cutLabel(rank: number, madeTopCut: boolean, madeTop16: boolean): Standing["cut"] {
+function cutLabel(rank: number, cutSize: number, madeTopCut: boolean, madeTop16: boolean): Standing["cut"] {
   if (rank === 1) return "Champion";
   if (rank <= 4) return "Top 4";
+  
+  if (cutSize === 40) {
+    if (rank <= 10) return "Top 10";
+    if (madeTopCut || rank <= 40) return "Top 40";
+    return "—";
+  }
+
   if (madeTop16 || rank <= 16) return "Top 16";
   if (madeTopCut && rank <= 32) return "Top 32";
   if (madeTopCut && rank <= 40) return "Top 40";

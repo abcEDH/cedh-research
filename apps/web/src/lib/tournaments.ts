@@ -28,7 +28,7 @@ export interface Standing {
   wins: number;
   losses: number;
   draws: number;
-  cut: "Champion" | "Top 2" | "Top 4" | "Top 16" | "Top 32" | "Top 40" | "—";
+  cut: "Champion" | "Top 2" | "Top 4" | "Top 10" | "Top 16" | "Top 32" | "Top 40" | "—";
   decklistUrl?: string | null;
   topdeckId?: string | null;
 }
@@ -143,10 +143,10 @@ const siegeStandings: Standing[] = [
   { rank: 2, player: "Logan Doan // CriticalEDH", team: "", commander: "Kinnan, Bonder Prodigy", colors: "UG", wins: 4, losses: 1, draws: 3, cut: "Top 2" },
   { rank: 3, player: "pigeonize (Level 7)", team: "[ZEN]", commander: "Ral, Monsoon Mage", colors: "UR", wins: 4, losses: 1, draws: 3, cut: "Top 4" },
   { rank: 4, player: "Justin Johnson", team: "", commander: "Thrasios / Tymna the Weaver", colors: "WUBG", wins: 3, losses: 2, draws: 3, cut: "Top 4" },
-  { rank: 5, player: "Sarah K.", team: "", commander: "Sisay, Weatherlight Captain", colors: "WUBRG", wins: 4, losses: 1, draws: 1, cut: "Top 16" },
-  { rank: 6, player: "Marcus T.", team: "[504]", commander: "Kraum / Tymna", colors: "WUBR", wins: 3, losses: 2, draws: 2, cut: "Top 16" },
-  { rank: 7, player: "Devon R.", team: "", commander: "Rograkh / Silas Renn", colors: "UBR", wins: 4, losses: 2, draws: 0, cut: "Top 16" },
-  { rank: 8, player: "Alex W.", team: "[Mon]", commander: "Dargo / Tymna the Weaver", colors: "WBR", wins: 3, losses: 3, draws: 0, cut: "Top 16" },
+  { rank: 5, player: "Sarah K.", team: "", commander: "Sisay, Weatherlight Captain", colors: "WUBRG", wins: 4, losses: 1, draws: 1, cut: "Top 10" },
+  { rank: 6, player: "Marcus T.", team: "[504]", commander: "Kraum / Tymna", colors: "WUBR", wins: 3, losses: 2, draws: 2, cut: "Top 10" },
+  { rank: 7, player: "Devon R.", team: "", commander: "Rograkh / Silas Renn", colors: "UBR", wins: 4, losses: 2, draws: 0, cut: "Top 10" },
+  { rank: 8, player: "Alex W.", team: "[Mon]", commander: "Dargo / Tymna the Weaver", colors: "WBR", wins: 3, losses: 3, draws: 0, cut: "Top 10" },
   { rank: 9, player: "Chris M.", team: "", commander: "Kinnan, Bonder Prodigy", colors: "UG", wins: 3, losses: 2, draws: 1, cut: "Top 40" },
   { rank: 10, player: "Pat L.", team: "", commander: "Etali, Primal Conqueror", colors: "RG", wins: 4, losses: 2, draws: 0, cut: "Top 40" },
   { rank: 11, player: "Jordan H.", team: "[SALT]", commander: "Ishai / Rograkh", colors: "WUR", wins: 3, losses: 3, draws: 0, cut: "Top 40" },
