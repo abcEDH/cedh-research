@@ -243,10 +243,12 @@ function Commanders({ tournament }: { tournament: TournamentDetail }) {
   const maxTotal = Math.max(...tournament.topCutDist.map((r) => r.totalCount), 1);
 
   const BarRow = ({ row }: { row: CommanderDistEntry }) => (
-    <div className="grid grid-cols-[minmax(120px,180px)_1fr_60px] items-center gap-4 border-b border-border/60 px-5 py-3 transition-colors hover:bg-accent/20">
-      <div className="flex min-w-0 items-center gap-2">
-        <Pips colors={row.colors} small />
-        <span className="truncate text-sm font-medium" title={row.name}>{row.name}</span>
+    <div className="grid grid-cols-[minmax(200px,400px)_1fr_60px] items-center gap-4 border-b border-border/60 px-5 py-3 transition-colors hover:bg-accent/20">
+      <div className="flex items-center gap-2">
+        <div className="shrink-0">
+          <Pips colors={row.colors} small />
+        </div>
+        <span className="text-sm font-medium" title={row.name}>{row.name}</span>
       </div>
       <div className="flex h-1.5 w-full rounded-full bg-muted/50 overflow-hidden">
         <div className="h-full bg-primary/80 transition-all" style={{ width: `${(row.cutCount / maxTotal) * 100}%` }} title={`Made Cut: ${row.cutCount}`} />
@@ -262,8 +264,8 @@ function Commanders({ tournament }: { tournament: TournamentDetail }) {
   return (
     <div className="knd-panel overflow-hidden">
       <div className="border-b border-border/70 px-5 py-4">
-        <h3 className="font-semibold">Top {tournament.cutSize} Meta Representation</h3>
-        <p className="text-sm text-muted-foreground">Commanders that advanced to the elimination rounds</p>
+        <h3 className="font-semibold">Tournament Meta Representation</h3>
+        <p className="text-sm text-muted-foreground">Top-performing commanders and their cut conversion rates</p>
       </div>
       {tournament.topCutDist.map((row) => (
         <BarRow key={row.name} row={row} />

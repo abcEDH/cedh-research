@@ -248,8 +248,12 @@ export function distributionFromStandings(standings: Standing[]): { topCutDist: 
   });
 
   const topCutDist = [...entries]
-    .filter((e) => e.cutCount > 0)
-    .sort((a, b) => b.cutCount - a.cutCount || a.totalCount - b.totalCount);
+    .sort((a, b) => {
+      if (b.cutCount !== a.cutCount) return b.cutCount - a.cutCount;
+      if (a.cutCount > 0) return a.totalCount - b.totalCount; // High conversion: 1/1 before 1/15
+      return b.totalCount - a.totalCount; // Missed cuts: 0/15 before 0/1
+    })
+    .slice(0, 30);
 
   const overallDist = [...entries]
     .sort((a, b) => b.totalCount - a.totalCount || b.cutCount - a.cutCount)
