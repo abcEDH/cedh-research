@@ -1,3 +1,19 @@
+# [1.19.0](https://github.com/abcEDH/cedh-research/compare/v1.18.4...v1.19.0) (2026-06-20)
+
+
+### Bug Fixes
+
+* **backend:** add statement_timeout to global Elo snapshot RPCs ([#229](https://github.com/abcEDH/cedh-research/issues/229)) ([d71882d](https://github.com/abcEDH/cedh-research/commit/d71882d66a611103c5a18ab1e2b4955d572ce025))
+* **backend:** batch SupabaseClient.upsert to avoid statement timeout ([#226](https://github.com/abcEDH/cedh-research/issues/226)) ([7020ebe](https://github.com/abcEDH/cedh-research/commit/7020ebe7db94093c18c0761a05c75f3870af09c0))
+* **backend:** push detect_active_players dedup into a Postgres RPC ([#227](https://github.com/abcEDH/cedh-research/issues/227)) ([f961247](https://github.com/abcEDH/cedh-research/commit/f961247e39be8d830ac9c4ffe446c4b58d8996e2))
+* **backend:** refresh materialized views over the direct Postgres connection ([#230](https://github.com/abcEDH/cedh-research/issues/230)) ([9a52263](https://github.com/abcEDH/cedh-research/commit/9a522634cbae990a1f7ec3b6c80338511fd33565))
+* **backend:** repair the three materialized-view refresh failures ([#228](https://github.com/abcEDH/cedh-research/issues/228)) ([78221f3](https://github.com/abcEDH/cedh-research/commit/78221f3f95a26383f6931f64c8202337cd12a692))
+
+
+### Features
+
+* Add tournament browsing surfaces ([#231](https://github.com/abcEDH/cedh-research/issues/231)) ([bba64f3](https://github.com/abcEDH/cedh-research/commit/bba64f3c353e44542cf4faa115f3e5ad70c4e961))
+
 ## [1.18.4](https://github.com/abcEDH/cedh-research/compare/v1.18.3...v1.18.4) (2026-06-17)
 
 
