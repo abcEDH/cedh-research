@@ -238,8 +238,7 @@ export default function TournamentsPage() {
             items.map((t, i) => {
               const tier = t.tier;
               const ts = TIER_STYLE[tier];
-              const hasDetail = t.hasDetail;
-              const href = hasDetail ? `/tournaments/${t.slug}` : "#";
+              const href = `/tournaments/${t.slug}`;
 
               return (
                 <div
@@ -247,13 +246,12 @@ export default function TournamentsPage() {
                   className="group flex items-center gap-4 px-5 py-4 transition-colors hover:bg-accent/25"
                   style={{
                     borderBottom: i < items.length - 1 ? "1px solid var(--border)" : "none",
-                    cursor: hasDetail ? "pointer" : "default",
+                    cursor: "pointer",
                   }}
                 >
                   <Link
                     href={href}
                     className="flex-1 min-w-0 flex items-center gap-4 no-underline"
-                    onClick={!hasDetail ? (e) => e.preventDefault() : undefined}
                   >
                     {/* Date column */}
                     <div className="flex flex-col items-center justify-center w-14 flex-shrink-0 border-r border-border pr-4">
@@ -343,9 +341,7 @@ export default function TournamentsPage() {
                       strokeLinejoin="round"
                       className="flex-shrink-0"
                       style={{
-                        color: hasDetail
-                          ? "hsl(var(--knd-cyan) / 0.6)"
-                          : "oklch(0.34 0.02 255 / 0.4)",
+                        color: "hsl(var(--knd-cyan) / 0.6)",
                       }}
                     >
                       <path d="m9 18 6-6-6-6" />
@@ -360,9 +356,6 @@ export default function TournamentsPage() {
         {/* Footer note */}
         <p className="mt-5 mx-0.5 text-xs text-muted-foreground font-mono">
           Source: TopDeck.gg · sample sizes ≥ 16 players · standings updated nightly.
-          {" · "}
-          <span style={{ color: "hsl(var(--knd-cyan))" }}>Cyan chevron</span>
-          {" "}= full standings + bracket available.
         </p>
       </main>
     </>

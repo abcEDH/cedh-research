@@ -117,12 +117,10 @@ const summaries: Omit<TournamentSummary, "tier" | "hasDetail">[] = [
   { name: "From The Vault Anniversary 3: Mox Ruby", date: "2026-03-28", players: 110, winner: "Theodore Montalbano", slug: "from-the-vault-3" },
 ];
 
-const detailedSlugs = new Set(["siege-cedh-10k", "the-boil-2026", "quest-for-a-cause", "land-go-open-10k"]);
-
 export const tournamentSummaries: TournamentSummary[] = summaries.map((event) => ({
   ...event,
   tier: assignEventTier(event.players),
-  hasDetail: detailedSlugs.has(event.slug),
+  hasDetail: true,
 }));
 
 const siegeStandings: Standing[] = [
@@ -306,7 +304,39 @@ function makeDetail(input: {
   };
 }
 
+function inferredRounds(players: number) {
+  if (players >= 180) return 8;
+  if (players >= 100) return 7;
+  return 6;
+}
+
+function inferredCutSize(players: number): 16 | 32 | 40 {
+  if (players >= 200) return 40;
+  if (players >= 100) return 32;
+  return 16;
+}
+
+function seedDetail(event: Omit<TournamentSummary, "tier" | "hasDetail">): TournamentDetail {
+  const rounds = inferredRounds(event.players);
+  const cutSize = inferredCutSize(event.players);
+  return makeDetail({
+    ...event,
+    rounds,
+    cutSize,
+    winnerCmd: "Kinnan, Bonder Prodigy",
+    winnerColors: "UG",
+    source: "https://topdeck.gg",
+    topRecord: rounds >= 8 ? "5-1-2" : "5-1-1",
+    prize: event.name.toLowerCase().includes("10k") ? "$10K" : "—",
+  });
+}
+
+const seededTournamentDetails: Record<string, TournamentDetail> = Object.fromEntries(
+  summaries.map((event) => [event.slug, seedDetail(event)])
+);
+
 export const tournamentDetails: Record<string, TournamentDetail> = {
+  ...seededTournamentDetails,
   "siege-cedh-10k": makeDetail({
     slug: "siege-cedh-10k",
     name: "SIEGE cEDH 10K",

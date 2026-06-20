@@ -517,7 +517,7 @@ export default async function Home() {
               {recentTournaments.map((event) => (
                 <Link
                   key={event.slug}
-                  href={event.hasDetail ? `/tournaments/${event.slug}` : "/tournaments"}
+                  href={`/tournaments/${event.slug}`}
                   className="group flex items-center gap-4 border-b border-border/60 px-4 py-3 transition-colors last:border-b-0 hover:bg-accent/20"
                 >
                   <DateBlock date={event.date} />
@@ -527,7 +527,7 @@ export default async function Home() {
                       {event.winner} · <span className="font-mono">{event.players.toLocaleString()}</span> players
                     </div>
                   </div>
-                  {event.hasDetail ? <ChevronRight className="h-4 w-4 shrink-0 text-primary/70" /> : null}
+                  <ChevronRight className="h-4 w-4 shrink-0 text-primary/70" />
                 </Link>
               ))}
             </div>
