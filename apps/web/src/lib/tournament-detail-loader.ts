@@ -52,10 +52,9 @@ export function staticTournamentParams() {
 
 export async function loadTournamentDetail(slug: string): Promise<TournamentDetail | null> {
   const summary = getTournamentSummary(slug);
-  if (!summary) return null;
 
-  const loaded = await loadSupabaseTournamentDetail(summary).catch((error) => {
-    console.error(`Tournament detail load failed for ${summary.slug}:`, error);
+  const loaded = await loadSupabaseTournamentDetail(slug, summary).catch((error) => {
+    console.error(`Tournament detail load failed for ${slug}:`, error);
     return null;
   });
 
@@ -80,12 +79,13 @@ export async function loadTournamentDetail(slug: string): Promise<TournamentDeta
 }
 
 async function loadSupabaseTournamentDetail(
-  summary: NonNullable<ReturnType<typeof getTournamentSummary>>
+  slug: string,
+  summary: ReturnType<typeof getTournamentSummary>
 ): Promise<TournamentDetail | null> {
   const { data: tournament, error: tournamentError } = await supabase
     .from("tournaments")
     .select("id, topdeck_tid, name, start_date, player_count, swiss_rounds, top_cut")
-    .eq("topdeck_tid", summary.topdeckTid)
+    .eq("topdeck_tid", summary?.topdeckTid ?? slug)
     .maybeSingle();
 
   if (tournamentError) throw tournamentError;
@@ -103,29 +103,30 @@ async function loadSupabaseTournamentDetail(
 
   if (entriesError) throw entriesError;
 
+  const topdeckTid = row.topdeck_tid ?? summary?.topdeckTid ?? slug;
   const standings = ((entryRows ?? []) as unknown as EntryRow[])
     .filter((entry) => entry.final_standing !== null)
-    .map((entry, index) => toStanding(entry, row.topdeck_tid ?? summary.topdeckTid, index));
+    .map((entry, index) => toStanding(entry, topdeckTid, index));
 
   if (standings.length === 0) return null;
 
   const winner = standings[0];
-  const players = row.player_count ?? summary.players;
+  const players = row.player_count ?? summary?.players ?? standings.length;
   const rounds = row.swiss_rounds && row.swiss_rounds > 0 ? row.swiss_rounds : inferRounds(players);
   const cutSize = row.top_cut && row.top_cut > 0 ? row.top_cut : inferCutSize(players);
 
   return {
-    name: (row.name ?? summary.name).trim(),
-    date: (row.start_date ?? summary.date).slice(0, 10),
+    name: (row.name ?? summary?.name ?? topdeckTid).trim(),
+    date: (row.start_date ?? summary?.date ?? "").slice(0, 10),
     players,
     winner: winner.player,
-    slug: summary.slug,
-    topdeckTid: row.topdeck_tid ?? summary.topdeckTid,
+    slug: summary?.slug ?? topdeckTid,
+    topdeckTid,
     rounds,
     cutSize,
     winnerCmd: winner.commander,
     winnerColors: winner.colors,
-    source: `https://topdeck.gg/bracket/${row.topdeck_tid ?? summary.topdeckTid}`,
+    source: `https://topdeck.gg/bracket/${topdeckTid}`,
     bracketAvailable: false,
     standings,
     narratives: buildLoadedNarratives({
@@ -175,7 +176,6 @@ function firstRelation<T>(value: T | T[] | null | undefined): T | null {
 
 function cutLabel(rank: number, madeTopCut: boolean, madeTop16: boolean): Standing["cut"] {
   if (rank === 1) return "Champion";
-  if (rank === 2) return "Top 2";
   if (rank <= 4) return "Top 4";
   if (madeTop16 || rank <= 16) return "Top 16";
   if (madeTopCut && rank <= 32) return "Top 32";
