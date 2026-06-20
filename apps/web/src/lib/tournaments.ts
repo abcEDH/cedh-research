@@ -249,8 +249,7 @@ export function distributionFromStandings(standings: Standing[]): { topCutDist: 
 
   const topCutDist = [...entries]
     .filter((e) => e.cutCount > 0)
-    .sort((a, b) => b.cutCount - a.cutCount || b.totalCount - a.totalCount)
-    .slice(0, 10);
+    .sort((a, b) => b.cutCount - a.cutCount || a.totalCount - b.totalCount);
 
   const overallDist = [...entries]
     .sort((a, b) => b.totalCount - a.totalCount || b.cutCount - a.cutCount)

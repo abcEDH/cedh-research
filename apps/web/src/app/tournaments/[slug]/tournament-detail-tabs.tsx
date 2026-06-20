@@ -240,7 +240,7 @@ function PathRow({ label, value }: { label: string; value: string }) {
 }
 
 function Commanders({ tournament }: { tournament: TournamentDetail }) {
-  const maxTotal = Math.max(...tournament.overallDist.map((r) => r.totalCount), 1);
+  const maxTotal = Math.max(...tournament.topCutDist.map((r) => r.totalCount), 1);
 
   const BarRow = ({ row }: { row: CommanderDistEntry }) => (
     <div className="grid grid-cols-[minmax(120px,180px)_1fr_60px] items-center gap-4 border-b border-border/60 px-5 py-3 transition-colors hover:bg-accent/20">
@@ -260,31 +260,16 @@ function Commanders({ tournament }: { tournament: TournamentDetail }) {
   );
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
-      <div className="knd-panel overflow-hidden">
-        <div className="border-b border-border/70 px-5 py-4">
-          <h3 className="font-semibold">Top {tournament.cutSize} Meta</h3>
-          <p className="text-sm text-muted-foreground">Most represented in the elimination rounds</p>
-        </div>
-        {tournament.topCutDist.map((row) => (
-          <BarRow key={row.name} row={row} />
-        ))}
-        <div className="px-5 py-3 font-mono text-[11px] text-muted-foreground">
-          Distribution reflects the recorded elimination cut.
-        </div>
+    <div className="knd-panel overflow-hidden">
+      <div className="border-b border-border/70 px-5 py-4">
+        <h3 className="font-semibold">Top {tournament.cutSize} Meta Representation</h3>
+        <p className="text-sm text-muted-foreground">Commanders that advanced to the elimination rounds</p>
       </div>
-
-      <div className="knd-panel overflow-hidden">
-        <div className="border-b border-border/70 px-5 py-4">
-          <h3 className="font-semibold">Overall Field Meta</h3>
-          <p className="text-sm text-muted-foreground">Most represented across all {tournament.players} entrants</p>
-        </div>
-        {tournament.overallDist.map((row) => (
-          <BarRow key={row.name} row={row} />
-        ))}
-        <div className="px-5 py-3 font-mono text-[11px] text-muted-foreground">
-          Stacked bars show players who made the cut vs missed.
-        </div>
+      {tournament.topCutDist.map((row) => (
+        <BarRow key={row.name} row={row} />
+      ))}
+      <div className="px-5 py-3 font-mono text-[11px] text-muted-foreground">
+        Stacked bars show players who made the cut vs missed.
       </div>
     </div>
   );
