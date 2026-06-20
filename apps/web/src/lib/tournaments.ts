@@ -130,6 +130,7 @@ const summaries: Omit<TournamentSummary, "tier" | "hasDetail">[] = [
   { name: "The Decatur Deathmatch (10K guaranteed)", date: "2026-06-06", players: 118, winner: "[CHUDS] Shmant Shmandrew Shmeklund", slug: "decatur-deathmatch", topdeckTid: "the-decatur-deathmatch-guaranteed-10k-cash-prizing" },
   { name: "Land Go Expo — Nashville Hot! Redemption Event", date: "2026-05-24", players: 112, winner: "JoeyTwoAnkles", slug: "land-go-expo-nashville", topdeckTid: "land-go-expo-nashville-hot-redemption-event" },
   { name: "From The Vault Anniversary 3: Mox Ruby", date: "2026-03-28", players: 110, winner: "Theodore Montalbano", slug: "from-the-vault-3", topdeckTid: "from-the-vault-anniversary-3-mox-ruby" },
+  { name: "CEDH Tournament 7", date: "2026-06-14", players: 63, winner: "Lucas Vetro", slug: "cedh-tournament-7-june-13th", topdeckTid: "cedh-tournament-7-june-13th" },
 ];
 
 export const tournamentSummaries: TournamentSummary[] = summaries.map((event) => ({
