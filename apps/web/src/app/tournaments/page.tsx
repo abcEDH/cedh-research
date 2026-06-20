@@ -28,7 +28,7 @@ function parseSort(params: SearchParams): SortOption {
 
 function parseTier(params: SearchParams): TierOption {
   const value = paramValue(params, "tier");
-  return value && value in TIER_MIN ? (value as TierOption) : "Gold";
+  return value && value in TIER_MIN ? (value as TierOption) : "All Tiers";
 }
 
 function parsePeriod(params: SearchParams): PeriodOption {
