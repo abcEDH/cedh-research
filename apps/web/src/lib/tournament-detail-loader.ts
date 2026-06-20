@@ -5,7 +5,7 @@ import {
   curatedTournamentDetails,
   getTournamentSummary,
   tournamentSummaries,
-  type CommanderDistEntry,
+  distributionFromStandings,
   type Standing,
   type TournamentDetail,
 } from "@/lib/tournaments";
@@ -74,7 +74,8 @@ export async function loadTournamentDetail(slug: string): Promise<TournamentDeta
     winnerColors: loaded.winnerColors,
     source: loaded.source,
     standings: loaded.standings,
-    cmdDist: loaded.cmdDist,
+    topCutDist: loaded.topCutDist,
+    overallDist: loaded.overallDist,
   };
 }
 
@@ -115,6 +116,8 @@ async function loadSupabaseTournamentDetail(
   const rounds = row.swiss_rounds && row.swiss_rounds > 0 ? row.swiss_rounds : inferRounds(players);
   const cutSize = row.top_cut && row.top_cut > 0 ? row.top_cut : inferCutSize(players);
 
+  const dist = distributionFromStandings(standings);
+
   return {
     name: (row.name ?? summary?.name ?? topdeckTid).trim(),
     date: (row.start_date ?? summary?.date ?? "").slice(0, 10),
@@ -137,7 +140,8 @@ async function loadSupabaseTournamentDetail(
       winnerCmd: winner.commander,
       topRecord: `${winner.wins}-${winner.losses}-${winner.draws}`,
     }),
-    cmdDist: distributionFromStandings(standings, cutSize),
+    topCutDist: dist.topCutDist,
+    overallDist: dist.overallDist,
     bracket: {
       swiss: { topSeed: winner.player, topRecord: `${winner.wins}-${winner.losses}-${winner.draws}` },
       t40: [],
@@ -196,27 +200,7 @@ function inferCutSize(players: number): 16 | 32 | 40 {
   return 16;
 }
 
-function distributionFromStandings(standings: Standing[], cutSize: number): CommanderDistEntry[] {
-  const cutRows = standings.filter((row) => row.cut !== "—").slice(0, cutSize);
-  const rows = cutRows.length > 0 ? cutRows : standings.slice(0, cutSize);
-  const counts = new Map<string, { colors: string; count: number }>();
 
-  for (const row of rows) {
-    const current = counts.get(row.commander) ?? { colors: row.colors, count: 0 };
-    current.count += 1;
-    counts.set(row.commander, current);
-  }
-
-  return [...counts.entries()]
-    .map(([name, value]) => ({
-      name,
-      colors: value.colors,
-      count: value.count,
-      pct: Number(((value.count / rows.length) * 100).toFixed(1)),
-    }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 10);
-}
 
 function buildLoadedNarratives(event: {
   players: number;

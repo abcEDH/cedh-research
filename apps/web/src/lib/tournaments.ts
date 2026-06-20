@@ -49,8 +49,10 @@ export interface RoundNarrative {
 export interface CommanderDistEntry {
   name: string;
   colors: string;
-  count: number;
-  pct: number;
+  cutCount: number;
+  missCount: number;
+  totalCount: number;
+  conversion: number;
 }
 
 export interface PodPlayer {
@@ -74,7 +76,8 @@ export interface TournamentDetail extends Omit<TournamentSummary, "hasDetail" | 
   bracketAvailable?: boolean;
   standings: Standing[];
   narratives: RoundNarrative[];
-  cmdDist: CommanderDistEntry[];
+  topCutDist: CommanderDistEntry[];
+  overallDist: CommanderDistEntry[];
   bracket: {
     swiss: { topSeed: string; topRecord: string };
     t40: PodData[];
@@ -219,22 +222,41 @@ function buildNarratives(event: { players: number; rounds: number; cutSize: numb
   ];
 }
 
-function distributionFromStandings(standings: Standing[], cutSize: number): CommanderDistEntry[] {
-  const counts = new Map<string, { colors: string; count: number }>();
+export function distributionFromStandings(standings: Standing[]): { topCutDist: CommanderDistEntry[]; overallDist: CommanderDistEntry[] } {
+  const counts = new Map<string, { colors: string; cutCount: number; missCount: number }>();
+
   for (const row of standings) {
-    const current = counts.get(row.commander) ?? { colors: row.colors, count: 0 };
-    current.count += 1;
+    const current = counts.get(row.commander) ?? { colors: row.colors, cutCount: 0, missCount: 0 };
+    if (row.cut !== "—") {
+      current.cutCount += 1;
+    } else {
+      current.missCount += 1;
+    }
     counts.set(row.commander, current);
   }
-  return [...counts.entries()]
-    .map(([name, value]) => ({
+
+  const entries: CommanderDistEntry[] = [...counts.entries()].map(([name, value]) => {
+    const totalCount = value.cutCount + value.missCount;
+    return {
       name,
       colors: value.colors,
-      count: value.count,
-      pct: Number(((value.count / cutSize) * 100).toFixed(1)),
-    }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 8);
+      cutCount: value.cutCount,
+      missCount: value.missCount,
+      totalCount,
+      conversion: Number(((value.cutCount / totalCount) * 100).toFixed(1)),
+    };
+  });
+
+  const topCutDist = [...entries]
+    .filter((e) => e.cutCount > 0)
+    .sort((a, b) => b.cutCount - a.cutCount || b.totalCount - a.totalCount)
+    .slice(0, 10);
+
+  const overallDist = [...entries]
+    .sort((a, b) => b.totalCount - a.totalCount || b.cutCount - a.cutCount)
+    .slice(0, 10);
+
+  return { topCutDist, overallDist };
 }
 
 function buildBracket(standings: Standing[]) {
@@ -299,6 +321,7 @@ function makeDetail(input: {
 }): TournamentDetail {
   const standings = input.standings ?? remapStandings(siegeStandings, input.winner, input.winnerCmd, input.winnerColors);
   const topdeckTid = summaries.find((event) => event.slug === input.slug)?.topdeckTid ?? input.slug;
+  const dist = distributionFromStandings(standings);
   return {
     slug: input.slug,
     topdeckTid,
@@ -314,7 +337,8 @@ function makeDetail(input: {
     bracketAvailable: true,
     standings,
     narratives: buildNarratives(input),
-    cmdDist: distributionFromStandings(standings, input.cutSize),
+    topCutDist: dist.topCutDist,
+    overallDist: dist.overallDist,
     bracket: buildBracket(standings),
   };
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { colorLetters, tournamentPoints, type PodData, type TournamentDetail } from "@/lib/tournaments";
+import { colorLetters, tournamentPoints, type CommanderDistEntry, type PodData, type TournamentDetail } from "@/lib/tournaments";
 
 import Link from "next/link";
 
@@ -240,27 +240,51 @@ function PathRow({ label, value }: { label: string; value: string }) {
 }
 
 function Commanders({ tournament }: { tournament: TournamentDetail }) {
-  return (
-    <div className="knd-panel overflow-hidden">
-      <div className="border-b border-border/70 px-5 py-4">
-        <h3 className="font-semibold">Top {tournament.cutSize} Commander Distribution</h3>
-        <p className="text-sm text-muted-foreground">{tournament.cutSize} seats · meta representation at this event</p>
+  const maxTotal = Math.max(...tournament.overallDist.map((r) => r.totalCount), 1);
+
+  const BarRow = ({ row }: { row: CommanderDistEntry }) => (
+    <div className="grid grid-cols-[minmax(120px,180px)_1fr_60px] items-center gap-4 border-b border-border/60 px-5 py-3 transition-colors hover:bg-accent/20">
+      <div className="flex min-w-0 items-center gap-2">
+        <Pips colors={row.colors} small />
+        <span className="truncate text-sm font-medium" title={row.name}>{row.name}</span>
       </div>
-      {tournament.cmdDist.map((row) => (
-        <div key={row.name} className="grid grid-cols-[minmax(170px,260px)_1fr_42px_54px] items-center gap-4 border-b border-border/60 px-5 py-3 transition-colors hover:bg-accent/20">
-          <div className="flex min-w-0 items-center gap-2">
-            <Pips colors={row.colors} small />
-            <span className="truncate text-sm font-medium">{row.name}</span>
-          </div>
-          <div className="h-1.5 rounded-full bg-muted/50">
-            <div className="h-full rounded-full bg-primary/60" style={{ width: `${Math.min(row.pct, 100)}%` }} />
-          </div>
-          <div className="text-right font-mono text-xs text-muted-foreground">{row.count}</div>
-          <div className="text-right font-mono text-xs text-primary">{row.pct}%</div>
+      <div className="flex h-1.5 w-full rounded-full bg-muted/50 overflow-hidden">
+        <div className="h-full bg-primary/80 transition-all" style={{ width: `${(row.cutCount / maxTotal) * 100}%` }} title={`Made Cut: ${row.cutCount}`} />
+        <div className="h-full bg-muted-foreground/30 transition-all" style={{ width: `${(row.missCount / maxTotal) * 100}%` }} title={`Missed Cut: ${row.missCount}`} />
+      </div>
+      <div className="text-right font-mono text-xs">
+        <span className="text-primary font-semibold" title="Made Cut">{row.cutCount}</span>
+        <span className="text-muted-foreground/60" title="Total Played">/{row.totalCount}</span>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      <div className="knd-panel overflow-hidden">
+        <div className="border-b border-border/70 px-5 py-4">
+          <h3 className="font-semibold">Top {tournament.cutSize} Meta</h3>
+          <p className="text-sm text-muted-foreground">Most represented in the elimination rounds</p>
         </div>
-      ))}
-      <div className="px-5 py-3 font-mono text-[11px] text-muted-foreground">
-        Distribution reflects the recorded elimination cut for this event.
+        {tournament.topCutDist.map((row) => (
+          <BarRow key={row.name} row={row} />
+        ))}
+        <div className="px-5 py-3 font-mono text-[11px] text-muted-foreground">
+          Distribution reflects the recorded elimination cut.
+        </div>
+      </div>
+
+      <div className="knd-panel overflow-hidden">
+        <div className="border-b border-border/70 px-5 py-4">
+          <h3 className="font-semibold">Overall Field Meta</h3>
+          <p className="text-sm text-muted-foreground">Most represented across all {tournament.players} entrants</p>
+        </div>
+        {tournament.overallDist.map((row) => (
+          <BarRow key={row.name} row={row} />
+        ))}
+        <div className="px-5 py-3 font-mono text-[11px] text-muted-foreground">
+          Stacked bars show players who made the cut vs missed.
+        </div>
       </div>
     </div>
   );
