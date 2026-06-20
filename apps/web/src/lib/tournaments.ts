@@ -1,5 +1,12 @@
 export type EventTier = "Diamond" | "Platinum" | "Gold" | "Silver" | "Bronze";
 
+export interface TopCutPlayer {
+  name: string;
+  commander: string;
+  colors: string[];
+  standing: number;
+}
+
 export interface TournamentSummary {
   name: string;
   date: string;
@@ -9,6 +16,7 @@ export interface TournamentSummary {
   topdeckTid: string;
   tier: EventTier;
   hasDetail: boolean;
+  topCut?: TopCutPlayer[];
 }
 
 export interface Standing {

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import { assignEventTier, TIER_MIN, tournamentSummaries, type EventTier, type TournamentSummary } from "@/lib/tournaments";
+import { assignEventTier, TIER_MIN, tournamentSummaries, type EventTier, type TournamentSummary, type TopCutPlayer } from "@/lib/tournaments";
 
 // ---- Types ----
 type SortOption = "Date" | "Players";
@@ -47,9 +47,11 @@ type TournamentRow = {
   tier: EventTier | null;
 };
 
-type WinnerRow = {
+type TopCutRow = {
   tournament_id: string;
+  final_standing: number;
   players: { name: string | null } | Array<{ name: string | null }> | null;
+  commanders: { name: string | null; color_identity: string[] | null } | Array<{ name: string | null; color_identity: string[] | null }> | null;
 };
 
 function relTime(days: number): string {
@@ -138,31 +140,43 @@ export function TournamentsList({ initialSort, initialTier, initialPeriod }: Tou
 
       const rows = tournamentRows as TournamentRow[];
       const ids = rows.map((row) => row.id);
-      const { data: winnerRows } = await supabase
+      const { data: topRows } = await supabase
         .from("tournament_entries")
-        .select("tournament_id, players(name)")
+        .select("tournament_id, final_standing, players(name), commanders(name, color_identity)")
         .in("tournament_id", ids)
-        .eq("final_standing", 1);
+        .lte("final_standing", 4)
+        .order("final_standing", { ascending: true });
 
-      const winnerByTournamentId = new Map(
-        ((winnerRows ?? []) as unknown as WinnerRow[]).map((row) => [
-          row.tournament_id,
-          firstRelation(row.players)?.name ?? "—",
-        ])
-      );
+      const topCutByTournamentId = new Map<string, TopCutPlayer[]>();
+      for (const row of ((topRows ?? []) as unknown as TopCutRow[])) {
+        const tId = row.tournament_id;
+        const entries = topCutByTournamentId.get(tId) ?? [];
+        entries.push({
+          standing: row.final_standing,
+          name: firstRelation(row.players)?.name ?? "Unknown",
+          commander: firstRelation(row.commanders)?.name ?? "Unknown Commander",
+          colors: firstRelation(row.commanders)?.color_identity ?? [],
+        });
+        topCutByTournamentId.set(tId, entries);
+      }
 
       const loadedEvents = rows
         .filter((row) => row.topdeck_tid && row.name && row.start_date && row.player_count)
-        .map((row) => ({
-          name: (row.name ?? "").trim(),
-          date: (row.start_date ?? "").slice(0, 10),
-          players: row.player_count ?? 0,
-          winner: winnerByTournamentId.get(row.id) ?? "—",
-          slug: row.topdeck_tid as string,
-          topdeckTid: row.topdeck_tid as string,
-          tier: row.tier ?? assignEventTier(row.player_count ?? 0),
-          hasDetail: true,
-        }));
+        .map((row) => {
+          const topCut = topCutByTournamentId.get(row.id) ?? [];
+          const winner = topCut.find((c) => c.standing === 1)?.name ?? "—";
+          return {
+            name: (row.name ?? "").trim(),
+            date: (row.start_date ?? "").slice(0, 10),
+            players: row.player_count ?? 0,
+            winner,
+            topCut,
+            slug: row.topdeck_tid as string,
+            topdeckTid: row.topdeck_tid as string,
+            tier: row.tier ?? assignEventTier(row.player_count ?? 0),
+            hasDetail: true,
+          };
+        });
 
       if (!cancelled && loadedEvents.length > 0) {
         setEvents(loadedEvents);
@@ -330,34 +344,59 @@ export function TournamentsList({ initialSort, initialTier, initialPeriod }: Tou
 
                     {/* Name + winner */}
                     <div className="flex-1 min-w-0 flex flex-col gap-1.5">
-                      <span className="text-[17px] font-semibold leading-snug text-foreground">
-                        {t.name}
-                      </span>
-                      <span className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <span className="inline-flex items-center gap-1.5">
-                          <svg
-                            width="13"
-                            height="13"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            style={{ color: "hsl(var(--knd-cyan))", flexShrink: 0 }}
-                          >
-                            <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" />
-                            <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" />
-                            <path d="M4 22h16" />
-                            <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" />
-                            <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" />
-                            <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" />
-                          </svg>
-                          <span className="text-foreground">{t.winner}</span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-[17px] font-semibold leading-snug text-foreground truncate">
+                          {t.name}
                         </span>
-                        <span className="text-border">·</span>
-                        <span>{relTime(t.days)}</span>
-                      </span>
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">
+                          {relTime(t.days)}
+                        </span>
+                      </div>
+                      
+                      {/* Top 4 Display */}
+                      {t.topCut && t.topCut.length > 0 ? (
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1">
+                          {t.topCut.map((cut) => (
+                            <div key={`${cut.standing}-${cut.name}`} className="flex items-center gap-1.5 min-w-0 max-w-[200px]">
+                              <span className={`text-[10px] font-mono font-bold flex-shrink-0 ${cut.standing === 1 ? 'text-[hsl(var(--knd-amber))]' : 'text-muted-foreground'}`}>
+                                {cut.standing === 1 ? '★' : `${cut.standing}`}
+                              </span>
+                              <div className="flex flex-col min-w-0">
+                                <span className={`text-xs truncate ${cut.standing === 1 ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>
+                                  {cut.name}
+                                </span>
+                                <span className="text-[10px] text-muted-foreground/70 truncate" title={cut.commander}>
+                                  {cut.commander}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
+                          <span className="inline-flex items-center gap-1.5">
+                            <svg
+                              width="13"
+                              height="13"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              style={{ color: "hsl(var(--knd-cyan))", flexShrink: 0 }}
+                            >
+                              <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" />
+                              <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" />
+                              <path d="M4 22h16" />
+                              <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" />
+                              <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" />
+                              <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" />
+                            </svg>
+                            <span className="text-foreground">{t.winner}</span>
+                          </span>
+                        </span>
+                      )}
                     </div>
 
                     {/* Tier badge */}
