@@ -107,7 +107,7 @@ function Standings({ tournament }: { tournament: TournamentDetail }) {
               <td className={`px-4 py-3 font-mono text-sm font-semibold ${row.rank === 1 ? "text-[hsl(var(--knd-amber))]" : row.rank === 2 ? "text-slate-200" : row.rank === 3 ? "text-orange-300" : "text-muted-foreground"}`}>
                 {rankLabel(row.rank)}
               </td>
-              <td className="px-3 py-3">
+              <td className="px-3 py-3 whitespace-nowrap">
                 {row.topdeckId ? (
                   <Link
                     href={`/regional-elo/player/${row.topdeckId}`}
@@ -120,7 +120,7 @@ function Standings({ tournament }: { tournament: TournamentDetail }) {
                 )}
                 {row.team ? <div className="font-mono text-[11px] text-muted-foreground">{row.team}</div> : null}
               </td>
-              <td className="px-3 py-3">
+              <td className="px-3 py-3 whitespace-nowrap">
                 <div className="flex items-center gap-2">
                   <Pips colors={row.colors} small />
                   <span className="text-muted-foreground">{row.commander}</span>
@@ -248,7 +248,7 @@ function Commanders({ tournament }: { tournament: TournamentDetail }) {
         <div className="shrink-0">
           <Pips colors={row.colors} small />
         </div>
-        <span className="text-sm font-medium" title={row.name}>{row.name}</span>
+        <span className="text-sm font-medium whitespace-nowrap" title={row.name}>{row.name}</span>
       </div>
       <div className="flex h-1.5 w-full rounded-full bg-muted/50 overflow-hidden">
         <div className="h-full bg-primary/80 transition-all" style={{ width: `${(row.cutCount / maxTotal) * 100}%` }} title={`Made Cut: ${row.cutCount}`} />
