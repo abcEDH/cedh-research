@@ -28,8 +28,7 @@ const PERIOD_DAYS: Record<PeriodOption, number> = {
   All: 1e9,
 };
 
-// Pinned reference date matching the current design handoff.
-const TODAY = new Date(2026, 5, 15);
+const TODAY = new Date();
 
 // ---- Helpers ----
 type TournamentsListProps = {
@@ -356,8 +355,8 @@ export function TournamentsList({ initialSort, initialTier, initialPeriod }: Tou
                       {/* Top 4 Display */}
                       {t.topCut && t.topCut.length > 0 ? (
                         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1">
-                          {t.topCut.map((cut) => (
-                            <div key={`${cut.standing}-${cut.name}`} className="flex items-center gap-1.5 min-w-0 max-w-[200px]">
+                          {t.topCut.map((cut, ci) => (
+                            <div key={`${cut.standing}-${cut.name}-${ci}`} className="flex items-center gap-1.5 min-w-0 max-w-[200px]">
                               <span className={`text-[10px] font-mono font-bold flex-shrink-0 ${cut.standing === 1 ? 'text-[hsl(var(--knd-amber))]' : 'text-muted-foreground'}`}>
                                 {cut.standing === 1 ? '★' : `${cut.standing}`}
                               </span>

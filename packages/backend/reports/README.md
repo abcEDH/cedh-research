@@ -1,8 +1,11 @@
-# cEDH Analytics Reports
+# cEDH Analytics Reports (ARCHIVED)
 
-This directory contains periodic analysis snapshots and meta reports.
+> **Note: The reporting scripts previously located here have been archived.**
+> The Python scripts (`snapshot_analysis.py`, `commander_ev_simulations.py`, `query_performance_stats.py`) are no longer actively maintained and do not feed supported data surfaces. They can be found in `packages/backend/archive/reports/` for historical reference.
 
-## Report Types
+This directory previously contained periodic analysis snapshots and meta reports.
+
+## Legacy Report Types
 
 ### Meta Reports (`YYYY-MM-meta-report.md`)
 Monthly snapshots of the cEDH competitive meta including:
