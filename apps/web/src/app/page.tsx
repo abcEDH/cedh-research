@@ -439,44 +439,47 @@ async function fetchHomeLeaderboardLatestTournaments(playerIds: string[]) {
   return latestByPlayerId;
 }
 
-async function getCachedRecentTournaments() {
-  return unstable_cache(
-    async () => {
-      const { data: rows } = await supabase
-        .from("tournaments")
-        .select("id, topdeck_tid, name, start_date, player_count")
-        .not("topdeck_tid", "is", null)
-        .gte("player_count", 16)
-        .order("start_date", { ascending: false })
-        .limit(10);
+async function fetchRecentTournaments() {
+  const { data: rows, error } = await supabase
+    .from("tournaments")
+    .select("id, topdeck_tid, name, start_date, player_count")
+    .not("topdeck_tid", "is", null)
+    .gte("player_count", 16)
+    .order("start_date", { ascending: false })
+    .limit(10);
 
-      if (!rows?.length) return [];
+  if (error) throw new Error(`Recent tournaments query failed: ${error.message}`);
+  if (!rows?.length) return [];
 
-      const ids = rows.map((r) => r.id);
-      const { data: winners } = await supabase
-        .from("tournament_entries")
-        .select("tournament_id, players(name, topdeck_handle)")
-        .eq("final_standing", 1)
-        .in("tournament_id", ids);
+  const ids = rows.map((r) => r.id);
+  const { data: winners, error: winnersError } = await supabase
+    .from("tournament_entries")
+    .select("tournament_id, players(name, topdeck_handle)")
+    .eq("final_standing", 1)
+    .in("tournament_id", ids);
 
-      const winnerMap = new Map((winners ?? []).map((w) => [w.tournament_id, w]));
+  if (winnersError) throw new Error(`Recent tournaments winners query failed: ${winnersError.message}`);
 
-      return rows.slice(0, 5).map((t) => {
-        const winner = winnerMap.get(t.id);
-        const player = Array.isArray(winner?.players) ? winner?.players[0] : winner?.players;
-        return {
-          slug: t.topdeck_tid as string,
-          name: (t.name ?? "").trim(),
-          date: (t.start_date ?? "").slice(0, 10),
-          players: t.player_count ?? 0,
-          winner: player?.name ?? (player as { topdeck_handle?: string } | null)?.topdeck_handle ?? "—",
-        };
-      });
-    },
-    ["recent-tournaments"],
-    { revalidate: HOME_CACHE_REVALIDATE_SECONDS }
-  )();
+  const winnerMap = new Map((winners ?? []).map((w) => [w.tournament_id, w]));
+
+  return rows.slice(0, 5).map((t) => {
+    const winner = winnerMap.get(t.id);
+    const player = Array.isArray(winner?.players) ? winner?.players[0] : winner?.players;
+    return {
+      slug: t.topdeck_tid as string,
+      name: (t.name ?? "").trim(),
+      date: (t.start_date ?? "").slice(0, 10),
+      players: t.player_count ?? 0,
+      winner: player?.name ?? (player as { topdeck_handle?: string } | null)?.topdeck_handle ?? "—",
+    };
+  });
 }
+
+const getCachedRecentTournaments = unstable_cache(
+  fetchRecentTournaments,
+  ["recent-tournaments"],
+  { revalidate: HOME_CACHE_REVALIDATE_SECONDS }
+);
 
 const getCachedHomeCoreStats = unstable_cache(
   getCoreStats,
