@@ -83,7 +83,7 @@ function Standings({ tournament }: { tournament: TournamentDetail }) {
     <div className="knd-panel overflow-x-auto">
       <table className="w-full min-w-[780px] text-sm">
         <thead>
-          <tr className="border-b border-border/70 text-left font-mono text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
+          <tr className="border-b border-border/70 text-left font-mono text-[11px] uppercase tracking-[0.2em] text-muted-foreground whitespace-nowrap">
             <th className="px-4 py-3">#</th>
             <th className="px-3 py-3">Player</th>
             <th className="px-3 py-3">Commander</th>
@@ -126,17 +126,17 @@ function Standings({ tournament }: { tournament: TournamentDetail }) {
                   <span className="text-muted-foreground">{row.commander}</span>
                 </div>
               </td>
-              <td className="px-3 py-3 font-mono text-[13px]">
+              <td className="px-3 py-3 font-mono text-[13px] whitespace-nowrap">
                 <span className="font-semibold text-primary">{row.wins}W</span>
                 <span className="text-muted-foreground"> · </span>
                 <span className="text-red-300">{row.losses}L</span>
                 <span className="text-muted-foreground"> · </span>
                 <span className="text-[hsl(var(--knd-amber))]">{row.draws}D</span>
               </td>
-              <td className="px-3 py-3 text-right font-mono font-semibold">
+              <td className="px-3 py-3 text-right font-mono font-semibold whitespace-nowrap">
                 {tournamentPoints(row.wins, row.draws)}
               </td>
-              <td className="px-4 py-3 text-right">
+              <td className="px-4 py-3 text-right whitespace-nowrap">
                 <span className={`inline-flex rounded-full border px-2 py-1 font-mono text-[11px] ${cutClass(row.cut)}`}>
                   {row.cut}
                 </span>
