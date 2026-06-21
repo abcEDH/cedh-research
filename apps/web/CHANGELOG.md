@@ -1,3 +1,33 @@
+# [1.20.0](https://github.com/abcEDH/cedh-research/compare/v1.19.0...v1.20.0) (2026-06-21)
+
+
+### Bug Fixes
+
+* display database points natively and infer missing records ([b3d0479](https://github.com/abcEDH/cedh-research/commit/b3d047920d23730dc717f66d831e0fc7ff8ad538))
+* do not derive losses from points alone to avoid overwriting data ([e165e11](https://github.com/abcEDH/cedh-research/commit/e165e1179d53607fdb95222280d42c441c109921))
+* Enable all tournament detail links ([51068e4](https://github.com/abcEDH/cedh-research/commit/51068e49d5513b715ea2bcb722f31e0fd1631ab1))
+* Load full tournament detail standings ([b611482](https://github.com/abcEDH/cedh-research/commit/b61148244382eb309a2770c4d97a20fe98a580dc))
+* **migrations:** add placeholders for remote-only migration versions ([2782494](https://github.com/abcEDH/cedh-research/commit/2782494c60e0d6f6678b17b57a095a9a84e42df5))
+* **migrations:** rename local migration files to match remote timestamps ([2f4870c](https://github.com/abcEDH/cedh-research/commit/2f4870c3b926201da67140d1c50754ae79ae3513))
+* remove unused Any import ([78c85d9](https://github.com/abcEDH/cedh-research/commit/78c85d9c36780f301ce0894428750a9ce3d8a70b))
+* Use exact tournament tier filters ([b2ce6f5](https://github.com/abcEDH/cedh-research/commit/b2ce6f56945696a617b0ec47a4b63a578c9cf8db))
+* **web:** default tournament list filter to All Tiers ([454b28b](https://github.com/abcEDH/cedh-research/commit/454b28b4c77bec228bde649142b8639bb1d960f9))
+* **web:** resolve merge conflict, keep module-level unstable_cache for recent tournaments ([093db42](https://github.com/abcEDH/cedh-research/commit/093db4230dfad23ccadcb19c0cde620d94205f41))
+* **web:** use current date for period filters and stable React keys ([d829d33](https://github.com/abcEDH/cedh-research/commit/d829d3391b332af202b8ac2bf08fa7d019bd669e))
+* **web:** use module-level unstable_cache for recent tournaments ([3220a7f](https://github.com/abcEDH/cedh-research/commit/3220a7f0dc39144483681e800b012bba390daabc))
+
+
+### Features
+
+* Add tournament browsing surfaces ([c346627](https://github.com/abcEDH/cedh-research/commit/c3466271ddfbee06cf9f1637d885a7d7bfad2243))
+* **web:** add CEDH Tournament 7 to tournament summaries ([1fcd0d5](https://github.com/abcEDH/cedh-research/commit/1fcd0d5914dc80ff07f2665451fd882a1a6dc8e1))
+* **web:** add stacked bar charts for top cut and overall meta representation ([a17b862](https://github.com/abcEDH/cedh-research/commit/a17b8624492185955b15270cadae8f784b1379a8))
+* **web:** display top 4 commanders on tournament list cards ([dd7f551](https://github.com/abcEDH/cedh-research/commit/dd7f5511b3445dfed195205c7edd0636d65eff0f))
+* **web:** show full commander names and include popular non-cut commanders ([c9843a1](https://github.com/abcEDH/cedh-research/commit/c9843a1c364d7233a24af13b92871ef7449dad85))
+* **web:** top 10 support for top 40 cuts ([0ece844](https://github.com/abcEDH/cedh-research/commit/0ece84443bdce9513485aaa4f4f234d671f4f653))
+* **web:** update commanders tab to single column ([118d6b3](https://github.com/abcEDH/cedh-research/commit/118d6b34ddce95acc5d6da7b119d9703fcf53be9))
+* **web:** update tournament details layout and player links ([35df9f8](https://github.com/abcEDH/cedh-research/commit/35df9f8ec86670d4222aa897f548b5988e343d98))
+
 # [1.19.0](https://github.com/abcEDH/cedh-research/compare/v1.18.4...v1.19.0) (2026-06-20)
 
 
