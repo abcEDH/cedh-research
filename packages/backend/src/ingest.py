@@ -880,8 +880,6 @@ class DataIngester:
 
             if info.get("losses") is not None:
                 entry["losses"] = info["losses"]
-            elif info["points"] > 0:
-                entry["losses"] = 0
 
             if info.get("draws") is not None:
                 entry["draws"] = info["draws"]
