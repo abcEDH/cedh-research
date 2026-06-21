@@ -124,3 +124,7 @@ FROM tournaments
 ORDER BY player_count DESC NULLS LAST
 LIMIT 20;
 ```
+
+### 4. Data Derivation Pitfalls
+**Problem:** Deriving `losses` from `points` when `wins`, `losses`, and `draws` are missing from a standings row.
+**Solution:** Do NOT derive `losses` from `points` alone. While `wins` and `draws` can be mathematically deduced (since a win is 5 points and a draw is 1), `losses` grant 0 points and cannot be inferred without the total number of rounds. Setting `losses = 0` as a fallback overwrites existing loss counts in `tournament_entries` during re-ingestion and incorrectly inflates win rates in downstream trend views.
