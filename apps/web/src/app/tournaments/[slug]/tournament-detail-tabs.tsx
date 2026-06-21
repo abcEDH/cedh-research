@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { colorLetters, tournamentPoints, type CommanderDistEntry, type PodData, type TournamentDetail } from "@/lib/tournaments";
+import { colorLetters, type CommanderDistEntry, type PodData, type TournamentDetail } from "@/lib/tournaments";
 
 import Link from "next/link";
 
@@ -134,7 +134,7 @@ function Standings({ tournament }: { tournament: TournamentDetail }) {
                 <span className="text-[hsl(var(--knd-amber))]">{row.draws}</span>
               </td>
               <td className="px-3 py-3 text-right font-mono font-semibold whitespace-nowrap">
-                {tournamentPoints(row.wins, row.draws)}
+                {row.points}
               </td>
               <td className="px-4 py-3 text-right whitespace-nowrap">
                 <span className={`inline-flex rounded-full border px-2 py-1 font-mono text-[11px] ${cutClass(row.cut)}`}>
