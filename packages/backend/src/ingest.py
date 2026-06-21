@@ -872,12 +872,21 @@ class DataIngester:
 
             # Only add W/L/D if they are explicitly present in the data to avoid
             # overwriting with zeros during re-ingestion.
+            # If not present but points > 0, derive them.
             if info.get("wins") is not None:
                 entry["wins"] = info["wins"]
+            elif info["points"] > 0:
+                entry["wins"] = info["points"] // 5
+
             if info.get("losses") is not None:
                 entry["losses"] = info["losses"]
+            elif info["points"] > 0:
+                entry["losses"] = 0
+
             if info.get("draws") is not None:
                 entry["draws"] = info["draws"]
+            elif info["points"] > 0:
+                entry["draws"] = info["points"] % 5
 
             entries.append(entry)
 

@@ -5,6 +5,7 @@ import {
   distributionFromStandings,
   type Standing,
   type TournamentDetail,
+  tournamentPoints,
 } from "@/lib/tournaments";
 
 type TournamentRow = {
@@ -22,6 +23,7 @@ type EntryRow = {
   wins: number | null;
   losses: number | null;
   draws: number | null;
+  points: number | null;
   decklist_url: string | null;
   made_top_cut: boolean | null;
   made_top_16: boolean | null;
@@ -66,7 +68,7 @@ async function loadSupabaseTournamentDetail(
   const { data: entryRows, error: entriesError } = await supabase
     .from("tournament_entries")
     .select(
-      "final_standing, wins, losses, draws, decklist_url, made_top_cut, made_top_16, players(name, topdeck_id, topdeck_handle), commanders(name, color_identity)"
+      "final_standing, wins, losses, draws, points, decklist_url, made_top_cut, made_top_16, players(name, topdeck_id, topdeck_handle), commanders(name, color_identity)"
     )
     .eq("tournament_id", row.id)
     .order("final_standing", { ascending: true, nullsFirst: false })
@@ -136,9 +138,10 @@ function toStanding(entry: EntryRow, topdeckTid: string, index: number, cutSize:
     team: "",
     commander: commander?.name ?? "Unknown Commander",
     colors,
-    wins: entry.wins ?? 0,
+    wins: entry.wins || (entry.points ? Math.floor(entry.points / 5) : 0),
     losses: entry.losses ?? 0,
-    draws: entry.draws ?? 0,
+    draws: entry.draws || (entry.points ? entry.points % 5 : 0),
+    points: entry.points ?? tournamentPoints(entry.wins ?? 0, entry.draws ?? 0),
     cut: cutLabel(rank, cutSize, Boolean(entry.made_top_cut), Boolean(entry.made_top_16)),
     decklistUrl,
     topdeckId,
