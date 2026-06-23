@@ -17,7 +17,7 @@
     "release": "semantic-release"
   },
   "dependencies": {
-    "@posthog/react": "^1.10.2",
+    "@posthog/react": "^1.10.3",
     "@radix-ui/react-select": "^2.3.1",
     "@radix-ui/react-slider": "^1.4.1",
     "@radix-ui/react-slot": "^1.2.4",
@@ -28,7 +28,7 @@
     "clsx": "^2.1.1",
     "lucide-react": "^0.562.0",
     "next": "^16.1.6",
-    "posthog-js": "^1.387.0",
+    "posthog-js": "^1.392.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "recharts": "^3.8.1",
