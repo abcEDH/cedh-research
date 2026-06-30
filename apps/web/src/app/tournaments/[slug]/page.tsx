@@ -31,7 +31,7 @@ export default async function TournamentDetailPage({ params }: PageProps) {
   if (!tournament) notFound();
 
   return (
-    <main className="mx-auto max-w-6xl px-6 py-10 pb-20">
+    <main className="mx-auto max-w-6xl px-4 sm:px-6 py-10 pb-20">
       <Link
         href="/tournaments"
         className="mb-7 inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
@@ -75,7 +75,7 @@ export default async function TournamentDetailPage({ params }: PageProps) {
         </div>
       </section>
 
-      <section className="mt-6 grid gap-3 md:grid-cols-4">
+      <section className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4">
         <StatCard label="Players" value={tournament.players.toLocaleString()} />
         <StatCard label="Top Cut" value={String(tournament.cutSize)} sub={`${Math.round((tournament.cutSize / tournament.players) * 100)}%`} />
         <StatCard label="Winner" value={tournament.winner} compact accent />

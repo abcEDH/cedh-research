@@ -88,8 +88,8 @@ function Standings({ tournament }: { tournament: TournamentDetail }) {
             <th className="px-3 py-3">Player</th>
             <th className="px-3 py-3">Commander</th>
             <th className="px-3 py-3">Record</th>
-            <th className="px-3 py-3 text-right">Pts</th>
-            <th className="px-4 py-3 text-right">Cut</th>
+            <th className="hidden sm:table-cell px-3 py-3 text-right">Pts</th>
+            <th className="hidden sm:table-cell px-4 py-3 text-right">Cut</th>
           </tr>
         </thead>
         <tbody>
@@ -133,10 +133,10 @@ function Standings({ tournament }: { tournament: TournamentDetail }) {
                 <span className="text-muted-foreground">-</span>
                 <span className="text-[hsl(var(--knd-amber))]">{row.draws}</span>
               </td>
-              <td className="px-3 py-3 text-right font-mono font-semibold whitespace-nowrap">
+              <td className="hidden sm:table-cell px-3 py-3 text-right font-mono font-semibold whitespace-nowrap">
                 {row.points}
               </td>
-              <td className="px-4 py-3 text-right whitespace-nowrap">
+              <td className="hidden sm:table-cell px-4 py-3 text-right whitespace-nowrap">
                 <span className={`inline-flex rounded-full border px-2 py-1 font-mono text-[11px] ${cutClass(row.cut)}`}>
                   {row.cut}
                 </span>
@@ -243,12 +243,12 @@ function Commanders({ tournament }: { tournament: TournamentDetail }) {
   const maxTotal = Math.max(...tournament.topCutDist.map((r) => r.totalCount), 1);
 
   const BarRow = ({ row }: { row: CommanderDistEntry }) => (
-    <div className="grid grid-cols-[minmax(200px,400px)_1fr_60px] items-center gap-4 border-b border-border/60 px-5 py-3 transition-colors hover:bg-accent/20">
-      <div className="flex items-center gap-2">
+    <div className="grid grid-cols-[minmax(0,1fr)_1fr_40px] sm:grid-cols-[minmax(200px,400px)_1fr_60px] items-center gap-3 sm:gap-4 border-b border-border/60 px-4 sm:px-5 py-3 transition-colors hover:bg-accent/20">
+      <div className="flex items-center gap-2 min-w-0">
         <div className="shrink-0">
           <Pips colors={row.colors} small />
         </div>
-        <span className="text-sm font-medium whitespace-nowrap" title={row.name}>{row.name}</span>
+        <span className="text-sm font-medium truncate" title={row.name}>{row.name}</span>
       </div>
       <div className="flex h-1.5 w-full rounded-full bg-muted/50 overflow-hidden">
         <div className="h-full bg-primary/80 transition-all" style={{ width: `${(row.cutCount / maxTotal) * 100}%` }} title={`Made Cut: ${row.cutCount}`} />
