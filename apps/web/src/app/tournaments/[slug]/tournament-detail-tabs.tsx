@@ -38,7 +38,7 @@ function cutClass(cut: string) {
 }
 
 function rankLabel(rank: number) {
-  return rank <= 3 ? `★ ${rank}` : String(rank);
+  return String(rank);
 }
 
 export function TournamentDetailTabs({ tournament }: { tournament: TournamentDetail }) {
