@@ -104,7 +104,7 @@ function Standings({ tournament }: { tournament: TournamentDetail }) {
                 row.rank === 1 ? "bg-[hsl(var(--knd-amber))]/[0.06]" : ""
               }`}
             >
-              <td className={`px-4 py-3 font-mono text-sm font-semibold ${row.rank === 1 ? "text-[hsl(var(--knd-amber))]" : row.rank === 2 ? "text-slate-200" : row.rank === 3 ? "text-orange-300" : "text-muted-foreground"}`}>
+              <td className="px-4 py-3 font-mono text-sm font-semibold text-muted-foreground">
                 {rankLabel(row.rank)}
               </td>
               <td className="px-3 py-3">
