@@ -22,6 +22,7 @@ These ADRs were extracted retroactively on 2026-05-03 from git history, merged P
 | [0012](0012-ai-review-is-advisory.md) | AI Code Review Is Advisory; Humans Approve Merges | Accepted | review process | `CONTRIBUTING.md`, PR #156 declined-suggestion thread |
 | [0013](0013-topdeck-attribution-and-compliance.md) | TopDeck Attribution and API Compliance | Accepted | `apps/web/`, `packages/backend/` | PR #53 |
 | [0014](0014-retire-dead-surfaces-wholesale.md) | Retire Dead Surfaces Wholesale | Accepted | repo-wide | `CONTRIBUTING.md`, PR #51, `docs/supported-surfaces.md` |
+| [0015](0015-topdeck-webhook-ingestion.md) | TopDeck Webhook Receiver with Raw Event Log | Accepted | `packages/backend/`, `.github/workflows/` | migration `20260704000000`, `docs/TOPDECK_WEBHOOK_RUNBOOK.md` |
 
 ## How decisions cluster
 

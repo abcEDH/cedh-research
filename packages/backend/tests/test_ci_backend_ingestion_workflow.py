@@ -37,6 +37,19 @@ class BackendIngestionWorkflowTests(unittest.TestCase):
         self.assertIn('echo "claimed=true" >> "$GITHUB_OUTPUT"', workflow)
         self.assertIn('echo "claimed=false" >> "$GITHUB_OUTPUT"', workflow)
 
+    def test_workflow_accepts_targeted_tournament_input(self) -> None:
+        workflow = WORKFLOW_PATH.read_text()
+        self.assertIn("tournament_id:", workflow)
+        self.assertIn('INGEST_FLAGS="--tournament-id $TOURNAMENT_ID"', workflow)
+        self.assertIn('INGEST_FLAGS="--days 7 --min-players 32"', workflow)
+
+    def test_targeted_runs_do_not_cancel_daily_sweep(self) -> None:
+        workflow = WORKFLOW_PATH.read_text()
+        self.assertIn(
+            "group: backend-ingestion-${{ github.ref }}-${{ inputs.tournament_id }}",
+            workflow,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

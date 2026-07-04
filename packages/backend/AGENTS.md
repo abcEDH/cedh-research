@@ -50,6 +50,27 @@ uv run python src/export_all_time_tids.py --out data/all_time_tids.txt
 - **Direct Postgres (`--direct`):** Uses `psycopg2.execute_values`, ~5000 rows/sec
 - See `docs/supabase-batch-ingestion-patterns.md` for detailed benchmarks
 
+## TopDeck Webhooks
+
+Push-based path for staffed tournaments (ADR 0015); the daily cron sweep
+remains the primary pipeline. See `docs/TOPDECK_WEBHOOK_RUNBOOK.md` for
+registration, secret rotation, and troubleshooting.
+
+- **Edge function:** `supabase/functions/topdeck-webhook/` — verifies the
+  HMAC signature (`verify.ts` is the only file encoding the scheme) and
+  persists every delivery to `webhook_events`. Deploy with
+  `supabase functions deploy topdeck-webhook --no-verify-jwt`.
+- **Consumer:** the `process_webhook_event` DB trigger; on
+  `tournament.finished` it calls `enqueue_targeted_ingestion(tid)` and the
+  job flows through `trigger-ingestion-refresh` →
+  `ci-backend-ingestion.yml` (`tournament_id` input) →
+  `ingest.py --tournament-id`.
+- **Secrets:** `TOPDECK_WEBHOOK_SECRET` (Supabase function secret,
+  backend-only like `TOPDECK_API_KEY`); optional
+  `TOPDECK_WEBHOOK_SIGNATURE_MODE=log` during scheme discovery.
+- **`webhook_events` is service-role-only** — payloads may carry player
+  PII. Do not add public read policies.
+
 ## Known Issues & Workarounds
 
 ### 1. Connection Drops During Large Ingestions

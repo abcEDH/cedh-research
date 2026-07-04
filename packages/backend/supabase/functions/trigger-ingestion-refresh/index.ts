@@ -16,6 +16,7 @@ const GITHUB_REF = Deno.env.get("GITHUB_REF") ?? "main";
 type JobRow = {
   id: string;
   status: string;
+  target_tid?: string | null;
 };
 
 function json(status: number, body: Record<string, unknown>) {
@@ -61,7 +62,7 @@ async function getPendingJob(jobId: string): Promise<JobRow | null> {
   const rows = await supabaseRequest<JobRow[]>(
     `/rest/v1/ingestion_jobs?id=eq.${
       encodeURIComponent(jobId)
-    }&status=eq.pending&select=id,status`,
+    }&status=eq.pending&select=id,status,target_tid`,
     { method: "GET" },
   );
   return rows[0] ?? null;
@@ -98,7 +99,10 @@ async function markFailed(jobId: string, errorText: string): Promise<void> {
   );
 }
 
-async function dispatchWorkflow(jobId: string): Promise<void> {
+async function dispatchWorkflow(
+  jobId: string,
+  targetTid: string | null,
+): Promise<void> {
   const pat = requireEnv("GITHUB_PAT", CRON_GITHUB_PAT);
   const response = await fetch(
     `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/workflows/${GITHUB_WORKFLOW_ID}/dispatches`,
@@ -114,6 +118,9 @@ async function dispatchWorkflow(jobId: string): Promise<void> {
         ref: GITHUB_REF,
         inputs: {
           job_id: jobId,
+          // Empty for cron-enqueued jobs — the workflow falls back to
+          // the recent-days sweep. Set for webhook-targeted jobs.
+          tournament_id: targetTid ?? "",
         },
       }),
     },
@@ -166,7 +173,7 @@ Deno.serve(async (request) => {
     }
 
     await markDispatched(jobId);
-    await dispatchWorkflow(jobId);
+    await dispatchWorkflow(jobId, job.target_tid ?? null);
 
     return json(202, { ok: true, job_id: jobId, status: "dispatched" });
   } catch (error) {

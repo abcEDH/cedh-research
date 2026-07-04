@@ -323,6 +323,11 @@ authorization_url_path = "/oauth/consent"
 # Allow dynamic client registration
 allow_dynamic_registration = false
 
+# TopDeck cannot send Supabase auth headers; the receiver authenticates
+# deliveries via HMAC signature instead (see the function's verify.ts).
+[functions.topdeck-webhook]
+verify_jwt = false
+
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.

@@ -7,9 +7,16 @@ on:
         description: "ingestion_jobs UUID for cron-dispatched runs"
         required: false
         default: ""
+      tournament_id:
+        description: "TopDeck TID for a targeted single-tournament ingestion (webhook-dispatched runs)"
+        required: false
+        default: ""
 
+# Targeted (webhook) runs get a per-TID group so they can never cancel a
+# running daily sweep; overlap across groups is prevented at the DB layer
+# by the shared advisory-lock enqueue guard.
 concurrency:
-  group: backend-ingestion-${{ github.ref }}
+  group: backend-ingestion-${{ github.ref }}-${{ inputs.tournament_id }}
   cancel-in-progress: true
 
 env:
@@ -52,13 +59,20 @@ jobs:
 
       - name: Run data ingestion
         id: run-ingestion
+        env:
+          TOURNAMENT_ID: ${{ inputs.tournament_id }}
         run: |
           JOB_FLAGS=""
           if [ -n "${{ inputs.job_id }}" ]; then
             JOB_FLAGS="--job-id ${{ inputs.job_id }}"
           fi
+          if [ -n "$TOURNAMENT_ID" ]; then
+            INGEST_FLAGS="--tournament-id $TOURNAMENT_ID"
+          else
+            INGEST_FLAGS="--days 7 --min-players 32"
+          fi
           set +e
-          uv run --project packages/backend python packages/backend/src/ingest.py --days 7 --min-players 32 $JOB_FLAGS
+          uv run --project packages/backend python packages/backend/src/ingest.py $INGEST_FLAGS $JOB_FLAGS
           status=$?
           set -e
 

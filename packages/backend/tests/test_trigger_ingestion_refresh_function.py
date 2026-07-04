@@ -16,9 +16,14 @@ class TriggerIngestionRefreshFunctionTests(unittest.TestCase):
         source = FUNCTION_PATH.read_text()
 
         mark_index = source.index("await markDispatched(jobId);")
-        dispatch_index = source.index("await dispatchWorkflow(jobId);")
+        dispatch_index = source.index("await dispatchWorkflow(jobId")
 
         self.assertLess(mark_index, dispatch_index)
+
+    def test_passes_target_tid_through_to_workflow(self) -> None:
+        source = FUNCTION_PATH.read_text()
+        self.assertIn("select=id,status,target_tid", source)
+        self.assertIn("tournament_id: targetTid ?? \"\"", source)
 
 
 if __name__ == "__main__":
