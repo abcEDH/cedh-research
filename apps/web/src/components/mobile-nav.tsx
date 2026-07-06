@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Menu } from "lucide-react";
@@ -17,10 +17,6 @@ import {
 export function MobileNav() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    setOpen(false);
-  }, [pathname]);
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -50,6 +46,7 @@ export function MobileNav() {
                     : "hover:bg-muted/40 hover:text-foreground"
                 }`}
                 href={item.href}
+                onClick={() => setOpen(false)}
               >
                 {item.label}
               </Link>
