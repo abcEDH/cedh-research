@@ -8,19 +8,30 @@ Fetches tournament data from TopDeck.gg API and loads into Supabase.
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import os
 import sys
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 from dateutil import parser as date_parser
 
+from deck_identity import (
+    COMMANDER_NAME_ALIASES,
+    PARTNER_ORDER_OVERRIDES,
+    DeckSource,
+    clean_commander_card_name,
+    extract_commanders,
+    get_identity_extractor,
+    load_legal_commander_pair_names,
+    load_legal_commander_pair_order_map,
+    normalize_commander_name,
+    normalize_partner_order,
+    sanitize_commander_payload,
+)
 from game_registry import (
     DEFAULT_GAME_KEY,
     GAME_REGISTRY,
@@ -45,18 +56,29 @@ from topdeck_client import (
 # Explicit re-exports — these names are imported from sub-modules so that
 # existing scripts which do `from ingest import X` continue to work unchanged.
 __all__ = [
+    "COMMANDER_NAME_ALIASES",
     "SUPABASE_REST_BASE",
     "DEFAULT_GAME_KEY",
+    "DeckSource",
     "DirectPostgresClient",
     "GAME_REGISTRY",
     "GameConfig",
     "MTG_GAME",
+    "PARTNER_ORDER_OVERRIDES",
     "SupabaseClient",
     "_describe_request_failure",
     "TOPDECK_FIRESTORE_PROJECT",
     "TopDeckClient",
+    "clean_commander_card_name",
     "decode_firestore_value",
+    "extract_commanders",
     "get_game_config",
+    "get_identity_extractor",
+    "load_legal_commander_pair_names",
+    "load_legal_commander_pair_order_map",
+    "normalize_commander_name",
+    "normalize_partner_order",
+    "sanitize_commander_payload",
 ]
 
 TOPDECK_STANDING_RATE_FIELDS = [
@@ -135,169 +157,6 @@ def extract_standing_rates(standing: dict[str, Any]) -> tuple[float | None, floa
             break
 
     return primary_rate, opponent_rate
-
-
-def clean_commander_card_name(name: str) -> str:
-    """Normalize an individual commander card name.
-
-    This removes escaped quotes, strips DFC/MDFC back faces, and drops any
-    trailing set-indicator suffix.
-    """
-    if not name:
-        return ""
-    cleaned = name.replace("\\'", "'").replace('\\"', '"')
-    front_face = cleaned.split(" // ", 1)[0]
-    normalized = front_face.split("[", 1)[0].strip()
-    return COMMANDER_NAME_ALIASES.get(normalized, normalized)
-
-
-COMMANDER_NAME_ALIASES: dict[str, str] = {
-    "Chief Jim Hopper": "Sophina, Spearsage Deserter",
-    "Dustin, Gadget Genius": "Hargilde, Kindly Runechanter",
-    "Eleven, the Mage": "Cecily, Haunted Mage",
-    "Lucas, the Sharpshooter": "Bjorna, Nightfall Alchemist",
-    "Max, the Daredevil": "Elmar, Ulvenwald Informant",
-    "Mike, the Dungeon Master": "Othelm, Sigardian Outcast",
-    "Mind Flayer, the Shadow": "Arvinox, the Mind Flail",
-    "Will the Wise": "Wernog, Rider's Chaplain",
-}
-
-
-@lru_cache(maxsize=1)
-def load_legal_commander_pair_names() -> set[str]:
-    """Load canonical legal two-card commander pair names."""
-    data_path = Path(__file__).resolve().parents[1] / "data" / "legal_commander_pairings.json"
-    payload = json.loads(data_path.read_text())
-    names = payload.get("legal_pair_names") or []
-    return {str(name) for name in names}
-
-
-@lru_cache(maxsize=1)
-def load_legal_commander_pair_order_map() -> dict[tuple[str, str], tuple[str, str]]:
-    """Load canonical ordering for all legal two-card commander pairings."""
-    data_path = Path(__file__).resolve().parents[1] / "data" / "legal_commander_pairings.json"
-    payload = json.loads(data_path.read_text())
-    pairs = payload.get("legal_pairs") or []
-    order_map: dict[tuple[str, str], tuple[str, str]] = {}
-    for pair in pairs:
-        canonical_name = str(pair.get("project_name") or "").strip()
-        canonical_parts = [clean_commander_card_name(part) for part in canonical_name.split(" / ") if part.strip()]
-        if len(canonical_parts) != 2:
-            continue
-        names = pair.get("commander_names") or []
-        if not isinstance(names, list) or len(names) != 2:
-            continue
-        cleaned = [clean_commander_card_name(str(name)) for name in names]
-        if len(cleaned) != 2 or not all(cleaned):
-            continue
-        order_map[tuple(sorted(cleaned))] = (canonical_parts[0], canonical_parts[1])
-    return order_map
-
-
-PARTNER_ORDER_OVERRIDES: dict[tuple[str, str], tuple[str, str]] = {
-    tuple(sorted(["Kraum, Ludevic's Opus", "Tymna the Weaver"])): ("Tymna the Weaver", "Kraum, Ludevic's Opus"),
-    tuple(sorted(["Thrasios, Triton Hero", "Tymna the Weaver"])): ("Tymna the Weaver", "Thrasios, Triton Hero"),
-    tuple(sorted(["Rograkh, Son of Rohgahh", "Thrasios, Triton Hero"])): (
-        "Rograkh, Son of Rohgahh",
-        "Thrasios, Triton Hero",
-    ),
-    tuple(sorted(["Rograkh, Son of Rohgahh", "Silas Renn, Seeker Adept"])): (
-        "Rograkh, Son of Rohgahh",
-        "Silas Renn, Seeker Adept",
-    ),
-    tuple(sorted(["Malcolm, Keen-Eyed Navigator", "Tymna the Weaver"])): (
-        "Malcolm, Keen-Eyed Navigator",
-        "Tymna the Weaver",
-    ),
-    tuple(sorted(["Kraum, Ludevic's Opus", "Tevesh Szat, Doom of Fools"])): (
-        "Tevesh Szat, Doom of Fools",
-        "Kraum, Ludevic's Opus",
-    ),
-    tuple(sorted(["Dargo, the Shipwrecker", "Tymna the Weaver"])): ("Dargo, the Shipwrecker", "Tymna the Weaver"),
-    tuple(sorted(["Krark, the Thumbless", "Sakashima of a Thousand Faces"])): (
-        "Krark, the Thumbless",
-        "Sakashima of a Thousand Faces",
-    ),
-    tuple(sorted(["Tevesh Szat, Doom of Fools", "Thrasios, Triton Hero"])): (
-        "Tevesh Szat, Doom of Fools",
-        "Thrasios, Triton Hero",
-    ),
-    tuple(sorted(["Pako, Arcane Retriever", "Haldan, Avid Arcanist"])): (
-        "Pako, Arcane Retriever",
-        "Haldan, Avid Arcanist",
-    ),
-    tuple(sorted(["Tana, the Bloodsower", "Tymna the Weaver"])): ("Tymna the Weaver", "Tana, the Bloodsower"),
-    tuple(sorted(["Vial Smasher the Fierce", "Malcolm, Keen-Eyed Navigator"])): (
-        "Malcolm, Keen-Eyed Navigator",
-        "Vial Smasher the Fierce",
-    ),
-    tuple(sorted(["Kediss, Emberclaw Familiar", "Malcolm, Keen-Eyed Navigator"])): (
-        "Malcolm, Keen-Eyed Navigator",
-        "Kediss, Emberclaw Familiar",
-    ),
-    tuple(sorted(["Bruse Tarl, Boorish Herder", "Thrasios, Triton Hero"])): (
-        "Bruse Tarl, Boorish Herder",
-        "Thrasios, Triton Hero",
-    ),
-    tuple(sorted(["Ikra Shidiqi, the Usurper", "Kraum, Ludevic's Opus"])): (
-        "Ikra Shidiqi, the Usurper",
-        "Kraum, Ludevic's Opus",
-    ),
-    tuple(sorted(["Francisco, Fowl Marauder", "Thrasios, Triton Hero"])): (
-        "Francisco, Fowl Marauder",
-        "Thrasios, Triton Hero",
-    ),
-    tuple(sorted(["Malcolm, Keen-Eyed Navigator", "Tana, the Bloodsower"])): (
-        "Malcolm, Keen-Eyed Navigator",
-        "Tana, the Bloodsower",
-    ),
-    tuple(sorted(["Malcolm, Keen-Eyed Navigator", "Francisco, Fowl Marauder"])): (
-        "Malcolm, Keen-Eyed Navigator",
-        "Francisco, Fowl Marauder",
-    ),
-    tuple(sorted(["Jeska, Thrice Reborn", "Tymna the Weaver"])): ("Jeska, Thrice Reborn", "Tymna the Weaver"),
-    tuple(sorted(["Kodama of the East Tree", "Tymna the Weaver"])): ("Kodama of the East Tree", "Tymna the Weaver"),
-    tuple(sorted(["Rograkh, Son of Rohgahh", "Tymna the Weaver"])): (
-        "Rograkh, Son of Rohgahh",
-        "Tymna the Weaver",
-    ),
-    tuple(sorted(["Rograkh, Son of Rohgahh", "Tevesh Szat, Doom of Fools"])): (
-        "Rograkh, Son of Rohgahh",
-        "Tevesh Szat, Doom of Fools",
-    ),
-    tuple(sorted(["Ardenn, Intrepid Archaeologist", "Tana, the Bloodsower"])): (
-        "Ardenn, Intrepid Archaeologist",
-        "Tana, the Bloodsower",
-    ),
-    tuple(sorted(["Jeska, Thrice Reborn", "Ishai, Ojutai Dragonspeaker"])): (
-        "Jeska, Thrice Reborn",
-        "Ishai, Ojutai Dragonspeaker",
-    ),
-    tuple(sorted(["Rograkh, Son of Rohgahh", "Ishai, Ojutai Dragonspeaker"])): (
-        "Rograkh, Son of Rohgahh",
-        "Ishai, Ojutai Dragonspeaker",
-    ),
-    tuple(sorted(["Rograkh, Son of Rohgahh", "Reyhan, Last of the Abzan"])): (
-        "Rograkh, Son of Rohgahh",
-        "Reyhan, Last of the Abzan",
-    ),
-    tuple(sorted(["Ukkima, Stalking Shadow", "Cazur, Ruthless Stalker"])): (
-        "Ukkima, Stalking Shadow",
-        "Cazur, Ruthless Stalker",
-    ),
-}
-
-
-def normalize_partner_order(names: list[str]) -> list[str]:
-    """Return canonical partner ordering for a list of commander names."""
-    clean_names = [clean_commander_card_name(value) for value in names if clean_commander_card_name(value)]
-    if len(clean_names) != 2:
-        return clean_names
-    pair_key = tuple(sorted(clean_names))
-    legal_pair_order = load_legal_commander_pair_order_map().get(pair_key)
-    if legal_pair_order:
-        return list(legal_pair_order)
-    return list(PARTNER_ORDER_OVERRIDES.get(pair_key, pair_key))
 
 
 def normalize_region_name(
@@ -450,83 +309,6 @@ def normalize_region_name(
 
     # Return as-is if no normalization needed
     return normalized
-
-
-def extract_commanders(decklist: str) -> list[str]:
-    """Extract commander names from a decklist.
-
-    Parses the ~Commanders~~ section to extract partner commanders.
-    Returns a list of commander names (usually 1, or 2 for partner pairs).
-    """
-    if not decklist:
-        return []
-
-    # TopDeck sometimes returns decklists with literal escaped newlines instead of
-    # actual line breaks. Normalize those first so the section parser can work.
-    normalized_decklist = decklist.replace("\\r\\n", "\n").replace("\\n", "\n")
-
-    commanders: list[str] = []
-    in_commanders = False
-
-    for line in normalized_decklist.split("\n"):
-        line = line.strip()
-
-        # Detect commander section
-        if "~~Commanders~~" in line or "~~COMMANDERS~~" in line or "Commanders" in line:
-            in_commanders = True
-            continue
-
-        # Stop at next section
-        if in_commanders and line.startswith("~"):
-            break
-
-        if in_commanders and line:
-            # Remove quantity prefix (e.g., "1 Commander Name" -> "Commander Name")
-            parts = line.split(" ", 1)
-            if len(parts) == 2 and parts[0].isdigit():
-                commanders.append(parts[1].strip())
-            elif len(parts) == 3 and parts[0].isdigit() and parts[1].isdigit():
-                # Partner pair like "1 Tymna the Weaver"
-                commanders.append(parts[1] + " " + parts[2])
-            else:
-                commanders.append(line)
-
-    return [clean_commander_card_name(c) for c in commanders if c]
-
-
-def normalize_commander_name(commanders: list[str]) -> str:
-    """Normalize commander pair name for consistent matching.
-
-    Applies the project's canonical partner ordering for partner pairs.
-    Single commanders are returned as-is.
-    """
-    clean_names = normalize_partner_order(commanders)
-    if not clean_names:
-        return "Unknown Commander"
-    return " / ".join(clean_names)
-
-
-def sanitize_commander_payload(
-    name: str | None,
-    commander_names: list[str] | None,
-) -> tuple[str, list[str]]:
-    """Build a canonical commander row payload before persistence."""
-    raw_names = commander_names or []
-    clean_names: list[str] = []
-    for value in raw_names:
-        cleaned = clean_commander_card_name(value)
-        if cleaned:
-            clean_names.append(cleaned)
-    if not clean_names and name:
-        normalized = normalize_commander_name(name.split(" / "))
-        clean_names = [part.strip() for part in normalized.split(" / ") if part.strip()]
-
-    canonical_name = normalize_commander_name(clean_names)
-    if len(clean_names) == 2 and canonical_name not in load_legal_commander_pair_names():
-        return "Unknown Commander", ["Unknown Commander"]
-    if canonical_name == "Unknown Commander":
-        return canonical_name, ["Unknown Commander"]
-    return canonical_name, [part.strip() for part in canonical_name.split(" / ") if part.strip()]
 
 
 class DataIngester:
@@ -779,14 +561,19 @@ class DataIngester:
         player_data: dict[str, str] = {}  # topdeck_id -> name
         standing_info: list[dict[str, Any]] = []  # [{idx, topdeck_id, commander_name, decklist, ...}]
 
+        identity_extractor = get_identity_extractor(self.game_config)
+
         for idx, standing in enumerate(standings):
             player_topdeck_id = standing.get("id")
             player_name = standing.get("name", "Unknown")
             decklist = standing.get("decklist") or ""
+            raw_deck_obj = standing.get("deckObj")
+            deck_obj = raw_deck_obj if isinstance(raw_deck_obj, dict) else None
 
-            # Extract and normalize commander
-            commanders = extract_commanders(decklist)
-            commander_name = normalize_commander_name(commanders)
+            # Extract and normalize the deck identity for this game
+            commander_name, commanders = identity_extractor(
+                DeckSource(decklist_text=decklist, deck_obj=deck_obj, standing=standing)
+            )
 
             # Collect unique commanders
             if commander_name not in commander_data:
@@ -803,6 +590,7 @@ class DataIngester:
                     "name": player_name,
                     "commander_name": commander_name,
                     "decklist": decklist,
+                    "deck_obj": deck_obj,
                     "rank": standing.get("rank") or standing.get("standing"),
                     "points": standing.get("points") or 0,
                     "wins": standing.get("wins"),
@@ -854,6 +642,7 @@ class DataIngester:
                             "name": player_name,
                             "commander_name": commander_name,
                             "decklist": "",
+                            "deck_obj": None,
                             "rank": None,
                             "points": 0,
                             "wins": None,
@@ -918,6 +707,11 @@ class DataIngester:
                 "decklist_text": info["decklist"],
                 "topdeck_entry_id": f"{tid}_{info['topdeck_id']}",
             }
+
+            # Persist structured deckObj only when present so re-ingestion never
+            # overwrites an existing decklist_obj with null.
+            if info.get("deck_obj") is not None:
+                entry["decklist_obj"] = info["deck_obj"]
 
             # Only add W/L/D if they are explicitly present in the data to avoid
             # overwriting with zeros during re-ingestion.
