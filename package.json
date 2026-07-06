@@ -2,7 +2,8 @@
   "name": "cedh-research",
   "private": true,
   "workspaces": [
-    "apps/web"
+    "apps/web",
+    "apps/multigame"
   ],
   "scripts": {
     "docs:check": "node scripts/check-mermaid.mjs",
@@ -21,6 +22,13 @@
     "web:test:e2e:url": "cd apps/web && BASE_URL=$npm_config_base_url playwright test",
     "web:test:e2e:ui": "cd apps/web && playwright test --ui",
     "web:test:e2e:prod": "cd apps/web && BASE_URL=${BASE_URL:-https://tedh.gg} playwright test",
+    "verify:multigame": "./scripts/verify-multigame.sh",
+    "multigame:dev": "cd apps/multigame && next dev",
+    "multigame:build": "cd apps/multigame && next build",
+    "multigame:start": "cd apps/multigame && next start",
+    "multigame:lint": "cd apps/multigame && eslint",
+    "multigame:test": "cd apps/multigame && vitest",
+    "multigame:test:ci": "cd apps/multigame && vitest run",
     "backend:install": "python -m pip install -r packages/backend/requirements.txt",
     "backend:ingest": "python packages/backend/src/ingest.py"
   },

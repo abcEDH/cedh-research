@@ -1,0 +1,7 @@
+{
+  "/(tenant)/[game]/page": "/[game]",
+  "/(tenant)/[game]/tournaments/[tid]/page": "/[game]/tournaments/[tid]",
+  "/(tenant)/[game]/tournaments/page": "/[game]/tournaments",
+  "/_global-error/page": "/_global-error",
+  "/_not-found/page": "/_not-found"
+}

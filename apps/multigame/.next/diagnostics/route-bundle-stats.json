@@ -1,0 +1,60 @@
+[
+  {
+    "route": "/[game]",
+    "firstLoadUncompressedJsBytes": 549379,
+    "firstLoadChunkPaths": [
+      ".next/static/chunks/05-c3ty_6dwfk.js",
+      ".next/static/chunks/14mrh2-p_w84d.js",
+      ".next/static/chunks/1rxncug86bump.js",
+      ".next/static/chunks/0p5xja2_f06w2.js",
+      ".next/static/chunks/0dhbjz-xsmu83.js",
+      ".next/static/chunks/15orcrkp-_9ct.js",
+      ".next/static/chunks/3peubv2924kx4.js",
+      ".next/static/chunks/07u_h6i539_wj.js",
+      ".next/static/chunks/turbopack-19b_bca3-52q-.js"
+    ]
+  },
+  {
+    "route": "/[game]/tournaments",
+    "firstLoadUncompressedJsBytes": 549379,
+    "firstLoadChunkPaths": [
+      ".next/static/chunks/05-c3ty_6dwfk.js",
+      ".next/static/chunks/14mrh2-p_w84d.js",
+      ".next/static/chunks/1rxncug86bump.js",
+      ".next/static/chunks/0p5xja2_f06w2.js",
+      ".next/static/chunks/0dhbjz-xsmu83.js",
+      ".next/static/chunks/15orcrkp-_9ct.js",
+      ".next/static/chunks/3peubv2924kx4.js",
+      ".next/static/chunks/07u_h6i539_wj.js",
+      ".next/static/chunks/turbopack-19b_bca3-52q-.js"
+    ]
+  },
+  {
+    "route": "/[game]/tournaments/[tid]",
+    "firstLoadUncompressedJsBytes": 534951,
+    "firstLoadChunkPaths": [
+      ".next/static/chunks/05-c3ty_6dwfk.js",
+      ".next/static/chunks/14mrh2-p_w84d.js",
+      ".next/static/chunks/1rxncug86bump.js",
+      ".next/static/chunks/3-9v5llyj1vf9.js",
+      ".next/static/chunks/0dhbjz-xsmu83.js",
+      ".next/static/chunks/15orcrkp-_9ct.js",
+      ".next/static/chunks/3peubv2924kx4.js",
+      ".next/static/chunks/07u_h6i539_wj.js",
+      ".next/static/chunks/turbopack-19b_bca3-52q-.js"
+    ]
+  },
+  {
+    "route": "/_not-found",
+    "firstLoadUncompressedJsBytes": 514649,
+    "firstLoadChunkPaths": [
+      ".next/static/chunks/05-c3ty_6dwfk.js",
+      ".next/static/chunks/14mrh2-p_w84d.js",
+      ".next/static/chunks/0dhbjz-xsmu83.js",
+      ".next/static/chunks/15orcrkp-_9ct.js",
+      ".next/static/chunks/3peubv2924kx4.js",
+      ".next/static/chunks/07u_h6i539_wj.js",
+      ".next/static/chunks/turbopack-19b_bca3-52q-.js"
+    ]
+  }
+]
