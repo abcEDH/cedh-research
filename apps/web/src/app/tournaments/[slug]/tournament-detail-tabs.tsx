@@ -299,15 +299,17 @@ function Bracket({ tournament }: { tournament: TournamentDetail }) {
 
   return (
     <div className="overflow-x-auto pb-3">
-      <div className="flex min-w-[1180px] items-start gap-4">
+      {/* Stages stack vertically below md:; the wide five-column bracket
+          scrolls horizontally from md: up. */}
+      <div className="flex flex-col gap-6 md:min-w-[1180px] md:flex-row md:items-start md:gap-4">
         <BracketSummary tournament={tournament} />
-        <BracketColumn title="Top 40" className="w-[340px] grid-cols-2" pods={tournament.bracket.t40} compact />
-        <BracketColumn title="Top 16" className="w-[218px] grid-cols-1" pods={tournament.bracket.t16} />
-        <div className="w-[222px] shrink-0">
+        <BracketColumn title="Top 40" className="w-full md:w-[340px] grid-cols-2" pods={tournament.bracket.t40} compact />
+        <BracketColumn title="Top 16" className="w-full md:w-[218px] grid-cols-1" pods={tournament.bracket.t16} />
+        <div className="w-full shrink-0 md:w-[222px]">
           <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.2em] text-muted-foreground">Top 4</h3>
           <PodCard pod={{ num: 1, players: tournament.bracket.t4.players }} finalPod />
         </div>
-        <div className="knd-panel w-[162px] shrink-0 border-[hsl(var(--knd-amber))]/35 bg-[hsl(var(--knd-amber))]/10 p-4 text-center">
+        <div className="knd-panel w-full shrink-0 border-[hsl(var(--knd-amber))]/35 bg-[hsl(var(--knd-amber))]/10 p-4 text-center md:w-[162px]">
           <div className="text-3xl text-[hsl(var(--knd-amber))]">★</div>
           <div className="mt-2 text-sm font-semibold text-[hsl(var(--knd-amber))]">{tournament.winner}</div>
           <div className="mt-2 flex justify-center">
@@ -325,7 +327,7 @@ function Bracket({ tournament }: { tournament: TournamentDetail }) {
 
 function BracketSummary({ tournament }: { tournament: TournamentDetail }) {
   return (
-    <div className="knd-panel w-[168px] shrink-0 p-4">
+    <div className="knd-panel w-full shrink-0 p-4 md:w-[168px]">
       <h3 className="font-mono text-[11px] uppercase tracking-[0.2em] text-muted-foreground">Swiss</h3>
       <div className="mt-4 space-y-3">
         <PathRow label="Players" value={tournament.players.toLocaleString()} />
