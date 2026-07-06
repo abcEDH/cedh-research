@@ -1,0 +1,47 @@
+name: Multigame
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/multigame/**'
+      - 'scripts/verify-multigame.sh'
+      - '.github/workflows/multigame.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/multigame/**'
+      - 'scripts/verify-multigame.sh'
+      - '.github/workflows/multigame.yml'
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  TARGET_NODE_MAJOR: "22"
+
+jobs:
+  quality-and-unit:
+    name: Multigame verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - name: Set fallback secrets for build
+        run: |
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co' }}"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder' }}"
+          } >> "$GITHUB_ENV"
+
+      - name: Run multigame verification harness
+        run: ./scripts/verify-multigame.sh
