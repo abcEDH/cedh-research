@@ -38,6 +38,21 @@ class SupabaseMigrationIntegrityTests(unittest.TestCase):
         self.assertIn("s.region_key AS primary_region_key,\n    s.country_key AS primary_country_key,\n    NULL::text AS country_key", sql)
         self.assertNotIn("s.country_key AS primary_country_key,\n    s.region_key AS primary_region_key,", sql)
 
+    def test_multigame_deck_identities_scopes_commanders_by_game(self) -> None:
+        sql = (MIGRATIONS_DIR / "20260706000000_multigame_deck_identities.sql").read_text()
+
+        self.assertIn("ADD COLUMN IF NOT EXISTS game TEXT NOT NULL DEFAULT 'Magic: The Gathering'", sql)
+        self.assertIn("ADD COLUMN IF NOT EXISTS identity_kind TEXT NOT NULL DEFAULT 'commander'", sql)
+        self.assertIn("DROP CONSTRAINT IF EXISTS commanders_name_key", sql)
+        self.assertIn("ADD CONSTRAINT commanders_game_name_key UNIQUE (game, name)", sql)
+        self.assertIn("CHECK (identity_kind IN ('commander', 'legend', 'leader', 'archetype', 'unknown'))", sql)
+
+    def test_multigame_tournaments_index_covers_game_format_recency(self) -> None:
+        sql = (MIGRATIONS_DIR / "20260706000001_tournaments_game_format_index.sql").read_text()
+
+        self.assertIn("idx_tournaments_game_format_date", sql)
+        self.assertIn("ON tournaments(game, format, start_date DESC)", sql)
+
     def test_canonical_leaderboard_counts_preserves_existing_column_order(self) -> None:
         sql = (MIGRATIONS_DIR / "20260409140000_fix_global_leaderboard_canonical_counts.sql").read_text()
 

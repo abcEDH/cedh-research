@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, urlparse
 import requests
 
 from ingest import (
+    MTG_GAME,
     SupabaseClient,
     clean_commander_card_name,
     extract_commanders,
@@ -118,16 +119,10 @@ def load_attempt_cache(cache_path: Path) -> dict[str, dict[str, str]]:
 
     raw_text = cache_path.read_text(errors="replace").replace("\x00", "")
     reader = csv.DictReader(io.StringIO(raw_text))
-    return {
-        row["entry_id"]: row
-        for row in reader
-        if row.get("entry_id")
-    }
+    return {row["entry_id"]: row for row in reader if row.get("entry_id")}
 
 
-ENTRY_ID_LINE_RE = re.compile(
-    r"(?m)^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}),"
-)
+ENTRY_ID_LINE_RE = re.compile(r"(?m)^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}),")
 
 
 def load_attempted_entry_ids(cache_path: Path) -> set[str]:
@@ -263,11 +258,7 @@ def cached_ids_for_statuses(
     attempt_cache: dict[str, dict[str, str]],
     retry_statuses: set[str],
 ) -> list[str]:
-    return sorted(
-        entry_id
-        for entry_id, row in attempt_cache.items()
-        if row.get("status", "") in retry_statuses
-    )
+    return sorted(entry_id for entry_id, row in attempt_cache.items() if row.get("status", "") in retry_statuses)
 
 
 def load_entry_ids(entry_ids_path: Path) -> list[str]:
@@ -327,7 +318,8 @@ def fetch_moxfield_entries(
     select = "id,decklist_url,commanders(name),players(topdeck_id),tournaments(topdeck_tid,start_date)"
     filters = {}
     if not include_known:
-        select = "id,decklist_url,commanders!inner(name),players!inner(topdeck_id),tournaments!inner(topdeck_tid,start_date)"
+        relations = "commanders!inner(name),players!inner(topdeck_id),tournaments!inner(topdeck_tid,start_date)"
+        select = f"id,decklist_url,{relations}"
         filters["commanders.name"] = 'in.("Unknown Commander","Moxfield Deck")'
     if require_topdeck_ids:
         filters["players.topdeck_id"] = "not.is.null"
@@ -371,7 +363,8 @@ def fetch_entries_by_ids(
         return []
     select = "id,decklist_url,commanders(name),players(topdeck_id),tournaments(topdeck_tid,start_date)"
     if not include_known:
-        select = "id,decklist_url,commanders!left(name),players!left(topdeck_id),tournaments!left(topdeck_tid,start_date)"
+        relations = "commanders!left(name),players!left(topdeck_id),tournaments!left(topdeck_tid,start_date)"
+        select = f"id,decklist_url,{relations}"
     ids = ",".join(entry_ids)
     return client.select(
         "tournament_entries",
@@ -408,10 +401,14 @@ def upsert_commanders(client: SupabaseClient, commander_data: dict[str, list[str
     result = client.upsert(
         "commanders",
         [
-            dict(zip(("name", "commander_names"), sanitize_commander_payload(name, names)))
+            {
+                **dict(zip(("name", "commander_names"), sanitize_commander_payload(name, names), strict=True)),
+                "game": MTG_GAME,
+                "identity_kind": "commander",
+            }
             for name, names in commander_data.items()
         ],
-        on_conflict="name",
+        on_conflict="game,name",
     )
     return {row["name"]: row["id"] for row in result}
 
@@ -445,11 +442,13 @@ def export_unresolved_csv(
                 break
 
             for row in rows:
-                writer.writerow({
-                    "entry_id": row["id"],
-                    "decklist_url": row.get("decklist_url") or "",
-                    "commander_names": "",
-                })
+                writer.writerow(
+                    {
+                        "entry_id": row["id"],
+                        "decklist_url": row.get("decklist_url") or "",
+                        "commander_names": "",
+                    }
+                )
                 written += 1
                 if limit and written >= limit:
                     print(f"Exported {written} unresolved Moxfield rows to {output_path}")
@@ -606,11 +605,31 @@ def main() -> None:
         default="desc",
         help="Sort direction for unresolved rows",
     )
-    parser.add_argument("--include-known", action="store_true", help="Update rows that already have non-placeholder commanders")
-    parser.add_argument("--embedded-only", action="store_true", help="Only process imported deck text with embedded commander sections")
-    parser.add_argument("--resolve-moxfield-api", action="store_true", help="Fetch pure Moxfield URLs from the Moxfield API")
-    parser.add_argument("--resolve-moxfield-page", action="store_true", help="Scrape pure Moxfield URLs from public deck pages")
-    parser.add_argument("--resolve-topdeck-deck-page", action="store_true", help="Scrape TopDeck's /deck/{tournament}/{player} page")
+    parser.add_argument(
+        "--include-known",
+        action="store_true",
+        help="Update rows that already have non-placeholder commanders",
+    )
+    parser.add_argument(
+        "--embedded-only",
+        action="store_true",
+        help="Only process imported deck text with embedded commander sections",
+    )
+    parser.add_argument(
+        "--resolve-moxfield-api",
+        action="store_true",
+        help="Fetch pure Moxfield URLs from the Moxfield API",
+    )
+    parser.add_argument(
+        "--resolve-moxfield-page",
+        action="store_true",
+        help="Scrape pure Moxfield URLs from public deck pages",
+    )
+    parser.add_argument(
+        "--resolve-topdeck-deck-page",
+        action="store_true",
+        help="Scrape TopDeck's /deck/{tournament}/{player} page",
+    )
     parser.add_argument(
         "--process-all-moxfield-rows",
         action="store_true",
@@ -619,7 +638,12 @@ def main() -> None:
     parser.add_argument("--player-topdeck-id", help="Only process entries for one TopDeck player id")
     parser.add_argument("--max-moxfield-requests", type=int, help="Stop after this many Moxfield URL requests")
     parser.add_argument("--max-topdeck-requests", type=int, help="Stop after this many TopDeck deck page requests")
-    parser.add_argument("--topdeck-timeout", type=float, default=10, help="Seconds before a TopDeck deck page request times out")
+    parser.add_argument(
+        "--topdeck-timeout",
+        type=float,
+        default=10,
+        help="Seconds before a TopDeck deck page request times out",
+    )
     parser.add_argument("--max-api-requests", type=int, help="Deprecated alias for --max-moxfield-requests")
     parser.add_argument("--sleep", type=float, default=0.2, help="Seconds to sleep between Moxfield URL requests")
     parser.add_argument("--export-unresolved-csv", type=Path, help="Write unresolved Moxfield entries to CSV")
@@ -731,7 +755,9 @@ def main() -> None:
     retry_entry_ids = (
         cached_ids_for_statuses(attempt_cache, retry_statuses)
         if retry_statuses
-        else load_entry_ids(args.entry_ids_file) if args.entry_ids_file else []
+        else load_entry_ids(args.entry_ids_file)
+        if args.entry_ids_file
+        else []
     )
     retry_index = 0
     if args.entry_ids_file and retry_statuses is None:
@@ -778,11 +804,7 @@ def main() -> None:
         if not rows:
             break
 
-        rows = [
-            row
-            for row in rows
-            if row_within_date_window(row, start_date=effective_start, end_date=effective_end)
-        ]
+        rows = [row for row in rows if row_within_date_window(row, start_date=effective_start, end_date=effective_end)]
         if not rows:
             if retry_statuses or args.entry_ids_file:
                 continue
@@ -1082,7 +1104,9 @@ def main() -> None:
         if retry_statuses or args.entry_ids_file:
             continue
         page_retained_successes = sum(
-            1 for entry_id, effects in row_effects.items() if not effects["decklist_update"] or entry_id not in successful_decklist_update_ids
+            1
+            for entry_id, effects in row_effects.items()
+            if not effects["decklist_update"] or entry_id not in successful_decklist_update_ids
         )
         if args.dry_run or args.include_known:
             offset += page_processed

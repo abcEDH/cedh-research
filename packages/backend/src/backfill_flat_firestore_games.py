@@ -15,6 +15,7 @@ from typing import Any
 import requests
 
 from ingest import (
+    MTG_GAME,
     SUPABASE_REST_BASE,
     TOPDECK_FIRESTORE_PROJECT,
     SupabaseClient,
@@ -280,8 +281,10 @@ def get_unknown_commander_id(client: SupabaseClient) -> str:
         {
             "name": "Unknown Commander",
             "commander_names": ["Unknown Commander"],
+            "game": MTG_GAME,
+            "identity_kind": "commander",
         },
-        on_conflict="name",
+        on_conflict="game,name",
         max_retries=8,
     )
     if not rows:
@@ -295,11 +298,7 @@ def ensure_tournament_entries(
     pods: list[dict[str, Any]],
 ) -> dict[str, dict[str, str]]:
     entry_by_topdeck_id = fetch_entry_map(client, tournament_id)
-    pod_topdeck_ids = {
-        topdeck_id
-        for pod in pods
-        for topdeck_id in pod["player_topdeck_ids"]
-    }
+    pod_topdeck_ids = {topdeck_id for pod in pods for topdeck_id in pod["player_topdeck_ids"]}
     missing_topdeck_ids = sorted(pod_topdeck_ids - set(entry_by_topdeck_id))
     if not missing_topdeck_ids:
         return entry_by_topdeck_id
@@ -312,26 +311,20 @@ def ensure_tournament_entries(
         select="id,topdeck_id,name",
     )
     player_id_by_topdeck_id = {
-        str(row["topdeck_id"]): row["id"]
-        for row in existing_players
-        if row.get("topdeck_id") and row.get("id")
+        str(row["topdeck_id"]): row["id"] for row in existing_players if row.get("topdeck_id") and row.get("id")
     }
 
-    new_player_ids = [
-        topdeck_id
-        for topdeck_id in missing_topdeck_ids
-        if topdeck_id not in player_id_by_topdeck_id
-    ]
+    new_player_ids = [topdeck_id for topdeck_id in missing_topdeck_ids if topdeck_id not in player_id_by_topdeck_id]
     if new_player_ids:
-        new_players = client.upsert(
-            "players",
-            [
-                {"topdeck_id": topdeck_id, "name": "Unknown"}
-                for topdeck_id in new_player_ids
-            ],
-            on_conflict="topdeck_id",
-            max_retries=8,
-        ) or []
+        new_players = (
+            client.upsert(
+                "players",
+                [{"topdeck_id": topdeck_id, "name": "Unknown"} for topdeck_id in new_player_ids],
+                on_conflict="topdeck_id",
+                max_retries=8,
+            )
+            or []
+        )
         for row in new_players:
             if row.get("topdeck_id") and row.get("id"):
                 player_id_by_topdeck_id[str(row["topdeck_id"])] = row["id"]
@@ -371,10 +364,7 @@ def upsert_games_and_participants(
     games: list[dict[str, Any]] = []
     skipped_pods = 0
     for pod in pods:
-        participant_entries = [
-            entry_by_topdeck_id.get(topdeck_id)
-            for topdeck_id in pod["player_topdeck_ids"]
-        ]
+        participant_entries = [entry_by_topdeck_id.get(topdeck_id) for topdeck_id in pod["player_topdeck_ids"]]
         if any(entry is None for entry in participant_entries):
             skipped_pods += 1
             continue
@@ -493,10 +483,14 @@ def main() -> None:
         raise SystemExit("SUPABASE_URL and SUPABASE_SERVICE_KEY are required")
 
     client = SupabaseClient(url, key)
-    issues = load_issues(args.issues_in) if args.issues_in else scan_for_issues(
-        client,
-        only_leagues=args.only_leagues,
-        workers=args.workers,
+    issues = (
+        load_issues(args.issues_in)
+        if args.issues_in
+        else scan_for_issues(
+            client,
+            only_leagues=args.only_leagues,
+            workers=args.workers,
+        )
     )
     if args.limit > 0:
         issues = issues[: args.limit]

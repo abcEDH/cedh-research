@@ -21,6 +21,13 @@ from typing import Any
 
 from dateutil import parser as date_parser
 
+from game_registry import (
+    DEFAULT_GAME_KEY,
+    GAME_REGISTRY,
+    MTG_GAME,
+    GameConfig,
+    get_game_config,
+)
 from supabase_client import (
     SUPABASE_REST_BASE,
     DirectPostgresClient,
@@ -39,12 +46,17 @@ from topdeck_client import (
 # existing scripts which do `from ingest import X` continue to work unchanged.
 __all__ = [
     "SUPABASE_REST_BASE",
+    "DEFAULT_GAME_KEY",
     "DirectPostgresClient",
+    "GAME_REGISTRY",
+    "GameConfig",
+    "MTG_GAME",
     "SupabaseClient",
     "_describe_request_failure",
     "TOPDECK_FIRESTORE_PROJECT",
     "TopDeckClient",
     "decode_firestore_value",
+    "get_game_config",
 ]
 
 TOPDECK_STANDING_RATE_FIELDS = [
@@ -524,9 +536,11 @@ class DataIngester:
         self,
         topdeck: TopDeckClient,
         supabase: SupabaseClient,
+        game_config: GameConfig | None = None,
     ):
         self.topdeck = topdeck
         self.supabase = supabase
+        self.game_config = game_config or GAME_REGISTRY[DEFAULT_GAME_KEY]
         self.commander_cache: dict[str, str] = {}  # name -> id
         self.player_cache: dict[str, str] = {}  # topdeck_id -> id
 
@@ -538,7 +552,10 @@ class DataIngester:
             return self.commander_cache[name]
 
         # Try to find existing
-        existing = self.supabase.select("commanders", {"name": f"eq.{name}"})
+        existing = self.supabase.select(
+            "commanders",
+            {"name": f"eq.{name}", "game": f"eq.{self.game_config.db_game}"},
+        )
         if existing:
             self.commander_cache[name] = existing[0]["id"]
             return existing[0]["id"]
@@ -547,8 +564,10 @@ class DataIngester:
         data = {
             "name": name,
             "commander_names": canonical_names,
+            "game": self.game_config.db_game,
+            "identity_kind": self.game_config.identity_kind,
         }
-        result = self.supabase.upsert("commanders", data, on_conflict="name")
+        result = self.supabase.upsert("commanders", data, on_conflict="game,name")
         if result:
             self.commander_cache[name] = result[0]["id"]
             return result[0]["id"]
@@ -584,9 +603,16 @@ class DataIngester:
         data = []
         for name, names in commander_data.items():
             canonical_name, canonical_names = sanitize_commander_payload(name, names)
-            data.append({"name": canonical_name, "commander_names": canonical_names})
+            data.append(
+                {
+                    "name": canonical_name,
+                    "commander_names": canonical_names,
+                    "game": self.game_config.db_game,
+                    "identity_kind": self.game_config.identity_kind,
+                }
+            )
 
-        result = self.supabase.upsert("commanders", data, on_conflict="name")
+        result = self.supabase.upsert("commanders", data, on_conflict="game,name")
         if not result:
             logger.error("Failed to batch upsert commanders")
             return {}
@@ -675,8 +701,9 @@ class DataIngester:
         swiss_rounds = tournament.get("swissNum", 0)
         reported_top_cut = tournament.get("topCut", 0)
         effective_top_cut = reported_top_cut
-        if player_count <= 34:
-            effective_top_cut = 4
+        small_event_top_cut = self.game_config.small_event_top_cut_override
+        if small_event_top_cut is not None and player_count <= 34:
+            effective_top_cut = small_event_top_cut
 
         logger.info(f"Processing: {name} ({player_count} players, {len(rounds)} rounds)")
 
@@ -688,10 +715,32 @@ class DataIngester:
         event_data = tournament.get("eventData", {})
         tier = self.topdeck.get_tournament_tier(tid)
 
+        # Resolve the game/format labels to persist. Configs with a pinned
+        # topdeck_format always write their canonical db_format; game-wide configs
+        # (topdeck_format=None) trust the payload's own format string so real format
+        # names surface from the data (ADR 0015).
+        payload_game = tournament.get("game")
+        payload_format = tournament.get("format")
+        db_format = self.game_config.db_format
+        if self.game_config.topdeck_format is None and payload_format:
+            db_format = str(payload_format)
+        if payload_game and str(payload_game) != self.game_config.db_game:
+            logger.warning(
+                f"Tournament {tid} payload reports game={payload_game!r}; "
+                f"persisting configured game={self.game_config.db_game!r}"
+            )
+        if self.game_config.topdeck_format is not None and payload_format and str(payload_format) != db_format:
+            logger.warning(
+                f"Tournament {tid} payload reports format={payload_format!r}; "
+                f"persisting configured format={db_format!r}"
+            )
+
         # Upsert tournament
         tournament_data: dict[str, Any] = {
             "topdeck_tid": tid,
             "name": name,
+            "game": self.game_config.db_game,
+            "format": db_format,
             "start_date": start_date,
             "player_count": player_count,
             "swiss_rounds": swiss_rounds,
@@ -872,10 +921,13 @@ class DataIngester:
 
             # Only add W/L/D if they are explicitly present in the data to avoid
             # overwriting with zeros during re-ingestion.
-            # If not present but points > 0, derive them.
+            # If not present but points > 0, derive them — but only for games whose
+            # scoring makes that sound (cEDH 5/1/0). Losses are never derivable from
+            # points regardless of game.
+            derive_wld = self.game_config.derive_wld_from_points
             if info.get("wins") is not None:
                 entry["wins"] = info["wins"]
-            elif info["points"] > 0:
+            elif derive_wld and info["points"] > 0:
                 entry["wins"] = info["points"] // 5
 
             if info.get("losses") is not None:
@@ -883,7 +935,7 @@ class DataIngester:
 
             if info.get("draws") is not None:
                 entry["draws"] = info["draws"]
-            elif info["points"] > 0:
+            elif derive_wld and info["points"] > 0:
                 entry["draws"] = info["points"] % 5
 
             entries.append(entry)
@@ -994,7 +1046,13 @@ class DataIngester:
                                     "entry_id": entry_id,
                                     "seat_position": seat_num,
                                     "result": result_text,
-                                    "points_earned": 1 if is_draw else 5 if is_winner else 0,
+                                    "points_earned": (
+                                        self.game_config.draw_points
+                                        if is_draw
+                                        else self.game_config.win_points
+                                        if is_winner
+                                        else 0
+                                    ),
                                 }
                                 participant_records.append(participant_record)
                             if participant_records:
@@ -1061,7 +1119,13 @@ class DataIngester:
                                     "entry_id": entry_id,
                                     "seat_position": seat_num,
                                     "result": result_text,
-                                    "points_earned": 1 if is_draw else 5 if is_winner else 0,
+                                    "points_earned": (
+                                        self.game_config.draw_points
+                                        if is_draw
+                                        else self.game_config.win_points
+                                        if is_winner
+                                        else 0
+                                    ),
                                 }
                                 participant_records.append(participant_record)
                             if participant_records:
