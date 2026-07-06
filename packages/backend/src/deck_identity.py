@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from functools import lru_cache
+from functools import cache, lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -302,8 +302,67 @@ def extract_identity_cedh(source: DeckSource) -> tuple[str, list[str]]:
     return normalize_commander_name(commanders), commanders
 
 
+def extract_identity_riftbound(source: DeckSource) -> tuple[str, list[str]]:
+    """Riftbound Legend from the deckObj Commanders-equivalent bucket."""
+    legends = [name.strip() for name in deck_obj_section_names(source.deck_obj, "Commanders") if name.strip()]
+    if not legends:
+        return "Unknown Legend", []
+    return " / ".join(sorted(legends)), sorted(legends)
+
+
+def extract_identity_gundam(source: DeckSource) -> tuple[str, list[str]]:
+    """Gundam deck identity — placeholder until leader extraction is defined.
+
+    decklist_obj is persisted, so identities can be re-derived by a backfill once
+    real Gundam deckObj payloads have been inspected (ADR 0015 appendix).
+    """
+    return "Unknown Deck", []
+
+
+@cache
+def load_ygo_archetype_rules(format_key: str) -> tuple[dict[str, Any], ...]:
+    """Load ordered archetype classification rules for one YGO retro format.
+
+    Rules file: packages/backend/data/ygo_archetypes/<format_key>.json with shape
+    {"archetypes": [{"name": str, "signature_cards": [str, ...], "min_matches": int}]}.
+    First rule whose signature-card matches reach min_matches (default 1) wins.
+    """
+    data_path = Path(__file__).resolve().parents[1] / "data" / "ygo_archetypes" / f"{format_key}.json"
+    if not data_path.exists():
+        return ()
+    payload = json.loads(data_path.read_text())
+    rules = payload.get("archetypes") or []
+    return tuple(rule for rule in rules if isinstance(rule, dict) and rule.get("name"))
+
+
+def classify_ygo_archetype(format_key: str, mainboard_names: list[str]) -> tuple[str, list[str]]:
+    """Classify a YGO deck into an archetype from its mainboard card names."""
+    normalized = {name.strip().lower() for name in mainboard_names if name.strip()}
+    for rule in load_ygo_archetype_rules(format_key):
+        signature = [str(card) for card in rule.get("signature_cards") or []]
+        matches = [card for card in signature if card.strip().lower() in normalized]
+        min_matches = int(rule.get("min_matches") or 1)
+        if signature and len(matches) >= min_matches:
+            return str(rule["name"]), matches
+    return "Unknown Archetype", []
+
+
+def make_ygo_extractor(format_key: str) -> IdentityExtractor:
+    """Build a data-driven archetype extractor for one YGO retro format."""
+
+    def extract(source: DeckSource) -> tuple[str, list[str]]:
+        mainboard = deck_obj_section_names(source.deck_obj, "Mainboard")
+        return classify_ygo_archetype(format_key, mainboard)
+
+    return extract
+
+
 IDENTITY_EXTRACTORS: dict[str, IdentityExtractor] = {
     "cedh": extract_identity_cedh,
+    "riftbound": extract_identity_riftbound,
+    "gundam": extract_identity_gundam,
+    "ygo-edison": make_ygo_extractor("edison"),
+    "ygo-goat": make_ygo_extractor("goat"),
 }
 
 

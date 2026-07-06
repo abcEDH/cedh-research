@@ -38,6 +38,7 @@ from game_registry import (
     MTG_GAME,
     GameConfig,
     get_game_config,
+    payload_format_matches,
 )
 from supabase_client import (
     SUPABASE_REST_BASE,
@@ -504,7 +505,7 @@ class DataIngester:
         payload_game = tournament.get("game")
         payload_format = tournament.get("format")
         db_format = self.game_config.db_format
-        if self.game_config.topdeck_format is None and payload_format:
+        if self.game_config.topdeck_format is None and payload_format and not self.game_config.format_aliases:
             db_format = str(payload_format)
         if payload_game and str(payload_game) != self.game_config.db_game:
             logger.warning(
@@ -767,6 +768,14 @@ class DataIngester:
 
             for table in tables:
                 table_num = table.get("table") or table.get("table_number") or table.get("tableNumber")
+                # TopDeck marks bye assignments with the literal table value "Byes"
+                # (common in 1v1 Swiss). They are not games — skip them; any other
+                # non-numeric table label would also break games.table_number.
+                if isinstance(table_num, str):
+                    if not table_num.strip().isdigit():
+                        logger.debug(f"Skipping non-game table {table_num!r} in round {round_value!r}")
+                        continue
+                    table_num = int(table_num)
                 seats = table.get("seats", [])
                 players = table.get("players", [])
 
@@ -1263,6 +1272,13 @@ def update_backfill_run_progress(
 def build_arg_parser() -> argparse.ArgumentParser:
     """Return the argument parser for the ingestion CLI."""
     parser = argparse.ArgumentParser(description="cEDH Analytics Data Ingestion")
+    parser.add_argument(
+        "--game",
+        type=str,
+        choices=sorted(GAME_REGISTRY),
+        default=DEFAULT_GAME_KEY,
+        help="Game/format vertical to ingest (one slug encodes game + format; default: cedh)",
+    )
     parser.add_argument("--tournament-id", type=str, help="TopDeck tournament ID (slug) to ingest")
     parser.add_argument("--days", type=int, default=7, help="Number of recent days to search for tournaments")
     parser.add_argument(
@@ -1345,8 +1361,9 @@ def main():
     supabase = SupabaseClient(supabase_url, supabase_key)
     db_client = None
 
-    # Initialize ingester
-    ingester = DataIngester(topdeck, supabase)
+    # Initialize ingester for the selected game vertical
+    game_config = get_game_config(getattr(args, "game", DEFAULT_GAME_KEY))
+    ingester = DataIngester(topdeck, supabase, game_config=game_config)
 
     # Job lifecycle management
     job_id = getattr(args, "job_id", "") or ""
@@ -1836,11 +1853,26 @@ def _run_ingestion(args, topdeck, supabase, ingester, job_id):
             )
     else:
         # Search and ingest recent tournaments
+        cfg = ingester.game_config if ingester else GAME_REGISTRY[DEFAULT_GAME_KEY]
         start_date = (datetime.now() - timedelta(days=args.days)).date().isoformat()
         end_date = datetime.now().date().isoformat()
-        logger.info(f"Searching for tournaments from {start_date} through {end_date} ({args.days} days)")
-        tournaments = topdeck.search_tournaments(start_date=start_date, end_date=end_date, leagues=args.leagues)
+        logger.info(f"Searching {cfg.topdeck_game} tournaments from {start_date} through {end_date} ({args.days} days)")
+        tournaments = topdeck.search_tournaments(
+            start_date=start_date,
+            end_date=end_date,
+            leagues=args.leagues,
+            game=cfg.topdeck_game,
+            game_format=cfg.topdeck_format,
+        )
         logger.info(f"Found {len(tournaments)} tournaments to process")
+
+        if cfg.format_aliases:
+            original_count = len(tournaments)
+            tournaments = [t for t in tournaments if payload_format_matches(cfg, t.get("format"))]
+            logger.info(
+                f"Filtered to {len(tournaments)} tournaments matching format aliases "
+                f"{cfg.format_aliases} (from {original_count})"
+            )
 
         if min_players > 0:
             original_count = len(tournaments)

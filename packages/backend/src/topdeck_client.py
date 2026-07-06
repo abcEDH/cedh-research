@@ -490,12 +490,20 @@ class TopDeckClient:
         start_date: str | None = None,
         end_date: str | None = None,
         leagues: bool = False,
+        game: str = "Magic: The Gathering",
+        game_format: str | None = "EDH",
     ) -> list[dict[str, Any]]:
-        """Search for tournaments within a date range."""
+        """Search for tournaments within a date range.
+
+        Defaults preserve the legacy cEDH behavior. Pass ``game_format=None`` to
+        search a game across all formats (used for games whose TopDeck format
+        strings are discovered from the data itself — see ADR 0015).
+        """
         params: dict[str, Any] = {
-            "game": "Magic: The Gathering",
-            "format": "EDH",
+            "game": game,
         }
+        if game_format is not None:
+            params["format"] = game_format
         if start_date:
             params["start"] = int(date_parser.parse(start_date).timestamp())
         if end_date:

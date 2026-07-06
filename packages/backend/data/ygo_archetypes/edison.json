@@ -1,0 +1,15 @@
+{
+  "_comment": "Ordered archetype classification rules for Edison format (March 2010). First rule whose signature-card matches reach min_matches wins. Seed list — extend as real TopDeck decklists surface (ADR 0015).",
+  "archetypes": [
+    { "name": "Blackwing", "signature_cards": ["Blackwing - Shura the Blue Flame", "Blackwing - Bora the Spear", "Blackwing - Kalut the Moon Shadow"], "min_matches": 2 },
+    { "name": "Infernity", "signature_cards": ["Infernity Archfiend", "Infernity Necromancer", "Infernity Launcher"], "min_matches": 2 },
+    { "name": "Lightsworn", "signature_cards": ["Judgment Dragon", "Lyla, Lightsworn Sorceress", "Charge of the Light Brigade"], "min_matches": 2 },
+    { "name": "Gladiator Beast", "signature_cards": ["Gladiator Beast Gyzarus", "Gladiator Beast Laquari", "Gladiator Proving Ground"], "min_matches": 2 },
+    { "name": "X-Saber", "signature_cards": ["XX-Saber Faultroll", "XX-Saber Gottoms", "XX-Saber Darksoul"], "min_matches": 2 },
+    { "name": "Flamvell Cat Synchro", "signature_cards": ["Rekindling", "Flamvell Firedog", "Summoner Monk"], "min_matches": 2 },
+    { "name": "Machina Gadget", "signature_cards": ["Machina Fortress", "Green Gadget", "Machina Gearframe"], "min_matches": 2 },
+    { "name": "Frog Monarch", "signature_cards": ["Treeborn Frog", "Caius the Shadow Monarch", "Battle Fader"], "min_matches": 2 },
+    { "name": "Quickdraw Plant", "signature_cards": ["Quickdraw Synchron", "Debris Dragon", "Lonefire Blossom"], "min_matches": 2 },
+    { "name": "Dark Armed Return", "signature_cards": ["Dark Armed Dragon", "Return from the Different Dimension", "Allure of Darkness"], "min_matches": 2 }
+  ]
+}

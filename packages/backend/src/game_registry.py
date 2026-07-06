@@ -77,6 +77,66 @@ GAME_REGISTRY: dict[str, GameConfig] = {
         small_event_top_cut_override=4,
         identity_kind="commander",
     ),
+    # Riftbound and Gundam search game-wide and persist the payload's own format
+    # string; win/draw points follow standard 1v1 Swiss match points and are only
+    # informational for these games (no points-based W/D derivation).
+    "riftbound": GameConfig(
+        key="riftbound",
+        topdeck_game="Riftbound",
+        topdeck_format=None,
+        db_game="Riftbound",
+        db_format="Standard",
+        pod_size=2,
+        win_points=3,
+        draw_points=1,
+        derive_wld_from_points=False,
+        small_event_top_cut_override=None,
+        identity_kind="legend",
+    ),
+    "gundam": GameConfig(
+        key="gundam",
+        topdeck_game="Gundam TCG",
+        topdeck_format=None,
+        db_game="Gundam TCG",
+        db_format="Standard",
+        pod_size=2,
+        win_points=3,
+        draw_points=1,
+        derive_wld_from_points=False,
+        small_event_top_cut_override=None,
+        identity_kind="leader",
+    ),
+    # Yu-Gi-Oh retro formats search game-wide and filter client-side by format
+    # aliases; exact TopDeck format strings are unverified until the first live
+    # runs (ADR 0015 appendix) — extend the aliases when real strings surface.
+    "ygo-edison": GameConfig(
+        key="ygo-edison",
+        topdeck_game="Yu-Gi-Oh",
+        topdeck_format=None,
+        db_game="Yu-Gi-Oh",
+        db_format="Edison",
+        pod_size=2,
+        win_points=3,
+        draw_points=1,
+        derive_wld_from_points=False,
+        small_event_top_cut_override=None,
+        identity_kind="archetype",
+        format_aliases=("Edison", "Edison Format"),
+    ),
+    "ygo-goat": GameConfig(
+        key="ygo-goat",
+        topdeck_game="Yu-Gi-Oh",
+        topdeck_format=None,
+        db_game="Yu-Gi-Oh",
+        db_format="Goat",
+        pod_size=2,
+        win_points=3,
+        draw_points=1,
+        derive_wld_from_points=False,
+        small_event_top_cut_override=None,
+        identity_kind="archetype",
+        format_aliases=("Goat", "GOAT", "Goat Format"),
+    ),
 }
 
 DEFAULT_GAME_KEY = "cedh"
