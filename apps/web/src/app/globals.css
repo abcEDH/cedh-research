@@ -138,6 +138,14 @@
   body {
     @apply bg-background text-foreground antialiased font-sans;
   }
+  /* Backstop against horizontal-scroll regressions from wide content.
+     clip (not hidden) so position: sticky keeps working. The real guard is
+     the e2e overflow assertion in e2e/helpers/overflow.ts — fix overflow at
+     the source rather than relying on this. */
+  html,
+  body {
+    overflow-x: clip;
+  }
 }
 
 @layer components {
