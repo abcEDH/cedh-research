@@ -94,6 +94,39 @@ Types live in `fetchers.ts`, not in consuming page components.
 
 ---
 
+## Mobile / Responsive (TypeScript / Next.js)
+
+The web app is mobile-first. New pages and components ship mobile-ready by
+default — don't leave it as a follow-up. Conventions:
+
+- **Breakpoints.** Mobile-first: base styles target phones, layer up with
+  `sm:` (640) and `md:` (768). `md:` is the nav switch — the desktop header
+  nav is `hidden md:flex` and the hamburger drawer (`MobileNav`) is `md:hidden`.
+- **Touch targets.** Interactive controls on mobile paths (drawer links,
+  filter triggers, pagers, chips) get ≥44px hit areas at the base breakpoint
+  (`min-h-11` or taller padding), relaxed at `sm:`. Do **not** globally resize
+  `ui/button.tsx` — desktop density is intentional.
+- **Wide tables — column priority.** Drop secondary columns on small screens
+  with `hidden sm:table-cell` / `hidden md:table-cell`, and surface the
+  dropped value as a `sm:hidden` sub-line under the primary cell. See the home
+  leaderboard (`app/page.tsx`) and `tournaments-list.tsx` for the pattern. Keep
+  `whitespace-nowrap` on numeric cells only; let names wrap or `line-clamp`.
+- **Genuinely wide content** (the pod bracket) stacks vertically below `md:`
+  (`flex-col md:flex-row`, `w-full md:w-[...]`) and keeps horizontal scroll
+  from `md:` up — see `tournaments/[slug]/tournament-detail-tabs.tsx`.
+- **Filters.** Prefer the Radix-based `ui/select.tsx` over hand-rolled
+  dropdowns — it handles small-viewport positioning and keyboard/touch for
+  free.
+- **Safe areas.** The layout uses `viewport-fit=cover` with
+  `env(safe-area-inset-*)` padding in `globals.css`; keep new fixed/sticky
+  chrome inside those insets.
+- **Regression guard.** Every route must pass `expectNoHorizontalOverflow`
+  (`e2e/helpers/overflow.ts`) on the mobile Playwright projects. Add new
+  routes to `e2e/mobile-routes.spec.ts`. Full checklist:
+  [`apps/web/docs/mobile-checklist.md`](apps/web/docs/mobile-checklist.md).
+
+---
+
 ## Dependency Pinning (uv)
 
 See [`docs/decisions/0010-lockfile-policy.md`](docs/decisions/0010-lockfile-policy.md) for
