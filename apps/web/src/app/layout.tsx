@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { PostHogProvider } from "./providers";
@@ -16,9 +16,31 @@ const jetBrainsMono = JetBrains_Mono({
   variable: "--font-jetbrains-mono",
 });
 
+const SITE_DESCRIPTION =
+  "tedh.gg for competitive Commander. Track commander performance, card trends, and tournament results.";
+
 export const metadata: Metadata = {
+  metadataBase: new URL("https://tedh.gg"),
   title: "tedh.gg",
-  description: "tedh.gg for competitive Commander. Track commander performance, card trends, and tournament results.",
+  description: SITE_DESCRIPTION,
+  appleWebApp: {
+    capable: true,
+    title: "tedh.gg",
+    statusBarStyle: "black-translucent",
+  },
+  openGraph: {
+    title: "tedh.gg",
+    description: SITE_DESCRIPTION,
+    url: "https://tedh.gg",
+    siteName: "tedh.gg",
+    type: "website",
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#030915",
 };
 
 export default function RootLayout({
