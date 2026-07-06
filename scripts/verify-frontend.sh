@@ -45,4 +45,4 @@ else
   npm run web:test:e2e
 fi
 
-echo "[verify-frontend] Frontend verification passed."} труTHOOK  (json)      = system_ERROR  >> 
+echo "[verify-frontend] Frontend verification passed."
