@@ -6,10 +6,13 @@ extraction behavior lives in the deck-identity module and is dispatched by
 ``GameConfig.key`` so this module never imports ingestion code.
 
 TopDeck game strings are case-sensitive and come from the documented Game enum in
-``packages/backend/openapi.yaml``. Format strings for non-MTG games are not enumerated
-by the API docs; configs for those games search game-wide (``topdeck_format=None``) and
-persist each tournament payload's own ``format`` string, so real format names surface
-from the data itself (see ADR 0015 appendix).
+``packages/backend/openapi.yaml``. The search endpoint requires both ``game`` and
+``format`` on every request (a 400 documents "Both game and format fields are
+required") — there is no way to search a game across all of its formats in one
+call. Format strings for non-MTG games are not enumerated by the API docs, so
+configs for those games carry a best-guess ``topdeck_format`` plus optional
+``format_aliases``; ingestion queries each candidate and merges the results (see
+ADR 0015 appendix). Pin the real strings once live data confirms them.
 """
 
 from __future__ import annotations
@@ -29,8 +32,8 @@ class GameConfig:
     topdeck_game: str
     """Exact case-sensitive game string sent to the TopDeck search API."""
 
-    topdeck_format: str | None
-    """Format string for the search payload; None searches the game across formats."""
+    topdeck_format: str
+    """Primary format string sent in every search request (TopDeck requires it)."""
 
     db_game: str
     """Value written to tournaments.game (and commanders.game)."""
@@ -59,8 +62,9 @@ class GameConfig:
     """Value written to commanders.identity_kind for this game's deck identities."""
 
     format_aliases: tuple[str, ...] = field(default=())
-    """Case-insensitive payload ``format`` values accepted when searching game-wide.
-    Empty means every format returned for the game is ingested."""
+    """Additional format strings to also search for (besides ``topdeck_format``) when
+    the exact label TopDeck uses is uncertain. Each alias triggers its own search
+    call; results are merged and deduped by tournament id."""
 
 
 GAME_REGISTRY: dict[str, GameConfig] = {
@@ -77,13 +81,15 @@ GAME_REGISTRY: dict[str, GameConfig] = {
         small_event_top_cut_override=4,
         identity_kind="commander",
     ),
-    # Riftbound and Gundam search game-wide and persist the payload's own format
-    # string; win/draw points follow standard 1v1 Swiss match points and are only
-    # informational for these games (no points-based W/D derivation).
+    # Riftbound and Gundam: TopDeck's format taxonomy for these games is not
+    # documented. "Standard" is a best guess (matches db_format); win/draw points
+    # follow standard 1v1 Swiss match points and are only informational (no
+    # points-based W/D derivation). Pin the real string once live search results
+    # confirm it (ADR 0015 appendix).
     "riftbound": GameConfig(
         key="riftbound",
         topdeck_game="Riftbound",
-        topdeck_format=None,
+        topdeck_format="Standard",
         db_game="Riftbound",
         db_format="Standard",
         pod_size=2,
@@ -96,7 +102,7 @@ GAME_REGISTRY: dict[str, GameConfig] = {
     "gundam": GameConfig(
         key="gundam",
         topdeck_game="Gundam TCG",
-        topdeck_format=None,
+        topdeck_format="Standard",
         db_game="Gundam TCG",
         db_format="Standard",
         pod_size=2,
@@ -106,13 +112,13 @@ GAME_REGISTRY: dict[str, GameConfig] = {
         small_event_top_cut_override=None,
         identity_kind="leader",
     ),
-    # Yu-Gi-Oh retro formats search game-wide and filter client-side by format
-    # aliases; exact TopDeck format strings are unverified until the first live
-    # runs (ADR 0015 appendix) — extend the aliases when real strings surface.
+    # Yu-Gi-Oh retro formats: exact TopDeck format strings are unverified until
+    # the first live runs (ADR 0015 appendix) — format_aliases lists plausible
+    # alternate spellings/casings; each is searched and results are merged.
     "ygo-edison": GameConfig(
         key="ygo-edison",
         topdeck_game="Yu-Gi-Oh",
-        topdeck_format=None,
+        topdeck_format="Edison",
         db_game="Yu-Gi-Oh",
         db_format="Edison",
         pod_size=2,
@@ -121,12 +127,12 @@ GAME_REGISTRY: dict[str, GameConfig] = {
         derive_wld_from_points=False,
         small_event_top_cut_override=None,
         identity_kind="archetype",
-        format_aliases=("Edison", "Edison Format"),
+        format_aliases=("Edison Format",),
     ),
     "ygo-goat": GameConfig(
         key="ygo-goat",
         topdeck_game="Yu-Gi-Oh",
-        topdeck_format=None,
+        topdeck_format="Goat",
         db_game="Yu-Gi-Oh",
         db_format="Goat",
         pod_size=2,
@@ -135,7 +141,7 @@ GAME_REGISTRY: dict[str, GameConfig] = {
         derive_wld_from_points=False,
         small_event_top_cut_override=None,
         identity_kind="archetype",
-        format_aliases=("Goat", "GOAT", "Goat Format"),
+        format_aliases=("GOAT", "Goat Format"),
     ),
 }
 
@@ -151,17 +157,17 @@ def get_game_config(key: str) -> GameConfig:
         raise KeyError(f"Unknown game key {key!r}; known keys: {known}") from None
 
 
-def payload_format_matches(config: GameConfig, payload_format: str | None) -> bool:
-    """Return True when a tournament payload's format is ingestible for this config.
+def accepted_topdeck_formats(config: GameConfig) -> tuple[str, ...]:
+    """Every format string a config's searches may return (primary + aliases)."""
+    return (config.topdeck_format, *config.format_aliases)
 
-    Used to filter game-wide searches down to the formats a vertical actually wants
-    (e.g. only Edison events out of all Yu-Gi-Oh results). Configs with an explicit
-    ``topdeck_format`` already filter server-side, and empty ``format_aliases`` accepts
-    everything.
+
+def payload_format_matches(config: GameConfig, payload_format: str | None) -> bool:
+    """Return True when a tournament payload's format matches one this config
+    searched for. Used as a defensive post-filter after multi-alias searches, in
+    case the API's format matching is looser than the documented exact match.
     """
-    if config.topdeck_format is not None or not config.format_aliases:
-        return True
     if not payload_format:
         return False
     normalized = str(payload_format).strip().lower()
-    return any(normalized == alias.strip().lower() for alias in config.format_aliases)
+    return any(normalized == alias.strip().lower() for alias in accepted_topdeck_formats(config))

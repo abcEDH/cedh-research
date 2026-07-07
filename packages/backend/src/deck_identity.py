@@ -261,6 +261,28 @@ def sanitize_commander_payload(
     return canonical_name, [part.strip() for part in canonical_name.split(" / ") if part.strip()]
 
 
+def sanitize_identity_payload(
+    name: str | None,
+    component_names: list[str] | None,
+    identity_kind: str,
+) -> tuple[str, list[str]]:
+    """Build a canonical deck-identity row payload before persistence.
+
+    Only cEDH commanders go through ``sanitize_commander_payload`` — that check
+    assumes exactly-two-card partner pairs drawn from Magic's legal pairing list,
+    and silently rewrites any other two-component identity (a Riftbound duo
+    Legend, a Yu-Gi-Oh archetype matched on two signature cards) to "Unknown
+    Commander". Since callers key their id maps by the extractor's original
+    name, that rewrite orphans the entry — its commander_id lookup misses and
+    the whole entry gets dropped (see PR #247 review).
+    """
+    if identity_kind == "commander":
+        return sanitize_commander_payload(name, component_names)
+    clean_name = (name or "").strip() or UNKNOWN_IDENTITY
+    clean_components = [str(value).strip() for value in (component_names or []) if str(value).strip()]
+    return clean_name, clean_components
+
+
 # ---------------------------------------------------------------------------
 # Per-game identity extraction (multi-game pipeline)
 # ---------------------------------------------------------------------------

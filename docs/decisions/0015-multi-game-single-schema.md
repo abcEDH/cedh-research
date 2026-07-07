@@ -17,10 +17,12 @@ heuristic, and every read model aggregated over all rows assuming they were cEDH
 **One Supabase project, one schema, `(game, format)` discriminator columns — no parallel
 per-game tables and no second database.**
 
-1. **Ingestion writes `tournaments.game` and `tournaments.format` explicitly.** Configs
-   with a pinned TopDeck format (cEDH → `EDH`) persist their canonical format; game-wide
-   configs (`topdeck_format = None`) persist the tournament payload's own `format` string
-   so real format names surface from the data itself (see Appendix).
+1. **Ingestion writes `tournaments.game` and `tournaments.format` explicitly**, always
+   the config's own `db_game`/`db_format` — TopDeck's search endpoint requires both `game`
+   and `format` on every request (a documented 400 otherwise), so there is no game-wide
+   search mode to trust a payload's format from. Non-MTG configs carry a best-guess
+   `topdeck_format` plus optional `format_aliases`; ingestion searches every candidate and
+   merges results, logging (not trusting) any payload/config format mismatch (see Appendix).
 2. **`commanders` becomes the game-scoped deck-identity table.** It keeps its physical
    name (renaming would ripple through every commander-centric view and the tedh.gg
    frontend) but gains `game` and `identity_kind`
@@ -77,12 +79,19 @@ topdeck.gg blocked), so:
   `packages/backend/openapi.yaml`, case-sensitive): `"Magic: The Gathering"`,
   `"Riftbound"`, `"Gundam TCG"`, `"Yu-Gi-Oh"`.
 - **Format strings** for non-MTG games are not enumerated by the API docs and remain
-  **unverified**. Riftbound and Gundam configs therefore search game-wide
-  (`topdeck_format = None`, no client-side format filter) and persist each payload's own
-  `format` string; Yu-Gi-Oh retro configs search game-wide and filter client-side via
-  case-insensitive `format_aliases` (e.g. `("Edison", "Edison Format")`). After the first
-  scheduled runs, `SELECT DISTINCT format FROM tournaments WHERE game = …` yields the
-  exact strings; pin them in `game_registry.py` (and the frontend registry) then.
+  **unverified** — and unlike the initial design, cannot be discovered by an unfiltered
+  "search this game across all formats" call: `POST /v2/tournaments` requires both `game`
+  and `format` on every request (400 `Both "game" and "format" fields are required.` per
+  `openapi.yaml`). Every `GameConfig` therefore carries a concrete best-guess
+  `topdeck_format` (Riftbound/Gundam: `"Standard"`; YGO retro: the format's proper name,
+  e.g. `"Edison"`/`"Goat"`) plus optional `format_aliases` for plausible alternate
+  spellings/casings (e.g. YGO Goat: `("GOAT", "Goat Format")`). `search_tournaments_for_game`
+  (`ingest.py`) issues one search per candidate format and unions the results by tournament
+  id, then re-filters through `payload_format_matches` as a defensive check. A wrong guess
+  fails safe: the search simply returns zero tournaments for that format string, not
+  corrupted data. After the first scheduled runs, `SELECT DISTINCT format FROM tournaments
+  WHERE game = …` yields the exact strings; pin them in `game_registry.py` (and the
+  frontend registry) then.
 - **`deckObj` shape** (from `openapi.yaml`):
   `{Commanders|Mainboard|Sideboard: {<card name>: {id: <uuid>, count: <int>}}}` — present
   on `standings[]` and `tables[].players[]`; `id` is the game's card identifier (Scryfall

@@ -31,12 +31,14 @@ from deck_identity import (
     normalize_commander_name,
     normalize_partner_order,
     sanitize_commander_payload,
+    sanitize_identity_payload,
 )
 from game_registry import (
     DEFAULT_GAME_KEY,
     GAME_REGISTRY,
     MTG_GAME,
     GameConfig,
+    accepted_topdeck_formats,
     get_game_config,
     payload_format_matches,
 )
@@ -70,6 +72,7 @@ __all__ = [
     "_describe_request_failure",
     "TOPDECK_FIRESTORE_PROJECT",
     "TopDeckClient",
+    "accepted_topdeck_formats",
     "clean_commander_card_name",
     "decode_firestore_value",
     "extract_commanders",
@@ -79,7 +82,9 @@ __all__ = [
     "load_legal_commander_pair_order_map",
     "normalize_commander_name",
     "normalize_partner_order",
+    "payload_format_matches",
     "sanitize_commander_payload",
+    "sanitize_identity_payload",
 ]
 
 TOPDECK_STANDING_RATE_FIELDS = [
@@ -329,7 +334,9 @@ class DataIngester:
 
     def get_or_create_commander(self, name: str, commander_names: list[str]) -> str | None:
         """Get or create a commander entry, return UUID. (Legacy - use batch method)"""
-        canonical_name, canonical_names = sanitize_commander_payload(name, commander_names)
+        canonical_name, canonical_names = sanitize_identity_payload(
+            name, commander_names, self.game_config.identity_kind
+        )
         name = canonical_name
         if name in self.commander_cache:
             return self.commander_cache[name]
@@ -385,7 +392,7 @@ class DataIngester:
 
         data = []
         for name, names in commander_data.items():
-            canonical_name, canonical_names = sanitize_commander_payload(name, names)
+            canonical_name, canonical_names = sanitize_identity_payload(name, names, self.game_config.identity_kind)
             data.append(
                 {
                     "name": canonical_name,
@@ -498,23 +505,22 @@ class DataIngester:
         event_data = tournament.get("eventData", {})
         tier = self.topdeck.get_tournament_tier(tid)
 
-        # Resolve the game/format labels to persist. Configs with a pinned
-        # topdeck_format always write their canonical db_format; game-wide configs
-        # (topdeck_format=None) trust the payload's own format string so real format
-        # names surface from the data (ADR 0015).
+        # Resolve the game/format labels to persist. Every config now carries a
+        # concrete db_format (TopDeck requires a format on every search, so there
+        # is no "trust the payload" game-wide mode — ADR 0015); just warn if the
+        # payload disagrees with what we're about to write.
         payload_game = tournament.get("game")
         payload_format = tournament.get("format")
         db_format = self.game_config.db_format
-        if self.game_config.topdeck_format is None and payload_format and not self.game_config.format_aliases:
-            db_format = str(payload_format)
         if payload_game and str(payload_game) != self.game_config.db_game:
             logger.warning(
                 f"Tournament {tid} payload reports game={payload_game!r}; "
                 f"persisting configured game={self.game_config.db_game!r}"
             )
-        if self.game_config.topdeck_format is not None and payload_format and str(payload_format) != db_format:
+        if payload_format and not payload_format_matches(self.game_config, payload_format):
             logger.warning(
-                f"Tournament {tid} payload reports format={payload_format!r}; "
+                f"Tournament {tid} payload reports format={payload_format!r}, which does not "
+                f"match any format searched for {self.game_config.key!r}; "
                 f"persisting configured format={db_format!r}"
             )
 
@@ -948,6 +954,44 @@ class DataIngester:
             "entries": len(entries),
             "games": games_processed,
         }
+
+
+def search_tournaments_for_game(
+    topdeck: TopDeckClient,
+    cfg: GameConfig,
+    *,
+    start_date: str | None,
+    end_date: str | None,
+    leagues: bool,
+) -> list[dict[str, Any]]:
+    """Search TopDeck for one game config, merging results across every format
+    it might use.
+
+    TopDeck requires both game and format on every search request, so there is
+    no single call that searches a game across all formats (ADR 0015). Configs
+    with an uncertain format string list plausible alternates in
+    ``format_aliases``; this issues one search per candidate format and unions
+    the results by tournament id, then defensively re-filters through
+    ``payload_format_matches`` in case the API's matching is looser than exact.
+    """
+    seen_ids: set[str] = set()
+    merged: list[dict[str, Any]] = []
+    for game_format in accepted_topdeck_formats(cfg):
+        results = topdeck.search_tournaments(
+            start_date=start_date,
+            end_date=end_date,
+            leagues=leagues,
+            game=cfg.topdeck_game,
+            game_format=game_format,
+        )
+        for tournament in results:
+            dedupe_key = str(tournament.get("id") or tournament.get("TID") or id(tournament))
+            if dedupe_key in seen_ids:
+                continue
+            seen_ids.add(dedupe_key)
+            merged.append(tournament)
+
+    return [t for t in merged if payload_format_matches(cfg, t.get("format"))]
 
 
 def parse_tournament_start_date(tournament: dict[str, Any]) -> datetime | None:
@@ -1856,23 +1900,18 @@ def _run_ingestion(args, topdeck, supabase, ingester, job_id):
         cfg = ingester.game_config if ingester else GAME_REGISTRY[DEFAULT_GAME_KEY]
         start_date = (datetime.now() - timedelta(days=args.days)).date().isoformat()
         end_date = datetime.now().date().isoformat()
-        logger.info(f"Searching {cfg.topdeck_game} tournaments from {start_date} through {end_date} ({args.days} days)")
-        tournaments = topdeck.search_tournaments(
+        logger.info(
+            f"Searching {cfg.topdeck_game} tournaments (formats={accepted_topdeck_formats(cfg)}) "
+            f"from {start_date} through {end_date} ({args.days} days)"
+        )
+        tournaments = search_tournaments_for_game(
+            topdeck,
+            cfg,
             start_date=start_date,
             end_date=end_date,
             leagues=args.leagues,
-            game=cfg.topdeck_game,
-            game_format=cfg.topdeck_format,
         )
         logger.info(f"Found {len(tournaments)} tournaments to process")
-
-        if cfg.format_aliases:
-            original_count = len(tournaments)
-            tournaments = [t for t in tournaments if payload_format_matches(cfg, t.get("format"))]
-            logger.info(
-                f"Filtered to {len(tournaments)} tournaments matching format aliases "
-                f"{cfg.format_aliases} (from {original_count})"
-            )
 
         if min_players > 0:
             original_count = len(tournaments)

@@ -8,6 +8,7 @@ from game_registry import (  # noqa: E402
     DEFAULT_GAME_KEY,
     GAME_REGISTRY,
     MTG_GAME,
+    accepted_topdeck_formats,
     get_game_config,
     payload_format_matches,
 )
@@ -38,6 +39,7 @@ class GameRegistryTests(unittest.TestCase):
             with self.subTest(key=key):
                 self.assertEqual(cfg.key, key)
                 self.assertTrue(cfg.topdeck_game)
+                self.assertTrue(cfg.topdeck_format)
                 self.assertTrue(cfg.db_game)
                 self.assertTrue(cfg.db_format)
                 self.assertIn(cfg.identity_kind, VALID_IDENTITY_KINDS)
@@ -47,59 +49,32 @@ class GameRegistryTests(unittest.TestCase):
                 if cfg.derive_wld_from_points:
                     # Points derivation assumes the cEDH 5/1/0 scoring identity.
                     self.assertEqual((cfg.win_points, cfg.draw_points), (5, 1))
-                if cfg.format_aliases:
-                    # Aliases only apply to game-wide searches.
-                    self.assertIsNone(cfg.topdeck_format)
+                # topdeck_format must never repeat in format_aliases (would send
+                # a redundant duplicate search).
+                self.assertNotIn(cfg.topdeck_format, cfg.format_aliases)
+
+    def test_accepted_topdeck_formats_includes_primary_and_aliases(self) -> None:
+        cfg = GAME_REGISTRY["ygo-goat"]
+        self.assertEqual(accepted_topdeck_formats(cfg), ("Goat", "GOAT", "Goat Format"))
 
     def test_get_game_config_rejects_unknown_key(self) -> None:
         with self.assertRaises(KeyError) as ctx:
             get_game_config("chess")
         self.assertIn("cedh", str(ctx.exception))
 
-    def test_payload_format_matches_with_pinned_format(self) -> None:
+    def test_payload_format_matches_pinned_format_case_insensitively(self) -> None:
         cfg = GAME_REGISTRY["cedh"]
-        # Server-side filtering already applied; everything passes.
         self.assertTrue(payload_format_matches(cfg, "EDH"))
-        self.assertTrue(payload_format_matches(cfg, None))
-
-    def test_payload_format_matches_with_aliases(self) -> None:
-        base = GAME_REGISTRY["cedh"]
-        cfg = type(base)(
-            key="test",
-            topdeck_game="Yu-Gi-Oh",
-            topdeck_format=None,
-            db_game="Yu-Gi-Oh",
-            db_format="Edison",
-            pod_size=2,
-            win_points=3,
-            draw_points=1,
-            derive_wld_from_points=False,
-            small_event_top_cut_override=None,
-            identity_kind="archetype",
-            format_aliases=("Edison", "Edison Format"),
-        )
-        self.assertTrue(payload_format_matches(cfg, "edison"))
-        self.assertTrue(payload_format_matches(cfg, "Edison Format"))
-        self.assertFalse(payload_format_matches(cfg, "Goat"))
+        self.assertTrue(payload_format_matches(cfg, "edh"))
+        self.assertFalse(payload_format_matches(cfg, "Pauper EDH"))
         self.assertFalse(payload_format_matches(cfg, None))
 
-    def test_payload_format_matches_game_wide_without_aliases(self) -> None:
-        base = GAME_REGISTRY["cedh"]
-        cfg = type(base)(
-            key="test",
-            topdeck_game="Riftbound",
-            topdeck_format=None,
-            db_game="Riftbound",
-            db_format="Standard",
-            pod_size=2,
-            win_points=3,
-            draw_points=1,
-            derive_wld_from_points=False,
-            small_event_top_cut_override=None,
-            identity_kind="legend",
-        )
-        self.assertTrue(payload_format_matches(cfg, "Anything"))
-        self.assertTrue(payload_format_matches(cfg, None))
+    def test_payload_format_matches_any_alias(self) -> None:
+        cfg = GAME_REGISTRY["ygo-edison"]
+        self.assertTrue(payload_format_matches(cfg, "Edison"))
+        self.assertTrue(payload_format_matches(cfg, "edison format"))
+        self.assertFalse(payload_format_matches(cfg, "Goat"))
+        self.assertFalse(payload_format_matches(cfg, None))
 
 
 if __name__ == "__main__":

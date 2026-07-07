@@ -11,6 +11,7 @@ from deck_identity import (  # noqa: E402
     extract_identity_cedh,
     get_identity_extractor,
     normalize_commander_name,
+    sanitize_identity_payload,
 )
 from game_registry import GAME_REGISTRY  # noqa: E402
 
@@ -78,6 +79,43 @@ class DeckObjSectionTests(unittest.TestCase):
         self.assertEqual(deck_obj_section_names(None, "Commanders"), [])
         self.assertEqual(deck_obj_section_names({}, "Commanders"), [])
         self.assertEqual(deck_obj_section_names({"Commanders": "not-a-dict"}, "Commanders"), [])
+
+
+class SanitizeIdentityPayloadTests(unittest.TestCase):
+    """PR #247 review: non-cEDH two-component identities must not be run
+    through the MTG partner-pair legality check."""
+
+    def test_commander_kind_delegates_to_mtg_sanitizer(self) -> None:
+        name, components = sanitize_identity_payload(
+            "Thrasios, Triton Hero / Tymna the Weaver",
+            ["Thrasios, Triton Hero", "Tymna the Weaver"],
+            "commander",
+        )
+        self.assertEqual(name, "Tymna the Weaver / Thrasios, Triton Hero")
+
+    def test_commander_kind_still_rejects_illegal_mtg_pairs(self) -> None:
+        name, components = sanitize_identity_payload("A / B", ["Sol Ring", "Brainstorm"], "commander")
+        self.assertEqual(name, "Unknown Commander")
+        self.assertEqual(components, ["Unknown Commander"])
+
+    def test_archetype_kind_passes_two_components_through_unchanged(self) -> None:
+        name, components = sanitize_identity_payload("Goat Control", ["Scapegoat", "Metamorphosis"], "archetype")
+        self.assertEqual(name, "Goat Control")
+        self.assertEqual(components, ["Scapegoat", "Metamorphosis"])
+
+    def test_legend_kind_passes_duo_components_through_unchanged(self) -> None:
+        name, components = sanitize_identity_payload(
+            "Jinx, Loose Cannon / Viktor, Herald of the Arcane",
+            ["Jinx, Loose Cannon", "Viktor, Herald of the Arcane"],
+            "legend",
+        )
+        self.assertEqual(name, "Jinx, Loose Cannon / Viktor, Herald of the Arcane")
+        self.assertEqual(components, ["Jinx, Loose Cannon", "Viktor, Herald of the Arcane"])
+
+    def test_non_commander_kind_falls_back_to_unknown_identity_for_blank_name(self) -> None:
+        name, components = sanitize_identity_payload("", [], "leader")
+        self.assertEqual(name, "Unknown Commander")
+        self.assertEqual(components, [])
 
 
 if __name__ == "__main__":
