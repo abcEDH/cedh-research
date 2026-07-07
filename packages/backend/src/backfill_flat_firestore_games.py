@@ -15,6 +15,7 @@ from typing import Any
 import requests
 
 from ingest import (
+    GAME_REGISTRY,
     MTG_GAME,
     SUPABASE_REST_BASE,
     TOPDECK_FIRESTORE_PROJECT,
@@ -172,9 +173,20 @@ def extract_flat_pods(data: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def fetch_tournaments(client: SupabaseClient, only_leagues: bool) -> list[dict[str, Any]]:
+    # Flat Firestore documents (E{n}:P{n} / S{n}:T{n} keys) are TopDeck's legacy,
+    # pre-v2-API storage format — they only exist for old cEDH tournaments run
+    # before the multi-game v2 API existed. Riftbound/Gundam/YGO tournaments are
+    # all v2-API-era and never have a flat Firestore doc to recover, but without
+    # this filter a coincidental Firestore hit would attach the MTG-only
+    # "Unknown Commander" fallback (get_unknown_commander_id) to a non-cEDH
+    # tournament_entries row, mixing games in the deck-identity read models
+    # (ADR 0015; PR #247 review).
+    cedh = GAME_REGISTRY["cedh"]
     params = {
         "select": "id,topdeck_tid,name,start_date",
         "topdeck_tid": "not.is.null",
+        "game": f"eq.{cedh.db_game}",
+        "format": f"eq.{cedh.db_format}",
         "order": "start_date.desc",
     }
     if only_leagues:
