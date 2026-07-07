@@ -4,7 +4,6 @@ from pathlib import Path
 from unittest import TestCase, main
 from unittest.mock import Mock, patch
 
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import regional_elo  # noqa: E402
@@ -95,9 +94,7 @@ class RefreshMaterializedViewsTests(TestCase):
         for fn in regional_elo.MATERIALIZED_VIEW_REFRESH_FUNCTIONS:
             self.assertIn(f"{client.url}/rest/v1/rpc/{fn}", called_endpoints)
         # Long read timeout is applied so slow refreshes aren't cut off client-side.
-        self.assertEqual(
-            post.call_args.kwargs["timeout"], regional_elo.REFRESH_RPC_TIMEOUT_SECONDS
-        )
+        self.assertEqual(post.call_args.kwargs["timeout"], regional_elo.REFRESH_RPC_TIMEOUT_SECONDS)
         self.assertEqual(result, 4)
 
     def test_refresh_materialized_views_continues_on_failure(self) -> None:
@@ -139,7 +136,11 @@ class RefreshMaterializedViewsTests(TestCase):
 class RegionalEloCliValidationTests(TestCase):
     def test_job_id_requires_apply(self) -> None:
         with patch.object(sys, "argv", ["regional_elo.py", "--job-id", "job-123", "--dry-run"]):
-            with patch.dict(os.environ, {"SUPABASE_URL": "https://test.supabase.co", "SUPABASE_SERVICE_KEY": "test-key"}, clear=False):
+            with patch.dict(
+                os.environ,
+                {"SUPABASE_URL": "https://test.supabase.co", "SUPABASE_SERVICE_KEY": "test-key"},
+                clear=False,
+            ):
                 with self.assertRaises(SystemExit) as ctx:
                     regional_elo.main()
 
@@ -214,15 +215,34 @@ class GameEventsAlwaysWrittenTests(TestCase):
                                         with patch("regional_elo.fetch_player_index", return_value={}):
                                             with patch("regional_elo.fetch_topdeck_elo_by_topdeck_id", return_value={}):
                                                 with patch("regional_elo.fetch_primary_state_stats", return_value={}):
-                                                    with patch("regional_elo.fetch_canonical_event_counts", return_value={}):
-                                                      with patch("regional_elo.build_active_leaderboard_rows", return_value=[]):
-                                                        with patch("regional_elo.upsert_active_leaderboard_rows"):
-                                                            with patch("regional_elo.delete_stale_active_leaderboard_rows"):
-                                                                with patch("regional_elo.build_player_profiles", return_value=[]):
-                                                                    with patch("regional_elo.build_primary_commanders", return_value={}):
-                                                                        with patch("regional_elo.detect_active_players", return_value=[]):
-                                                                            with patch("regional_elo.refresh_materialized_views", return_value=0):
-                                                                                regional_elo.main()
+                                                    with patch(
+                                                        "regional_elo.fetch_canonical_event_counts", return_value={}
+                                                    ):
+                                                        with patch(
+                                                            "regional_elo.build_active_leaderboard_rows",
+                                                            return_value=[],
+                                                        ):
+                                                            with patch("regional_elo.upsert_active_leaderboard_rows"):
+                                                                with patch(
+                                                                    "regional_elo.delete_stale_active_leaderboard_rows"
+                                                                ):
+                                                                    with patch(
+                                                                        "regional_elo.build_player_profiles",
+                                                                        return_value=[],
+                                                                    ):
+                                                                        with patch(
+                                                                            "regional_elo.build_primary_commanders",
+                                                                            return_value={},
+                                                                        ):
+                                                                            with patch(
+                                                                                "regional_elo.detect_active_players",
+                                                                                return_value=[],
+                                                                            ):
+                                                                                with patch(
+                                                                                    "regional_elo.refresh_materialized_views",
+                                                                                    return_value=0,
+                                                                                ):
+                                                                                    regional_elo.main()
                     return mock_client
 
     def test_game_events_always_upserted(self) -> None:
@@ -263,9 +283,9 @@ class DetectActivePlayersTests(TestCase):
 class ProcessResultsTests(TestCase):
     def test_groups_by_game_id(self) -> None:
         rows = [
-            {"game_id": "g1", "entry_id": "e1", "result": "win",  "seat_position": 1, "rating": 1500},
+            {"game_id": "g1", "entry_id": "e1", "result": "win", "seat_position": 1, "rating": 1500},
             {"game_id": "g1", "entry_id": "e2", "result": "loss", "seat_position": 2, "rating": 1500},
-            {"game_id": "g2", "entry_id": "e3", "result": "win",  "seat_position": 1, "rating": 1500},
+            {"game_id": "g2", "entry_id": "e3", "result": "win", "seat_position": 1, "rating": 1500},
             {"game_id": "g2", "entry_id": "e4", "result": "loss", "seat_position": 2, "rating": 1500},
         ]
         events = regional_elo.process_results(rows)
@@ -280,10 +300,24 @@ class ProcessResultsTests(TestCase):
 
     def test_events_carry_game_metadata(self) -> None:
         rows = [
-            {"game_id": "g1", "tournament_id": "t1", "start_date": "2026-01-01",
-             "entry_id": "e1", "result": "win",  "seat_position": 1, "rating": 1500},
-            {"game_id": "g1", "tournament_id": "t1", "start_date": "2026-01-01",
-             "entry_id": "e2", "result": "loss", "seat_position": 2, "rating": 1500},
+            {
+                "game_id": "g1",
+                "tournament_id": "t1",
+                "start_date": "2026-01-01",
+                "entry_id": "e1",
+                "result": "win",
+                "seat_position": 1,
+                "rating": 1500,
+            },
+            {
+                "game_id": "g1",
+                "tournament_id": "t1",
+                "start_date": "2026-01-01",
+                "entry_id": "e2",
+                "result": "loss",
+                "seat_position": 2,
+                "rating": 1500,
+            },
         ]
         events = regional_elo.process_results(rows)
         self.assertEqual(len(events), 1)
@@ -310,7 +344,7 @@ class ProcessResultsTests(TestCase):
 
     def test_fallback_no_game_id(self) -> None:
         rows = [
-            {"entry_id": "e1", "result": "win",  "seat_position": 1, "rating": 1500},
+            {"entry_id": "e1", "result": "win", "seat_position": 1, "rating": 1500},
             {"entry_id": "e2", "result": "loss", "seat_position": 2, "rating": 1500},
         ]
         events = regional_elo.process_results(rows)
@@ -325,12 +359,18 @@ class UpdateRatingsTests(TestCase):
         }
         events = [
             {
-                "player_id": "p1", "opp_player_id": "p2", "entry_id": "e1",
-                "outcome": "win", "game_id": "g1", "tournament_id": "t1",
-                "game_date": "2026-01-01", "is_draw": False, "opponent_count": 1,
+                "player_id": "p1",
+                "opp_player_id": "p2",
+                "entry_id": "e1",
+                "outcome": "win",
+                "game_id": "g1",
+                "tournament_id": "t1",
+                "game_date": "2026-01-01",
+                "is_draw": False,
+                "opponent_count": 1,
             }
         ]
-        db_rows = regional_elo.update_ratings_with_games(ratings, events)
+        regional_elo.update_ratings_with_games(ratings, events)
         self.assertEqual(ratings[("global", "ALL", "p1")]["wins"], 1)
         self.assertEqual(ratings[("global", "ALL", "p2")]["losses"], 1)
 
@@ -341,9 +381,15 @@ class UpdateRatingsTests(TestCase):
         }
         events = [
             {
-                "player_id": "p1", "opp_player_id": "p2", "entry_id": "e1",
-                "outcome": "win", "game_id": "g1", "tournament_id": "t1",
-                "game_date": "2026-01-01", "is_draw": False, "opponent_count": 1,
+                "player_id": "p1",
+                "opp_player_id": "p2",
+                "entry_id": "e1",
+                "outcome": "win",
+                "game_id": "g1",
+                "tournament_id": "t1",
+                "game_date": "2026-01-01",
+                "is_draw": False,
+                "opponent_count": 1,
             }
         ]
         db_rows = regional_elo.update_ratings_with_games(ratings, events)
@@ -393,8 +439,15 @@ class LoadRatingsFromSnapshotTests(TestCase):
     @patch("regional_elo._rpc_fetch_all")
     def test_builds_ratings_dict_from_rpc_rows(self, mock_rpc: Mock) -> None:
         mock_rpc.return_value = [
-            {"player_id": "abc-123", "rating": 1650.5, "games_played": 20,
-             "wins": 10, "draws": 2, "losses": 8, "last_game_date": "2026-01-01"},
+            {
+                "player_id": "abc-123",
+                "rating": 1650.5,
+                "games_played": 20,
+                "wins": 10,
+                "draws": 2,
+                "losses": 8,
+                "last_game_date": "2026-01-01",
+            },
         ]
         client = Mock()
 
@@ -535,6 +588,20 @@ class BuildPrimaryCommandersTests(TestCase):
         params_arg = mock_fetch_all.call_args[0][2]
         self.assertEqual(table_arg, "tournament_entries")
         self.assertIn("commanders(name)", params_arg.get("select", ""))
+
+    @patch("regional_elo.fetch_all")
+    def test_scopes_query_to_cedh_only(self, mock_fetch_all: Mock) -> None:
+        """PR #247 review: this reads tournament_entries directly (not through the
+        guarded regional_elo_game_results view), so it must filter game/format
+        itself or a player's non-cEDH identity (Riftbound/Gundam/Yu-Gi-Oh) could
+        surface as their cEDH primary_commander_name once those games share the
+        table."""
+        mock_fetch_all.return_value = []
+        regional_elo.build_primary_commanders(Mock())
+        params_arg = mock_fetch_all.call_args[0][2]
+        self.assertIn("tournaments!inner", params_arg.get("select", ""))
+        self.assertEqual(params_arg.get("tournaments.game"), "eq.Magic: The Gathering")
+        self.assertEqual(params_arg.get("tournaments.format"), "eq.EDH")
 
     @patch("regional_elo.fetch_all")
     def test_empty_input_returns_empty_dict(self, mock_fetch_all: Mock) -> None:

@@ -42,6 +42,7 @@ export default async function TournamentsPage({
           <FormatSwitcher
             formats={game.formats}
             activeFormat={format.slug}
+            gameSlug={game.slug}
             basePath="/tournaments"
           />
         ) : null}
@@ -53,7 +54,7 @@ export default async function TournamentsPage({
           NEXT_PUBLIC_SUPABASE_ANON_KEY to load live tournament data.
         </p>
       ) : (
-        <TournamentsList tournaments={tournaments} />
+        <TournamentsList tournaments={tournaments} gameSlug={game.slug} />
       )}
     </main>
   );

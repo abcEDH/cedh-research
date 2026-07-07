@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getGame } from "@/lib/games/registry";
 import { getCardImageProvider } from "@/lib/games/card-images";
+import { withGameParam } from "@/lib/games/links";
 import { fetchTournamentDetail } from "@/lib/tournaments/fetchers";
 import { formatDate } from "@/lib/tournaments/stats";
 import { isSupabaseConfigured } from "@/lib/supabase";
@@ -60,7 +61,7 @@ export default async function TournamentDetailPage({
     <main className="container mx-auto flex flex-col gap-6 px-4 py-8">
       <div>
         <Link
-          href="/tournaments"
+          href={withGameParam("/tournaments", game.slug)}
           className="text-sm text-muted-foreground transition hover:text-foreground"
         >
           ← Tournaments

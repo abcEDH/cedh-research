@@ -43,7 +43,12 @@ export default async function MetaOverviewPage({
           </p>
         </div>
         {game.formats.length > 1 ? (
-          <FormatSwitcher formats={game.formats} activeFormat={format.slug} basePath="/" />
+          <FormatSwitcher
+            formats={game.formats}
+            activeFormat={format.slug}
+            gameSlug={game.slug}
+            basePath="/"
+          />
         ) : null}
       </div>
 

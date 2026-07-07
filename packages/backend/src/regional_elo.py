@@ -20,6 +20,7 @@ from typing import Any
 
 import requests
 
+from game_registry import DEFAULT_GAME_KEY, GAME_REGISTRY
 from ingest import SupabaseClient
 from supabase_client import DirectPostgresClient
 
@@ -352,9 +353,7 @@ def process_results(
     game_events: list[dict[str, Any]] = []
     for gid, standings in games.items():
         meta = game_meta.get(gid, {})
-        game_events.extend(
-            _process_one_game(standings, game_id=gid, **meta)
-        )
+        game_events.extend(_process_one_game(standings, game_id=gid, **meta))
 
     # Fallback: rows without game_id get processed as one group (legacy behaviour).
     if ungrouped:
@@ -830,12 +829,25 @@ def build_primary_commanders(client: SupabaseClient) -> dict[str, tuple[str, flo
     commander_name, picks the most-played known commander per player, and
     computes known_pct = known_entries / total_entries.  Players whose
     known_pct falls below 0.5 are omitted from the result.
+
+    Elo remains cEDH-only (ADR 0008), and unlike fetch_participants_for_leaderboard
+    this reads tournament_entries directly rather than through the guarded
+    regional_elo_game_results view, so it must filter on tournaments.game/format
+    itself — otherwise a player who also plays Riftbound/Gundam/Yu-Gi-Oh could
+    get a non-cEDH identity reported as their cEDH primary_commander_name once
+    those tournaments share this table (see PR #247 review).
     """
-    # Fetch all entries with their joined commander name
+    cedh = GAME_REGISTRY[DEFAULT_GAME_KEY]
+    # Fetch all cEDH entries with their joined commander name. tournaments!inner
+    # both forces the join and makes the embedded-resource filter valid PostgREST.
     rows = fetch_all(
         client,
         "tournament_entries",
-        {"select": "player_id,commander_id,commanders(name)"},
+        {
+            "select": "player_id,commander_id,commanders(name),tournaments!inner(game,format)",
+            "tournaments.game": f"eq.{cedh.db_game}",
+            "tournaments.format": f"eq.{cedh.db_format}",
+        },
     )
 
     # Tally per-player counts
@@ -1232,9 +1244,7 @@ def upsert_active_leaderboard_rows(
         )
 
 
-def refresh_materialized_views(
-    client: SupabaseClient, direct: DirectPostgresClient | None = None
-) -> int:
+def refresh_materialized_views(client: SupabaseClient, direct: DirectPostgresClient | None = None) -> int:
     """Refresh downstream materialized views. Returns count of successful refreshes.
 
     The heaviest refreshes (card_frequencies, card_performance) run for minutes
@@ -1252,9 +1262,7 @@ def refresh_materialized_views(
                 direct.call_function(fn_name)
             else:
                 endpoint = f"{client.url}/rest/v1/rpc/{fn_name}"
-                response = requests.post(
-                    endpoint, json={}, headers=client.headers, timeout=REFRESH_RPC_TIMEOUT_SECONDS
-                )
+                response = requests.post(endpoint, json={}, headers=client.headers, timeout=REFRESH_RPC_TIMEOUT_SECONDS)
                 if response.status_code >= 400:
                     raise RuntimeError(f"{response.status_code} {response.text}")
             success_count += 1
@@ -1356,9 +1364,7 @@ def main() -> None:
             client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS, direct=direct
         )
         update_job_heartbeat(client, job_id)
-        player_ids = fetch_distinct_entry_ids(
-            client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS, direct=direct
-        )
+        player_ids = fetch_distinct_entry_ids(client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS, direct=direct)
         player_ratings = {}
         for pid in player_ids:
             key = (GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY, pid)

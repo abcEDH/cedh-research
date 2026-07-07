@@ -1,4 +1,6 @@
 import Link from "next/link";
+import type { GameSlug } from "@/lib/games/registry";
+import { withGameParam } from "@/lib/games/links";
 import type { TournamentRow } from "@/lib/schemas/api-contracts";
 import { formatDate } from "@/lib/tournaments/stats";
 import {
@@ -10,7 +12,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-export function TournamentsList({ tournaments }: { tournaments: TournamentRow[] }) {
+export function TournamentsList({
+  tournaments,
+  gameSlug,
+}: {
+  tournaments: TournamentRow[];
+  gameSlug: GameSlug;
+}) {
   if (tournaments.length === 0) {
     return (
       <p className="rounded-xl border border-border/70 bg-card/50 px-6 py-10 text-center text-sm text-muted-foreground">
@@ -35,7 +43,7 @@ export function TournamentsList({ tournaments }: { tournaments: TournamentRow[] 
           <TableRow key={tournament.id}>
             <TableCell className="font-medium">
               <Link
-                href={`/tournaments/${tournament.topdeck_tid}`}
+                href={withGameParam(`/tournaments/${tournament.topdeck_tid}`, gameSlug)}
                 className="transition hover:text-primary"
               >
                 {tournament.name}

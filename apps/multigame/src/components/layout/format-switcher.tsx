@@ -1,14 +1,17 @@
 import Link from "next/link";
-import type { GameFormat } from "@/lib/games/registry";
+import type { GameFormat, GameSlug } from "@/lib/games/registry";
+import { withGameParam } from "@/lib/games/links";
 import { cn } from "@/lib/utils";
 
 export function FormatSwitcher({
   formats,
   activeFormat,
+  gameSlug,
   basePath = "/",
 }: {
   formats: GameFormat[];
   activeFormat: string;
+  gameSlug: GameSlug;
   basePath?: string;
 }) {
   return (
@@ -16,7 +19,7 @@ export function FormatSwitcher({
       {formats.map((format) => (
         <Link
           key={format.slug}
-          href={`${basePath}?format=${format.slug}`}
+          href={withGameParam(basePath, gameSlug, { format: format.slug })}
           className={cn(
             "rounded-full border px-3 py-1 text-sm transition",
             format.slug === activeFormat

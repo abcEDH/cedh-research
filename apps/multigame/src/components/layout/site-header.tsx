@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { GameConfig } from "@/lib/games/registry";
+import { withGameParam } from "@/lib/games/links";
 
 const NAV_ITEMS = [
   { href: "/", label: "Meta" },
@@ -11,7 +12,7 @@ export function SiteHeader({ game }: { game: GameConfig }) {
     <header className="sticky top-0 z-50 border-b border-border/70 bg-background/80 backdrop-blur-xl">
       <div className="container mx-auto flex flex-col gap-3 px-4 py-4 md:flex-row md:items-center md:justify-between">
         <Link
-          href="/"
+          href={withGameParam("/", game.slug)}
           aria-label={game.name}
           className="text-xl font-semibold text-foreground transition hover:text-primary"
         >
@@ -22,7 +23,7 @@ export function SiteHeader({ game }: { game: GameConfig }) {
           {NAV_ITEMS.map((item) => (
             <Link
               key={item.href}
-              href={item.href}
+              href={withGameParam(item.href, game.slug)}
               className="rounded-[10px] px-3.5 py-2 transition hover:bg-muted/40 hover:text-foreground"
             >
               {item.label}
