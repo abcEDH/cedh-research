@@ -210,6 +210,34 @@ class ChooseCanonicalRowTests(unittest.TestCase):
         self.assertEqual(canonical["id"], "a-id")
         self.assertEqual([row["id"] for row in duplicates], ["b-id"])
 
+    def test_prefers_true_named_row_for_partner_pair_composite_names(self) -> None:
+        # Regression test: a two-card commander row's `name` is a composite
+        # display string like "Sophina, Spearsage Deserter / Hargilde, Kindly
+        # Runechanter", which never appears verbatim in `true_oracle_names`
+        # (that set only contains individual card names). Before the fix,
+        # this made every partner row look flavor-named, so a flavor-named
+        # row alphabetically earlier than the true-named row (e.g. "Chief Jim
+        # Hopper / Dustin, Gadget Genius") would incorrectly win as canonical.
+        true_row = {
+            "id": "true-id",
+            "name": "Sophina, Spearsage Deserter / Hargilde, Kindly Runechanter",
+            "commander_names": ["Sophina, Spearsage Deserter", "Hargilde, Kindly Runechanter"],
+        }
+        flavor_row = {
+            "id": "flavor-id",
+            "name": "Chief Jim Hopper / Dustin, Gadget Genius",
+            "commander_names": ["Chief Jim Hopper", "Hargilde, Kindly Runechanter"],
+        }
+        true_oracle_names = {
+            "Sophina, Spearsage Deserter",
+            "Hargilde, Kindly Runechanter",
+        }
+
+        canonical, duplicates = choose_canonical_row([flavor_row, true_row], true_oracle_names)
+
+        self.assertEqual(canonical["id"], "true-id")
+        self.assertEqual([row["id"] for row in duplicates], ["flavor-id"])
+
 
 if __name__ == "__main__":
     unittest.main()

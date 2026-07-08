@@ -154,7 +154,17 @@ def choose_canonical_row(
 
     def sort_key(row: dict[str, Any]) -> tuple[int, str, str]:
         name = str(row.get("name") or "")
-        is_flavor_name = 0 if name in true_oracle_names else 1
+        # For partner/two-card commander rows, `name` is a composite display
+        # string (e.g. "Sophina, Spearsage Deserter / Hargilde, Kindly
+        # Runechanter") that never matches an individual entry in
+        # `true_oracle_names`. Score each component name from
+        # `commander_names` instead so a row only counts as flavor-named when
+        # at least one of its actual cards is a UB alt name.
+        component_names = commander_names_from_row(row)
+        is_true_named = bool(component_names) and all(
+            component in true_oracle_names for component in component_names
+        )
+        is_flavor_name = 0 if is_true_named else 1
         return (is_flavor_name, name, str(row.get("id") or ""))
 
     ordered = sorted(rows, key=sort_key)
