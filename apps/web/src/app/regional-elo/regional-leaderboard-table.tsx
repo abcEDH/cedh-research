@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 
+// Client-facing row shape. Deliberately excludes `rating` (internal Elo) — this component
+// runs in the browser, so any field present here is serialized into the page payload. See
+// issue #253 / the `toClientLeaderboardRow` helper in page.tsx.
 type LeaderboardRow = {
   region_type: string;
   region_key: string;
   player_id: string;
   player_name: string;
   topdeck_id: string | null;
-  rating: number;
   games_played: number;
   wins: number;
   draws: number;

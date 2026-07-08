@@ -123,6 +123,18 @@ type LeaderboardRow = {
   topdeck_elo_rank?: number | null;
 };
 
+// Client-safe leaderboard row. This intentionally omits `rating` (the internal Elo used for
+// matchmaking/ranking calculations) so it never gets serialized into the RSC payload sent to
+// the browser — see issue #253. Server-side code may still use the full `LeaderboardRow` for
+// sorting/calculations; only rows destined for a client component should go through
+// `toClientLeaderboardRow`.
+type ClientLeaderboardRow = Omit<LeaderboardRow, "rating">;
+
+export function toClientLeaderboardRow(row: LeaderboardRow): ClientLeaderboardRow {
+  const { rating: _rating, ...clientRow } = row;
+  return clientRow;
+}
+
 type LatestCommanderRow = {
   topdeck_id: string | null;
   active_commander: string | null;
@@ -409,7 +421,10 @@ export default async function RegionalEloPage({
             )
           ).rows
         : [];
-  const leaderboard = leaderboardRows;
+  // Strip internal-only fields (e.g. `rating`) before this data flows into the client
+  // component below — `RegionalLeaderboardTable` is a client component, so anything left on
+  // these rows is serialized into the page's payload and inspectable by any visitor.
+  const leaderboard: ClientLeaderboardRow[] = leaderboardRows.map(toClientLeaderboardRow);
 
   const playerKeys = leaderboard
     .map((r) => ({ player_id: r.player_id, topdeck_id: r.topdeck_id }))
