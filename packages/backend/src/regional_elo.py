@@ -1027,7 +1027,9 @@ def build_active_leaderboard_rows(
         if not player:
             continue
 
-        rating = _coerce_float(rating_row.get("rating")) or DEFAULT_RATING
+        rating = _coerce_float(rating_row.get("rating"))
+        if rating is None:
+            rating = DEFAULT_RATING
         canonical = (canonical_counts_by_player or {}).get(player_id)
         if canonical is not None:
             games_played = int(canonical.get("games_played") or 0)
@@ -1103,19 +1105,58 @@ def build_active_leaderboard_rows(
         partitions[(row["region_type"], row["region_key"])].append(row)
 
     for partition_rows in partitions.values():
-        partition_rows.sort(
-            key=lambda r: (
-                -float(r.get("rating") or 0),
-                -float(r.get("activity_score") or 0),
-                -int(r.get("games_played") or 0),
-                str(r.get("player_name") or ""),
-            )
-        )
-        for index, row in enumerate(partition_rows, start=1):
+        # Players with zero games sit at DEFAULT_RATING (an anchor/mean value,
+        # not a real competitive signal) because create_empty_ratings_row seeds
+        # every tracked player at that value before any games are processed.
+        # Real ratings can legitimately drift below that anchor (or below zero)
+        # for players who have actually played, so ranking purely on the numeric
+        # rating value lets a zero-game player's sentinel rating outrank -- and
+        # even land at rank 1 ahead of -- players with real, hard-earned
+        # ratings. Only players with at least one recorded game are eligible
+        # for a rating-based rank; everyone else is placed after them.
+        eligible_rows = [r for r in partition_rows if _is_rank_eligible(r)]
+        ineligible_rows = [r for r in partition_rows if not _is_rank_eligible(r)]
+
+        for group in (eligible_rows, ineligible_rows):
+            group.sort(key=_leaderboard_rank_sort_key)
+
+        for index, row in enumerate([*eligible_rows, *ineligible_rows], start=1):
             row["rank"] = index
 
     assign_topdeck_elo_ranks(leaderboard_rows)
     return leaderboard_rows
+
+
+def _is_rank_eligible(row: Mapping[str, Any]) -> bool:
+    """Return True if *row* has a real, games-backed rating.
+
+    Zero-game players are seeded with the DEFAULT_RATING anchor rather than a
+    genuine computed rating, so they must never be eligible to outrank (or, in
+    the worst case, become rank 1 ahead of) a player with a real rating -
+    including a legitimately negative one.
+    """
+    games_played = row.get("games_played")
+    try:
+        return int(games_played or 0) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _leaderboard_rank_sort_key(r: Mapping[str, Any]) -> tuple[float, float, int, str]:
+    """Sort key for rating rank: highest rating first, ties broken by activity,
+    then games played, then name. A missing rating sorts last rather than
+    being coerced to 0 (which could beat a real negative rating); missing
+    activity_score/games_played fall back to 0, the correct "no activity"
+    floor for those fields."""
+    rating = r.get("rating")
+    activity_score = r.get("activity_score")
+    games_played = r.get("games_played")
+    return (
+        -float(rating) if rating is not None else float("inf"),
+        -float(activity_score) if activity_score is not None else 0.0,
+        -int(games_played) if games_played is not None else 0,
+        str(r.get("player_name") or ""),
+    )
 
 
 def fetch_player_index(client: SupabaseClient) -> dict[str, dict[str, Any]]:

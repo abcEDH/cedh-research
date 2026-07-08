@@ -235,6 +235,90 @@ class BuildActiveLeaderboardRowsTests(unittest.TestCase):
         self.assertEqual(ranks_by_name["High Activity"], 1)
         self.assertEqual(ranks_by_name["Low Activity"], 2)
 
+    def test_zero_games_unrated_player_does_not_outrank_real_negative_rating(self) -> None:
+        # Regression test for #252: a player with zero games and no rating data
+        # (represented by an absent "rating" key, mirroring a fresh
+        # create_empty_ratings_row entry) was landing at rank 1 ahead of a
+        # player with a real, legitimately negative rating because the
+        # zero-games player's DEFAULT_RATING anchor (1500) numerically beat
+        # the real player's negative rating.
+        rows = regional_elo.build_active_leaderboard_rows(
+            ratings_rows=[
+                {
+                    "region_type": "global",
+                    "region_key": "ALL",
+                    "player_id": "player-real",
+                    "rating": -75.0,
+                    "games_played": 40,
+                    "wins": 5,
+                    "losses": 35,
+                },
+                {
+                    "region_type": "global",
+                    "region_key": "ALL",
+                    "player_id": "player-ghost",
+                    # No "rating" key at all: mirrors a brand new
+                    # create_empty_ratings_row() entry for a player who has
+                    # never actually played a processed game.
+                    "games_played": 0,
+                },
+            ],
+            player_index={
+                "player-real": {
+                    "id": "player-real",
+                    "name": "Real Player",
+                    "topdeck_id": "topdeck-real",
+                },
+                "player-ghost": {
+                    "id": "player-ghost",
+                    "name": "Ghost Player",
+                    "topdeck_id": "topdeck-ghost",
+                },
+            },
+            topdeck_elo_by_topdeck_id={},
+            state_stats_by_player={},
+            updated_at="2026-05-01T00:00:00+00:00",
+        )
+
+        global_rows = {
+            row["player_name"]: row for row in rows if row["region_type"] == "global"
+        }
+
+        # The real, rated player must be ranked ahead of the zero-game ghost
+        # player even though the ghost's sentinel rating (DEFAULT_RATING,
+        # 1500) is numerically higher than the real player's negative rating.
+        self.assertEqual(global_rows["Real Player"]["rank"], 1)
+        self.assertEqual(global_rows["Ghost Player"]["rank"], 2)
+        self.assertEqual(global_rows["Real Player"]["rating"], -75.0)
+
+    def test_zero_rating_value_is_preserved_not_coerced_to_default(self) -> None:
+        # A real player whose computed rating happens to equal exactly 0.0
+        # must keep that value; `0.0 or DEFAULT_RATING` previously collapsed
+        # any falsy-but-real rating back to the 1500 anchor.
+        rows = regional_elo.build_active_leaderboard_rows(
+            ratings_rows=[
+                {
+                    "region_type": "global",
+                    "region_key": "ALL",
+                    "player_id": "player-zero-rating",
+                    "rating": 0.0,
+                    "games_played": 12,
+                },
+            ],
+            player_index={
+                "player-zero-rating": {
+                    "id": "player-zero-rating",
+                    "name": "Zero Rating Player",
+                    "topdeck_id": "topdeck-zero",
+                },
+            },
+            topdeck_elo_by_topdeck_id={},
+            state_stats_by_player={},
+            updated_at="2026-05-01T00:00:00+00:00",
+        )
+
+        self.assertEqual(rows[0]["rating"], 0.0)
+
     def test_stale_cleanup_uses_minimal_return_and_runs_outside_nonempty_guard(self) -> None:
         source = Path(regional_elo.__file__).read_text()
 
