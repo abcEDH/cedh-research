@@ -5,7 +5,7 @@
     "dataset": "default_cards",
     "bulk_data_url": "https://api.scryfall.com/bulk-data",
     "timeout_seconds": 120.0,
-    "note": "Seed baseline mirrored from ingest.py's COMMANDER_NAME_ALIASES; this environment cannot reach api.scryfall.com to run generate_commander_oracle_aliases.py directly. Regenerate with `uv run python src/generate_commander_oracle_aliases.py` from an environment with Scryfall network access to pick up new Universes Beyond alternate-name printings."
+    "note": "Seed baseline mirrored from ingest.py's COMMANDER_NAME_ALIASES; this environment cannot reach api.scryfall.com to run generate_commander_oracle_aliases.py directly. Regenerate with `uv run --project packages/backend python packages/backend/src/generate_commander_oracle_aliases.py` (from the repo root; or `uv run python src/generate_commander_oracle_aliases.py` from inside packages/backend) from an environment with Scryfall network access to pick up new Universes Beyond alternate-name printings. The script's default --output path resolves relative to its own location, so either invocation writes to packages/backend/data/commander_oracle_aliases.json."
   },
   "alias_count": 8,
   "aliases": {
