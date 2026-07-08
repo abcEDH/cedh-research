@@ -25,7 +25,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
-from generate_legal_commander_pairings import front_face_name, front_face_value
+from generate_legal_commander_pairings import build_commander_card, front_face_name, front_face_value
 from ingest import clean_commander_card_name, normalize_partner_order
 
 DEFAULT_CARDS_BULK_TYPE = "default_cards"
@@ -71,22 +71,64 @@ def collect_true_oracle_names(cards: list[dict[str, Any]]) -> set[str]:
     return names
 
 
-def build_alias_map(cards: list[dict[str, Any]]) -> dict[str, str]:
-    """Build a flavor_name -> true_name alias map for commander-legal cards.
+def is_commander_eligible(card: dict[str, Any]) -> bool:
+    """Return whether ``card`` can actually occupy the command zone.
 
-    Only commander-legal printings are considered, keeping the generated
-    artifact scoped to names that can plausibly appear as a ``commanders``
-    row rather than every flavor-named card ever printed.
+    ``legalities.commander == "legal"`` only means the card is legal to
+    *include in the 99* of a Commander deck -- true for the overwhelming
+    majority of Magic cards -- and says nothing about whether the card can
+    itself *be* a commander. Reuses the trait extraction that
+    ``generate_legal_commander_pairings.py`` already built to solve this
+    exact problem for legal-pairing generation (``build_commander_card``),
+    rather than re-deriving type-line/oracle-text heuristics here.
+
+    A card can be a (possibly partial, e.g. partner/background) commander
+    if it is format-legal in Commander *and* one of:
+
+    - a Legendary Creature, the overwhelmingly common case;
+    - a Legendary Background, which occupies the second command-zone slot
+      alongside a "Choose a Background" creature; or
+    - any other card whose oracle text explicitly grants commander
+      eligibility (the wording Wizards uses on eligible planeswalkers,
+      e.g. "Tevesh Szat, Doom of Fools can be your commander.").
     """
+    commander_card = build_commander_card(card)
+    if not commander_card.is_commander_legal:
+        return False
+    if "Legendary" in commander_card.type_line and "Creature" in commander_card.type_line:
+        return True
+    if commander_card.is_legendary_background:
+        return True
+    if "can be your commander" in commander_card.oracle_text.casefold():
+        return True
+    return False
+
+
+def build_alias_map(cards: list[dict[str, Any]]) -> dict[str, str]:
+    """Build a flavor_name -> true_name alias map for commander-eligible cards.
+
+    Only cards that can actually occupy the command zone (see
+    ``is_commander_eligible``) are considered, keeping the generated
+    artifact scoped to names that can plausibly appear as a ``commanders``
+    row rather than every commander-format-legal, flavor-named card ever
+    printed -- most of which are ordinary 99-deck cards, not commanders.
+
+    Flavor names that are themselves a real Oracle name of some *other*
+    card are also skipped: aliasing such a string would be ambiguous, and
+    could silently rewrite a distinct real card's name via
+    ``clean_commander_card_name()``.
+    """
+    true_oracle_names = collect_true_oracle_names(cards)
     alias_map: dict[str, str] = {}
     for card in cards:
-        legalities = card.get("legalities") or {}
-        if legalities.get("commander") != "legal":
+        if not is_commander_eligible(card):
             continue
         true_name = front_face_name(str(card.get("name") or ""))
         flavor_name = front_face_value(card, "flavor_name")
         flavor_name = front_face_name(flavor_name) if flavor_name else ""
         if not true_name or not flavor_name or flavor_name == true_name:
+            continue
+        if flavor_name in true_oracle_names:
             continue
         alias_map.setdefault(flavor_name, true_name)
     return alias_map

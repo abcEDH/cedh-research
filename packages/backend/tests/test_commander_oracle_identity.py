@@ -31,6 +31,7 @@ from commander_oracle_identity import (  # noqa: E402
     collect_true_oracle_names,
     commander_names_from_row,
     group_duplicate_commander_rows,
+    is_commander_eligible,
     oracle_signature_for_names,
 )
 
@@ -71,6 +72,76 @@ NOT_COMMANDER_LEGAL_ALT_PRINTING = {
     "legalities": {"commander": "not_legal"},
 }
 
+# `legalities.commander == "legal"` means "legal in a Commander deck's 99",
+# which is true of an ordinary 99-deck card too -- it says nothing about
+# whether the card can occupy the command zone. This fixture has a flavor
+# name that collides with a *real* commander's true Oracle name
+# ("Tymna the Weaver", see UNRELATED_PRINTING above); without an
+# eligibility filter beyond format-legality, this would generate an alias
+# that silently rewrites that commander's name via
+# `clean_commander_card_name()`.
+ORDINARY_99_DECK_CARD_WITH_COLLIDING_FLAVOR_NAME = {
+    "name": "Sample Instant Spell",
+    "flavor_name": "Tymna the Weaver",
+    "oracle_id": "55555555-5555-5555-5555-555555555555",
+    "type_line": "Instant",
+    "legalities": {"commander": "legal"},
+}
+
+# A commander-eligible (Legendary Creature) card whose flavor name happens
+# to collide with a *different* real card's true Oracle name. Even though
+# this card itself passes the eligibility filter, the flavor name must
+# still be rejected because it is ambiguous with another card's real name.
+COMMANDER_ELIGIBLE_CARD_WITH_FLAVOR_NAME_COLLIDING_WITH_OTHER_ORACLE_NAME = {
+    "name": "Marchesa, the Black Rose",
+    "flavor_name": "Tymna the Weaver",
+    "oracle_id": "77777777-7777-7777-7777-777777777777",
+    "type_line": "Legendary Creature — Human Assassin",
+    "legalities": {"commander": "legal"},
+}
+
+LEGENDARY_BACKGROUND = {
+    "name": "Test Background",
+    "type_line": "Legendary Enchantment — Background",
+    "oracle_text": "",
+    "legalities": {"commander": "legal"},
+}
+
+PLANESWALKER_COMMANDER = {
+    "name": "Test Planeswalker Commander",
+    "type_line": "Legendary Planeswalker — TestWalker",
+    "oracle_text": "Test Planeswalker Commander can be your commander.\n+1: Draw a card.",
+    "legalities": {"commander": "legal"},
+}
+
+ORDINARY_NON_LEGENDARY_CREATURE = {
+    "name": "Ordinary Creature",
+    "type_line": "Creature — Human Wizard",
+    "oracle_text": "",
+    "legalities": {"commander": "legal"},
+}
+
+
+class IsCommanderEligibleTests(unittest.TestCase):
+    def test_legendary_creature_is_eligible(self) -> None:
+        self.assertTrue(is_commander_eligible(TRUE_PRINTING))
+
+    def test_ordinary_commander_legal_card_is_not_eligible(self) -> None:
+        # This is the exact landmine from the review comment: a card that's
+        # merely legal to *play* in Commander (true of most Magic cards) is
+        # not thereby eligible to *be* a commander.
+        self.assertFalse(is_commander_eligible(ORDINARY_99_DECK_CARD_WITH_COLLIDING_FLAVOR_NAME))
+        self.assertFalse(is_commander_eligible(ORDINARY_NON_LEGENDARY_CREATURE))
+
+    def test_legendary_background_is_eligible(self) -> None:
+        self.assertTrue(is_commander_eligible(LEGENDARY_BACKGROUND))
+
+    def test_planeswalker_with_can_be_your_commander_text_is_eligible(self) -> None:
+        self.assertTrue(is_commander_eligible(PLANESWALKER_COMMANDER))
+
+    def test_non_commander_legal_card_is_not_eligible_regardless_of_type_line(self) -> None:
+        self.assertFalse(is_commander_eligible(NOT_COMMANDER_LEGAL_ALT_PRINTING))
+
 
 class BuildNameToOracleIdMapTests(unittest.TestCase):
     def test_indexes_true_name_and_flavor_name_to_same_oracle_id(self) -> None:
@@ -109,6 +180,35 @@ class BuildAliasMapTests(unittest.TestCase):
     def test_excludes_printings_without_a_distinct_flavor_name(self) -> None:
         alias_map = build_alias_map([TRUE_PRINTING, UNRELATED_PRINTING])
         self.assertEqual(alias_map, {})
+
+    def test_excludes_ordinary_99_deck_card_even_though_format_legal(self) -> None:
+        # Regression test for the review comment: `legalities.commander ==
+        # "legal"` alone must not be enough to emit an alias. This ordinary
+        # Instant is legal to run in a Commander deck's 99 (like almost
+        # every card), but it can never itself be a commander, so no alias
+        # should be generated even though its flavor name collides with a
+        # real commander's true Oracle name.
+        alias_map = build_alias_map([ORDINARY_99_DECK_CARD_WITH_COLLIDING_FLAVOR_NAME])
+        self.assertEqual(alias_map, {})
+
+    def test_excludes_flavor_name_that_is_a_real_oracle_name_of_another_card(self) -> None:
+        # Regression test: even a commander-eligible card must not have its
+        # flavor name aliased if that exact string is itself the real
+        # Oracle name of some other card -- aliasing it would be ambiguous
+        # and could rewrite that other card's name via
+        # `clean_commander_card_name()`.
+        alias_map = build_alias_map(
+            [UNRELATED_PRINTING, COMMANDER_ELIGIBLE_CARD_WITH_FLAVOR_NAME_COLLIDING_WITH_OTHER_ORACLE_NAME]
+        )
+        self.assertEqual(alias_map, {})
+
+    def test_still_generates_aliases_for_legitimate_commander_eligible_ub_cards(self) -> None:
+        # Confirms the eligibility + oracle-name filters don't regress the
+        # actual feature: a genuine UB alternate-name commander printing
+        # (Legendary Creature, distinct flavor name, no collisions) must
+        # still produce its alias.
+        alias_map = build_alias_map([TRUE_PRINTING, UB_ALT_NAME_PRINTING, UNRELATED_PRINTING])
+        self.assertEqual(alias_map, {"Totally Radical Skater": "Nadier, Agent of the Duskenel"})
 
 
 class CollectTrueOracleNamesTests(unittest.TestCase):
