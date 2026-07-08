@@ -136,17 +136,29 @@ def build_commander_card(card: dict[str, Any]) -> CommanderCard:
     )
 
 
-def fetch_oracle_cards(timeout: float) -> list[dict[str, Any]]:
+def fetch_bulk_cards(bulk_type: str, timeout: float) -> list[dict[str, Any]]:
+    """Fetch a Scryfall bulk-data card list of the given ``bulk_type``.
+
+    Shared by any script that needs raw Scryfall card payloads — e.g.
+    ``oracle_cards`` (one row per oracle_id, used here for legal pairing rules)
+    or ``default_cards`` (one row per printing, used by
+    ``commander_oracle_identity.py`` for Universes Beyond alternate-name/
+    oracle_id identity resolution).
+    """
     bulk_response = requests.get(SCRYFALL_BULK_DATA_URL, timeout=timeout)
     bulk_response.raise_for_status()
     bulk_payload = bulk_response.json()
     bulk_items = bulk_payload.get("data") or []
-    oracle_item = next((item for item in bulk_items if item.get("type") == ORACLE_BULK_TYPE), None)
-    if not oracle_item or not oracle_item.get("download_uri"):
-        raise RuntimeError("Unable to locate Scryfall oracle_cards bulk download")
-    cards_response = requests.get(oracle_item["download_uri"], timeout=timeout)
+    bulk_item = next((item for item in bulk_items if item.get("type") == bulk_type), None)
+    if not bulk_item or not bulk_item.get("download_uri"):
+        raise RuntimeError(f"Unable to locate Scryfall {bulk_type} bulk download")
+    cards_response = requests.get(bulk_item["download_uri"], timeout=timeout)
     cards_response.raise_for_status()
     return cards_response.json()
+
+
+def fetch_oracle_cards(timeout: float) -> list[dict[str, Any]]:
+    return fetch_bulk_cards(ORACLE_BULK_TYPE, timeout)
 
 
 def add_pair(

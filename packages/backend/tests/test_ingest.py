@@ -37,6 +37,7 @@ from ingest import (  # noqa: E402
     clean_commander_card_name,
     extract_standing_rates,
     INGESTION_JOB_ALREADY_CLAIMED_EXIT_CODE,
+    load_commander_oracle_aliases,
     normalize_commander_name,
     resolve_record_fields,
     sanitize_commander_payload,
@@ -112,6 +113,47 @@ class CommanderNormalizationTests(unittest.TestCase):
             clean_commander_card_name("Etali, Primal Conqueror // Etali, Primal Sickness"),
             "Etali, Primal Conqueror",
         )
+
+    def test_clean_commander_card_name_falls_back_to_generated_oracle_alias_map(self) -> None:
+        # A newly-released Universes Beyond alternate-name printing that hasn't
+        # been hand-added to COMMANDER_NAME_ALIASES yet should still resolve
+        # via the generated commander_oracle_aliases.json artifact, keyed off
+        # the underlying Scryfall oracle_id (see generate_commander_oracle_aliases.py).
+        load_commander_oracle_aliases.cache_clear()
+        try:
+            with patch(
+                "ingest.load_commander_oracle_aliases",
+                return_value={"Totally Radical Skater": "Nadier, Agent of the Duskenel"},
+            ):
+                self.assertEqual(
+                    clean_commander_card_name("Totally Radical Skater"),
+                    "Nadier, Agent of the Duskenel",
+                )
+        finally:
+            load_commander_oracle_aliases.cache_clear()
+
+    def test_hardcoded_alias_takes_precedence_over_generated_alias_map(self) -> None:
+        load_commander_oracle_aliases.cache_clear()
+        try:
+            with patch(
+                "ingest.load_commander_oracle_aliases",
+                return_value={"Lucas, the Sharpshooter": "Some Other Card"},
+            ):
+                self.assertEqual(
+                    clean_commander_card_name("Lucas, the Sharpshooter"),
+                    "Bjorna, Nightfall Alchemist",
+                )
+        finally:
+            load_commander_oracle_aliases.cache_clear()
+
+    def test_load_commander_oracle_aliases_reads_generated_artifact(self) -> None:
+        load_commander_oracle_aliases.cache_clear()
+        try:
+            aliases = load_commander_oracle_aliases()
+        finally:
+            load_commander_oracle_aliases.cache_clear()
+        self.assertIsInstance(aliases, dict)
+        self.assertEqual(aliases.get("Chief Jim Hopper"), "Sophina, Spearsage Deserter")
 
     def test_normalize_commander_name_strips_back_faces_from_partner_pair(self) -> None:
         self.assertEqual(

@@ -1,0 +1,21 @@
+{
+  "generated_at": "2026-07-08T00:00:00+00:00",
+  "source": {
+    "provider": "Scryfall",
+    "dataset": "default_cards",
+    "bulk_data_url": "https://api.scryfall.com/bulk-data",
+    "timeout_seconds": 120.0,
+    "note": "Seed baseline mirrored from ingest.py's COMMANDER_NAME_ALIASES; this environment cannot reach api.scryfall.com to run generate_commander_oracle_aliases.py directly. Regenerate with `uv run python src/generate_commander_oracle_aliases.py` from an environment with Scryfall network access to pick up new Universes Beyond alternate-name printings."
+  },
+  "alias_count": 8,
+  "aliases": {
+    "Chief Jim Hopper": "Sophina, Spearsage Deserter",
+    "Dustin, Gadget Genius": "Hargilde, Kindly Runechanter",
+    "Eleven, the Mage": "Cecily, Haunted Mage",
+    "Lucas, the Sharpshooter": "Bjorna, Nightfall Alchemist",
+    "Max, the Daredevil": "Elmar, Ulvenwald Informant",
+    "Mike, the Dungeon Master": "Othelm, Sigardian Outcast",
+    "Mind Flayer, the Shadow": "Arvinox, the Mind Flail",
+    "Will the Wise": "Wernog, Rider's Chaplain"
+  }
+}
