@@ -131,7 +131,14 @@ type LeaderboardRow = {
 type ClientLeaderboardRow = Omit<LeaderboardRow, "rating">;
 
 export function toClientLeaderboardRow(row: LeaderboardRow): ClientLeaderboardRow {
-  const { rating: _rating, ...clientRow } = row;
+  // Cast defensively: a pre-deploy cache entry (written by the older
+  // `normalizeLeaderboardRows`, which used to copy `rating` onto `hidden_rating`) can still be
+  // sitting in the Next.js data cache with a `hidden_rating` field even though it's no longer
+  // part of the `LeaderboardRow` type. Strip it explicitly alongside `rating` so a stale cache
+  // hit can never leak the internal Elo to the client — see issue #253.
+  const { rating: _rating, hidden_rating: _hiddenRating, ...clientRow } = row as LeaderboardRow & {
+    hidden_rating?: number;
+  };
   return clientRow;
 }
 
@@ -338,7 +345,10 @@ const getCachedLeaderboardRows = unstable_cache(
     withTiming("regional-elo:leaderboard", () =>
       fetchLeaderboardRows(regionType, regionKey, page, pageSize, searchQuery)
     ),
-  ["regional-elo-leaderboard-v4"],
+  // v5: bumped to invalidate any pre-deploy cache entries that still carry the legacy
+  // `hidden_rating` field written by the old `normalizeLeaderboardRows` (see issue #253 /
+  // `toClientLeaderboardRow`'s defensive strip above).
+  ["regional-elo-leaderboard-v5"],
   { revalidate: REGIONAL_ELO_CACHE_REVALIDATE_SECONDS }
 );
 

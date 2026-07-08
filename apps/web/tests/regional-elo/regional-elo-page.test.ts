@@ -250,4 +250,36 @@ describe("RegionalEloPage", () => {
     expect(clientRow).not.toHaveProperty("rating");
     expect(clientRow.player_name).toBe("Test Player");
   });
+
+  it("strips a legacy `hidden_rating` field left over from a stale pre-deploy cache entry", async () => {
+    const pageModule = await import("@/app/regional-elo/page");
+    // Simulate a `regional-elo-leaderboard-v4` cache entry written by the old
+    // `normalizeLeaderboardRows`, which used to copy `rating` onto `hidden_rating`. TypeScript's
+    // static `LeaderboardRow` type no longer has this field, but a runtime cache hit could still
+    // carry it until the cache naturally expires — `toClientLeaderboardRow` must defend against
+    // that regardless of the declared type.
+    const staleRowFromCache = {
+      region_type: "global",
+      region_key: "ALL",
+      player_id: "player-1",
+      player_name: "Test Player",
+      topdeck_id: "player-1-topdeck",
+      rating: 1734.864,
+      hidden_rating: 1734.864,
+      games_played: 1,
+      wins: 1,
+      draws: 0,
+      losses: 0,
+      last_game_date: null,
+      rank: 1,
+      topdeck_elo: 2000,
+      topdeck_elo_rank: 1,
+    } as Parameters<typeof pageModule.toClientLeaderboardRow>[0];
+
+    const clientRow = pageModule.toClientLeaderboardRow(staleRowFromCache);
+
+    expect(clientRow).not.toHaveProperty("rating");
+    expect(clientRow).not.toHaveProperty("hidden_rating");
+    expect(clientRow.player_name).toBe("Test Player");
+  });
 });
