@@ -111,9 +111,19 @@ describe.skipIf(!canRunTests)("API Contract Tests", () => {
   describe("Database Views", () => {
     describe("commander_stats", () => {
       it("should return data matching CommanderStats schema", async () => {
+        // Order by total_entries desc (matching how the app and backend
+        // CI checks query this view — see apps/web/src/app/commanders/page.tsx
+        // and packages/backend/src/ci_backend_checks.py). Without an
+        // explicit order, .limit(1) can return an arbitrary row, including a
+        // commander with zero tournament entries. commander_stats aggregates
+        // (total_wins, avg_win_rate, etc.) come from a LEFT JOIN, so SUM/AVG
+        // legitimately return NULL when a commander has no entries — that's
+        // valid data, not a schema violation, but it isn't representative of
+        // the populated rows this contract is meant to validate.
         const { data, error } = await supabase
           .from("commander_stats")
           .select("*")
+          .order("total_entries", { ascending: false })
           .limit(1);
 
         expect(error).toBeNull();
