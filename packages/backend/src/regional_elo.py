@@ -927,8 +927,8 @@ def assign_topdeck_elo_ranks(
     """Assign topdeck_elo_rank within each (region_type, region_key) partition.
 
     Eligible rows -- those with a non-null topdeck_elo AND at least one
-    games-backed record in this app (see ``_is_rank_eligible``) -- are sorted
-    by topdeck_elo DESC, ties broken stably by rating DESC, then player_name
+    games-backed record in this app (see ``_is_topdeck_rank_eligible``) -- are
+    sorted by topdeck_elo DESC, ties broken stably by rating DESC, then player_name
     ASC for deterministic ordering. All other rows receive rank = None,
     including rows with a non-null topdeck_elo but zero recorded games.
 
@@ -948,16 +948,13 @@ def assign_topdeck_elo_ranks(
         partitions[(row.get("region_type", ""), row.get("region_key", ""))].append(row)
 
     for partition_rows in partitions.values():
-        ranked = [
-            r
-            for r in partition_rows
-            if r.get("topdeck_elo") is not None and _is_rank_eligible(r)
-        ]
-        unranked = [
-            r
-            for r in partition_rows
-            if r.get("topdeck_elo") is None or not _is_rank_eligible(r)
-        ]
+        ranked = []
+        unranked = []
+        for r in partition_rows:
+            if _is_topdeck_rank_eligible(r):
+                ranked.append(r)
+            else:
+                unranked.append(r)
         ranked.sort(
             key=lambda r: (
                 -float(r.get("topdeck_elo") or 0),
@@ -1160,6 +1157,19 @@ def _is_rank_eligible(row: Mapping[str, Any]) -> bool:
         return int(games_played or 0) > 0
     except (TypeError, ValueError):
         return False
+
+
+def _is_topdeck_rank_eligible(row: Mapping[str, Any]) -> bool:
+    """Return True if *row* is eligible for a topdeck_elo_rank.
+
+    Composes the shared games-backed gate (``_is_rank_eligible``) with the
+    topdeck_elo-specific requirement that the row actually has an imported
+    topdeck_elo value. Kept separate from ``_is_rank_eligible`` itself
+    because that helper is also used for the unrelated, purely rating-based
+    ``rank`` field in ``build_active_leaderboard_rows``, which must stay
+    eligible for players who have no topdeck_elo at all.
+    """
+    return row.get("topdeck_elo") is not None and _is_rank_eligible(row)
 
 
 def _leaderboard_rank_sort_key(r: Mapping[str, Any]) -> tuple[float, float, int, str]:
