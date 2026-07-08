@@ -926,18 +926,38 @@ def assign_topdeck_elo_ranks(
 ) -> None:
     """Assign topdeck_elo_rank within each (region_type, region_key) partition.
 
-    Rows are sorted by topdeck_elo DESC with NULLs last; rows whose
-    topdeck_elo is None receive rank = None. Ties are broken stably by
-    rating DESC, then player_name ASC for deterministic ordering. Mutates
-    rows in place by setting the ``topdeck_elo_rank`` field.
+    Eligible rows -- those with a non-null topdeck_elo AND at least one
+    games-backed record in this app (see ``_is_rank_eligible``) -- are sorted
+    by topdeck_elo DESC, ties broken stably by rating DESC, then player_name
+    ASC for deterministic ordering. All other rows receive rank = None,
+    including rows with a non-null topdeck_elo but zero recorded games.
+
+    topdeck_elo is imported independently from TopDeck.gg's own published
+    Elo snapshot (see ``import_topdeck_player_elos.py``) and is keyed only by
+    a player's external topdeck_id, so it can be populated for a player who
+    has never actually recorded a game in this app's data. Without the
+    games-played gate, that external rating -- which reflects no real
+    competitive standing here -- could rank a zero-game player ahead of (or
+    at rank 1 above) players with real, games-backed rankings, which is the
+    same class of bug fixed for the ``rank`` field in
+    ``build_active_leaderboard_rows`` (#252). Mutates rows in place by
+    setting the ``topdeck_elo_rank`` field.
     """
     partitions: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
         partitions[(row.get("region_type", ""), row.get("region_key", ""))].append(row)
 
     for partition_rows in partitions.values():
-        ranked = [r for r in partition_rows if r.get("topdeck_elo") is not None]
-        unranked = [r for r in partition_rows if r.get("topdeck_elo") is None]
+        ranked = [
+            r
+            for r in partition_rows
+            if r.get("topdeck_elo") is not None and _is_rank_eligible(r)
+        ]
+        unranked = [
+            r
+            for r in partition_rows
+            if r.get("topdeck_elo") is None or not _is_rank_eligible(r)
+        ]
         ranked.sort(
             key=lambda r: (
                 -float(r.get("topdeck_elo") or 0),

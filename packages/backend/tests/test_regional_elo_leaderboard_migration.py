@@ -71,6 +71,7 @@ class AssignTopdeckEloRanksTests(unittest.TestCase):
                 "region_key": "ALL",
                 "player_name": "Alice",
                 "rating": 1700,
+                "games_played": 10,
                 "topdeck_elo": 2100,
             },
             {
@@ -78,6 +79,7 @@ class AssignTopdeckEloRanksTests(unittest.TestCase):
                 "region_key": "ALL",
                 "player_name": "Bob",
                 "rating": 1800,
+                "games_played": 20,
                 "topdeck_elo": 2300,
             },
             {
@@ -85,6 +87,7 @@ class AssignTopdeckEloRanksTests(unittest.TestCase):
                 "region_key": "ALL",
                 "player_name": "Carol",
                 "rating": 1750,
+                "games_played": 15,
                 "topdeck_elo": 2200,
             },
         ]
@@ -101,6 +104,7 @@ class AssignTopdeckEloRanksTests(unittest.TestCase):
                 "region_key": "UNITED STATES",
                 "player_name": "Alice",
                 "rating": 1700,
+                "games_played": 10,
                 "topdeck_elo": 2100,
             },
             {
@@ -108,6 +112,7 @@ class AssignTopdeckEloRanksTests(unittest.TestCase):
                 "region_key": "UNITED STATES",
                 "player_name": "Bob",
                 "rating": 1750,
+                "games_played": 5,
                 "topdeck_elo": None,
             },
         ]
@@ -117,6 +122,39 @@ class AssignTopdeckEloRanksTests(unittest.TestCase):
         ranks_by_name = {r["player_name"]: r["topdeck_elo_rank"] for r in rows}
         self.assertEqual(ranks_by_name, {"Alice": 1, "Bob": None})
 
+    def test_zero_games_player_with_high_topdeck_elo_receives_null_rank(self) -> None:
+        # Regression test for #252 (sibling bug in the topdeck_elo_rank path):
+        # TopDeck's published Elo snapshot is imported independently of this
+        # app's own game data and keyed only by topdeck_id, so a player who
+        # has never recorded a game here can still carry a high, non-null
+        # topdeck_elo. Such a player must not be ranked -- and must never
+        # outrank a real, games-backed player -- on the strength of that
+        # external Elo value alone.
+        rows = [
+            {
+                "region_type": "global",
+                "region_key": "ALL",
+                "player_name": "Max Sternburg",
+                "rating": 1500,
+                "games_played": 0,
+                "topdeck_elo": 2070,
+            },
+            {
+                "region_type": "global",
+                "region_key": "ALL",
+                "player_name": "Real Player",
+                "rating": 1650,
+                "games_played": 40,
+                "topdeck_elo": 1950,
+            },
+        ]
+
+        regional_elo.assign_topdeck_elo_ranks(rows)
+
+        ranks_by_name = {r["player_name"]: r["topdeck_elo_rank"] for r in rows}
+        self.assertEqual(ranks_by_name["Max Sternburg"], None)
+        self.assertEqual(ranks_by_name["Real Player"], 1)
+
     def test_ranks_are_partitioned_by_region(self) -> None:
         rows = [
             {
@@ -124,6 +162,7 @@ class AssignTopdeckEloRanksTests(unittest.TestCase):
                 "region_key": "ALL",
                 "player_name": "Alice",
                 "rating": 1700,
+                "games_played": 10,
                 "topdeck_elo": 2100,
             },
             {
@@ -131,6 +170,7 @@ class AssignTopdeckEloRanksTests(unittest.TestCase):
                 "region_key": "UNITED STATES",
                 "player_name": "Alice",
                 "rating": 1700,
+                "games_played": 10,
                 "topdeck_elo": 2100,
             },
             {
@@ -138,6 +178,7 @@ class AssignTopdeckEloRanksTests(unittest.TestCase):
                 "region_key": "UNITED STATES",
                 "player_name": "Bob",
                 "rating": 1800,
+                "games_played": 20,
                 "topdeck_elo": 2300,
             },
         ]
@@ -318,6 +359,61 @@ class BuildActiveLeaderboardRowsTests(unittest.TestCase):
         )
 
         self.assertEqual(rows[0]["rating"], 0.0)
+
+    def test_zero_games_player_with_topdeck_elo_does_not_outrank_real_player(self) -> None:
+        # Regression test for #252 reproducing in production via the
+        # homepage's "Global Leaderboard" (ordered by topdeck_elo_rank): a
+        # player who has never recorded a game in this app's data (games
+        # played == 0) but who has a high topdeck_elo imported independently
+        # from TopDeck.gg's own snapshot must not receive a real
+        # topdeck_elo_rank, and must not rank ahead of a real, games-backed
+        # player.
+        rows = regional_elo.build_active_leaderboard_rows(
+            ratings_rows=[
+                {
+                    "region_type": "global",
+                    "region_key": "ALL",
+                    "player_id": "player-ghost",
+                    "rating": 1500,
+                    "games_played": 0,
+                },
+                {
+                    "region_type": "global",
+                    "region_key": "ALL",
+                    "player_id": "player-real",
+                    "rating": 1650,
+                    "games_played": 40,
+                    "wins": 25,
+                    "losses": 15,
+                },
+            ],
+            player_index={
+                "player-ghost": {
+                    "id": "player-ghost",
+                    "name": "Max Sternburg",
+                    "topdeck_id": "topdeck-ghost",
+                },
+                "player-real": {
+                    "id": "player-real",
+                    "name": "Real Player",
+                    "topdeck_id": "topdeck-real",
+                },
+            },
+            topdeck_elo_by_topdeck_id={
+                "topdeck-ghost": 2070.0,
+                "topdeck-real": 1950.0,
+            },
+            state_stats_by_player={},
+            updated_at="2026-05-01T00:00:00+00:00",
+        )
+
+        global_rows = {
+            row["player_name"]: row for row in rows if row["region_type"] == "global"
+        }
+
+        self.assertEqual(global_rows["Max Sternburg"]["topdeck_elo"], 2070.0)
+        self.assertIsNone(global_rows["Max Sternburg"]["topdeck_elo_rank"])
+        self.assertEqual(global_rows["Real Player"]["topdeck_elo_rank"], 1)
 
     def test_stale_cleanup_uses_minimal_return_and_runs_outside_nonempty_guard(self) -> None:
         source = Path(regional_elo.__file__).read_text()
