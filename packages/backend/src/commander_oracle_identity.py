@@ -26,6 +26,7 @@ from collections import defaultdict
 from typing import Any
 
 from generate_legal_commander_pairings import front_face_name, front_face_value
+from ingest import clean_commander_card_name, normalize_partner_order
 
 DEFAULT_CARDS_BULK_TYPE = "default_cards"
 
@@ -148,11 +149,15 @@ def choose_canonical_row(
 
     Preference order:
     1. A row whose ``name`` is a real Oracle name (not a UB flavor name).
-    2. Alphabetically first name, for determinism.
-    3. Lowest ``id``, as a final tiebreaker.
+    2. For two-card partner rows, the row whose commander order already
+       matches the canonical partner order (see ``normalize_partner_order``),
+       so a sweep never merges into the non-canonical "B, A" ordering just
+       because it sorts alphabetically first.
+    3. Alphabetically first name, for determinism.
+    4. Lowest ``id``, as a final tiebreaker.
     """
 
-    def sort_key(row: dict[str, Any]) -> tuple[int, str, str]:
+    def sort_key(row: dict[str, Any]) -> tuple[int, int, str, str]:
         name = str(row.get("name") or "")
         # For partner/two-card commander rows, `name` is a composite display
         # string (e.g. "Sophina, Spearsage Deserter / Hargilde, Kindly
@@ -165,7 +170,22 @@ def choose_canonical_row(
             component in true_oracle_names for component in component_names
         )
         is_flavor_name = 0 if is_true_named else 1
-        return (is_flavor_name, name, str(row.get("id") or ""))
+
+        # When the database already has the same two-card partner pair in
+        # both orders (e.g. "Kraum, Ludevic's Opus / Tymna the Weaver" and
+        # "Tymna the Weaver / Kraum, Ludevic's Opus"), both rows are equally
+        # "true named" and would otherwise tie-break alphabetically — which
+        # ignores the canonical order enforced elsewhere via
+        # `PARTNER_ORDER_OVERRIDES`/`normalize_partner_order`. Prefer the row
+        # that already matches that canonical order.
+        is_non_canonical_order = 0
+        if len(component_names) == 2:
+            cleaned_components = [clean_commander_card_name(component) for component in component_names]
+            canonical_order = normalize_partner_order(component_names)
+            if len(canonical_order) == 2 and cleaned_components != canonical_order:
+                is_non_canonical_order = 1
+
+        return (is_flavor_name, is_non_canonical_order, name, str(row.get("id") or ""))
 
     ordered = sorted(rows, key=sort_key)
     return ordered[0], ordered[1:]

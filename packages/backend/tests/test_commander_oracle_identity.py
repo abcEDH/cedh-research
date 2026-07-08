@@ -238,6 +238,33 @@ class ChooseCanonicalRowTests(unittest.TestCase):
         self.assertEqual(canonical["id"], "true-id")
         self.assertEqual([row["id"] for row in duplicates], ["flavor-id"])
 
+    def test_prefers_canonical_partner_order_over_alphabetical_fallback(self) -> None:
+        # Regression test: when the database already has the same two
+        # true-named partners in both orders, the alphabetical fallback used
+        # to win regardless of the canonical order enforced by
+        # `PARTNER_ORDER_OVERRIDES`/`normalize_partner_order` elsewhere in the
+        # ingest pipeline. "Kraum, Ludevic's Opus" sorts before "Tymna the
+        # Weaver" alphabetically, but the canonical override for this pair is
+        # ("Tymna the Weaver", "Kraum, Ludevic's Opus").
+        non_canonical_row = {
+            "id": "non-canonical-id",
+            "name": "Kraum, Ludevic's Opus / Tymna the Weaver",
+            "commander_names": ["Kraum, Ludevic's Opus", "Tymna the Weaver"],
+        }
+        canonical_row = {
+            "id": "canonical-id",
+            "name": "Tymna the Weaver / Kraum, Ludevic's Opus",
+            "commander_names": ["Tymna the Weaver", "Kraum, Ludevic's Opus"],
+        }
+        true_oracle_names = {"Kraum, Ludevic's Opus", "Tymna the Weaver"}
+
+        canonical, duplicates = choose_canonical_row(
+            [non_canonical_row, canonical_row], true_oracle_names
+        )
+
+        self.assertEqual(canonical["id"], "canonical-id")
+        self.assertEqual([row["id"] for row in duplicates], ["non-canonical-id"])
+
 
 if __name__ == "__main__":
     unittest.main()

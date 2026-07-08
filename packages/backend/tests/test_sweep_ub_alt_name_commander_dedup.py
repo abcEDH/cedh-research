@@ -116,7 +116,10 @@ class MergeDuplicateGroupTests(unittest.TestCase):
                 dry_run=False,
             )
 
-            patch_call = mock_requests.patch.call_args
+            # First patch call repoints tournament_entries; the
+            # commander_matchups repoints (covered in detail by the test
+            # below) follow before the delete.
+            patch_call = mock_requests.patch.call_args_list[0]
             self.assertEqual(patch_call.kwargs["params"], {"commander_id": "eq.alt-id"})
             self.assertEqual(patch_call.kwargs["json"], {"commander_id": "true-id"})
 
@@ -125,6 +128,74 @@ class MergeDuplicateGroupTests(unittest.TestCase):
 
         self.assertEqual(canonical["id"], "true-id")
         self.assertEqual([row["id"] for row in duplicates], ["alt-id"])
+
+    def test_live_run_repoints_commander_matchups_on_both_fk_columns_before_delete(self) -> None:
+        # Regression test: `commander_matchups` has foreign keys from both
+        # `commander_id` and `opponent_commander_id` to `commanders`. If the
+        # duplicate row being merged away has matchup rows on either side,
+        # deleting it without repointing those columns first raises a
+        # Postgres FK violation. Assert both columns get repointed, in order,
+        # before the delete call is made.
+        client = make_fake_client([])
+        with patch.object(sweep_partner_commander_order, "requests") as mock_requests:
+            mock_requests.patch.return_value = Mock(raise_for_status=Mock())
+            mock_requests.delete.return_value = Mock(raise_for_status=Mock())
+
+            canonical, duplicates = merge_duplicate_group(
+                client,
+                (UB_ALT_NAME_ORACLE_ID,),
+                [ALT_ROW, TRUE_ROW],
+                {"Nadier, Agent of the Duskenel"},
+                dry_run=False,
+            )
+
+            self.assertEqual(mock_requests.patch.call_count, 3)
+            tournament_entries_call, commander_id_call, opponent_commander_id_call = (
+                mock_requests.patch.call_args_list
+            )
+
+            self.assertIn("tournament_entries", tournament_entries_call.args[0])
+            self.assertEqual(tournament_entries_call.kwargs["params"], {"commander_id": "eq.alt-id"})
+            self.assertEqual(tournament_entries_call.kwargs["json"], {"commander_id": "true-id"})
+
+            self.assertIn("commander_matchups", commander_id_call.args[0])
+            self.assertEqual(commander_id_call.kwargs["params"], {"commander_id": "eq.alt-id"})
+            self.assertEqual(commander_id_call.kwargs["json"], {"commander_id": "true-id"})
+
+            self.assertIn("commander_matchups", opponent_commander_id_call.args[0])
+            self.assertEqual(
+                opponent_commander_id_call.kwargs["params"], {"opponent_commander_id": "eq.alt-id"}
+            )
+            self.assertEqual(
+                opponent_commander_id_call.kwargs["json"], {"opponent_commander_id": "true-id"}
+            )
+
+            # The delete must only fire after every repoint call above.
+            delete_call = mock_requests.delete.call_args
+            self.assertEqual(delete_call.kwargs["params"], {"id": "eq.alt-id"})
+
+        self.assertEqual(canonical["id"], "true-id")
+        self.assertEqual([row["id"] for row in duplicates], ["alt-id"])
+
+    def test_repoint_failure_prevents_delete(self) -> None:
+        # If a repoint call fails (e.g. a transient network error), the
+        # duplicate commander row must not be deleted, so a retry can safely
+        # pick up where the sweep left off instead of failing on an FK
+        # violation against already-repointed rows.
+        client = make_fake_client([])
+        with patch.object(sweep_partner_commander_order, "requests") as mock_requests:
+            mock_requests.patch.return_value = Mock(raise_for_status=Mock(side_effect=RuntimeError("boom")))
+
+            with self.assertRaises(RuntimeError):
+                merge_duplicate_group(
+                    client,
+                    (UB_ALT_NAME_ORACLE_ID,),
+                    [ALT_ROW, TRUE_ROW],
+                    {"Nadier, Agent of the Duskenel"},
+                    dry_run=False,
+                )
+
+            mock_requests.delete.assert_not_called()
 
 
 class RunSweepTests(unittest.TestCase):
@@ -150,7 +221,9 @@ class RunSweepTests(unittest.TestCase):
 
             report_lines = run_sweep(client, CARD_FIXTURE, commander_limit=5000, dry_run=False)
 
-            self.assertEqual(mock_requests.patch.call_count, 1)
+            # One patch for tournament_entries.commander_id, plus two for
+            # commander_matchups (commander_id and opponent_commander_id).
+            self.assertEqual(mock_requests.patch.call_count, 3)
             self.assertEqual(mock_requests.delete.call_count, 1)
 
         self.assertEqual(len(report_lines), 2)

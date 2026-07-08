@@ -132,6 +132,36 @@ def repoint_tournament_entries(
     response.raise_for_status()
 
 
+def repoint_commander_matchups(
+    client: SupabaseClient,
+    source_commander_id: str,
+    target_commander_id: str,
+) -> None:
+    """Repoint ``commander_matchups`` rows from a duplicate commander to its canonical row.
+
+    ``commander_matchups`` has foreign keys from both ``commander_id`` and
+    ``opponent_commander_id`` to ``commanders(id)`` (see the
+    ``20260110000001_initial_schema.sql`` migration), so both columns must be
+    repointed away from a duplicate commander before that commander row can
+    be deleted, or Postgres will reject the delete with a foreign-key
+    violation. There is no unique constraint on ``commander_matchups`` beyond
+    its own ``id``, so repointing either column can never collide with an
+    existing row. Filtering by ``eq.<source_commander_id>`` also makes this
+    safely re-runnable: once a column has been repointed, re-running finds no
+    matching rows and is a no-op.
+    """
+    endpoint = f"{client.url}/rest/v1/commander_matchups"
+    for column in ("commander_id", "opponent_commander_id"):
+        response = requests.patch(
+            endpoint,
+            headers=client.headers,
+            params={column: f"eq.{source_commander_id}"},
+            json={column: target_commander_id},
+            timeout=60,
+        )
+        response.raise_for_status()
+
+
 def update_commander_row(
     client: SupabaseClient,
     commander_id: str,
