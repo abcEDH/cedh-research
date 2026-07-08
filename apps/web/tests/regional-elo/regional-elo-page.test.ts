@@ -1,6 +1,7 @@
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+import { RegionalLeaderboardTable } from "@/app/regional-elo/regional-leaderboard-table";
 
 type TableData = Record<string, Array<Record<string, unknown>>>;
 
@@ -148,6 +149,30 @@ vi.mock("@/lib/supabase", () => ({
   },
 }));
 
+type ReactElementLike = { type: unknown; props?: { children?: unknown } };
+
+function isReactElementLike(value: unknown): value is ReactElementLike {
+  return typeof value === "object" && value !== null && "type" in value;
+}
+
+// Walks a React element tree (without rendering it) collecting every element whose `type`
+// matches `target`. Used to inspect the exact props a client component receives, since that's
+// what gets serialized into the page's payload — see issue #253.
+function findElementsOfType(node: unknown, target: unknown, found: ReactElementLike[] = []) {
+  if (node === null || node === undefined || typeof node === "boolean") return found;
+  if (Array.isArray(node)) {
+    for (const child of node) findElementsOfType(child, target, found);
+    return found;
+  }
+  if (isReactElementLike(node)) {
+    if (node.type === target) found.push(node);
+    if (node.props && "children" in node.props) {
+      findElementsOfType(node.props.children, target, found);
+    }
+  }
+  return found;
+}
+
 describe("RegionalEloPage", () => {
   it("renders commander and latest tournament data when the enriched profile rows are present", async () => {
     const pageModule = await import("@/app/regional-elo/page");
@@ -183,5 +208,46 @@ describe("RegionalEloPage", () => {
     } finally {
       tableData.player_commander_profiles = originalProfiles;
     }
+  });
+
+  it("never passes the internal `rating` field to the client leaderboard table", async () => {
+    const pageModule = await import("@/app/regional-elo/page");
+    const element = await pageModule.default({
+      searchParams: { scope: "global" },
+    });
+
+    const tableElements = findElementsOfType(element, RegionalLeaderboardTable);
+    expect(tableElements.length).toBeGreaterThan(0);
+
+    for (const tableElement of tableElements) {
+      const { leaderboard } = tableElement.props as { leaderboard: Array<Record<string, unknown>> };
+      expect(leaderboard.length).toBeGreaterThan(0);
+      for (const row of leaderboard) {
+        expect(row).not.toHaveProperty("rating");
+      }
+    }
+  });
+
+  it("strips `rating` when normalizing a Supabase row into a client-safe leaderboard row", async () => {
+    const pageModule = await import("@/app/regional-elo/page");
+    const clientRow = pageModule.toClientLeaderboardRow({
+      region_type: "global",
+      region_key: "ALL",
+      player_id: "player-1",
+      player_name: "Test Player",
+      topdeck_id: "player-1-topdeck",
+      rating: 1734.864,
+      games_played: 1,
+      wins: 1,
+      draws: 0,
+      losses: 0,
+      last_game_date: null,
+      rank: 1,
+      topdeck_elo: 2000,
+      topdeck_elo_rank: 1,
+    });
+
+    expect(clientRow).not.toHaveProperty("rating");
+    expect(clientRow.player_name).toBe("Test Player");
   });
 });
