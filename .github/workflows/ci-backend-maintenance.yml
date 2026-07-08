@@ -74,6 +74,13 @@ jobs:
             uv run --project packages/backend python packages/backend/src/regional_elo.py --smoke-days "${{ inputs.smoke_days }}" --dry-run
           fi
 
+      - name: Normalize partner commander order
+        if: ${{ inputs.refresh_mode == 'full' }}
+        run: |
+          mkdir -p packages/backend/logs
+          uv run --project packages/backend python packages/backend/src/sweep_partner_commander_order.py \
+            --report "packages/backend/logs/sweep_partner_commander_order_${{ github.run_id }}.csv"
+
       - name: Rebuild player commander profiles
         if: ${{ inputs.refresh_mode == 'full' }}
         run: uv run --project packages/backend python packages/backend/src/rebuild_player_commander_profiles.py

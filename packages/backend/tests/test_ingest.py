@@ -40,6 +40,7 @@ from ingest import (  # noqa: E402
     normalize_commander_name,
     resolve_record_fields,
     sanitize_commander_payload,
+    DataIngester,
     SupabaseClient,
     claim_ingestion_job,
     complete_ingestion_job,
@@ -161,6 +162,76 @@ class CommanderNormalizationTests(unittest.TestCase):
         self.assertEqual(
             normalize_commander_name(["Haldan, Avid Arcanist", "Pako, Arcane Retriever"]),
             "Pako, Arcane Retriever / Haldan, Avid Arcanist",
+        )
+
+    def test_sanitize_commander_payload_is_order_independent_for_legal_pair(self) -> None:
+        """A / B and B / A must resolve to the identical canonical row.
+
+        Regression test for #260: partner pairs were splitting into two
+        `commanders` rows depending on which order the decklist happened to
+        list them in.
+        """
+        forward = sanitize_commander_payload(
+            None,
+            ["Abby, Merciless Soldier", "Ellie, Brick Master"],
+        )
+        reversed_order = sanitize_commander_payload(
+            None,
+            ["Ellie, Brick Master", "Abby, Merciless Soldier"],
+        )
+        self.assertEqual(forward, reversed_order)
+        self.assertEqual(forward, ("Abby, Merciless Soldier / Ellie, Brick Master", [
+            "Abby, Merciless Soldier",
+            "Ellie, Brick Master",
+        ]))
+
+
+class BatchUpsertCommandersMergeTests(unittest.TestCase):
+    """Regression coverage for #260 at the ingestion-batch level.
+
+    ``DataIngester`` builds a `canonical name -> [commander names]` dict once
+    per ingestion run (see `DataIngester.ingest_tournament`'s Step 1), keyed by
+    `normalize_commander_name(...)`. Because that key is already
+    order-independent, two decklists that list the same partner pair in
+    opposite orders must collapse into a single dict entry — and therefore a
+    single upserted `commanders` row — before Supabase is ever touched.
+    """
+
+    def test_new_partner_pair_ingested_in_both_orders_merges_to_one_row(self) -> None:
+        supabase = Mock()
+        supabase.upsert.return_value = [
+            {"name": "Tymna the Weaver / Kraum, Ludevic's Opus", "id": "commander-uuid-1"}
+        ]
+        ingester = DataIngester(topdeck=Mock(), supabase=supabase)
+
+        # Two different decklists list the same partner pair in opposite order.
+        decklist_commanders = [
+            ["Kraum, Ludevic's Opus", "Tymna the Weaver"],
+            ["Tymna the Weaver", "Kraum, Ludevic's Opus"],
+        ]
+        commander_data: dict[str, list[str]] = {}
+        for commanders in decklist_commanders:
+            commander_name = normalize_commander_name(commanders)
+            if commander_name not in commander_data:
+                commander_data[commander_name] = commanders
+
+        # Both orderings must collapse to the same canonical dict key before
+        # a single row is ever sent to Supabase.
+        self.assertEqual(len(commander_data), 1)
+
+        result = ingester.batch_upsert_commanders(commander_data)
+
+        upsert_call_args, upsert_call_kwargs = supabase.upsert.call_args
+        upserted_rows = upsert_call_args[1]
+        self.assertEqual(len(upserted_rows), 1)
+        self.assertEqual(upserted_rows[0]["name"], "Tymna the Weaver / Kraum, Ludevic's Opus")
+        self.assertEqual(
+            upserted_rows[0]["commander_names"],
+            ["Tymna the Weaver", "Kraum, Ludevic's Opus"],
+        )
+        self.assertEqual(
+            result,
+            {"Tymna the Weaver / Kraum, Ludevic's Opus": "commander-uuid-1"},
         )
 
 
