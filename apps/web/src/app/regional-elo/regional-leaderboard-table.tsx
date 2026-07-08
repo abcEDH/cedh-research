@@ -15,7 +15,6 @@ type LeaderboardRow = {
   losses: number;
   last_game_date: string | null;
   rank: number;
-  hidden_rating?: number;
   topdeck_elo?: number | null;
   topdeck_elo_rank?: number | null;
 };
