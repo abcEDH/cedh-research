@@ -1,0 +1,119 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-space-grotesk), "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+}
+
+/*
+ * Neutral dark shell. The app always renders <html class="dark">; per-tenant
+ * palettes below override only the brand knobs (--primary/--accent/--ring/
+ * --chart-*) on the [data-game] wrapper each tenant layout renders.
+ */
+:root {
+  --radius: 0.75rem;
+  --background: oklch(0.15 0.01 260);
+  --foreground: oklch(0.95 0.01 250);
+  --card: oklch(0.2 0.012 260);
+  --card-foreground: oklch(0.95 0.01 250);
+  --popover: oklch(0.2 0.012 260);
+  --popover-foreground: oklch(0.95 0.01 250);
+  --primary: oklch(0.75 0.05 250);
+  --primary-foreground: oklch(0.16 0.01 260);
+  --secondary: oklch(0.28 0.015 260);
+  --secondary-foreground: oklch(0.93 0.01 250);
+  --muted: oklch(0.24 0.012 260);
+  --muted-foreground: oklch(0.75 0.015 255);
+  --accent: oklch(0.3 0.015 260);
+  --accent-foreground: oklch(0.95 0.01 250);
+  --destructive: oklch(0.62 0.2 25);
+  --border: oklch(0.33 0.012 255 / 0.6);
+  --input: oklch(0.28 0.012 255 / 0.8);
+  --ring: oklch(0.68 0.05 250);
+  --chart-1: oklch(0.75 0.05 250);
+  --chart-2: oklch(0.7 0.1 200);
+  --chart-3: oklch(0.68 0.1 300);
+  --chart-4: oklch(0.72 0.12 150);
+  --chart-5: oklch(0.76 0.12 70);
+}
+
+/* Riftbound — hextech blue with gold accents. */
+[data-game="riftbound"] {
+  --primary: oklch(0.76 0.13 215);
+  --primary-foreground: oklch(0.16 0.02 230);
+  --accent: oklch(0.78 0.12 85);
+  --accent-foreground: oklch(0.2 0.05 85);
+  --ring: oklch(0.68 0.11 215);
+  --chart-1: oklch(0.76 0.13 215);
+  --chart-2: oklch(0.78 0.12 85);
+  --chart-3: oklch(0.62 0.1 250);
+  --chart-4: oklch(0.7 0.09 180);
+  --chart-5: oklch(0.66 0.07 60);
+}
+
+/* Gundam — RX-78 white/red/blue. */
+[data-game="gundam"] {
+  --primary: oklch(0.63 0.19 25);
+  --primary-foreground: oklch(0.98 0.005 25);
+  --accent: oklch(0.62 0.15 260);
+  --accent-foreground: oklch(0.97 0.01 260);
+  --ring: oklch(0.6 0.16 25);
+  --chart-1: oklch(0.63 0.19 25);
+  --chart-2: oklch(0.62 0.15 260);
+  --chart-3: oklch(0.9 0.01 250);
+  --chart-4: oklch(0.78 0.13 85);
+  --chart-5: oklch(0.55 0.1 300);
+}
+
+/* Yu-Gi-Oh retro — warm amber/brown, aged-card feel. */
+[data-game="retro"] {
+  --primary: oklch(0.76 0.13 75);
+  --primary-foreground: oklch(0.24 0.05 70);
+  --accent: oklch(0.55 0.08 55);
+  --accent-foreground: oklch(0.96 0.02 80);
+  --ring: oklch(0.68 0.11 75);
+  --chart-1: oklch(0.76 0.13 75);
+  --chart-2: oklch(0.6 0.1 45);
+  --chart-3: oklch(0.7 0.09 100);
+  --chart-4: oklch(0.55 0.08 30);
+  --chart-5: oklch(0.82 0.1 90);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground antialiased font-sans;
+  }
+}

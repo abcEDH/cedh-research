@@ -1,0 +1,60 @@
+name: CI Backend Ingestion Multigame
+
+# Weekly ingestion for the non-cEDH verticals (ADR 0015). Deliberately separate
+# from ci-backend-ingestion.yml: that pipeline exists to serialize Elo
+# maintenance via job claiming (ADR 0007), which these games do not have —
+# Elo remains cEDH-only (ADR 0008).
+
+on:
+  schedule:
+    # Wednesdays 14:00 UTC, offset from the cEDH pipeline's schedule.
+    - cron: "0 14 * * 3"
+  workflow_dispatch:
+    inputs:
+      game:
+        description: "Single game slug to ingest (blank = full matrix)"
+        required: false
+        default: ""
+      days:
+        description: "Days back to search"
+        required: false
+        default: "7"
+
+concurrency:
+  group: backend-ingestion-multigame-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  TOPDECK_API_KEY: ${{ secrets.TOPDECK_API_KEY }}
+  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+  SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  ingest:
+    name: Ingest ${{ matrix.game }} tournaments
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        game: [riftbound, gundam, ygo-edison, ygo-goat]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies (locked)
+        run: uv sync --frozen --project packages/backend
+
+      - name: Run data ingestion
+        if: ${{ inputs.game == '' || inputs.game == matrix.game }}
+        working-directory: packages/backend
+        run: |
+          uv run python src/ingest.py \
+            --game "${{ matrix.game }}" \
+            --days "${{ inputs.days || '7' }}" \
+            --min-players 8

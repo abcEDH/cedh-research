@@ -1,0 +1,14 @@
+{
+  "_comment": "Ordered archetype classification rules for GOAT format (April 2005). First rule whose signature-card matches reach min_matches wins. Seed list — extend as real TopDeck decklists surface (ADR 0015).",
+  "archetypes": [
+    { "name": "Chaos Turbo", "signature_cards": ["Black Luster Soldier - Envoy of the Beginning", "Chaos Sorcerer", "Night Assailant"], "min_matches": 2 },
+    { "name": "Goat Control", "signature_cards": ["Scapegoat", "Metamorphosis", "Thousand-Eyes Restrict"], "min_matches": 2 },
+    { "name": "Chaos Warrior", "signature_cards": ["Black Luster Soldier - Envoy of the Beginning", "Blade Knight", "D.D. Warrior Lady"], "min_matches": 2 },
+    { "name": "Zoo", "signature_cards": ["Berserk Gorilla", "Enraged Battle Ox", "King Tiger Wanghu"], "min_matches": 2 },
+    { "name": "Burn", "signature_cards": ["Lava Golem", "Wave-Motion Cannon", "Stealth Bird"], "min_matches": 2 },
+    { "name": "Panda Burn", "signature_cards": ["Gyaku-Gire Panda", "Scapegoat", "Lava Golem"], "min_matches": 2 },
+    { "name": "Flip Control", "signature_cards": ["Des Lacooda", "Swarm of Locusts", "Golem Sentry"], "min_matches": 2 },
+    { "name": "Earth Beat", "signature_cards": ["Giant Rat", "Exiled Force", "Injection Fairy Lily"], "min_matches": 2 },
+    { "name": "Warrior Toolbox", "signature_cards": ["Goblin Attack Force", "Exiled Force", "Reinforcement of the Army"], "min_matches": 2 }
+  ]
+}

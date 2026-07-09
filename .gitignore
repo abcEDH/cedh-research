@@ -29,6 +29,8 @@ apps/web/playwright/.cache/
 /public/
 apps/web/.next/
 apps/web/out/
+apps/multigame/.next/
+apps/multigame/out/
 
 # production
 /build
