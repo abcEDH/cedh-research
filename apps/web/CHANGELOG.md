@@ -1,3 +1,12 @@
+## [1.20.1](https://github.com/abcEDH/cedh-research/compare/v1.20.0...v1.20.1) (2026-07-09)
+
+
+### Bug Fixes
+
+* **regional-elo:** strip internal rating before serializing to client ([32fb54e](https://github.com/abcEDH/cedh-research/commit/32fb54e8d7c40eee08efa366af8d73d8b646abca))
+* **regional-elo:** strip legacy hidden_rating from client mapper defensively ([8e47c82](https://github.com/abcEDH/cedh-research/commit/8e47c826890619debc5841e99c68ab881077a984)), closes [#253](https://github.com/abcEDH/cedh-research/issues/253)
+* **schema:** allow nullable values in CommanderStats schema ([209d751](https://github.com/abcEDH/cedh-research/commit/209d751b3831c1d756b7698e98ddeeac8759344b))
+
 # [1.20.0](https://github.com/abcEDH/cedh-research/compare/v1.19.0...v1.20.0) (2026-06-21)
 
 
