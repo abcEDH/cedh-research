@@ -4,12 +4,9 @@ from pathlib import Path
 
 import requests
 
-
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "supabase" / "migrations"
 STATE_ACTIVITY_MIGRATION = MIGRATIONS_DIR / "20260406010000_global_elo_state_activity.sql"
-LEADERBOARD_TOPDECK_MIGRATION = (
-    MIGRATIONS_DIR / "20260501000000_regional_elo_leaderboard_topdeck_fields.sql"
-)
+LEADERBOARD_TOPDECK_MIGRATION = MIGRATIONS_DIR / "20260501000000_regional_elo_leaderboard_topdeck_fields.sql"
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -27,9 +24,7 @@ class RegionalEloLeaderboardMigrationTests(unittest.TestCase):
     def test_migration_adds_topdeck_elo_columns_idempotently(self) -> None:
         sql = LEADERBOARD_TOPDECK_MIGRATION.read_text()
 
-        self.assertIn(
-            "ALTER TABLE public.global_elo_active_leaderboard", sql
-        )
+        self.assertIn("ALTER TABLE public.global_elo_active_leaderboard", sql)
         self.assertIn("ADD COLUMN IF NOT EXISTS topdeck_elo numeric", sql)
         self.assertIn("ADD COLUMN IF NOT EXISTS topdeck_elo_rank integer", sql)
 
@@ -49,9 +44,7 @@ class RegionalEloLeaderboardMigrationTests(unittest.TestCase):
     def test_migration_recreates_alias_view_with_security_invoker(self) -> None:
         sql = LEADERBOARD_TOPDECK_MIGRATION.read_text()
 
-        self.assertIn(
-            "CREATE OR REPLACE VIEW public.regional_elo_active_leaderboard AS", sql
-        )
+        self.assertIn("CREATE OR REPLACE VIEW public.regional_elo_active_leaderboard AS", sql)
         self.assertIn("SELECT * FROM public.global_elo_active_leaderboard", sql)
         self.assertIn(
             "ALTER VIEW public.regional_elo_active_leaderboard SET (security_invoker = true)",
@@ -144,16 +137,10 @@ class AssignTopdeckEloRanksTests(unittest.TestCase):
 
         regional_elo.assign_topdeck_elo_ranks(rows)
 
-        country_ranks = {
-            r["player_name"]: r["topdeck_elo_rank"]
-            for r in rows
-            if r["region_type"] == "country"
-        }
+        country_ranks = {r["player_name"]: r["topdeck_elo_rank"] for r in rows if r["region_type"] == "country"}
         self.assertEqual(country_ranks, {"Bob": 1, "Alice": 2})
 
-        global_ranks = [
-            r["topdeck_elo_rank"] for r in rows if r["region_type"] == "global"
-        ]
+        global_ranks = [r["topdeck_elo_rank"] for r in rows if r["region_type"] == "global"]
         self.assertEqual(global_ranks, [1])
 
 
@@ -227,13 +214,71 @@ class BuildActiveLeaderboardRowsTests(unittest.TestCase):
             updated_at="2026-05-01T00:00:00+00:00",
         )
 
-        ranks_by_name = {
-            row["player_name"]: row["rank"]
-            for row in rows
-            if row["region_type"] == "global"
-        }
+        ranks_by_name = {row["player_name"]: row["rank"] for row in rows if row["region_type"] == "global"}
         self.assertEqual(ranks_by_name["High Activity"], 1)
         self.assertEqual(ranks_by_name["Low Activity"], 2)
+
+    def test_zero_games_unrated_player_does_not_outrank_real_rated_players(self) -> None:
+        # Regression test for #252: a player with no games played (and thus
+        # no meaningful rating signal) must never sort above players who
+        # have actually played games and hold a real rating -- even a real
+        # rating that is low or negative. Previously the sort key collapsed
+        # a missing rating to 0 with `r.get("rating") or 0`, so an unrated
+        # zero-games player could land at rank #1 ahead of legitimately
+        # rated players.
+        rows = regional_elo.build_active_leaderboard_rows(
+            ratings_rows=[
+                {
+                    "region_type": "global",
+                    "region_key": "ALL",
+                    "player_id": "player-no-games",
+                    "rating": None,
+                    "games_played": 0,
+                },
+                {
+                    "region_type": "global",
+                    "region_key": "ALL",
+                    "player_id": "player-negative-rating",
+                    "rating": -50,
+                    "games_played": 20,
+                },
+                {
+                    "region_type": "global",
+                    "region_key": "ALL",
+                    "player_id": "player-positive-rating",
+                    "rating": 1700,
+                    "games_played": 15,
+                },
+            ],
+            player_index={
+                "player-no-games": {
+                    "id": "player-no-games",
+                    "name": "No Games",
+                    "topdeck_id": "topdeck-no-games",
+                },
+                "player-negative-rating": {
+                    "id": "player-negative-rating",
+                    "name": "Negative Rating",
+                    "topdeck_id": "topdeck-negative",
+                },
+                "player-positive-rating": {
+                    "id": "player-positive-rating",
+                    "name": "Positive Rating",
+                    "topdeck_id": "topdeck-positive",
+                },
+            },
+            topdeck_elo_by_topdeck_id={},
+            state_stats_by_player={},
+            updated_at="2026-05-01T00:00:00+00:00",
+        )
+
+        ranks_by_name = {row["player_name"]: row["rank"] for row in rows if row["region_type"] == "global"}
+
+        self.assertEqual(ranks_by_name["Positive Rating"], 1)
+        self.assertEqual(ranks_by_name["Negative Rating"], 2)
+        # The zero-games/unrated player must rank last, not above any
+        # player who has actually played and been rated.
+        self.assertEqual(ranks_by_name["No Games"], 3)
 
     def test_stale_cleanup_uses_minimal_return_and_runs_outside_nonempty_guard(self) -> None:
         source = Path(regional_elo.__file__).read_text()

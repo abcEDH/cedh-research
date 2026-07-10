@@ -352,9 +352,7 @@ def process_results(
     game_events: list[dict[str, Any]] = []
     for gid, standings in games.items():
         meta = game_meta.get(gid, {})
-        game_events.extend(
-            _process_one_game(standings, game_id=gid, **meta)
-        )
+        game_events.extend(_process_one_game(standings, game_id=gid, **meta))
 
     # Fallback: rows without game_id get processed as one group (legacy behaviour).
     if ungrouped:
@@ -999,6 +997,38 @@ def detect_topdeck_elo_id_column(client: SupabaseClient) -> str:
     raise RuntimeError("topdeck_player_elos is missing both topdeck_id and uid columns") from last_schema_error
 
 
+def _leaderboard_rank_sort_key(row: dict[str, Any]) -> tuple[int, float, float, int, str]:
+    """Sort key for ranking leaderboard rows within a region partition.
+
+    A missing/None rating, activity_score, or games_played must never be
+    treated as equivalent to a legitimate 0 (or negative) value -- doing so
+    lets an unrated/zero-games player collapse to the same sort position as
+    (or ahead of) a real, worse-but-rated player. Rows without a recorded
+    game (``games_played`` <= 0) are bucketed after every row that has
+    played at least one game, regardless of their numeric rating. Within a
+    bucket, missing numeric fields sort to the back rather than being
+    coerced to 0.
+    """
+    games_played = row.get("games_played")
+    has_played = bool(games_played) and games_played > 0
+
+    rating = row.get("rating")
+    rating_key = -float(rating) if rating is not None else float("inf")
+
+    activity_score = row.get("activity_score")
+    activity_key = -float(activity_score) if activity_score is not None else float("inf")
+
+    games_played_key = -int(games_played) if games_played is not None else 0
+
+    return (
+        0 if has_played else 1,
+        rating_key,
+        activity_key,
+        games_played_key,
+        str(row.get("player_name") or ""),
+    )
+
+
 def build_active_leaderboard_rows(
     ratings_rows: Iterable[Mapping[str, Any]],
     player_index: Mapping[str, Mapping[str, Any]],
@@ -1103,14 +1133,7 @@ def build_active_leaderboard_rows(
         partitions[(row["region_type"], row["region_key"])].append(row)
 
     for partition_rows in partitions.values():
-        partition_rows.sort(
-            key=lambda r: (
-                -float(r.get("rating") or 0),
-                -float(r.get("activity_score") or 0),
-                -int(r.get("games_played") or 0),
-                str(r.get("player_name") or ""),
-            )
-        )
+        partition_rows.sort(key=_leaderboard_rank_sort_key)
         for index, row in enumerate(partition_rows, start=1):
             row["rank"] = index
 
@@ -1232,9 +1255,7 @@ def upsert_active_leaderboard_rows(
         )
 
 
-def refresh_materialized_views(
-    client: SupabaseClient, direct: DirectPostgresClient | None = None
-) -> int:
+def refresh_materialized_views(client: SupabaseClient, direct: DirectPostgresClient | None = None) -> int:
     """Refresh downstream materialized views. Returns count of successful refreshes.
 
     The heaviest refreshes (card_frequencies, card_performance) run for minutes
@@ -1252,9 +1273,7 @@ def refresh_materialized_views(
                 direct.call_function(fn_name)
             else:
                 endpoint = f"{client.url}/rest/v1/rpc/{fn_name}"
-                response = requests.post(
-                    endpoint, json={}, headers=client.headers, timeout=REFRESH_RPC_TIMEOUT_SECONDS
-                )
+                response = requests.post(endpoint, json={}, headers=client.headers, timeout=REFRESH_RPC_TIMEOUT_SECONDS)
                 if response.status_code >= 400:
                     raise RuntimeError(f"{response.status_code} {response.text}")
             success_count += 1
@@ -1356,9 +1375,7 @@ def main() -> None:
             client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS, direct=direct
         )
         update_job_heartbeat(client, job_id)
-        player_ids = fetch_distinct_entry_ids(
-            client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS, direct=direct
-        )
+        player_ids = fetch_distinct_entry_ids(client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS, direct=direct)
         player_ratings = {}
         for pid in player_ids:
             key = (GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY, pid)
