@@ -1063,24 +1063,31 @@ def build_active_leaderboard_rows(
         if rating is None:
             rating = DEFAULT_RATING
         canonical = (canonical_counts_by_player or {}).get(player_id)
+        state_stats = state_stats_by_player.get(player_id) or {}
         if canonical is not None:
             games_played = int(canonical.get("games_played") or 0)
             wins = int(canonical.get("wins") or 0)
             draws = int(canonical.get("draws") or 0)
             losses = int(canonical.get("losses") or 0)
+            # Prefer the canonical global last_game_date over the primary-state
+            # one below: a player's most recent game is often played while
+            # traveling outside their primary state, so gating eligibility on
+            # the primary-state-only date would wrongly mark active players as
+            # inactive. Falls back to the primary-state date only when no
+            # canonical row exists at all (see the `else` branch).
+            last_game_date = canonical.get("last_game_date") or state_stats.get("last_game_date")
         else:
             games_played = int(rating_row.get("games_played") or 0)
             wins = int(rating_row.get("wins") or 0)
             draws = int(rating_row.get("draws") or 0)
             losses = int(rating_row.get("losses") or 0)
+            last_game_date = state_stats.get("last_game_date")
         topdeck_id = player.get("topdeck_id")
         topdeck_elo = topdeck_elo_by_topdeck_id.get(str(topdeck_id)) if topdeck_id else None
 
-        state_stats = state_stats_by_player.get(player_id) or {}
         primary_country_key = state_stats.get("country_key") or ""
         primary_region_key = state_stats.get("region_key") or ""
         activity_score = _coerce_float(state_stats.get("activity_score"))
-        last_game_date = state_stats.get("last_game_date")
 
         base_row: dict[str, Any] = {
             "player_id": player_id,
@@ -1301,12 +1308,18 @@ def fetch_primary_state_stats(client: SupabaseClient) -> dict[str, dict[str, Any
     return by_player
 
 
-def fetch_canonical_event_counts(client: SupabaseClient) -> dict[str, dict[str, int]]:
-    """Return per-player canonical game counts from the leaderboard view.
+def fetch_canonical_event_counts(client: SupabaseClient) -> dict[str, dict[str, Any]]:
+    """Return per-player canonical game counts and last_game_date from the
+    leaderboard view.
 
     The view aggregates from global_elo_game_events, which is the ground-truth
     source. Bypasses the stale accumulator columns in global_elo_ratings that
     drift when full recomputes run multiple times.
+
+    ``last_game_date`` here is the player's true global last game date, unlike
+    the primary-state-only date from ``fetch_primary_state_stats`` -- it must
+    be used for activity-eligibility checks so a player who last played while
+    traveling outside their primary state isn't wrongly marked inactive.
 
     Must be called after game events for the current run have been upserted.
     """
@@ -1314,7 +1327,7 @@ def fetch_canonical_event_counts(client: SupabaseClient) -> dict[str, dict[str, 
         client,
         "regional_elo_leaderboard",
         {
-            "select": "player_id,games_played,wins,losses,draws",
+            "select": "player_id,games_played,wins,losses,draws,last_game_date",
             "region_type": f"eq.{GLOBAL_REGION_TYPE}",
             "region_key": f"eq.{GLOBAL_REGION_KEY}",
         },
@@ -1325,6 +1338,7 @@ def fetch_canonical_event_counts(client: SupabaseClient) -> dict[str, dict[str, 
             "wins": int(row.get("wins") or 0),
             "losses": int(row.get("losses") or 0),
             "draws": int(row.get("draws") or 0),
+            "last_game_date": row.get("last_game_date"),
         }
         for row in rows
         if row.get("player_id")

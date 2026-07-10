@@ -1,5 +1,6 @@
 import os
 import sys
+from datetime import date
 from pathlib import Path
 from unittest import TestCase, main
 from unittest.mock import Mock, patch
@@ -549,17 +550,26 @@ class CanonicalEventCountsTests(TestCase):
     @patch("regional_elo.fetch_all")
     def test_fetch_canonical_event_counts_queries_leaderboard_view(self, mock_fetch_all: Mock) -> None:
         mock_fetch_all.return_value = [
-            {"player_id": "p1", "games_played": 10, "wins": 5, "losses": 3, "draws": 2},
+            {
+                "player_id": "p1",
+                "games_played": 10,
+                "wins": 5,
+                "losses": 3,
+                "draws": 2,
+                "last_game_date": "2026-06-27",
+            },
         ]
         result = regional_elo.fetch_canonical_event_counts(Mock())
         table_arg = mock_fetch_all.call_args[0][1]
         params_arg = mock_fetch_all.call_args[0][2]
         self.assertEqual(table_arg, "regional_elo_leaderboard")
         self.assertIn("games_played", params_arg.get("select", ""))
+        self.assertIn("last_game_date", params_arg.get("select", ""))
         self.assertIn(regional_elo.GLOBAL_REGION_TYPE, str(params_arg.get("region_type", "")))
         self.assertEqual(result["p1"]["wins"], 5)
         self.assertEqual(result["p1"]["losses"], 3)
         self.assertEqual(result["p1"]["draws"], 2)
+        self.assertEqual(result["p1"]["last_game_date"], "2026-06-27")
 
     @patch("regional_elo.fetch_all")
     def test_fetch_canonical_event_counts_skips_rows_without_player_id(self, mock_fetch_all: Mock) -> None:
@@ -601,6 +611,50 @@ class CanonicalEventCountsTests(TestCase):
         self.assertEqual(global_row["wins"], 25)
         self.assertEqual(global_row["losses"], 15)
         self.assertEqual(global_row["draws"], 10)
+
+    def test_build_active_leaderboard_rows_prefers_canonical_last_game_date_over_primary_state(
+        self,
+    ) -> None:
+        """Regression test for a P1 finding on PR #263: a player's most recent
+        game is often played while traveling outside their primary state, so
+        gating activity eligibility on the primary-state-only last_game_date
+        wrongly marks recently-active traveling players as inactive. The
+        canonical global last_game_date must win whenever it's available."""
+        rating_row = {
+            "region_type": "global",
+            "region_key": "ALL",
+            "player_id": "p1",
+            "rating": 1600,
+            "games_played": 50,
+        }
+        canonical_counts = {
+            "p1": {
+                "games_played": 50,
+                "wins": 25,
+                "losses": 15,
+                "draws": 10,
+                "last_game_date": "2026-06-27",
+            },
+        }
+        state_stats = {
+            "p1": {"country_key": "US", "region_key": "HAWAII", "last_game_date": "2025-12-21"},
+        }
+        player_index = {"p1": {"id": "p1", "name": "Test Player", "topdeck_id": None}}
+
+        rows = regional_elo.build_active_leaderboard_rows(
+            [rating_row],
+            player_index,
+            {},
+            state_stats,
+            "2026-01-01T00:00:00",
+            canonical_counts,
+            reference_date=date(2026, 7, 10),
+        )
+
+        global_row = next((r for r in rows if r["region_type"] == "global"), None)
+        self.assertIsNotNone(global_row)
+        self.assertEqual(global_row["last_game_date"], "2026-06-27")
+        self.assertEqual(global_row["rank"], 1)
 
     def test_build_active_leaderboard_rows_falls_back_to_rating_row_when_no_canonical(self) -> None:
         rating_row = {
