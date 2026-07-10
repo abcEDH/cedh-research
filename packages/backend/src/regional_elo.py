@@ -37,6 +37,10 @@ COMMANDER_FALLBACK_LOOKBACK_MONTHS = 12
 COMMANDER_MIN_PRIMARY_ENTRIES = 2
 COMMANDER_RECENCY_HALF_LIFE_DAYS = 24
 ACTIVE_PLAYER_LOOKBACK_MONTHS = 6
+# Business rule: players with no tournaments in the last 6 months are excluded
+# from the public rankings (rank / topdeck_elo_rank), regardless of historical
+# games played or rating. See docs/decisions/0015-rank-activity-window-and-topdeck-snapshot-pruning.md.
+RANK_ACTIVITY_WINDOW_DAYS = 183
 REGION_COUNTRY_BY_STATE = {
     "AGDER": "NORWAY",
     "ALABAMA": "UNITED STATES",
@@ -923,14 +927,17 @@ ACTIVE_LEADERBOARD_BATCH_SIZE = 1000
 
 def assign_topdeck_elo_ranks(
     rows: list[dict[str, Any]],
+    reference_date: date | None = None,
 ) -> None:
     """Assign topdeck_elo_rank within each (region_type, region_key) partition.
 
     Eligible rows -- those with a non-null topdeck_elo AND at least one
-    games-backed record in this app (see ``_is_topdeck_rank_eligible``) -- are
+    games-backed record in this app AND recent activity within
+    ``RANK_ACTIVITY_WINDOW_DAYS`` (see ``_is_topdeck_rank_eligible``) -- are
     sorted by topdeck_elo DESC, ties broken stably by rating DESC, then player_name
     ASC for deterministic ordering. All other rows receive rank = None,
-    including rows with a non-null topdeck_elo but zero recorded games.
+    including rows with a non-null topdeck_elo but zero recorded games, and
+    rows whose most recent recorded game is older than the activity window.
 
     topdeck_elo is imported independently from TopDeck.gg's own published
     Elo snapshot (see ``import_topdeck_player_elos.py``) and is keyed only by
@@ -942,6 +949,9 @@ def assign_topdeck_elo_ranks(
     same class of bug fixed for the ``rank`` field in
     ``build_active_leaderboard_rows`` (#252). Mutates rows in place by
     setting the ``topdeck_elo_rank`` field.
+
+    ``reference_date`` is the date the activity window is measured against;
+    it defaults to today (UTC) and is only overridden in tests.
     """
     partitions: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
@@ -951,7 +961,7 @@ def assign_topdeck_elo_ranks(
         ranked = []
         unranked = []
         for r in partition_rows:
-            if _is_topdeck_rank_eligible(r):
+            if _is_topdeck_rank_eligible(r, reference_date):
                 ranked.append(r)
             else:
                 unranked.append(r)
@@ -1023,12 +1033,17 @@ def build_active_leaderboard_rows(
     state_stats_by_player: Mapping[str, Mapping[str, Any]],
     updated_at: str,
     canonical_counts_by_player: Mapping[str, Mapping[str, Any]] | None = None,
+    reference_date: date | None = None,
 ) -> list[dict[str, Any]]:
     """Materialise active leaderboard rows for global, country, and state slices.
 
     Mirrors the shape produced by the regional_elo_leaderboard view but is
     persisted to the leaderboard table so PostgREST can serve the data
     without joining to topdeck_player_elos at request time.
+
+    ``reference_date`` anchors the "no tournaments in the last 6 months"
+    activity gate (``RANK_ACTIVITY_WINDOW_DAYS``, see ``_is_rank_eligible``);
+    it defaults to today (UTC) and is only overridden in tests.
     """
     leaderboard_rows: list[dict[str, Any]] = []
     for rating_row in ratings_rows:
@@ -1129,10 +1144,11 @@ def build_active_leaderboard_rows(
         # for players who have actually played, so ranking purely on the numeric
         # rating value lets a zero-game player's sentinel rating outrank -- and
         # even land at rank 1 ahead of -- players with real, hard-earned
-        # ratings. Only players with at least one recorded game are eligible
-        # for a rating-based rank; everyone else is placed after them.
-        eligible_rows = [r for r in partition_rows if _is_rank_eligible(r)]
-        ineligible_rows = [r for r in partition_rows if not _is_rank_eligible(r)]
+        # ratings. Only players with at least one recorded game AND recent
+        # activity (within RANK_ACTIVITY_WINDOW_DAYS of reference_date) are
+        # eligible for a rating-based rank; everyone else is placed after them.
+        eligible_rows = [r for r in partition_rows if _is_rank_eligible(r, reference_date)]
+        ineligible_rows = [r for r in partition_rows if not _is_rank_eligible(r, reference_date)]
 
         for group in (eligible_rows, ineligible_rows):
             group.sort(key=_leaderboard_rank_sort_key)
@@ -1140,36 +1156,81 @@ def build_active_leaderboard_rows(
         for index, row in enumerate([*eligible_rows, *ineligible_rows], start=1):
             row["rank"] = index
 
-    assign_topdeck_elo_ranks(leaderboard_rows)
+    assign_topdeck_elo_ranks(leaderboard_rows, reference_date)
     return leaderboard_rows
 
 
-def _is_rank_eligible(row: Mapping[str, Any]) -> bool:
-    """Return True if *row* has a real, games-backed rating.
+def _parse_last_game_date(value: Any) -> date | None:
+    """Parse a `last_game_date` value that may arrive as a `date`, a
+    `datetime`, an ISO date/datetime string, or `None` -- the exact shape
+    depends on whether the row was built in Python or round-tripped through a
+    PostgREST JSON response. Returns None if the value is missing, empty, or
+    unparseable so callers can treat it as "no known activity" rather than
+    raising.
+    """
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value[:10])
+        except ValueError:
+            return None
+    return None
+
+
+def _is_recently_active(last_game_date: Any, reference_date: date | None = None) -> bool:
+    """Return True if `last_game_date` is within RANK_ACTIVITY_WINDOW_DAYS
+    (183 days) of `reference_date` (defaults to today, UTC).
+
+    Implements the "players with no tournaments in the last 6 months are
+    excluded from the rankings" business rule. A missing or unparseable
+    `last_game_date` is treated as ineligible rather than defaulting to
+    active, since we have no evidence of recent play.
+    """
+    parsed = _parse_last_game_date(last_game_date)
+    if parsed is None:
+        return False
+    if reference_date is None:
+        reference_date = utc_now().date()
+    return (reference_date - parsed).days <= RANK_ACTIVITY_WINDOW_DAYS
+
+
+def _is_rank_eligible(row: Mapping[str, Any], reference_date: date | None = None) -> bool:
+    """Return True if *row* has a real, games-backed rating AND recent activity.
 
     Zero-game players are seeded with the DEFAULT_RATING anchor rather than a
     genuine computed rating, so they must never be eligible to outrank (or, in
     the worst case, become rank 1 ahead of) a player with a real rating -
     including a legitimately negative one.
+
+    Additionally, a player whose most recent recorded game (`last_game_date`)
+    is older than RANK_ACTIVITY_WINDOW_DAYS (183 days, ~6 months) relative to
+    `reference_date` is excluded from ranking regardless of games played or
+    rating -- the "no tournaments in the last 6 months" business rule.
     """
     games_played = row.get("games_played")
     try:
-        return int(games_played or 0) > 0
+        if int(games_played or 0) <= 0:
+            return False
     except (TypeError, ValueError):
         return False
+    return _is_recently_active(row.get("last_game_date"), reference_date)
 
 
-def _is_topdeck_rank_eligible(row: Mapping[str, Any]) -> bool:
+def _is_topdeck_rank_eligible(row: Mapping[str, Any], reference_date: date | None = None) -> bool:
     """Return True if *row* is eligible for a topdeck_elo_rank.
 
-    Composes the shared games-backed gate (``_is_rank_eligible``) with the
-    topdeck_elo-specific requirement that the row actually has an imported
-    topdeck_elo value. Kept separate from ``_is_rank_eligible`` itself
-    because that helper is also used for the unrelated, purely rating-based
-    ``rank`` field in ``build_active_leaderboard_rows``, which must stay
-    eligible for players who have no topdeck_elo at all.
+    Composes the shared games-backed + recent-activity gate
+    (``_is_rank_eligible``) with the topdeck_elo-specific requirement that
+    the row actually has an imported topdeck_elo value. Kept separate from
+    ``_is_rank_eligible`` itself because that helper is also used for the
+    unrelated, purely rating-based ``rank`` field in
+    ``build_active_leaderboard_rows``, which must stay eligible for players
+    who have no topdeck_elo at all.
     """
-    return row.get("topdeck_elo") is not None and _is_rank_eligible(row)
+    return row.get("topdeck_elo") is not None and _is_rank_eligible(row, reference_date)
 
 
 def _leaderboard_rank_sort_key(r: Mapping[str, Any]) -> tuple[float, float, int, str]:

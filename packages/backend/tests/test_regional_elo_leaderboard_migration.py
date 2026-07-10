@@ -1,5 +1,6 @@
 import sys
 import unittest
+from datetime import date
 from pathlib import Path
 
 import requests
@@ -15,6 +16,14 @@ LEADERBOARD_TOPDECK_MIGRATION = (
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import regional_elo  # noqa: E402
+
+
+# Fixed reference date + a `last_game_date` comfortably inside
+# RANK_ACTIVITY_WINDOW_DAYS (183), used by tests below that predate the
+# 6-month activity gate and only care about exercising games_played /
+# topdeck_elo eligibility, not activity recency.
+TEST_REFERENCE_DATE = date(2026, 7, 10)
+RECENT_LAST_GAME_DATE = "2026-07-01"
 
 
 class RegionalEloLeaderboardMigrationTests(unittest.TestCase):
@@ -73,6 +82,7 @@ class AssignTopdeckEloRanksTests(unittest.TestCase):
                 "rating": 1700,
                 "games_played": 10,
                 "topdeck_elo": 2100,
+                "last_game_date": RECENT_LAST_GAME_DATE,
             },
             {
                 "region_type": "global",
@@ -81,6 +91,7 @@ class AssignTopdeckEloRanksTests(unittest.TestCase):
                 "rating": 1800,
                 "games_played": 20,
                 "topdeck_elo": 2300,
+                "last_game_date": RECENT_LAST_GAME_DATE,
             },
             {
                 "region_type": "global",
@@ -89,10 +100,11 @@ class AssignTopdeckEloRanksTests(unittest.TestCase):
                 "rating": 1750,
                 "games_played": 15,
                 "topdeck_elo": 2200,
+                "last_game_date": RECENT_LAST_GAME_DATE,
             },
         ]
 
-        regional_elo.assign_topdeck_elo_ranks(rows)
+        regional_elo.assign_topdeck_elo_ranks(rows, TEST_REFERENCE_DATE)
 
         ranks_by_name = {r["player_name"]: r["topdeck_elo_rank"] for r in rows}
         self.assertEqual(ranks_by_name, {"Bob": 1, "Carol": 2, "Alice": 3})
@@ -106,6 +118,7 @@ class AssignTopdeckEloRanksTests(unittest.TestCase):
                 "rating": 1700,
                 "games_played": 10,
                 "topdeck_elo": 2100,
+                "last_game_date": RECENT_LAST_GAME_DATE,
             },
             {
                 "region_type": "country",
@@ -114,10 +127,11 @@ class AssignTopdeckEloRanksTests(unittest.TestCase):
                 "rating": 1750,
                 "games_played": 5,
                 "topdeck_elo": None,
+                "last_game_date": RECENT_LAST_GAME_DATE,
             },
         ]
 
-        regional_elo.assign_topdeck_elo_ranks(rows)
+        regional_elo.assign_topdeck_elo_ranks(rows, TEST_REFERENCE_DATE)
 
         ranks_by_name = {r["player_name"]: r["topdeck_elo_rank"] for r in rows}
         self.assertEqual(ranks_by_name, {"Alice": 1, "Bob": None})
@@ -138,6 +152,7 @@ class AssignTopdeckEloRanksTests(unittest.TestCase):
                 "rating": 1500,
                 "games_played": 0,
                 "topdeck_elo": 2070,
+                "last_game_date": RECENT_LAST_GAME_DATE,
             },
             {
                 "region_type": "global",
@@ -146,10 +161,11 @@ class AssignTopdeckEloRanksTests(unittest.TestCase):
                 "rating": 1650,
                 "games_played": 40,
                 "topdeck_elo": 1950,
+                "last_game_date": RECENT_LAST_GAME_DATE,
             },
         ]
 
-        regional_elo.assign_topdeck_elo_ranks(rows)
+        regional_elo.assign_topdeck_elo_ranks(rows, TEST_REFERENCE_DATE)
 
         ranks_by_name = {r["player_name"]: r["topdeck_elo_rank"] for r in rows}
         self.assertEqual(ranks_by_name["Max Sternburg"], None)
@@ -164,6 +180,7 @@ class AssignTopdeckEloRanksTests(unittest.TestCase):
                 "rating": 1700,
                 "games_played": 10,
                 "topdeck_elo": 2100,
+                "last_game_date": RECENT_LAST_GAME_DATE,
             },
             {
                 "region_type": "country",
@@ -172,6 +189,7 @@ class AssignTopdeckEloRanksTests(unittest.TestCase):
                 "rating": 1700,
                 "games_played": 10,
                 "topdeck_elo": 2100,
+                "last_game_date": RECENT_LAST_GAME_DATE,
             },
             {
                 "region_type": "country",
@@ -180,10 +198,11 @@ class AssignTopdeckEloRanksTests(unittest.TestCase):
                 "rating": 1800,
                 "games_played": 20,
                 "topdeck_elo": 2300,
+                "last_game_date": RECENT_LAST_GAME_DATE,
             },
         ]
 
-        regional_elo.assign_topdeck_elo_ranks(rows)
+        regional_elo.assign_topdeck_elo_ranks(rows, TEST_REFERENCE_DATE)
 
         country_ranks = {
             r["player_name"]: r["topdeck_elo_rank"]
@@ -221,8 +240,11 @@ class BuildActiveLeaderboardRowsTests(unittest.TestCase):
                 }
             },
             topdeck_elo_by_topdeck_id={"topdeck-1": 1900.5},
-            state_stats_by_player={},
+            state_stats_by_player={
+                "player-1": {"last_game_date": RECENT_LAST_GAME_DATE},
+            },
             updated_at="2026-05-01T00:00:00+00:00",
+            reference_date=TEST_REFERENCE_DATE,
         )
 
         self.assertEqual(len(rows), 1)
@@ -317,8 +339,11 @@ class BuildActiveLeaderboardRowsTests(unittest.TestCase):
                 },
             },
             topdeck_elo_by_topdeck_id={},
-            state_stats_by_player={},
+            state_stats_by_player={
+                "player-real": {"last_game_date": RECENT_LAST_GAME_DATE},
+            },
             updated_at="2026-05-01T00:00:00+00:00",
+            reference_date=TEST_REFERENCE_DATE,
         )
 
         global_rows = {
@@ -403,8 +428,11 @@ class BuildActiveLeaderboardRowsTests(unittest.TestCase):
                 "topdeck-ghost": 2070.0,
                 "topdeck-real": 1950.0,
             },
-            state_stats_by_player={},
+            state_stats_by_player={
+                "player-real": {"last_game_date": RECENT_LAST_GAME_DATE},
+            },
             updated_at="2026-05-01T00:00:00+00:00",
+            reference_date=TEST_REFERENCE_DATE,
         )
 
         global_rows = {
@@ -425,6 +453,146 @@ class BuildActiveLeaderboardRowsTests(unittest.TestCase):
             "        delete_stale_active_leaderboard_rows(client, leaderboard_run_marker)",
             source,
         )
+
+
+class RankActivityWindowTests(unittest.TestCase):
+    """Regression tests for the 6-month (RANK_ACTIVITY_WINDOW_DAYS) activity
+    rule: players with no tournaments in the last 6 months are excluded from
+    the rankings, even if they have real historical games and a high
+    topdeck_elo. See docs/decisions/0015-rank-activity-window-and-topdeck-snapshot-pruning.md.
+    """
+
+    REFERENCE_DATE = date(2026, 7, 10)
+
+    def test_stale_last_game_date_excludes_player_despite_highest_topdeck_elo(self) -> None:
+        # Regression test for issue #252 / PR #263 follow-up: this reproduces
+        # the Max Sternburg case, where a player with 396 real games and a
+        # last game on 2025-09-20 (well over 6 months before the report) was
+        # still receiving a rank/topdeck_elo_rank purely because the
+        # zero-game gate alone doesn't catch stale-but-real players.
+        rows = regional_elo.build_active_leaderboard_rows(
+            ratings_rows=[
+                {
+                    "region_type": "global",
+                    "region_key": "ALL",
+                    "player_id": "player-inactive",
+                    "rating": 1900,
+                    "games_played": 396,
+                },
+                {
+                    "region_type": "global",
+                    "region_key": "ALL",
+                    "player_id": "player-active",
+                    "rating": 1650,
+                    "games_played": 40,
+                },
+            ],
+            player_index={
+                "player-inactive": {
+                    "id": "player-inactive",
+                    "name": "Stale Player",
+                    "topdeck_id": "topdeck-inactive",
+                },
+                "player-active": {
+                    "id": "player-active",
+                    "name": "Active Player",
+                    "topdeck_id": "topdeck-active",
+                },
+            },
+            topdeck_elo_by_topdeck_id={
+                "topdeck-inactive": 2070.0,
+                "topdeck-active": 1950.0,
+            },
+            state_stats_by_player={
+                "player-inactive": {"last_game_date": "2025-09-20"},
+                "player-active": {"last_game_date": "2026-07-01"},
+            },
+            updated_at="2026-07-10T00:00:00+00:00",
+            reference_date=self.REFERENCE_DATE,
+        )
+
+        global_rows = {
+            row["player_name"]: row for row in rows if row["region_type"] == "global"
+        }
+
+        self.assertIsNone(global_rows["Stale Player"]["topdeck_elo_rank"])
+        self.assertEqual(global_rows["Active Player"]["topdeck_elo_rank"], 1)
+        # The stale (but real, games-backed) player must sort after the
+        # active player for `rank` too, despite the higher raw `rating`.
+        self.assertEqual(global_rows["Active Player"]["rank"], 1)
+        self.assertEqual(global_rows["Stale Player"]["rank"], 2)
+
+    def test_last_game_date_exactly_at_window_boundary_stays_eligible(self) -> None:
+        boundary_date = "2026-01-08"  # exactly RANK_ACTIVITY_WINDOW_DAYS (183) before REFERENCE_DATE
+
+        rows = regional_elo.build_active_leaderboard_rows(
+            ratings_rows=[
+                {
+                    "region_type": "global",
+                    "region_key": "ALL",
+                    "player_id": "player-boundary",
+                    "rating": 1700,
+                    "games_played": 10,
+                },
+            ],
+            player_index={
+                "player-boundary": {
+                    "id": "player-boundary",
+                    "name": "Boundary Player",
+                    "topdeck_id": "topdeck-boundary",
+                },
+            },
+            topdeck_elo_by_topdeck_id={"topdeck-boundary": 2000.0},
+            state_stats_by_player={
+                "player-boundary": {"last_game_date": boundary_date},
+            },
+            updated_at="2026-07-10T00:00:00+00:00",
+            reference_date=self.REFERENCE_DATE,
+        )
+
+        row = next(r for r in rows if r["region_type"] == "global")
+        self.assertEqual(row["rank"], 1)
+        self.assertEqual(row["topdeck_elo_rank"], 1)
+
+    def test_missing_last_game_date_is_ineligible(self) -> None:
+        rows = regional_elo.build_active_leaderboard_rows(
+            ratings_rows=[
+                {
+                    "region_type": "global",
+                    "region_key": "ALL",
+                    "player_id": "player-no-date",
+                    "rating": 1700,
+                    "games_played": 10,
+                },
+            ],
+            player_index={
+                "player-no-date": {
+                    "id": "player-no-date",
+                    "name": "No Date Player",
+                    "topdeck_id": "topdeck-no-date",
+                },
+            },
+            topdeck_elo_by_topdeck_id={"topdeck-no-date": 2000.0},
+            state_stats_by_player={},
+            updated_at="2026-07-10T00:00:00+00:00",
+            reference_date=self.REFERENCE_DATE,
+        )
+
+        row = next(r for r in rows if r["region_type"] == "global")
+        self.assertIsNone(row["topdeck_elo_rank"])
+
+    def test_is_rank_eligible_handles_date_and_string_last_game_date(self) -> None:
+        recent_string_row = {"games_played": 5, "last_game_date": "2026-07-01"}
+        recent_date_row = {"games_played": 5, "last_game_date": date(2026, 7, 1)}
+        stale_row = {"games_played": 5, "last_game_date": "2025-01-01"}
+        unparseable_row = {"games_played": 5, "last_game_date": "not-a-date"}
+        none_row = {"games_played": 5, "last_game_date": None}
+
+        self.assertTrue(regional_elo._is_rank_eligible(recent_string_row, self.REFERENCE_DATE))
+        self.assertTrue(regional_elo._is_rank_eligible(recent_date_row, self.REFERENCE_DATE))
+        self.assertFalse(regional_elo._is_rank_eligible(stale_row, self.REFERENCE_DATE))
+        self.assertFalse(regional_elo._is_rank_eligible(unparseable_row, self.REFERENCE_DATE))
+        self.assertFalse(regional_elo._is_rank_eligible(none_row, self.REFERENCE_DATE))
 
 
 class FetchTopdeckEloByTopdeckIdTests(unittest.TestCase):
