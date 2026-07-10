@@ -73,15 +73,16 @@ vi.mock("@/lib/supabase/client", () => ({
 // We need to bypass the actual getLeaderboardPreview which is unexported but we can test
 // by just reading the file to ensure fetchHomeLeaderboardProfiles has the correct fields
 // and fetchHomeLeaderboardLatestTournaments is removed.
-// Since getLeaderboardPreview is not exported, we will just parse the file source
-// in the test to prevent regressions.
+// Since getLeaderboardPreview is not exported from that internal helper, we will just parse
+// the file source in the test to prevent regressions. The homepage data-fetching logic lives
+// in src/lib/home/fetchers.ts (extracted from src/app/page.tsx), which the homepage imports.
 import * as fs from "fs";
 import * as path from "path";
 
 describe("Home Page Data Fetching", () => {
   it("fetches leaderboard preview and merges latest tournament metadata from player profiles without using event logs", () => {
     const source = fs.readFileSync(
-      path.resolve(__dirname, "../../src/app/page.tsx"),
+      path.resolve(__dirname, "../../src/lib/home/fetchers.ts"),
       "utf-8"
     );
 
