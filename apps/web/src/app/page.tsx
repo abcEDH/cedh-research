@@ -174,9 +174,9 @@ async function getTopRisingCommandersByTwoWeekTrend(): Promise<RisingCommander[]
 }
 
 async function getCoreStats() {
-  const oneYearAgo = new Date();
-  oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-  const oneYearAgoIso = oneYearAgo.toISOString().split("T")[0];
+  const sixMonthsAgo = new Date();
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+  const sixMonthsAgoIso = sixMonthsAgo.toISOString().split("T")[0];
 
   // Fetch candidates with > 60 entries (only ~200 rows)
   const { data: candidates, error: candidateErr } = await supabase
@@ -194,7 +194,7 @@ async function getCoreStats() {
 
   const candidateIds = (candidates ?? []).map((c) => c.commander_id);
 
-  // Check which candidates were active in the past year using monthly trends (fewer rows)
+  // Check which candidates were active in the past 6 months using monthly trends (fewer rows)
   // We chunk the IN clause to avoid URL length limits
   const activeIdsSet = new Set<string>();
   const CHUNK_SIZE = 100;
@@ -204,7 +204,7 @@ async function getCoreStats() {
       .from("commander_monthly_trends")
       .select("commander_id")
       .in("commander_id", chunk)
-      .gte("month_start_date", oneYearAgoIso);
+      .gte("month_start_date", sixMonthsAgoIso);
 
     if (activeErr) {
       console.error(`Error fetching activity for chunk ${i}:`, activeErr.message);
