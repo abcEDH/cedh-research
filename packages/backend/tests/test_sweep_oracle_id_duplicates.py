@@ -122,16 +122,37 @@ class ChooseCanonicalCommanderTests(unittest.TestCase):
         chosen = choose_canonical_commander(group)
         self.assertEqual(chosen["id"], "canonical-row")
 
-    def test_falls_back_to_first_row_when_none_are_normalized(self) -> None:
-        # Neither row's stored name matches clean_commander_card_name's output
-        # for itself (e.g. both are raw/unnormalized); there's no clearly-better
-        # choice, so the first row (by the caller's sort order) is kept.
+    def test_returns_none_when_no_row_is_normalized(self) -> None:
+        # Neither row's stored name matches its own normalized form (e.g. both
+        # are raw/unnormalized) - there's no signal for which is canonical, so
+        # the merge must be skipped rather than guessing which to delete.
         group = [
             {"id": "row-a", "name": "Some Weird Name [Foo]", "commander_names": ["Urza"]},
             {"id": "row-b", "name": "Another Weird Name [Bar]", "commander_names": ["Urza"]},
         ]
-        chosen = choose_canonical_commander(group)
-        self.assertEqual(chosen["id"], "row-a")
+        self.assertIsNone(choose_canonical_commander(group))
+
+    def test_returns_none_for_unknown_ub_alternate_name_pair(self) -> None:
+        # Regression test: when neither name in the group is registered in
+        # COMMANDER_NAME_ALIASES, both rows trivially "self-normalize" (a
+        # single commander name with no known alias normalizes to itself).
+        # Picking either one (e.g. alphabetically-first) risks deleting the
+        # actual mainline/canonical card, which ingestion would immediately
+        # recreate as a fresh duplicate. This must be surfaced for a human to
+        # add a COMMANDER_NAME_ALIASES entry, not resolved automatically.
+        group = [
+            {
+                "id": "row-a",
+                "name": "Chun-Li, Countless Kicks",
+                "commander_names": ["Chun-Li, Countless Kicks"],
+            },
+            {
+                "id": "row-b",
+                "name": "Zethi, Arcane Blademaster",
+                "commander_names": ["Zethi, Arcane Blademaster"],
+            },
+        ]
+        self.assertIsNone(choose_canonical_commander(group))
 
 
 if __name__ == "__main__":

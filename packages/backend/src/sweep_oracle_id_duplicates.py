@@ -102,25 +102,35 @@ def build_oracle_group_key(
     return tuple(sorted(oracle_ids))
 
 
-def choose_canonical_commander(group: list[dict]) -> dict:
+def choose_canonical_commander(group: list[dict]) -> dict | None:
     """Pick the row to keep when merging an oracle_id duplicate group.
 
     Keeping an un-normalized alias row (e.g. "Chief Jim Hopper" instead of its
     canonical "Sophina, Spearsage Deserter", per COMMANDER_NAME_ALIASES) would
     mean the next ingestion run normalizes new entries to the canonical name,
     finds no existing row for it (since it was just deleted), and recreates the
-    very duplicate this sweep was meant to remove. Prefer the row whose stored
-    `name` already equals its own normalized form; only fall back to the first
-    row (by the caller's sort order) if none qualify.
+    very duplicate this sweep was meant to remove. A row whose stored `name`
+    already equals its own normalized form is confidently canonical *only* when
+    it's the sole such row in the group — that asymmetry only shows up when
+    COMMANDER_NAME_ALIASES maps some other row's name onto this one.
+
+    For UB alternate-name pairs that aren't yet in COMMANDER_NAME_ALIASES,
+    every row's name trivially equals its own normalized form (neither is
+    known to be an alias of the other), so there is no algorithmic way to
+    tell which name the game considers canonical. Guessing (e.g. picking
+    whichever sorts first) risks deleting the actual mainline/canonical row,
+    which a later ingestion run would recreate as a fresh duplicate. Returns
+    None in that ambiguous case so the caller skips the merge and surfaces it
+    for a human to add a COMMANDER_NAME_ALIASES entry instead.
     """
     normalized_matches = [
         commander
         for commander in group
         if commander.get("name") == normalize_commander_name(commander.get("commander_names") or [])
     ]
-    if normalized_matches:
+    if len(normalized_matches) == 1:
         return normalized_matches[0]
-    return group[0]
+    return None
 
 
 def main() -> None:
@@ -171,6 +181,7 @@ def main() -> None:
     # Process groups with multiple commanders (duplicates)
     report_lines = ["oracle_ids,canonical_name,duplicate_names,merged"]
     merged_count = 0
+    ambiguous_groups: list[tuple[tuple[str, ...], list[dict]]] = []
 
     for oracle_key, group in sorted(oracle_groups.items()):
         if len(group) <= 1:
@@ -179,7 +190,19 @@ def main() -> None:
         # Multiple commanders with same full oracle-id identity - merge them,
         # preferring the already-normalized row as canonical (see
         # choose_canonical_commander) rather than an alphabetically-first alias.
+        # When no row is confidently canonical (neither name is a known alias
+        # in COMMANDER_NAME_ALIASES), skip rather than guess which to delete -
+        # deleting the wrong one just lets ingestion recreate the duplicate.
         canonical = choose_canonical_commander(group)
+        if canonical is None:
+            ambiguous_groups.append((oracle_key, group))
+            names = [cmd["name"] for cmd in group]
+            print(
+                f"Skipping ambiguous oracle group (oracle_ids={'+'.join(oracle_key)}): "
+                f"{names} - add a COMMANDER_NAME_ALIASES entry to resolve"
+            )
+            continue
+
         canonical_id = canonical["id"]
         canonical_name = canonical["name"]
 
@@ -200,12 +223,17 @@ def main() -> None:
 
         report_lines.append(f'{oracle_key_str},"{canonical_name}","{"; ".join(duplicate_names)}",yes')
 
+    for oracle_key, group in ambiguous_groups:
+        names = [cmd["name"] for cmd in group]
+        report_lines.append(f'{"+".join(oracle_key)},"AMBIGUOUS","{"; ".join(names)}",no')
+
     Path(args.report).parent.mkdir(parents=True, exist_ok=True)
     Path(args.report).write_text("\n".join(report_lines) + "\n")
 
     print(f"commander_groups={len(oracle_groups)}")
     print(f"commanders_with_duplicates={len([g for g in oracle_groups.values() if len(g) > 1])}")
     print(f"merged={merged_count}")
+    print(f"ambiguous_skipped={len(ambiguous_groups)}")
     print(f"commanders_without_oracle={len(commander_without_oracle)}")
     print(f"report={args.report}")
 
