@@ -519,7 +519,7 @@ def sanitize_commander_payload(
 
 def deduplicate_commanders_in_batch(
     commander_data: dict[str, list[str]],
-) -> dict[str, list[str]]:
+) -> tuple[dict[str, list[str]], dict[str, str]]:
     """Deduplicate partner commanders with the same canonical pair key.
 
     When multiple versions of the same partner pair (e.g., "A / B" and "B / A")
@@ -529,7 +529,10 @@ def deduplicate_commanders_in_batch(
         commander_data: dict mapping canonical name -> individual commander names
 
     Returns:
-        Deduplicated dict with single canonical entry per partner pair
+        Tuple of:
+        - Deduplicated dict with single canonical entry per partner pair
+        - Alias map from each discarded original name to the kept name it was
+          merged into (empty for names that weren't discarded)
     """
     # Group commanders by canonical pair key (for partner pairs only)
     pair_groups: dict[tuple[str, ...], list[tuple[str, list[str]]]] = defaultdict(list)
@@ -547,22 +550,24 @@ def deduplicate_commanders_in_batch(
             pair_groups[(canonical_name,)].append((canonical_name, commander_names))
 
     # Rebuild dict, keeping only one canonical per pair
-    result = {}
+    result: dict[str, list[str]] = {}
+    aliases: dict[str, str] = {}
     for group_key, entries in pair_groups.items():
         if len(entries) > 1:
             # Multiple versions of the same pair - keep the first one
             # (they should all normalize to the same canonical name anyway)
-            logger.info(
-                f"Deduplicating partner pair {group_key}: "
-                f"keeping {entries[0][0]}, discarding {[e[0] for e in entries[1:]]}"
-            )
-            result[entries[0][0]] = entries[0][1]
+            kept_name = entries[0][0]
+            discarded_names = [e[0] for e in entries[1:]]
+            logger.info(f"Deduplicating partner pair {group_key}: keeping {kept_name}, discarding {discarded_names}")
+            result[kept_name] = entries[0][1]
+            for discarded_name in discarded_names:
+                aliases[discarded_name] = kept_name
         else:
             # Single entry, keep as-is
             name, names = entries[0]
             result[name] = names
 
-    return result
+    return result, aliases
 
 
 class DataIngester:
@@ -625,16 +630,21 @@ class DataIngester:
         return None
 
     def batch_upsert_commanders(self, commander_data: dict[str, list[str]]) -> dict[str, str]:
-        """Batch upsert commanders and return name -> id mapping.
+        """Batch upsert commanders and return original-name -> id mapping.
 
-        Deduplicates partner pairs with the same canonical key to prevent
-        duplicate rows for pair variants like "A / B" vs "B / A".
+        Deduplicates partner pairs with the same canonical key (e.g. "A / B" vs
+        "B / A") before upserting, to avoid writing duplicate rows. The returned
+        mapping is still keyed by every *original* name in `commander_data`
+        (not just the deduplicated/kept ones), since `sanitize_commander_payload`
+        canonicalizes deterministically from `commander_names` regardless of
+        name order — callers that look up standings by their original
+        `commander_name` string must be able to resolve any pair-order variant.
         """
         if not commander_data:
             return {}
 
-        # Deduplicate partner pairs in the batch
-        deduplicated = deduplicate_commanders_in_batch(commander_data)
+        # Deduplicate partner pairs in the batch (reduces upsert payload only)
+        deduplicated, _aliases = deduplicate_commanders_in_batch(commander_data)
 
         data = []
         for name, names in deduplicated.items():
@@ -646,7 +656,16 @@ class DataIngester:
             logger.error("Failed to batch upsert commanders")
             return {}
 
-        return {r["name"]: r["id"] for r in result}
+        id_by_canonical_name = {r["name"]: r["id"] for r in result}
+
+        commander_id_map: dict[str, str] = {}
+        for original_name, original_commander_names in commander_data.items():
+            canonical_name, _ = sanitize_commander_payload(original_name, original_commander_names)
+            commander_id = id_by_canonical_name.get(canonical_name)
+            if commander_id:
+                commander_id_map[original_name] = commander_id
+
+        return commander_id_map
 
     def batch_upsert_players(self, player_data: dict[str, str]) -> dict[str, str]:
         """Batch upsert players and return topdeck_id -> id mapping."""

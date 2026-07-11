@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
-"""Sweep to deduplicate commanders with same Scryfall oracle_id (Universes Beyond variants)."""
+"""Sweep to deduplicate commanders with same Scryfall oracle_id (Universes Beyond variants).
+
+Note: `data/legal_commander_pairings.json` only records `scryfall_ids` (per-print
+card IDs from Scryfall's `card.id`), not the stable `oracle_id` that identifies a
+card across reprints/alternate-art/alternate-name (Universes Beyond) variants —
+the whole point of this sweep. There is no local source of real oracle_id data,
+so this script always fetches oracle_ids fresh from Scryfall's bulk data API.
+"""
 
 from __future__ import annotations
 
 import argparse
-import json
 from collections import defaultdict
 from pathlib import Path
 
@@ -19,33 +25,6 @@ from ingest import (
     SupabaseClient,
     clean_commander_card_name,
 )
-
-
-def build_oracle_id_map() -> dict[str, str]:
-    """Build a map of commander name -> oracle_id from legal_commander_pairings.json.
-
-    The legal_commander_pairings.json is generated from Scryfall and contains
-    oracle_id for all legal commander cards.
-    """
-    data_path = Path(__file__).resolve().parents[1] / "data" / "legal_commander_pairings.json"
-    if not data_path.exists():
-        return {}
-
-    payload = json.loads(data_path.read_text())
-    pairs = payload.get("legal_pairs") or []
-
-    name_to_oracle: dict[str, str] = {}
-    for pair in pairs:
-        commander_names = pair.get("commander_names") or []
-        scryfall_ids = pair.get("scryfall_ids") or []
-
-        if len(commander_names) == 2 and len(scryfall_ids) == 2:
-            for name, scryfall_id in zip(commander_names, scryfall_ids):
-                cleaned = clean_commander_card_name(name)
-                if cleaned:
-                    name_to_oracle[cleaned] = scryfall_id
-
-    return name_to_oracle
 
 
 def fetch_oracle_ids_from_scryfall(timeout: float = 60.0) -> dict[str, str]:
@@ -84,13 +63,36 @@ def fetch_oracle_ids_from_scryfall(timeout: float = 60.0) -> dict[str, str]:
     return name_to_oracle
 
 
+def build_oracle_group_key(
+    commander_names: list[str],
+    name_to_oracle: dict[str, str],
+) -> tuple[str, ...] | None:
+    """Build the full-identity group key for a commander row, or None if unresolved.
+
+    Two commander rows should only be treated as duplicates when *every* card in
+    the row shares an oracle_id with every card in the other row — e.g. "Tymna /
+    Kraum" and "Tymna / Thrasios" both contain Tymna but are distinct legal pairs
+    and must not merge. Keying off only the first matching card (breaking out of
+    the loop early) would incorrectly collapse them. If any name in the row fails
+    to resolve to an oracle_id, the whole row is left ungrouped (returns None)
+    rather than partially matching on the names that did resolve.
+    """
+    if not commander_names:
+        return None
+
+    oracle_ids: list[str] = []
+    for cmd_name in commander_names:
+        cleaned = clean_commander_card_name(cmd_name)
+        oracle_id = name_to_oracle.get(cleaned)
+        if not oracle_id:
+            return None
+        oracle_ids.append(oracle_id)
+
+    return tuple(sorted(oracle_ids))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Sweep to deduplicate Universes Beyond oracle_id variants.")
-    parser.add_argument(
-        "--fetch-scryfall",
-        action="store_true",
-        help="Fetch fresh oracle_id mapping from Scryfall instead of using legal_commander_pairings.json",
-    )
     parser.add_argument(
         "--timeout",
         type=float,
@@ -112,56 +114,46 @@ def main() -> None:
     supabase_url, supabase_key = load_credentials()
     client = SupabaseClient(supabase_url, supabase_key)
 
-    # Get oracle_id mapping
-    if args.fetch_scryfall:
-        print("Fetching oracle_ids from Scryfall...")
-        name_to_oracle = fetch_oracle_ids_from_scryfall(args.timeout)
-    else:
-        print("Loading oracle_ids from legal_commander_pairings.json...")
-        name_to_oracle = build_oracle_id_map()
-
+    print("Fetching oracle_ids from Scryfall...")
+    name_to_oracle = fetch_oracle_ids_from_scryfall(args.timeout)
     print(f"Loaded {len(name_to_oracle)} commander oracle_ids")
 
     # Fetch all commanders
     print("Fetching all commanders from database...")
     commanders = client.select("commanders", {"select": "id,name,commander_names", "limit": 5000, "order": "name.asc"})
 
-    # Group commanders by oracle_id
-    oracle_groups: dict[str, list[dict]] = defaultdict(list)
+    # Group commanders by full-identity oracle_id key (all cards in the row, not
+    # just the first match) so distinct partner pairs sharing one card never merge.
+    oracle_groups: dict[tuple[str, ...], list[dict]] = defaultdict(list)
     commander_without_oracle = []
 
     for commander in commanders:
         commander_names = commander.get("commander_names") or []
-        found_oracle = False
+        group_key = build_oracle_group_key(commander_names, name_to_oracle)
 
-        for cmd_name in commander_names:
-            cleaned = clean_commander_card_name(cmd_name)
-            if cleaned in name_to_oracle:
-                oracle_id = name_to_oracle[cleaned]
-                oracle_groups[oracle_id].append(commander)
-                found_oracle = True
-                break
-
-        if not found_oracle:
+        if group_key is not None:
+            oracle_groups[group_key].append(commander)
+        else:
             commander_without_oracle.append(commander)
 
     # Process groups with multiple commanders (duplicates)
-    report_lines = ["oracle_id,canonical_name,duplicate_names,merged"]
+    report_lines = ["oracle_ids,canonical_name,duplicate_names,merged"]
     merged_count = 0
 
-    for oracle_id, group in sorted(oracle_groups.items()):
+    for oracle_key, group in sorted(oracle_groups.items()):
         if len(group) <= 1:
             continue
 
-        # Multiple commanders with same oracle_id - merge them
+        # Multiple commanders with same full oracle-id identity - merge them
         canonical = group[0]
         canonical_id = canonical["id"]
         canonical_name = canonical["name"]
 
         duplicates = group[1:]
         duplicate_names = [cmd["name"] for cmd in duplicates]
+        oracle_key_str = "+".join(oracle_key)
 
-        print(f"Merging {len(duplicates)} duplicates of {canonical_name} (oracle_id={oracle_id})")
+        print(f"Merging {len(duplicates)} duplicates of {canonical_name} (oracle_ids={oracle_key_str})")
 
         for duplicate in duplicates:
             if not args.dry_run:
@@ -172,7 +164,7 @@ def main() -> None:
 
             merged_count += 1
 
-        report_lines.append(f'{oracle_id},"{canonical_name}","{"; ".join(duplicate_names)}",yes')
+        report_lines.append(f'{oracle_key_str},"{canonical_name}","{"; ".join(duplicate_names)}",yes')
 
     Path(args.report).parent.mkdir(parents=True, exist_ok=True)
     Path(args.report).write_text("\n".join(report_lines) + "\n")
