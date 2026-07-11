@@ -843,7 +843,7 @@ export default async function Home() {
           <Card>
             <CardHeader className="knd-panel-header">
               <CardTitle className="text-lg">Win Rate Leaders</CardTitle>
-              <p className="text-sm text-muted-foreground">Active last 12mo · 60+ entries</p>
+              <p className="text-sm text-muted-foreground">Active last 6mo · 60+ entries</p>
             </CardHeader>
             <CardContent className="space-y-2 p-2 sm:p-6 sm:space-y-3">
               {topWinRate.length > 0 ? (

@@ -87,12 +87,29 @@ describe("Home Page Data Fetching", () => {
 
     // Verify correct fields are selected from profiles
     expect(source).not.toContain("latest_tournament_name, latest_tournament_date, latest_tournament_topdeck_tid");
-    
+
     // Verify we map them properly
     expect(source).toContain("latest_tournament_name: latestTournament?.name ?? null");
-    
+
     // Verify we DO call fetchHomeLeaderboardLatestTournaments anymore
     expect(source).toContain("fetchHomeLeaderboardLatestTournaments");
     expect(source).toContain("global_elo_game_event_log");
+  });
+
+  it("Win Rate Leaders section uses 6-month activity window and has consistent label", () => {
+    const source = fs.readFileSync(
+      path.resolve(__dirname, "../../src/app/page.tsx"),
+      "utf-8"
+    );
+
+    // Verify getCoreStats filters by 6 months (setMonth(getMonth() - 6))
+    expect(source).toContain("sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)");
+
+    // Verify the Win Rate Leaders label says "Active last 6mo" not "12mo"
+    expect(source).toContain("Active last 6mo · 60+ entries");
+    expect(source).not.toContain("Active last 12mo");
+
+    // Verify commander_monthly_trends is filtered by 6 months
+    expect(source).toContain('gte("month_start_date", sixMonthsAgoIso)');
   });
 });
