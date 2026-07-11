@@ -35,6 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from ingest import (  # noqa: E402
     _describe_request_failure,
     clean_commander_card_name,
+    deduplicate_commanders_in_batch,
     extract_standing_rates,
     INGESTION_JOB_ALREADY_CLAIMED_EXIT_CODE,
     normalize_commander_name,
@@ -133,6 +134,45 @@ class CommanderNormalizationTests(unittest.TestCase):
             normalize_commander_name(["Haldan, Avid Arcanist", "Pako, Arcane Retriever"]),
             "Pako, Arcane Retriever / Haldan, Avid Arcanist",
         )
+
+    def test_deduplicate_commanders_keeps_single_partner_pair(self) -> None:
+        commander_data = {
+            "Tymna the Weaver / Kraum, Ludevic's Opus": [
+                "Tymna the Weaver",
+                "Kraum, Ludevic's Opus",
+            ]
+        }
+        result = deduplicate_commanders_in_batch(commander_data)
+        self.assertEqual(len(result), 1)
+        self.assertIn("Tymna the Weaver / Kraum, Ludevic's Opus", result)
+
+    def test_deduplicate_commanders_merges_reversed_partner_pairs(self) -> None:
+        # When both orders of a partner pair are in the batch, keep only one
+        commander_data = {
+            "Tymna the Weaver / Kraum, Ludevic's Opus": [
+                "Tymna the Weaver",
+                "Kraum, Ludevic's Opus",
+            ],
+            "Kraum, Ludevic's Opus / Tymna the Weaver": [
+                "Kraum, Ludevic's Opus",
+                "Tymna the Weaver",
+            ],
+        }
+        result = deduplicate_commanders_in_batch(commander_data)
+        # Should keep only one entry for this pair
+        self.assertEqual(len(result), 1)
+        # The first occurrence should be kept
+        self.assertIn("Tymna the Weaver / Kraum, Ludevic's Opus", result)
+
+    def test_deduplicate_commanders_keeps_single_commanders(self) -> None:
+        commander_data = {
+            "Urza, Lord Artificer": ["Urza, Lord Artificer"],
+            "Rhystic Study": ["Rhystic Study"],
+        }
+        result = deduplicate_commanders_in_batch(commander_data)
+        self.assertEqual(len(result), 2)
+        self.assertIn("Urza, Lord Artificer", result)
+        self.assertIn("Rhystic Study", result)
 
 
 class IngestionJobLifecycleTests(unittest.TestCase):

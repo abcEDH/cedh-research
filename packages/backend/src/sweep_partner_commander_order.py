@@ -13,16 +13,17 @@ from backfill_moxfield_commanders import (
     fetch_topdeck_deck_page_details,
     load_credentials,
 )
+from commander_dedup import (
+    canonical_pair_key,
+    delete_commander_row,
+    repoint_tournament_entries,
+    update_commander_row,
+)
 from ingest import (
     PARTNER_ORDER_OVERRIDES,
     SupabaseClient,
     clean_commander_card_name,
 )
-
-
-def canonical_pair_key(names: list[str]) -> tuple[str, ...]:
-    cleaned = [clean_commander_card_name(name) for name in names if name and name.strip()]
-    return tuple(sorted(cleaned))
 
 
 def current_pair_order(row: dict) -> tuple[str, str] | None:
@@ -116,48 +117,6 @@ def choose_target_order(
     return sorted(top_orders)[0]
 
 
-def repoint_tournament_entries(
-    client: SupabaseClient,
-    source_commander_id: str,
-    target_commander_id: str,
-) -> None:
-    endpoint = f"{client.url}/rest/v1/tournament_entries"
-    response = requests.patch(
-        endpoint,
-        headers=client.headers,
-        params={"commander_id": f"eq.{source_commander_id}"},
-        json={"commander_id": target_commander_id},
-        timeout=60,
-    )
-    response.raise_for_status()
-
-
-def update_commander_row(
-    client: SupabaseClient,
-    commander_id: str,
-    target_name: str,
-    target_order: tuple[str, str],
-) -> None:
-    endpoint = f"{client.url}/rest/v1/commanders"
-    response = requests.patch(
-        endpoint,
-        headers=client.headers,
-        params={"id": f"eq.{commander_id}"},
-        json={"name": target_name, "commander_names": list(target_order)},
-        timeout=60,
-    )
-    response.raise_for_status()
-
-
-def delete_commander_row(client: SupabaseClient, commander_id: str) -> None:
-    endpoint = f"{client.url}/rest/v1/commanders"
-    response = requests.delete(
-        endpoint,
-        headers=client.headers,
-        params={"id": f"eq.{commander_id}"},
-        timeout=60,
-    )
-    response.raise_for_status()
 
 
 def main() -> None:

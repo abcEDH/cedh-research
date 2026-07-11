@@ -517,6 +517,54 @@ def sanitize_commander_payload(
     return canonical_name, [part.strip() for part in canonical_name.split(" / ") if part.strip()]
 
 
+def deduplicate_commanders_in_batch(
+    commander_data: dict[str, list[str]],
+) -> dict[str, list[str]]:
+    """Deduplicate partner commanders with the same canonical pair key.
+
+    When multiple versions of the same partner pair (e.g., "A / B" and "B / A")
+    appear in the same batch, keep only the canonical one.
+
+    Args:
+        commander_data: dict mapping canonical name -> individual commander names
+
+    Returns:
+        Deduplicated dict with single canonical entry per partner pair
+    """
+    # Group commanders by canonical pair key (for partner pairs only)
+    pair_groups: dict[tuple[str, ...], list[tuple[str, list[str]]]] = defaultdict(list)
+
+    for canonical_name, commander_names in commander_data.items():
+        # Only group by pair key for actual partner pairs
+        if len(commander_names) == 2:
+            # Get the canonical key (sorted cleaned names)
+            cleaned = [clean_commander_card_name(name) for name in commander_names if name and name.strip()]
+            if len(cleaned) == 2:
+                pair_key = tuple(sorted(cleaned))
+                pair_groups[pair_key].append((canonical_name, commander_names))
+        else:
+            # Keep non-pairs as-is
+            pair_groups[(canonical_name,)].append((canonical_name, commander_names))
+
+    # Rebuild dict, keeping only one canonical per pair
+    result = {}
+    for group_key, entries in pair_groups.items():
+        if len(entries) > 1:
+            # Multiple versions of the same pair - keep the first one
+            # (they should all normalize to the same canonical name anyway)
+            logger.info(
+                f"Deduplicating partner pair {group_key}: "
+                f"keeping {entries[0][0]}, discarding {[e[0] for e in entries[1:]]}"
+            )
+            result[entries[0][0]] = entries[0][1]
+        else:
+            # Single entry, keep as-is
+            name, names = entries[0]
+            result[name] = names
+
+    return result
+
+
 class DataIngester:
     """Main ingestion orchestrator."""
 
@@ -577,12 +625,19 @@ class DataIngester:
         return None
 
     def batch_upsert_commanders(self, commander_data: dict[str, list[str]]) -> dict[str, str]:
-        """Batch upsert commanders and return name -> id mapping."""
+        """Batch upsert commanders and return name -> id mapping.
+
+        Deduplicates partner pairs with the same canonical key to prevent
+        duplicate rows for pair variants like "A / B" vs "B / A".
+        """
         if not commander_data:
             return {}
 
+        # Deduplicate partner pairs in the batch
+        deduplicated = deduplicate_commanders_in_batch(commander_data)
+
         data = []
-        for name, names in commander_data.items():
+        for name, names in deduplicated.items():
             canonical_name, canonical_names = sanitize_commander_payload(name, names)
             data.append({"name": canonical_name, "commander_names": canonical_names})
 
