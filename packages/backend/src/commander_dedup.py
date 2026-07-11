@@ -47,8 +47,29 @@ def repoint_commander_matchups(
     with a foreign-key violation - after any tournament_entries repoint has
     already committed, leaving a half-merged duplicate. Must be called before
     delete_commander_row() for any merge that could touch matchup data.
+
+    If source and target already faced each other in some game, a blanket
+    repoint would turn that row into an invalid target-vs-target self-matchup
+    (corrupting aggregates like commander_head_to_head), so those rows are
+    deleted outright instead of repointed.
     """
     endpoint = f"{client.url}/rest/v1/commander_matchups"
+
+    for column, other_column in (
+        ("commander_id", "opponent_commander_id"),
+        ("opponent_commander_id", "commander_id"),
+    ):
+        delete_response = requests.delete(
+            endpoint,
+            headers=client.headers,
+            params={
+                column: f"eq.{source_commander_id}",
+                other_column: f"eq.{target_commander_id}",
+            },
+            timeout=60,
+        )
+        delete_response.raise_for_status()
+
     for column in ("commander_id", "opponent_commander_id"):
         response = requests.patch(
             endpoint,
