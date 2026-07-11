@@ -175,10 +175,14 @@ async function getTopRisingCommandersByTwoWeekTrend(): Promise<RisingCommander[]
 
 async function getCoreStats() {
   const sixMonthsAgo = new Date();
-  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-  // commander_monthly_trends.month_start_date is always the 1st of its month, so
-  // flooring here avoids excluding the entire cutoff month on any day after the 1st.
+  // Floor to the 1st *before* subtracting months: setMonth(getMonth() - 6) on a
+  // day that doesn't exist 6 months back (e.g. Aug 31 -> Feb 31) overflows into
+  // the following month, which would silently drop an extra month of history.
+  // commander_monthly_trends.month_start_date is always the 1st of its month,
+  // so flooring also avoids excluding the entire cutoff month on any day after
+  // the 1st.
   sixMonthsAgo.setDate(1);
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
   const sixMonthsAgoIso = sixMonthsAgo.toISOString().split("T")[0];
 
   // Fetch candidates with > 60 entries (only ~200 rows)

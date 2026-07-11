@@ -32,6 +32,16 @@ def fetch_oracle_ids_from_scryfall(timeout: float = 60.0) -> dict[str, str]:
     """Fetch oracle_id mapping from Scryfall bulk data.
 
     Returns mapping of card name -> oracle_id for all legal commander cards.
+
+    Uses the "default_cards" bulk dataset rather than "oracle_cards": the
+    oracle_cards feed collapses every printing down to a single representative
+    card object per oracle_id, so it only exposes one name per card. Universes
+    Beyond alternate-name/alternate-art printings share an oracle_id with their
+    mainline counterpart but have a *different* name, and that alternate name
+    would be missing from an oracle_cards-based map — silently leaving the
+    exact duplicate this script exists to find ungrouped. default_cards
+    includes one object per distinct printing (so every alternate name is
+    present), at the cost of a larger download.
     """
     bulk_url = "https://api.scryfall.com/bulk-data"
     bulk_response = requests.get(bulk_url, timeout=timeout)
@@ -39,11 +49,11 @@ def fetch_oracle_ids_from_scryfall(timeout: float = 60.0) -> dict[str, str]:
     bulk_payload = bulk_response.json()
     bulk_items = bulk_payload.get("data") or []
 
-    oracle_item = next((item for item in bulk_items if item.get("type") == "oracle_cards"), None)
-    if not oracle_item or not oracle_item.get("download_uri"):
-        raise RuntimeError("Unable to locate Scryfall oracle_cards bulk download")
+    cards_item = next((item for item in bulk_items if item.get("type") == "default_cards"), None)
+    if not cards_item or not cards_item.get("download_uri"):
+        raise RuntimeError("Unable to locate Scryfall default_cards bulk download")
 
-    cards_response = requests.get(oracle_item["download_uri"], timeout=timeout)
+    cards_response = requests.get(cards_item["download_uri"], timeout=timeout)
     cards_response.raise_for_status()
     cards = cards_response.json()
 

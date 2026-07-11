@@ -110,11 +110,54 @@ describe("Home Page Data Fetching", () => {
     // entire cutoff month is wrongly excluded on any day after the 1st.
     expect(source).toContain("sixMonthsAgo.setDate(1)");
 
+    // Verify setDate(1) runs BEFORE setMonth(-6): flooring after subtracting
+    // months overflows on days that don't exist 6 months back (e.g. Aug 31 ->
+    // Feb 31 rolls into March), silently dropping an extra month of history.
+    const setDateIndex = source.indexOf("sixMonthsAgo.setDate(1)");
+    const setMonthIndex = source.indexOf(
+      "sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)"
+    );
+    expect(setDateIndex).toBeGreaterThan(-1);
+    expect(setMonthIndex).toBeGreaterThan(-1);
+    expect(setDateIndex).toBeLessThan(setMonthIndex);
+
     // Verify the Win Rate Leaders label says "Active last 6mo" not "12mo"
     expect(source).toContain("Active last 6mo · 60+ entries");
     expect(source).not.toContain("Active last 12mo");
 
     // Verify commander_monthly_trends is filtered by 6 months
     expect(source).toContain('gte("month_start_date", sixMonthsAgoIso)');
+  });
+});
+
+describe("six-month activity cutoff arithmetic", () => {
+  // Mirrors the exact two-line computation in getCoreStats(). Kept as a
+  // standalone pure function so the date-overflow edge case is verified by
+  // real arithmetic, not just by grepping the source for line order.
+  function computeSixMonthsAgoIso(now: Date): string {
+    const sixMonthsAgo = new Date(now);
+    sixMonthsAgo.setDate(1);
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+    return sixMonthsAgo.toISOString().split("T")[0];
+  }
+
+  it("floors to month start without overflowing on a 31-day month", () => {
+    // Aug 31 minus 6 months, naively, would compute Feb 31 (doesn't exist) and
+    // overflow to March — flooring the day *first* avoids that entirely.
+    expect(computeSixMonthsAgoIso(new Date("2026-08-31T00:00:00Z"))).toBe(
+      "2026-02-01"
+    );
+  });
+
+  it("floors correctly for a mid-month date", () => {
+    expect(computeSixMonthsAgoIso(new Date("2026-07-11T00:00:00Z"))).toBe(
+      "2026-01-01"
+    );
+  });
+
+  it("handles the December-to-prior-year rollover", () => {
+    expect(computeSixMonthsAgoIso(new Date("2026-01-15T00:00:00Z"))).toBe(
+      "2025-07-01"
+    );
   });
 });
