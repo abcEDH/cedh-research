@@ -64,9 +64,20 @@ def fetch_oracle_ids_from_scryfall(timeout: float = 60.0) -> dict[str, str]:
         if legalities.get("commander") != "legal":
             continue
 
-        name = card.get("name", "")
         oracle_id = card.get("oracle_id", "")
-        if name and oracle_id:
+        if not oracle_id:
+            continue
+
+        # A Universes Beyond printing keeps the base Magic rules name in
+        # `name`, but shows a different name on the card itself via
+        # `flavor_name` (or `printed_name` for some non-English/promo prints).
+        # commander_names in our DB may have been recorded from any of these,
+        # so all three must map to the same oracle_id or the alternate-name
+        # duplicate this script exists to find would go unmatched.
+        for name_field in ("name", "flavor_name", "printed_name"):
+            name = card.get(name_field) or ""
+            if not name:
+                continue
             front_face = name.split(" // ", 1)[0].strip()
             cleaned = clean_commander_card_name(front_face)
             if cleaned:

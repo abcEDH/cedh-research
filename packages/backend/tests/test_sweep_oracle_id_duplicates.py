@@ -2,7 +2,7 @@ import sys
 import types
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 try:
     import requests as requests_module
@@ -33,6 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from sweep_oracle_id_duplicates import (  # noqa: E402
     build_oracle_group_key,
     choose_canonical_commander,
+    fetch_oracle_ids_from_scryfall,
 )
 
 
@@ -56,12 +57,8 @@ class BuildOracleGroupKeyTests(unittest.TestCase):
             "Tymna the Weaver": "oracle-tymna",
             "Kraum, Ludevic's Opus": "oracle-kraum",
         }
-        forward = build_oracle_group_key(
-            ["Tymna the Weaver", "Kraum, Ludevic's Opus"], name_to_oracle
-        )
-        reversed_ = build_oracle_group_key(
-            ["Kraum, Ludevic's Opus", "Tymna the Weaver"], name_to_oracle
-        )
+        forward = build_oracle_group_key(["Tymna the Weaver", "Kraum, Ludevic's Opus"], name_to_oracle)
+        reversed_ = build_oracle_group_key(["Kraum, Ludevic's Opus", "Tymna the Weaver"], name_to_oracle)
         self.assertEqual(forward, reversed_)
 
     def test_different_partner_pairs_sharing_one_card_do_not_collide(self) -> None:
@@ -73,12 +70,8 @@ class BuildOracleGroupKeyTests(unittest.TestCase):
             "Kraum, Ludevic's Opus": "oracle-kraum",
             "Thrasios, Triton Hero": "oracle-thrasios",
         }
-        tymna_kraum = build_oracle_group_key(
-            ["Tymna the Weaver", "Kraum, Ludevic's Opus"], name_to_oracle
-        )
-        tymna_thrasios = build_oracle_group_key(
-            ["Tymna the Weaver", "Thrasios, Triton Hero"], name_to_oracle
-        )
+        tymna_kraum = build_oracle_group_key(["Tymna the Weaver", "Kraum, Ludevic's Opus"], name_to_oracle)
+        tymna_thrasios = build_oracle_group_key(["Tymna the Weaver", "Thrasios, Triton Hero"], name_to_oracle)
         self.assertIsNotNone(tymna_kraum)
         self.assertIsNotNone(tymna_thrasios)
         self.assertNotEqual(tymna_kraum, tymna_thrasios)
@@ -87,9 +80,7 @@ class BuildOracleGroupKeyTests(unittest.TestCase):
         # Partial resolution must not produce a group key at all, since matching
         # only the resolved half of a pair risks merging unrelated commanders.
         name_to_oracle = {"Tymna the Weaver": "oracle-tymna"}
-        key = build_oracle_group_key(
-            ["Tymna the Weaver", "Some Unmapped Card"], name_to_oracle
-        )
+        key = build_oracle_group_key(["Tymna the Weaver", "Some Unmapped Card"], name_to_oracle)
         self.assertIsNone(key)
 
     def test_empty_commander_names_returns_none(self) -> None:
@@ -153,6 +144,57 @@ class ChooseCanonicalCommanderTests(unittest.TestCase):
             },
         ]
         self.assertIsNone(choose_canonical_commander(group))
+
+
+class FetchOracleIdsFromScryfallTests(unittest.TestCase):
+    """Regression coverage for indexing Universes Beyond flavor/printed names.
+
+    A UB reprint keeps the base Magic rules name in Scryfall's `name` field,
+    but shows a different name on the card via `flavor_name` (or
+    `printed_name` for some prints). Our DB's commander_names may have been
+    recorded from any of these, so all three must map to the same oracle_id -
+    indexing only `name` would leave real UB duplicates permanently unmatched.
+    """
+
+    @patch("sweep_oracle_id_duplicates.requests.get")
+    def test_indexes_name_flavor_name_and_printed_name_to_same_oracle_id(self, mock_get: Mock) -> None:
+        bulk_response = Mock()
+        bulk_response.json.return_value = {
+            "data": [
+                {"type": "default_cards", "download_uri": "https://example.com/default-cards.json"},
+            ]
+        }
+        bulk_response.raise_for_status = Mock()
+
+        # Use names that aren't in COMMANDER_NAME_ALIASES, so clean_commander_card_name
+        # passes them through unchanged and the test actually exercises the
+        # flavor_name/printed_name indexing rather than the pre-existing hardcoded
+        # alias substitution.
+        cards_response = Mock()
+        cards_response.json.return_value = [
+            {
+                "name": "Zethi, Arcane Blademaster",
+                "flavor_name": "Chun-Li, Countless Kicks",
+                "oracle_id": "oracle-zethi",
+                "legalities": {"commander": "legal"},
+            },
+            {
+                "name": "Some Other Card",
+                "printed_name": "Some Printed Variant",
+                "oracle_id": "oracle-other",
+                "legalities": {"commander": "legal"},
+            },
+        ]
+        cards_response.raise_for_status = Mock()
+
+        mock_get.side_effect = [bulk_response, cards_response]
+
+        name_to_oracle = fetch_oracle_ids_from_scryfall()
+
+        self.assertEqual(name_to_oracle["Zethi, Arcane Blademaster"], "oracle-zethi")
+        self.assertEqual(name_to_oracle["Chun-Li, Countless Kicks"], "oracle-zethi")
+        self.assertEqual(name_to_oracle["Some Other Card"], "oracle-other")
+        self.assertEqual(name_to_oracle["Some Printed Variant"], "oracle-other")
 
 
 if __name__ == "__main__":
