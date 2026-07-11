@@ -39,7 +39,7 @@ COMMANDER_RECENCY_HALF_LIFE_DAYS = 24
 ACTIVE_PLAYER_LOOKBACK_MONTHS = 6
 # Business rule: players with no tournaments in the last 6 months are excluded
 # from the public rankings (rank / topdeck_elo_rank), regardless of historical
-# games played or rating. See docs/decisions/0015-rank-activity-window-and-topdeck-snapshot-pruning.md.
+# games played or rating. See docs/decisions/0016-rank-activity-window-and-topdeck-snapshot-pruning.md.
 RANK_ACTIVITY_WINDOW_DAYS = 183
 REGION_COUNTRY_BY_STATE = {
     "AGDER": "NORWAY",

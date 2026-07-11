@@ -1,4 +1,4 @@
-# 0015 - Rank Activity Window and TopDeck Snapshot Pruning
+# 0016 - Rank Activity Window and TopDeck Snapshot Pruning
 
 ## Status
 Accepted

@@ -1,6 +1,6 @@
 """Regression tests for the TopDeck Elo importer's replace-snapshot pruning.
 
-See docs/decisions/0015-rank-activity-window-and-topdeck-snapshot-pruning.md:
+See docs/decisions/0016-rank-activity-window-and-topdeck-snapshot-pruning.md:
 `upsert_elo_rows` upserts the freshly fetched TopDeck Elo snapshot and deletes
 any `topdeck_player_elos` row not present in that snapshot, in the same
 transaction, so delisted players (e.g. banned cheaters) don't linger with a

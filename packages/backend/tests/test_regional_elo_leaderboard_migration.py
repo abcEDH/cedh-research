@@ -459,7 +459,7 @@ class RankActivityWindowTests(unittest.TestCase):
     """Regression tests for the 6-month (RANK_ACTIVITY_WINDOW_DAYS) activity
     rule: players with no tournaments in the last 6 months are excluded from
     the rankings, even if they have real historical games and a high
-    topdeck_elo. See docs/decisions/0015-rank-activity-window-and-topdeck-snapshot-pruning.md.
+    topdeck_elo. See docs/decisions/0016-rank-activity-window-and-topdeck-snapshot-pruning.md.
     """
 
     REFERENCE_DATE = date(2026, 7, 10)
