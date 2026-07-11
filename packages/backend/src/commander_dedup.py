@@ -6,8 +6,8 @@ from __future__ import annotations
 import requests
 
 from ingest import (
-    clean_commander_card_name,
     SupabaseClient,
+    clean_commander_card_name,
 )
 
 
@@ -32,6 +32,32 @@ def repoint_tournament_entries(
         timeout=60,
     )
     response.raise_for_status()
+
+
+def repoint_commander_matchups(
+    client: SupabaseClient,
+    source_commander_id: str,
+    target_commander_id: str,
+) -> None:
+    """Repoint commander_matchups rows from source commander to target commander.
+
+    commander_matchups.commander_id and .opponent_commander_id both have
+    non-cascading foreign keys to commanders(id). Deleting a commander row that
+    still has matchup rows pointing at it (via either column) fails the DELETE
+    with a foreign-key violation - after any tournament_entries repoint has
+    already committed, leaving a half-merged duplicate. Must be called before
+    delete_commander_row() for any merge that could touch matchup data.
+    """
+    endpoint = f"{client.url}/rest/v1/commander_matchups"
+    for column in ("commander_id", "opponent_commander_id"):
+        response = requests.patch(
+            endpoint,
+            headers=client.headers,
+            params={column: f"eq.{source_commander_id}"},
+            json={column: target_commander_id},
+            timeout=60,
+        )
+        response.raise_for_status()
 
 
 def update_commander_row(
@@ -74,6 +100,7 @@ def delete_commander_row(client: SupabaseClient, commander_id: str) -> None:
 __all__ = [
     "canonical_pair_key",
     "repoint_tournament_entries",
+    "repoint_commander_matchups",
     "update_commander_row",
     "delete_commander_row",
 ]

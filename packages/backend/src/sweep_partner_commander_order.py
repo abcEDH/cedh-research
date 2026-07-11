@@ -16,6 +16,7 @@ from backfill_moxfield_commanders import (
 from commander_dedup import (
     canonical_pair_key,
     delete_commander_row,
+    repoint_commander_matchups,
     repoint_tournament_entries,
     update_commander_row,
 )
@@ -117,6 +118,20 @@ def choose_target_order(
     return sorted(top_orders)[0]
 
 
+def build_report_line(
+    commander_id: str,
+    current_name: str,
+    target_name: str,
+    observations: str,
+    current_order: tuple[str, str],
+    target_order: tuple[str, str],
+    status: str,
+) -> str:
+    """Build one CSV report row for a partner-order sweep decision."""
+    return (
+        f'{commander_id},"{current_name}","{target_name}","{observations}",'
+        f'"{" / ".join(current_order)}","{" / ".join(target_order)}",{status}'
+    )
 
 
 def main() -> None:
@@ -161,12 +176,13 @@ def main() -> None:
                 if not source_key:
                     players = row.get("players") or {}
                     tournaments = row.get("tournaments") or {}
-                    source_key = f"{tournaments.get('topdeck_tid','')}::{players.get('topdeck_id','')}"
+                    source_key = f"{tournaments.get('topdeck_tid', '')}::{players.get('topdeck_id', '')}"
                 if source_key in seen_sources:
                     continue
                 seen_sources.add(source_key)
 
-                observed = observe_pair_order({**row, **{"commander_names": list(current_order)}}, session, args.timeout)
+                row_with_order = {**row, "commander_names": list(current_order)}
+                observed = observe_pair_order(row_with_order, session, args.timeout)
                 if not observed:
                     continue
                 observed_orders[observed] += 1
@@ -176,19 +192,22 @@ def main() -> None:
             target_order = choose_target_order(current_order, observed_orders)
         current_name = commander["name"]
         target_name = " / ".join(target_order)
-        observations = "; ".join(
-            f"{left} / {right}:{count}" for (left, right), count in observed_orders.most_common()
-        )
+        observations = "; ".join(f"{left} / {right}:{count}" for (left, right), count in observed_orders.most_common())
 
         if target_name != current_name:
             conflict_id = name_to_id.get(target_name)
             if conflict_id and conflict_id != commander["id"]:
                 if not args.dry_run:
                     repoint_tournament_entries(client, commander["id"], conflict_id)
+                    # commander_matchups has non-cascading FKs to commanders(id);
+                    # repoint before deleting or the delete fails on FK violation.
+                    repoint_commander_matchups(client, commander["id"], conflict_id)
                     delete_commander_row(client, commander["id"])
                 merged += 1
                 report_lines.append(
-                    f'{commander["id"]},"{current_name}","{target_name}","{observations}","{" / ".join(current_order)}","{" / ".join(target_order)}",merged'
+                    build_report_line(
+                        commander["id"], current_name, target_name, observations, current_order, target_order, "merged"
+                    )
                 )
                 continue
             if not args.dry_run:
@@ -197,11 +216,15 @@ def main() -> None:
             name_to_id[target_name] = commander["id"]
             updated += 1
             report_lines.append(
-                f'{commander["id"]},"{current_name}","{target_name}","{observations}","{" / ".join(current_order)}","{" / ".join(target_order)}",yes'
+                build_report_line(
+                    commander["id"], current_name, target_name, observations, current_order, target_order, "yes"
+                )
             )
         else:
             report_lines.append(
-                f'{commander["id"]},"{current_name}","{target_name}","{observations}","{" / ".join(current_order)}","{" / ".join(target_order)}",no'
+                build_report_line(
+                    commander["id"], current_name, target_name, observations, current_order, target_order, "no"
+                )
             )
 
     Path(args.report).parent.mkdir(parents=True, exist_ok=True)

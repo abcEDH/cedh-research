@@ -19,6 +19,7 @@ import requests
 from backfill_moxfield_commanders import load_credentials
 from commander_dedup import (
     delete_commander_row,
+    repoint_commander_matchups,
     repoint_tournament_entries,
 )
 from ingest import (
@@ -216,6 +217,10 @@ def main() -> None:
             if not args.dry_run:
                 # Repoint entries to canonical
                 repoint_tournament_entries(client, duplicate["id"], canonical_id)
+                # Repoint matchup rows too - commander_matchups has non-cascading
+                # FKs, so leaving these pointed at the duplicate would make the
+                # delete below fail with a foreign-key violation.
+                repoint_commander_matchups(client, duplicate["id"], canonical_id)
                 # Delete duplicate
                 delete_commander_row(client, duplicate["id"])
 
