@@ -1103,7 +1103,13 @@ def build_active_leaderboard_rows(
         partitions[(row["region_type"], row["region_key"])].append(row)
 
     for partition_rows in partitions.values():
-        partition_rows.sort(
+        # Separate rated (games_played > 0) from unrated (games_played == 0) players.
+        # Unrated players have no real rating data and should never rank above rated players.
+        rated_rows = [r for r in partition_rows if int(r.get("games_played") or 0) > 0]
+        unrated_rows = [r for r in partition_rows if int(r.get("games_played") or 0) == 0]
+
+        # Sort rated players by rating DESC, activity_score DESC, games_played DESC, name ASC
+        rated_rows.sort(
             key=lambda r: (
                 -float(r.get("rating") or 0),
                 -float(r.get("activity_score") or 0),
@@ -1111,7 +1117,14 @@ def build_active_leaderboard_rows(
                 str(r.get("player_name") or ""),
             )
         )
-        for index, row in enumerate(partition_rows, start=1):
+
+        # Sort unrated players by name for determinism
+        unrated_rows.sort(key=lambda r: str(r.get("player_name") or ""))
+
+        # Assign ranks: rated players first, then unrated
+        for index, row in enumerate(rated_rows, start=1):
+            row["rank"] = index
+        for index, row in enumerate(unrated_rows, start=len(rated_rows) + 1):
             row["rank"] = index
 
     assign_topdeck_elo_ranks(leaderboard_rows)

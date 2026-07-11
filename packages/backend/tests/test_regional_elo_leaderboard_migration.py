@@ -235,6 +235,73 @@ class BuildActiveLeaderboardRowsTests(unittest.TestCase):
         self.assertEqual(ranks_by_name["High Activity"], 1)
         self.assertEqual(ranks_by_name["Low Activity"], 2)
 
+    def test_unrated_player_does_not_outrank_rated_player(self) -> None:
+        """Regression test for issue #252: unrated players should not rank above rated players."""
+        rows = regional_elo.build_active_leaderboard_rows(
+            ratings_rows=[
+                {
+                    "region_type": "global",
+                    "region_key": "ALL",
+                    "player_id": "unrated-player",
+                    "rating": None,  # No rating (never played games)
+                    "games_played": 0,
+                    "wins": 0,
+                    "draws": 0,
+                    "losses": 0,
+                },
+                {
+                    "region_type": "global",
+                    "region_key": "ALL",
+                    "player_id": "rated-player-positive",
+                    "rating": 1700,
+                    "games_played": 5,
+                    "wins": 3,
+                    "draws": 0,
+                    "losses": 2,
+                },
+                {
+                    "region_type": "global",
+                    "region_key": "ALL",
+                    "player_id": "rated-player-negative",
+                    "rating": 1400,  # Legitimately low rating from losses
+                    "games_played": 3,
+                    "wins": 0,
+                    "draws": 0,
+                    "losses": 3,
+                },
+            ],
+            player_index={
+                "unrated-player": {
+                    "id": "unrated-player",
+                    "name": "Unrated Player",
+                    "topdeck_id": "topdeck-unrated",
+                },
+                "rated-player-positive": {
+                    "id": "rated-player-positive",
+                    "name": "Positive Rated",
+                    "topdeck_id": "topdeck-positive",
+                },
+                "rated-player-negative": {
+                    "id": "rated-player-negative",
+                    "name": "Negative Rated",
+                    "topdeck_id": "topdeck-negative",
+                },
+            },
+            topdeck_elo_by_topdeck_id={},
+            state_stats_by_player={},
+            updated_at="2026-05-01T00:00:00+00:00",
+        )
+
+        ranks_by_name = {
+            row["player_name"]: row["rank"]
+            for row in rows
+            if row["region_type"] == "global"
+        }
+        # Unrated player should rank last, not first
+        self.assertEqual(ranks_by_name["Positive Rated"], 1)
+        self.assertEqual(ranks_by_name["Negative Rated"], 2)
+        self.assertEqual(ranks_by_name["Unrated Player"], 3)
+
     def test_stale_cleanup_uses_minimal_return_and_runs_outside_nonempty_guard(self) -> None:
         source = Path(regional_elo.__file__).read_text()
 
