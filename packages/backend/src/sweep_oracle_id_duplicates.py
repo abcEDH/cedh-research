@@ -12,10 +12,8 @@ import requests
 
 from backfill_moxfield_commanders import load_credentials
 from commander_dedup import (
-    canonical_pair_key,
     delete_commander_row,
     repoint_tournament_entries,
-    update_commander_row,
 )
 from ingest import (
     SupabaseClient,
