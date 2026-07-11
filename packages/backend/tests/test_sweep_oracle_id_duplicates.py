@@ -30,7 +30,10 @@ sys.modules.setdefault("dateutil.parser", dateutil_parser_module)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from sweep_oracle_id_duplicates import build_oracle_group_key  # noqa: E402
+from sweep_oracle_id_duplicates import (  # noqa: E402
+    build_oracle_group_key,
+    choose_canonical_commander,
+)
 
 
 class BuildOracleGroupKeyTests(unittest.TestCase):
@@ -91,6 +94,44 @@ class BuildOracleGroupKeyTests(unittest.TestCase):
 
     def test_empty_commander_names_returns_none(self) -> None:
         self.assertIsNone(build_oracle_group_key([], {}))
+
+
+class ChooseCanonicalCommanderTests(unittest.TestCase):
+    """Tests for canonical-row selection during an oracle_id merge.
+
+    Regression coverage for keeping an alias row (e.g. "Chief Jim Hopper") as
+    canonical instead of its normalized target ("Sophina, Spearsage Deserter",
+    per COMMANDER_NAME_ALIASES): a future ingestion run normalizes new entries
+    straight to the canonical name, finds no row for it since it was deleted,
+    and recreates the duplicate the sweep was meant to remove.
+    """
+
+    def test_prefers_already_normalized_row_over_alphabetically_first(self) -> None:
+        group = [
+            {
+                "id": "alias-row",
+                "name": "Chief Jim Hopper",
+                "commander_names": ["Chief Jim Hopper"],
+            },
+            {
+                "id": "canonical-row",
+                "name": "Sophina, Spearsage Deserter",
+                "commander_names": ["Sophina, Spearsage Deserter"],
+            },
+        ]
+        chosen = choose_canonical_commander(group)
+        self.assertEqual(chosen["id"], "canonical-row")
+
+    def test_falls_back_to_first_row_when_none_are_normalized(self) -> None:
+        # Neither row's stored name matches clean_commander_card_name's output
+        # for itself (e.g. both are raw/unnormalized); there's no clearly-better
+        # choice, so the first row (by the caller's sort order) is kept.
+        group = [
+            {"id": "row-a", "name": "Some Weird Name [Foo]", "commander_names": ["Urza"]},
+            {"id": "row-b", "name": "Another Weird Name [Bar]", "commander_names": ["Urza"]},
+        ]
+        chosen = choose_canonical_commander(group)
+        self.assertEqual(chosen["id"], "row-a")
 
 
 if __name__ == "__main__":

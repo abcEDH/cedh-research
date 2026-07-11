@@ -176,6 +176,9 @@ async function getTopRisingCommandersByTwoWeekTrend(): Promise<RisingCommander[]
 async function getCoreStats() {
   const sixMonthsAgo = new Date();
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+  // commander_monthly_trends.month_start_date is always the 1st of its month, so
+  // flooring here avoids excluding the entire cutoff month on any day after the 1st.
+  sixMonthsAgo.setDate(1);
   const sixMonthsAgoIso = sixMonthsAgo.toISOString().split("T")[0];
 
   // Fetch candidates with > 60 entries (only ~200 rows)

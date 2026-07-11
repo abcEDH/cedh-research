@@ -105,6 +105,11 @@ describe("Home Page Data Fetching", () => {
     // Verify getCoreStats filters by 6 months (setMonth(getMonth() - 6))
     expect(source).toContain("sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)");
 
+    // Verify the cutoff is floored to month start, since commander_monthly_trends
+    // stores month_start_date as the 1st of the month — without flooring, the
+    // entire cutoff month is wrongly excluded on any day after the 1st.
+    expect(source).toContain("sixMonthsAgo.setDate(1)");
+
     // Verify the Win Rate Leaders label says "Active last 6mo" not "12mo"
     expect(source).toContain("Active last 6mo · 60+ entries");
     expect(source).not.toContain("Active last 12mo");

@@ -24,6 +24,7 @@ from commander_dedup import (
 from ingest import (
     SupabaseClient,
     clean_commander_card_name,
+    normalize_commander_name,
 )
 
 
@@ -91,6 +92,27 @@ def build_oracle_group_key(
     return tuple(sorted(oracle_ids))
 
 
+def choose_canonical_commander(group: list[dict]) -> dict:
+    """Pick the row to keep when merging an oracle_id duplicate group.
+
+    Keeping an un-normalized alias row (e.g. "Chief Jim Hopper" instead of its
+    canonical "Sophina, Spearsage Deserter", per COMMANDER_NAME_ALIASES) would
+    mean the next ingestion run normalizes new entries to the canonical name,
+    finds no existing row for it (since it was just deleted), and recreates the
+    very duplicate this sweep was meant to remove. Prefer the row whose stored
+    `name` already equals its own normalized form; only fall back to the first
+    row (by the caller's sort order) if none qualify.
+    """
+    normalized_matches = [
+        commander
+        for commander in group
+        if commander.get("name") == normalize_commander_name(commander.get("commander_names") or [])
+    ]
+    if normalized_matches:
+        return normalized_matches[0]
+    return group[0]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Sweep to deduplicate Universes Beyond oracle_id variants.")
     parser.add_argument(
@@ -144,12 +166,14 @@ def main() -> None:
         if len(group) <= 1:
             continue
 
-        # Multiple commanders with same full oracle-id identity - merge them
-        canonical = group[0]
+        # Multiple commanders with same full oracle-id identity - merge them,
+        # preferring the already-normalized row as canonical (see
+        # choose_canonical_commander) rather than an alphabetically-first alias.
+        canonical = choose_canonical_commander(group)
         canonical_id = canonical["id"]
         canonical_name = canonical["name"]
 
-        duplicates = group[1:]
+        duplicates = [cmd for cmd in group if cmd["id"] != canonical_id]
         duplicate_names = [cmd["name"] for cmd in duplicates]
         oracle_key_str = "+".join(oracle_key)
 
