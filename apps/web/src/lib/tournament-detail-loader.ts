@@ -5,7 +5,6 @@ import {
   distributionFromStandings,
   type Standing,
   type TournamentDetail,
-  tournamentPoints,
 } from "@/lib/tournaments";
 
 type TournamentRow = {
@@ -141,7 +140,6 @@ function toStanding(entry: EntryRow, topdeckTid: string, index: number, cutSize:
     wins: entry.wins || (entry.points ? Math.floor(entry.points / 5) : 0),
     losses: entry.losses ?? 0,
     draws: entry.draws || (entry.points ? entry.points % 5 : 0),
-    points: entry.points ?? tournamentPoints(entry.wins ?? 0, entry.draws ?? 0),
     cut: cutLabel(rank, cutSize, Boolean(entry.made_top_cut), Boolean(entry.made_top_16)),
     decklistUrl,
     topdeckId,

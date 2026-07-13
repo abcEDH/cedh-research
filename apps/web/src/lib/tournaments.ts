@@ -28,7 +28,6 @@ export interface Standing {
   wins: number;
   losses: number;
   draws: number;
-  points: number;
   cut: "Champion" | "Top 2" | "Top 4" | "Top 10" | "Top 16" | "Top 32" | "Top 40" | "—";
   decklistUrl?: string | null;
   topdeckId?: string | null;
@@ -106,10 +105,6 @@ export function assignEventTier(players: number): EventTier {
 
 export function colorLetters(colors: string): string[] {
   return colors.split("").filter(Boolean);
-}
-
-export function tournamentPoints(wins: number, draws: number) {
-  return wins * 5 + draws;
 }
 
 export function distributionFromStandings(standings: Standing[]): { topCutDist: CommanderDistEntry[]; overallDist: CommanderDistEntry[] } {
