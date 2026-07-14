@@ -1,3 +1,11 @@
+## [1.22.2](https://github.com/abcEDH/cedh-research/compare/v1.22.1...v1.22.2) (2026-07-14)
+
+
+### Bug Fixes
+
+* **schema:** allow nullable SUM/AVG aggregates in CommanderStatsSchema ([5223bb8](https://github.com/abcEDH/cedh-research/commit/5223bb8a3799c28272224aee59d253a5ed9937cb)), closes [#262](https://github.com/abcEDH/cedh-research/issues/262)
+* **tests:** make commander_stats contract test query deterministic ([8c7cd13](https://github.com/abcEDH/cedh-research/commit/8c7cd13dcc0a38f2768538b75b04e9ccee00503e)), closes [#262](https://github.com/abcEDH/cedh-research/issues/262)
+
 ## [1.22.1](https://github.com/abcEDH/cedh-research/compare/v1.22.0...v1.22.1) (2026-07-14)
 
 
