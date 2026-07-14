@@ -10,7 +10,7 @@ test.describe("Home Page", () => {
     await expect(page.getByRole("heading", { name: /competitive Intelligence for cEDH/i })).toBeVisible();
   });
 
-  test("displays global leaderboard table with internal links", async ({ page }) => {
+  test("displays global leaderboard table with internal links", async ({ page, isMobile }) => {
     await expect(page.getByText("Global Leaderboard")).toBeVisible();
     await expect(page.getByRole("link", { name: "Full View" })).toHaveAttribute(
       "href",
@@ -20,7 +20,13 @@ test.describe("Home Page", () => {
     const leaderboardTable = page.getByTestId("global-leaderboard-table");
     await expect(leaderboardTable).toBeVisible();
     await expect(leaderboardTable.getByRole("columnheader", { name: "Elo" }).first()).toBeVisible();
-    await expect(leaderboardTable.getByRole("columnheader", { name: "Commander" }).first()).toBeVisible();
+    // The Commander column is dropped below the sm: breakpoint (column priority).
+    const commanderHeader = leaderboardTable.getByRole("columnheader", { name: "Commander" }).first();
+    if (isMobile) {
+      await expect(commanderHeader).toBeHidden();
+    } else {
+      await expect(commanderHeader).toBeVisible();
+    }
 
     const playerLinks = leaderboardTable.locator('a[href^="/regional-elo/player/"]');
     const playerLinkCount = await playerLinks.count();
@@ -49,7 +55,7 @@ test.describe("Home Page", () => {
     await expect(page).toHaveURL(/\/tournament-likelihood/);
   });
 
-  test("navigation links are valid", async ({ page }) => {
+  test("navigation links are valid", async ({ page, isMobile }) => {
     const navPaths = [
       "/tournament-likelihood",
       "/regional-elo",
@@ -57,9 +63,18 @@ test.describe("Home Page", () => {
       "/about",
     ];
 
-    for (const path of navPaths) {
-      const link = page.locator(`header nav a[href="${path}"]`).first();
-      await expect(link).toBeVisible();
+    if (isMobile) {
+      // Mobile keeps the nav links in the hamburger drawer, not the header row.
+      await page.getByRole("button", { name: /open navigation menu/i }).click();
+      const drawer = page.getByRole("dialog");
+      for (const path of navPaths) {
+        await expect(drawer.locator(`a[href="${path}"]`).first()).toBeVisible();
+      }
+    } else {
+      for (const path of navPaths) {
+        const link = page.locator(`header nav a[href="${path}"]`).first();
+        await expect(link).toBeVisible();
+      }
     }
   });
 });

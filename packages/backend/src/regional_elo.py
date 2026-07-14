@@ -37,6 +37,10 @@ COMMANDER_FALLBACK_LOOKBACK_MONTHS = 12
 COMMANDER_MIN_PRIMARY_ENTRIES = 2
 COMMANDER_RECENCY_HALF_LIFE_DAYS = 24
 ACTIVE_PLAYER_LOOKBACK_MONTHS = 6
+# Business rule: players with no tournaments in the last 6 months are excluded
+# from the public rankings (rank / topdeck_elo_rank), regardless of historical
+# games played or rating. See docs/decisions/0016-rank-activity-window-and-topdeck-snapshot-pruning.md.
+RANK_ACTIVITY_WINDOW_DAYS = 183
 REGION_COUNTRY_BY_STATE = {
     "AGDER": "NORWAY",
     "ALABAMA": "UNITED STATES",
@@ -923,21 +927,44 @@ ACTIVE_LEADERBOARD_BATCH_SIZE = 1000
 
 def assign_topdeck_elo_ranks(
     rows: list[dict[str, Any]],
+    reference_date: date | None = None,
 ) -> None:
     """Assign topdeck_elo_rank within each (region_type, region_key) partition.
 
-    Rows are sorted by topdeck_elo DESC with NULLs last; rows whose
-    topdeck_elo is None receive rank = None. Ties are broken stably by
-    rating DESC, then player_name ASC for deterministic ordering. Mutates
-    rows in place by setting the ``topdeck_elo_rank`` field.
+    Eligible rows -- those with a non-null topdeck_elo AND at least one
+    games-backed record in this app AND recent activity within
+    ``RANK_ACTIVITY_WINDOW_DAYS`` (see ``_is_topdeck_rank_eligible``) -- are
+    sorted by topdeck_elo DESC, ties broken stably by rating DESC, then player_name
+    ASC for deterministic ordering. All other rows receive rank = None,
+    including rows with a non-null topdeck_elo but zero recorded games, and
+    rows whose most recent recorded game is older than the activity window.
+
+    topdeck_elo is imported independently from TopDeck.gg's own published
+    Elo snapshot (see ``import_topdeck_player_elos.py``) and is keyed only by
+    a player's external topdeck_id, so it can be populated for a player who
+    has never actually recorded a game in this app's data. Without the
+    games-played gate, that external rating -- which reflects no real
+    competitive standing here -- could rank a zero-game player ahead of (or
+    at rank 1 above) players with real, games-backed rankings, which is the
+    same class of bug fixed for the ``rank`` field in
+    ``build_active_leaderboard_rows`` (#252). Mutates rows in place by
+    setting the ``topdeck_elo_rank`` field.
+
+    ``reference_date`` is the date the activity window is measured against;
+    it defaults to today (UTC) and is only overridden in tests.
     """
     partitions: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
         partitions[(row.get("region_type", ""), row.get("region_key", ""))].append(row)
 
     for partition_rows in partitions.values():
-        ranked = [r for r in partition_rows if r.get("topdeck_elo") is not None]
-        unranked = [r for r in partition_rows if r.get("topdeck_elo") is None]
+        ranked = []
+        unranked = []
+        for r in partition_rows:
+            if _is_topdeck_rank_eligible(r, reference_date):
+                ranked.append(r)
+            else:
+                unranked.append(r)
         ranked.sort(
             key=lambda r: (
                 -float(r.get("topdeck_elo") or 0),
@@ -1006,12 +1033,17 @@ def build_active_leaderboard_rows(
     state_stats_by_player: Mapping[str, Mapping[str, Any]],
     updated_at: str,
     canonical_counts_by_player: Mapping[str, Mapping[str, Any]] | None = None,
+    reference_date: date | None = None,
 ) -> list[dict[str, Any]]:
     """Materialise active leaderboard rows for global, country, and state slices.
 
     Mirrors the shape produced by the regional_elo_leaderboard view but is
     persisted to the leaderboard table so PostgREST can serve the data
     without joining to topdeck_player_elos at request time.
+
+    ``reference_date`` anchors the "no tournaments in the last 6 months"
+    activity gate (``RANK_ACTIVITY_WINDOW_DAYS``, see ``_is_rank_eligible``);
+    it defaults to today (UTC) and is only overridden in tests.
     """
     leaderboard_rows: list[dict[str, Any]] = []
     for rating_row in ratings_rows:
@@ -1027,26 +1059,35 @@ def build_active_leaderboard_rows(
         if not player:
             continue
 
-        rating = _coerce_float(rating_row.get("rating")) or DEFAULT_RATING
+        rating = _coerce_float(rating_row.get("rating"))
+        if rating is None:
+            rating = DEFAULT_RATING
         canonical = (canonical_counts_by_player or {}).get(player_id)
+        state_stats = state_stats_by_player.get(player_id) or {}
         if canonical is not None:
             games_played = int(canonical.get("games_played") or 0)
             wins = int(canonical.get("wins") or 0)
             draws = int(canonical.get("draws") or 0)
             losses = int(canonical.get("losses") or 0)
+            # Prefer the canonical global last_game_date over the primary-state
+            # one below: a player's most recent game is often played while
+            # traveling outside their primary state, so gating eligibility on
+            # the primary-state-only date would wrongly mark active players as
+            # inactive. Falls back to the primary-state date only when no
+            # canonical row exists at all (see the `else` branch).
+            last_game_date = canonical.get("last_game_date") or state_stats.get("last_game_date")
         else:
             games_played = int(rating_row.get("games_played") or 0)
             wins = int(rating_row.get("wins") or 0)
             draws = int(rating_row.get("draws") or 0)
             losses = int(rating_row.get("losses") or 0)
+            last_game_date = state_stats.get("last_game_date")
         topdeck_id = player.get("topdeck_id")
         topdeck_elo = topdeck_elo_by_topdeck_id.get(str(topdeck_id)) if topdeck_id else None
 
-        state_stats = state_stats_by_player.get(player_id) or {}
         primary_country_key = state_stats.get("country_key") or ""
         primary_region_key = state_stats.get("region_key") or ""
         activity_score = _coerce_float(state_stats.get("activity_score"))
-        last_game_date = state_stats.get("last_game_date")
 
         base_row: dict[str, Any] = {
             "player_id": player_id,
@@ -1103,19 +1144,123 @@ def build_active_leaderboard_rows(
         partitions[(row["region_type"], row["region_key"])].append(row)
 
     for partition_rows in partitions.values():
-        partition_rows.sort(
-            key=lambda r: (
-                -float(r.get("rating") or 0),
-                -float(r.get("activity_score") or 0),
-                -int(r.get("games_played") or 0),
-                str(r.get("player_name") or ""),
-            )
-        )
-        for index, row in enumerate(partition_rows, start=1):
-            row["rank"] = index
+        # Players with zero games sit at DEFAULT_RATING (an anchor/mean value,
+        # not a real competitive signal) because create_empty_ratings_row seeds
+        # every tracked player at that value before any games are processed.
+        # Real ratings can legitimately drift below that anchor (or below zero)
+        # for players who have actually played, so ranking purely on the numeric
+        # rating value lets a zero-game player's sentinel rating outrank -- and
+        # even land at rank 1 ahead of -- players with real, hard-earned
+        # ratings. Only players with at least one recorded game AND recent
+        # activity (within RANK_ACTIVITY_WINDOW_DAYS of reference_date) are
+        # eligible for a rating-based rank at all; everyone else gets
+        # rank = None rather than a fallback ordinal. Several apps/web read
+        # paths fall back to `rank` whenever `topdeck_elo_rank` is null, so a
+        # non-null fallback rank would let an inactive/zero-game player show
+        # up with what looks like a real rank badge again (Codex P2 review
+        # finding on PR #263).
+        eligible_rows = [r for r in partition_rows if _is_rank_eligible(r, reference_date)]
+        ineligible_rows = [r for r in partition_rows if not _is_rank_eligible(r, reference_date)]
 
-    assign_topdeck_elo_ranks(leaderboard_rows)
+        eligible_rows.sort(key=_leaderboard_rank_sort_key)
+
+        for index, row in enumerate(eligible_rows, start=1):
+            row["rank"] = index
+        for row in ineligible_rows:
+            row["rank"] = None
+
+    assign_topdeck_elo_ranks(leaderboard_rows, reference_date)
     return leaderboard_rows
+
+
+def _parse_last_game_date(value: Any) -> date | None:
+    """Parse a `last_game_date` value that may arrive as a `date`, a
+    `datetime`, an ISO date/datetime string, or `None` -- the exact shape
+    depends on whether the row was built in Python or round-tripped through a
+    PostgREST JSON response. Returns None if the value is missing, empty, or
+    unparseable so callers can treat it as "no known activity" rather than
+    raising.
+    """
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value[:10])
+        except ValueError:
+            return None
+    return None
+
+
+def _is_recently_active(last_game_date: Any, reference_date: date | None = None) -> bool:
+    """Return True if `last_game_date` is within RANK_ACTIVITY_WINDOW_DAYS
+    (183 days) of `reference_date` (defaults to today, UTC).
+
+    Implements the "players with no tournaments in the last 6 months are
+    excluded from the rankings" business rule. A missing or unparseable
+    `last_game_date` is treated as ineligible rather than defaulting to
+    active, since we have no evidence of recent play.
+    """
+    parsed = _parse_last_game_date(last_game_date)
+    if parsed is None:
+        return False
+    if reference_date is None:
+        reference_date = utc_now().date()
+    return (reference_date - parsed).days <= RANK_ACTIVITY_WINDOW_DAYS
+
+
+def _is_rank_eligible(row: Mapping[str, Any], reference_date: date | None = None) -> bool:
+    """Return True if *row* has a real, games-backed rating AND recent activity.
+
+    Zero-game players are seeded with the DEFAULT_RATING anchor rather than a
+    genuine computed rating, so they must never be eligible to outrank (or, in
+    the worst case, become rank 1 ahead of) a player with a real rating -
+    including a legitimately negative one.
+
+    Additionally, a player whose most recent recorded game (`last_game_date`)
+    is older than RANK_ACTIVITY_WINDOW_DAYS (183 days, ~6 months) relative to
+    `reference_date` is excluded from ranking regardless of games played or
+    rating -- the "no tournaments in the last 6 months" business rule.
+    """
+    games_played = row.get("games_played")
+    try:
+        if int(games_played or 0) <= 0:
+            return False
+    except (TypeError, ValueError):
+        return False
+    return _is_recently_active(row.get("last_game_date"), reference_date)
+
+
+def _is_topdeck_rank_eligible(row: Mapping[str, Any], reference_date: date | None = None) -> bool:
+    """Return True if *row* is eligible for a topdeck_elo_rank.
+
+    Composes the shared games-backed + recent-activity gate
+    (``_is_rank_eligible``) with the topdeck_elo-specific requirement that
+    the row actually has an imported topdeck_elo value. Kept separate from
+    ``_is_rank_eligible`` itself because that helper is also used for the
+    unrelated, purely rating-based ``rank`` field in
+    ``build_active_leaderboard_rows``, which must stay eligible for players
+    who have no topdeck_elo at all.
+    """
+    return row.get("topdeck_elo") is not None and _is_rank_eligible(row, reference_date)
+
+
+def _leaderboard_rank_sort_key(r: Mapping[str, Any]) -> tuple[float, float, int, str]:
+    """Sort key for rating rank: highest rating first, ties broken by activity,
+    then games played, then name. A missing rating sorts last rather than
+    being coerced to 0 (which could beat a real negative rating); missing
+    activity_score/games_played fall back to 0, the correct "no activity"
+    floor for those fields."""
+    rating = r.get("rating")
+    activity_score = r.get("activity_score")
+    games_played = r.get("games_played")
+    return (
+        -float(rating) if rating is not None else float("inf"),
+        -float(activity_score) if activity_score is not None else 0.0,
+        -int(games_played) if games_played is not None else 0,
+        str(r.get("player_name") or ""),
+    )
 
 
 def fetch_player_index(client: SupabaseClient) -> dict[str, dict[str, Any]]:
@@ -1169,12 +1314,18 @@ def fetch_primary_state_stats(client: SupabaseClient) -> dict[str, dict[str, Any
     return by_player
 
 
-def fetch_canonical_event_counts(client: SupabaseClient) -> dict[str, dict[str, int]]:
-    """Return per-player canonical game counts from the leaderboard view.
+def fetch_canonical_event_counts(client: SupabaseClient) -> dict[str, dict[str, Any]]:
+    """Return per-player canonical game counts and last_game_date from the
+    leaderboard view.
 
     The view aggregates from global_elo_game_events, which is the ground-truth
     source. Bypasses the stale accumulator columns in global_elo_ratings that
     drift when full recomputes run multiple times.
+
+    ``last_game_date`` here is the player's true global last game date, unlike
+    the primary-state-only date from ``fetch_primary_state_stats`` -- it must
+    be used for activity-eligibility checks so a player who last played while
+    traveling outside their primary state isn't wrongly marked inactive.
 
     Must be called after game events for the current run have been upserted.
     """
@@ -1182,7 +1333,7 @@ def fetch_canonical_event_counts(client: SupabaseClient) -> dict[str, dict[str, 
         client,
         "regional_elo_leaderboard",
         {
-            "select": "player_id,games_played,wins,losses,draws",
+            "select": "player_id,games_played,wins,losses,draws,last_game_date",
             "region_type": f"eq.{GLOBAL_REGION_TYPE}",
             "region_key": f"eq.{GLOBAL_REGION_KEY}",
         },
@@ -1193,6 +1344,7 @@ def fetch_canonical_event_counts(client: SupabaseClient) -> dict[str, dict[str, 
             "wins": int(row.get("wins") or 0),
             "losses": int(row.get("losses") or 0),
             "draws": int(row.get("draws") or 0),
+            "last_game_date": row.get("last_game_date"),
         }
         for row in rows
         if row.get("player_id")
