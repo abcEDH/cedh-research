@@ -1,3 +1,12 @@
+## [1.22.3](https://github.com/abcEDH/cedh-research/compare/v1.22.2...v1.22.3) (2026-07-14)
+
+
+### Bug Fixes
+
+* check Scryfall printed_name too, restore real Stranger Things aliases ([cd86f3b](https://github.com/abcEDH/cedh-research/commit/cd86f3b510496c141a4ab16a9f1956b12e3cac74))
+* include extras in commander alias search, add rate-limit retry ([6337260](https://github.com/abcEDH/cedh-research/commit/633726049942f533ce14133bdd4daeeabc859c40))
+* regenerate real commander_oracle_aliases.json, remove fabricated aliases ([24b41e7](https://github.com/abcEDH/cedh-research/commit/24b41e7d1496f3aa7c02c0688f77dba5cf5dc269))
+
 ## [1.22.2](https://github.com/abcEDH/cedh-research/compare/v1.22.1...v1.22.2) (2026-07-14)
 
 
