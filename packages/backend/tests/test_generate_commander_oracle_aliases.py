@@ -93,7 +93,7 @@ class WriteOutputTests(unittest.TestCase):
             list(payload["aliases"].keys()),
             ["Chief Jim Hopper", "Totally Radical Skater"],
         )
-        self.assertEqual(payload["source"]["dataset"], "default_cards")
+        self.assertEqual(payload["source"]["dataset"], "commander_eligible_prints")
         self.assertIn("generated_at", payload)
 
 

@@ -161,14 +161,17 @@ def clean_commander_card_name(name: str) -> str:
 
 
 COMMANDER_NAME_ALIASES: dict[str, str] = {
-    "Chief Jim Hopper": "Sophina, Spearsage Deserter",
-    "Dustin, Gadget Genius": "Hargilde, Kindly Runechanter",
-    "Eleven, the Mage": "Cecily, Haunted Mage",
-    "Lucas, the Sharpshooter": "Bjorna, Nightfall Alchemist",
-    "Max, the Daredevil": "Elmar, Ulvenwald Informant",
-    "Mike, the Dungeon Master": "Othelm, Sigardian Outcast",
-    "Mind Flayer, the Shadow": "Arvinox, the Mind Flail",
-    "Will the Wise": "Wernog, Rider's Chaplain",
+    # Previously seeded with 8 "Secret Lair x Stranger Things" character-name
+    # -> Innistrad-commander mappings (e.g. "Chief Jim Hopper" -> "Sophina,
+    # Spearsage Deserter"). Verified against live Scryfall data while
+    # investigating PR #265's Codex review: that Secret Lair drop is a real
+    # Universes Beyond product (promo_types includes "universesbeyond"), but
+    # none of its printings actually carry a `flavor_name` -- Wizards kept
+    # the original card names and only changed the art, so none of those 8
+    # flavor names exist anywhere in Scryfall's data. Removed as fabricated.
+    # Add real hand-curated overrides here only when verified against an
+    # actual Scryfall `flavor_name` (see `load_commander_oracle_aliases()`
+    # below for the generated, Scryfall-verified alias source).
 }
 
 

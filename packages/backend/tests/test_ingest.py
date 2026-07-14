@@ -102,9 +102,6 @@ class ExtractStandingRatesTests(unittest.TestCase):
 
 
 class CommanderNormalizationTests(unittest.TestCase):
-    def test_clean_commander_card_name_maps_stranger_things_to_in_universe(self) -> None:
-        self.assertEqual(clean_commander_card_name("Lucas, the Sharpshooter"), "Bjorna, Nightfall Alchemist")
-
     def test_clean_commander_card_name_unescapes_quotes(self) -> None:
         self.assertEqual(clean_commander_card_name("K\\'rrik, Son of Yawgmoth"), "K'rrik, Son of Yawgmoth")
 
@@ -133,27 +130,43 @@ class CommanderNormalizationTests(unittest.TestCase):
             load_commander_oracle_aliases.cache_clear()
 
     def test_hardcoded_alias_takes_precedence_over_generated_alias_map(self) -> None:
+        # COMMANDER_NAME_ALIASES is empty in production (see its module-level
+        # comment), so precedence is exercised here with a synthetic entry
+        # rather than depending on any specific real-world alias.
         load_commander_oracle_aliases.cache_clear()
         try:
-            with patch(
-                "ingest.load_commander_oracle_aliases",
-                return_value={"Lucas, the Sharpshooter": "Some Other Card"},
+            with (
+                patch.dict(
+                    "ingest.COMMANDER_NAME_ALIASES",
+                    {"Synthetic Flavor Name": "Synthetic True Name"},
+                    clear=True,
+                ),
+                patch(
+                    "ingest.load_commander_oracle_aliases",
+                    return_value={"Synthetic Flavor Name": "Some Other Card"},
+                ),
             ):
                 self.assertEqual(
-                    clean_commander_card_name("Lucas, the Sharpshooter"),
-                    "Bjorna, Nightfall Alchemist",
+                    clean_commander_card_name("Synthetic Flavor Name"),
+                    "Synthetic True Name",
                 )
         finally:
             load_commander_oracle_aliases.cache_clear()
 
     def test_load_commander_oracle_aliases_reads_generated_artifact(self) -> None:
+        # "Seymour Guado" -> "Kinnan, Bonder Prodigy" is a verified-real UB
+        # alternate-name printing (Final Fantasy Secret Lair, promo_types
+        # includes "ffx"/"universesbeyond"; confirmed via Scryfall's
+        # oracle_id-scoped printing search during the PR #265 review pass),
+        # unlike the fabricated Stranger Things entries removed from
+        # COMMANDER_NAME_ALIASES.
         load_commander_oracle_aliases.cache_clear()
         try:
             aliases = load_commander_oracle_aliases()
         finally:
             load_commander_oracle_aliases.cache_clear()
         self.assertIsInstance(aliases, dict)
-        self.assertEqual(aliases.get("Chief Jim Hopper"), "Sophina, Spearsage Deserter")
+        self.assertEqual(aliases.get("Seymour Guado"), "Kinnan, Bonder Prodigy")
 
     def test_normalize_commander_name_strips_back_faces_from_partner_pair(self) -> None:
         self.assertEqual(
@@ -175,18 +188,6 @@ class CommanderNormalizationTests(unittest.TestCase):
             (
                 "Tymna the Weaver / Kraum, Ludevic's Opus",
                 ["Tymna the Weaver", "Kraum, Ludevic's Opus"],
-            ),
-        )
-
-    def test_sanitize_commander_payload_maps_stranger_things_pair(self) -> None:
-        self.assertEqual(
-            sanitize_commander_payload(
-                "Lucas, the Sharpshooter / Will the Wise",
-                ["Lucas, the Sharpshooter", "Will the Wise"],
-            ),
-            (
-                "Bjorna, Nightfall Alchemist / Wernog, Rider's Chaplain",
-                ["Bjorna, Nightfall Alchemist", "Wernog, Rider's Chaplain"],
             ),
         )
 

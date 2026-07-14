@@ -18,7 +18,17 @@ import requests
 from ingest import normalize_commander_name
 
 SCRYFALL_BULK_DATA_URL = "https://api.scryfall.com/bulk-data"
+SCRYFALL_SEARCH_URL = "https://api.scryfall.com/cards/search"
 ORACLE_BULK_TYPE = "oracle_cards"
+
+# Scryfall rejects requests carrying an HTTP library's default User-Agent
+# (e.g. plain "python-requests/x.y.z") with a 400 "generic_user_agent" error
+# and asks API consumers to identify themselves. Every Scryfall request in
+# this module must send these headers.
+SCRYFALL_HEADERS = {
+    "User-Agent": "cedh-research/1.0 (+https://github.com/abcEDH/cedh-research)",
+    "Accept": "application/json",
+}
 
 PARTNER_WITH_PREFIX = "partner with "
 PARTNER_DESIGNATOR_PATTERN = re.compile(r"^partner(?:\s*[—-]\s*|\s+)(.+)$", re.IGNORECASE)
@@ -145,20 +155,49 @@ def fetch_bulk_cards(bulk_type: str, timeout: float) -> list[dict[str, Any]]:
     ``commander_oracle_identity.py`` for Universes Beyond alternate-name/
     oracle_id identity resolution).
     """
-    bulk_response = requests.get(SCRYFALL_BULK_DATA_URL, timeout=timeout)
+    bulk_response = requests.get(SCRYFALL_BULK_DATA_URL, headers=SCRYFALL_HEADERS, timeout=timeout)
     bulk_response.raise_for_status()
     bulk_payload = bulk_response.json()
     bulk_items = bulk_payload.get("data") or []
     bulk_item = next((item for item in bulk_items if item.get("type") == bulk_type), None)
     if not bulk_item or not bulk_item.get("download_uri"):
         raise RuntimeError(f"Unable to locate Scryfall {bulk_type} bulk download")
-    cards_response = requests.get(bulk_item["download_uri"], timeout=timeout)
+    cards_response = requests.get(bulk_item["download_uri"], headers=SCRYFALL_HEADERS, timeout=timeout)
     cards_response.raise_for_status()
     return cards_response.json()
 
 
 def fetch_oracle_cards(timeout: float) -> list[dict[str, Any]]:
     return fetch_bulk_cards(ORACLE_BULK_TYPE, timeout)
+
+
+def fetch_commander_eligible_prints(timeout: float) -> list[dict[str, Any]]:
+    """Fetch every printing (``unique=prints``, includes flavor names) of every
+    card that can occupy the command zone, via Scryfall's search API.
+
+    Used instead of the ~550MB ``default_cards`` bulk dataset by
+    ``generate_commander_oracle_aliases.py``: Scryfall's own ``is:commander``
+    search operator already covers every card the alias generator needs
+    (Legendary Creatures, planeswalkers with explicit "can be your commander"
+    text, and Legendary Backgrounds — verified empirically that
+    ``type:background -is:commander`` matches zero cards, i.e. ``is:commander``
+    is a strict superset of Backgrounds), at roughly 12k printings instead of
+    every Magic card ever printed. ``sweep_ub_alt_name_commander_dedup.py``
+    still uses the full ``default_cards`` bulk dataset via ``fetch_bulk_cards``
+    since it must resolve oracle_id signatures for arbitrary existing
+    ``commanders`` rows, not just ones known to be commander-eligible.
+    """
+    cards: list[dict[str, Any]] = []
+    url: str | None = SCRYFALL_SEARCH_URL
+    params: dict[str, str] | None = {"q": "is:commander", "unique": "prints"}
+    while url:
+        response = requests.get(url, params=params, headers=SCRYFALL_HEADERS, timeout=timeout)
+        response.raise_for_status()
+        payload = response.json()
+        cards.extend(payload.get("data") or [])
+        url = payload.get("next_page") if payload.get("has_more") else None
+        params = None  # next_page is a fully-formed URL with its own query string
+    return cards
 
 
 def add_pair(
