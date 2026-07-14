@@ -38,6 +38,7 @@ from ingest import (  # noqa: E402
     extract_standing_rates,
     INGESTION_JOB_ALREADY_CLAIMED_EXIT_CODE,
     normalize_commander_name,
+    resolve_record_fields,
     sanitize_commander_payload,
     SupabaseClient,
     claim_ingestion_job,
@@ -45,6 +46,34 @@ from ingest import (  # noqa: E402
     fail_ingestion_job,
     main,
 )
+
+
+class ResolveRecordFieldsTests(unittest.TestCase):
+    def test_uses_explicit_wins_losses_draws_when_present(self) -> None:
+        info = {"wins": 4, "losses": 1, "draws": 0, "points": 20}
+
+        fields = resolve_record_fields(info)
+
+        self.assertEqual(fields, {"wins": 4, "losses": 1, "draws": 0})
+
+    def test_does_not_derive_wins_or_draws_from_points_when_missing(self) -> None:
+        # Regression guard: merlion-anniversary-cedh reported points=1866 with no
+        # explicit wins/losses/draws. The old fallback (points // 5, points % 5)
+        # fabricated a 373-0-1 record, which is impossible for a 5-round event.
+        # Point-scoring formulas vary per tournament/organizer and are not a
+        # reliable stand-in for an explicit record.
+        info = {"wins": None, "losses": None, "draws": None, "points": 1866}
+
+        fields = resolve_record_fields(info)
+
+        self.assertEqual(fields, {})
+
+    def test_uses_only_the_fields_that_are_explicitly_present(self) -> None:
+        info = {"wins": 3, "losses": None, "draws": None, "points": 15}
+
+        fields = resolve_record_fields(info)
+
+        self.assertEqual(fields, {"wins": 3})
 
 
 class ExtractStandingRatesTests(unittest.TestCase):
