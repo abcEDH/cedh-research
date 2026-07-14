@@ -7,6 +7,7 @@ import argparse
 import itertools
 import json
 import re
+import time
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -186,18 +187,52 @@ def fetch_commander_eligible_prints(timeout: float) -> list[dict[str, Any]]:
     still uses the full ``default_cards`` bulk dataset via ``fetch_bulk_cards``
     since it must resolve oracle_id signatures for arbitrary existing
     ``commanders`` rows, not just ones known to be commander-eligible.
+
+    ``include:extras`` is required: Scryfall's search API defaults
+    ``include_extras`` to false, which silently drops ~500 printings —
+    including 153 real flavor-named Universes Beyond/crossover commander
+    printings (verified by comparing result counts and flavor_name presence
+    with and without it) that the alias map needs.
     """
     cards: list[dict[str, Any]] = []
     url: str | None = SCRYFALL_SEARCH_URL
-    params: dict[str, str] | None = {"q": "is:commander", "unique": "prints"}
+    params: dict[str, str] | None = {"q": "is:commander include:extras", "unique": "prints"}
     while url:
-        response = requests.get(url, params=params, headers=SCRYFALL_HEADERS, timeout=timeout)
-        response.raise_for_status()
+        response = _get_with_rate_limit_retry(url, params=params, headers=SCRYFALL_HEADERS, timeout=timeout)
         payload = response.json()
         cards.extend(payload.get("data") or [])
         url = payload.get("next_page") if payload.get("has_more") else None
         params = None  # next_page is a fully-formed URL with its own query string
+        if url:
+            time.sleep(0.25)  # Scryfall asks for a short delay between paginated requests
     return cards
+
+
+def _get_with_rate_limit_retry(
+    url: str,
+    *,
+    params: dict[str, str] | None,
+    headers: dict[str, str],
+    timeout: float,
+    max_retries: int = 8,
+) -> requests.Response:
+    """GET with exponential backoff (capped at 30s) on Scryfall 429s.
+
+    A ~70-page paginated fetch is long enough to occasionally trip
+    Scryfall's rate limiting even with a delay between requests (e.g. a
+    burst of unrelated calls just beforehand). Scryfall's own ``Retry-After``
+    header isn't reliable here (observed as ``0`` immediately after a 429),
+    so this backs off with a fixed schedule instead of trusting it.
+    """
+    for attempt in range(max_retries):
+        response = requests.get(url, params=params, headers=headers, timeout=timeout)
+        if response.status_code != 429:
+            response.raise_for_status()
+            return response
+        if attempt == max_retries - 1:
+            response.raise_for_status()
+        time.sleep(min(2**attempt, 30))
+    raise RuntimeError("unreachable")  # pragma: no cover
 
 
 def add_pair(
