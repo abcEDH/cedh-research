@@ -1,3 +1,23 @@
+# [1.22.0](https://github.com/abcEDH/cedh-research/compare/v1.21.0...v1.22.0) (2026-07-14)
+
+
+### Bug Fixes
+
+* clean up frontend verification script ([a8a8043](https://github.com/abcEDH/cedh-research/commit/a8a804307dd5705cbbea61bdcc34287c9c14dce9))
+* close mobile nav without effect state update ([caf31b2](https://github.com/abcEDH/cedh-research/commit/caf31b2006078203fa7b44eb8dce3937da061e6d))
+* install Playwright system dependencies ([614ba35](https://github.com/abcEDH/cedh-research/commit/614ba353e54139ac8bf90972f0dd2056a72f162a))
+* install WebKit for mobile Safari e2e tests ([4749699](https://github.com/abcEDH/cedh-research/commit/4749699b17be49b0a975b54a14b71944132acaa0))
+
+
+### Features
+
+* **web:** add installable web app manifest, icons, and mobile metadata ([5bf8016](https://github.com/abcEDH/cedh-research/commit/5bf8016abce42ccbb4200c5050198b7dcd138994))
+* **web:** add mobile nav drawer, safe-area insets, and motif perf guard ([eced850](https://github.com/abcEDH/cedh-research/commit/eced8503620332dfb058465a02f77811c3af5547))
+* **web:** improve trap-spice touch targets on mobile ([3ce9851](https://github.com/abcEDH/cedh-research/commit/3ce9851dbe42f6321e9d9606a288274232a5e4d8))
+* **web:** make tournaments list responsive with Radix Select filters ([895248f](https://github.com/abcEDH/cedh-research/commit/895248f567dcd2f3044ccf89accd94326d3416ff))
+* **web:** stack pod bracket stages vertically on mobile ([5034bb6](https://github.com/abcEDH/cedh-research/commit/5034bb6ab49c621bcbbc14d0c8ea52eabeef61a6))
+* **web:** tune player profile tables for phone widths ([27dd2cb](https://github.com/abcEDH/cedh-research/commit/27dd2cb8902bef128d5532a42c2314aefa20b703))
+
 # [1.21.0](https://github.com/abcEDH/cedh-research/compare/v1.20.1...v1.21.0) (2026-07-14)
 
 
