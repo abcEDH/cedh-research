@@ -1,3 +1,14 @@
+## [1.22.1](https://github.com/abcEDH/cedh-research/compare/v1.22.0...v1.22.1) (2026-07-14)
+
+
+### Bug Fixes
+
+* exclude leaderboard rows with no games in the last 6 months ([d555496](https://github.com/abcEDH/cedh-research/commit/d555496b93577f618948424caa5df9971e79a514))
+* null denormalized topdeck rank on prune, exclude ineligible rows from fallback rank ([6ead79e](https://github.com/abcEDH/cedh-research/commit/6ead79e0075afb98d7a1843af4509140f12b34fc))
+* prune stale rows from topdeck_player_elos on import ([e0ed33e](https://github.com/abcEDH/cedh-research/commit/e0ed33e5df5c0db4fc0af6e48ee39576d09058c1))
+* run TopDeck Elo import daily instead of weekly ([d38608c](https://github.com/abcEDH/cedh-research/commit/d38608ceefae42c4026cfecad07bd1b2b2e17b41))
+* use canonical global last_game_date for activity eligibility ([095e228](https://github.com/abcEDH/cedh-research/commit/095e2283867e3eee7730e7888e7a0c730cd359b3))
+
 # [1.22.0](https://github.com/abcEDH/cedh-research/compare/v1.21.0...v1.22.0) (2026-07-14)
 
 
