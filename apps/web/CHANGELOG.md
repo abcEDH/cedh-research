@@ -1,3 +1,19 @@
+# [1.21.0](https://github.com/abcEDH/cedh-research/compare/v1.20.1...v1.21.0) (2026-07-14)
+
+
+### Bug Fixes
+
+* **backend:** stop deriving wins/draws from points during ingestion ([3189b0d](https://github.com/abcEDH/cedh-research/commit/3189b0dc252bb3423e1e3e5f9dfdda7d4aa3c4ec))
+* **ci:** restore --min-players 16 floor per review feedback ([6e82861](https://github.com/abcEDH/cedh-research/commit/6e82861bff8bb7bbd1e4215aadd3d4f1caca0b84))
+* **web:** bypass Data Cache for tournament detail reads ([e5b6bf9](https://github.com/abcEDH/cedh-research/commit/e5b6bf9be523d8cc6f2706d57ab8faabb1755d62))
+* **web:** remove unreliable Pts column from tournament standings ([d3eea41](https://github.com/abcEDH/cedh-research/commit/d3eea413cd135c8851b3b614e2c189a60d16d663)), closes [#b3d0479](https://github.com/abcEDH/cedh-research/issues/b3d0479)
+* **web:** restore Pts column, drop unsafe points-to-record derivation ([d067548](https://github.com/abcEDH/cedh-research/commit/d06754842396df45dd3f399c691824a154c243be))
+
+
+### Features
+
+* **mobile:** two-row card layout and responsive fixes for tournament pages ([79042c3](https://github.com/abcEDH/cedh-research/commit/79042c3fe3809d6958cbf3563c5eea00c8b92071))
+
 ## [1.20.1](https://github.com/abcEDH/cedh-research/compare/v1.20.0...v1.20.1) (2026-07-09)
 
 
