@@ -203,7 +203,7 @@ export default function TrapSpicePage() {
               <select
                 value={selectedCommander}
                 onChange={(e) => setSelectedCommander(e.target.value)}
-                className="knd-input flex-1 max-w-md"
+                className="knd-input min-h-11 w-full flex-1 sm:min-h-0 sm:w-auto sm:max-w-md"
               >
                 <option value="">All Commanders (Global)</option>
                 {commanders.map((c) => (
@@ -419,7 +419,7 @@ function CardWithCommanders({
               <Link
                 key={commander.commander_id}
                 href={`/commanders/${commander.commander_id}`}
-                className={`text-xs px-2 py-1 rounded transition-colors ${
+                className={`text-xs px-2 py-1.5 sm:py-1 rounded transition-colors ${
                   highlightCommander === commander.commander_id
                     ? "bg-[hsl(var(--knd-amber))] text-background"
                     : "bg-card/60 hover:bg-muted/40"

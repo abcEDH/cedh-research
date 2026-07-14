@@ -39,7 +39,7 @@ if [[ "${NEXT_PUBLIC_SUPABASE_URL:-}" == *"placeholder.supabase.co"* ]]; then
   echo "[verify-frontend] Supabase placeholder detected. Skipping Playwright E2E tests."
 else
   echo "[verify-frontend] Installing Playwright browsers..."
-  npx playwright install chromium
+  npx playwright install --with-deps chromium webkit
 
   echo "[verify-frontend] Running Playwright E2E tests..."
   npm run web:test:e2e

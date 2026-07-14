@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { JetBrains_Mono, Space_Grotesk } from "next/font/google";
 import "./globals.css";
 import { PostHogProvider } from "./providers";
@@ -16,9 +16,32 @@ const jetBrainsMono = JetBrains_Mono({
   variable: "--font-jetbrains-mono",
 });
 
+const SITE_DESCRIPTION =
+  "tedh.gg for competitive Commander. Track commander performance, card trends, and tournament results.";
+
 export const metadata: Metadata = {
+  metadataBase: new URL("https://tedh.gg"),
   title: "tedh.gg",
-  description: "tedh.gg for competitive Commander. Track commander performance, card trends, and tournament results.",
+  description: SITE_DESCRIPTION,
+  appleWebApp: {
+    capable: true,
+    title: "tedh.gg",
+    statusBarStyle: "black-translucent",
+  },
+  openGraph: {
+    title: "tedh.gg",
+    description: SITE_DESCRIPTION,
+    url: "https://tedh.gg",
+    siteName: "tedh.gg",
+    type: "website",
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#030915",
 };
 
 export default function RootLayout({
@@ -35,7 +58,7 @@ export default function RootLayout({
           <div className="flex min-h-screen flex-col">
             <SiteHeader />
             <div className="flex-1">{children}</div>
-            <footer className="border-t border-border/60 px-4 py-4 text-center text-xs text-muted-foreground">
+            <footer className="border-t border-border/60 px-4 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] text-center text-xs text-muted-foreground">
               Data provided by{" "}
               <a
                 href="https://topdeck.gg"
