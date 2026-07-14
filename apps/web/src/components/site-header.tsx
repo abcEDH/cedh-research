@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+// Note: "/commanders" is intentionally omitted from the nav — the commander
+// rankings page stays reachable by URL but is deprioritized in the header.
 const navItems = [
   { href: "/tournaments", label: "Tournaments" },
-  { href: "/commanders", label: "Commanders" },
   { href: "/regional-elo", label: "Leaderboard" },
   { href: "/tournament-likelihood", label: "Tournament Prep" },
   { href: "/about", label: "Methodology" },

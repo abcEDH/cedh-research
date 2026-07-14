@@ -538,7 +538,7 @@ export default async function Home() {
                   </Link>
                 </Button>
                 <Button asChild variant="outline">
-                  <Link href="/regional-elo">Commander Rankings</Link>
+                  <Link href="/regional-elo">Player Leaderboard</Link>
                 </Button>
               </div>
             </div>
