@@ -108,10 +108,6 @@ export function colorLetters(colors: string): string[] {
   return colors.split("").filter(Boolean);
 }
 
-export function tournamentPoints(wins: number, draws: number) {
-  return wins * 5 + draws;
-}
-
 export function distributionFromStandings(standings: Standing[]): { topCutDist: CommanderDistEntry[]; overallDist: CommanderDistEntry[] } {
   const counts = new Map<string, { colors: string; cutCount: number; missCount: number }>();
 

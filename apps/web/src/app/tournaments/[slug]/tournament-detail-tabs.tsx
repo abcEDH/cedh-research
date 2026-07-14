@@ -146,7 +146,7 @@ function Standings({ tournament }: { tournament: TournamentDetail }) {
         </tbody>
       </table>
       <div className="border-t border-border/60 px-4 py-3 font-mono text-[11px] text-muted-foreground">
-        Top {tournament.cutSize} of {tournament.players} · Pts = 5 per win + 1 per draw
+        Top {tournament.cutSize} of {tournament.players} · Pts as reported by the tournament organizer (scoring varies by event)
       </div>
     </div>
   );

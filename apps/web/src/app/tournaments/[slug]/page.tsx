@@ -8,8 +8,6 @@ type PageProps = {
   params: Promise<{ slug: string }>;
 };
 
-export const revalidate = 86400;
-
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 
 export async function generateMetadata({ params }: PageProps) {
