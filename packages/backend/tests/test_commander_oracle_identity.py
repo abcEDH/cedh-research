@@ -64,6 +64,21 @@ UNRELATED_PRINTING = {
     "legalities": {"commander": "legal"},
 }
 
+# Regression fixture for the Codex review comment on PR #265: some UB
+# rebrands use `printed_name` (normally a foreign-language localization
+# field) instead of `flavor_name`, while still being tagged `lang: "en"`.
+# The real example is Sophina, Spearsage Deserter's Secret Lair x Stranger
+# Things printing, which has `printed_name: "Chief Jim Hopper"` with no
+# `flavor_name` at all.
+PRINTED_NAME_ALT_PRINTING = {
+    "name": "Nadier, Agent of the Duskenel",
+    "printed_name": "Chief Jim Hopper",
+    "lang": "en",
+    "oracle_id": UB_ALT_NAME_ORACLE_ID,
+    "type_line": "Legendary Creature — Human Warlock",
+    "legalities": {"commander": "legal"},
+}
+
 NOT_COMMANDER_LEGAL_ALT_PRINTING = {
     "name": "Some Un-Legal Card",
     "flavor_name": "Definitely Not Legal Flavor Name",
@@ -167,6 +182,10 @@ class BuildNameToOracleIdMapTests(unittest.TestCase):
         mapping = build_name_to_oracle_id_map([{"name": "No Oracle Id Card"}])
         self.assertEqual(mapping, {})
 
+    def test_indexes_printed_name_alongside_flavor_name(self) -> None:
+        mapping = build_name_to_oracle_id_map([TRUE_PRINTING, PRINTED_NAME_ALT_PRINTING])
+        self.assertEqual(mapping["Chief Jim Hopper"], UB_ALT_NAME_ORACLE_ID)
+
 
 class BuildAliasMapTests(unittest.TestCase):
     def test_maps_flavor_name_to_true_name_for_commander_legal_cards(self) -> None:
@@ -209,6 +228,20 @@ class BuildAliasMapTests(unittest.TestCase):
         # still produce its alias.
         alias_map = build_alias_map([TRUE_PRINTING, UB_ALT_NAME_PRINTING, UNRELATED_PRINTING])
         self.assertEqual(alias_map, {"Totally Radical Skater": "Nadier, Agent of the Duskenel"})
+
+    def test_maps_printed_name_to_true_name_alongside_flavor_name(self) -> None:
+        # Regression test for the Codex review comment on PR #265: a UB
+        # rebrand recorded via `printed_name` (not `flavor_name`) must still
+        # produce an alias -- an earlier pass only checked `flavor_name` and
+        # incorrectly concluded these names didn't exist in Scryfall's data.
+        alias_map = build_alias_map([TRUE_PRINTING, UB_ALT_NAME_PRINTING, PRINTED_NAME_ALT_PRINTING])
+        self.assertEqual(
+            alias_map,
+            {
+                "Totally Radical Skater": "Nadier, Agent of the Duskenel",
+                "Chief Jim Hopper": "Nadier, Agent of the Duskenel",
+            },
+        )
 
 
 class CollectTrueOracleNamesTests(unittest.TestCase):

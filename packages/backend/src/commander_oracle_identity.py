@@ -31,11 +31,50 @@ from ingest import clean_commander_card_name, normalize_partner_order
 DEFAULT_CARDS_BULK_TYPE = "default_cards"
 
 
+def alternate_display_names(card: dict[str, Any]) -> list[str]:
+    """Return every alternate display name recorded for ``card``, distinct
+    from its true Oracle ``name``.
+
+    Universes Beyond rebrands use *two* different Scryfall fields depending
+    on the product, and both must be checked -- relying on only one silently
+    drops real alternate names:
+
+    - ``flavor_name`` -- e.g. the Godzilla/Street Fighter Secret Lair series.
+    - ``printed_name`` -- normally a foreign-language localization field, but
+      also how Scryfall records some UB rebrands that keep the same
+      ``lang: "en"`` tag while renaming the card in-universe (e.g. the
+      Secret Lair x Stranger Things series: `Sophina, Spearsage Deserter`'s
+      `sld` printing has `printed_name: "Chief Jim Hopper"`, not a
+      `flavor_name`). Confirmed via Codex review on PR #265 after an
+      earlier pass incorrectly concluded these names didn't exist in
+      Scryfall's data at all, having checked only `flavor_name`.
+
+    Scryfall's search API already scopes results to `lang: "en"` printings
+    by default (``include_multilingual`` defaults to false), so genuine
+    foreign-language ``printed_name`` values mostly don't reach this
+    function in the first place; the rare oddball promo that still carries
+    a non-English ``printed_name`` under an ``en`` language tag is harmless
+    here since it's just an alias that will never match real English
+    decklist text.
+    """
+    names = []
+    for field in ("flavor_name", "printed_name"):
+        value = front_face_value(card, field)
+        if not value:
+            continue
+        value = front_face_name(value)
+        if value:
+            names.append(value)
+    return names
+
+
 def build_name_to_oracle_id_map(cards: list[dict[str, Any]]) -> dict[str, str]:
-    """Index every known printed name (true name and flavor name) to oracle_id.
+    """Index every known printed name (true name and alternate display names)
+    to oracle_id.
 
     True (Oracle) names are indexed first so that, in the extremely unlikely
-    event of a collision, a flavor name never shadows a real card name.
+    event of a collision, an alternate display name never shadows a real
+    card name.
     """
     mapping: dict[str, str] = {}
 
@@ -51,12 +90,8 @@ def build_name_to_oracle_id_map(cards: list[dict[str, Any]]) -> dict[str, str]:
         oracle_id = str(card.get("oracle_id") or "").strip()
         if not oracle_id:
             continue
-        flavor_name = front_face_value(card, "flavor_name")
-        if not flavor_name:
-            continue
-        flavor_name = front_face_name(flavor_name)
-        if flavor_name:
-            mapping.setdefault(flavor_name, oracle_id)
+        for alt_name in alternate_display_names(card):
+            mapping.setdefault(alt_name, oracle_id)
 
     return mapping
 
@@ -105,15 +140,18 @@ def is_commander_eligible(card: dict[str, Any]) -> bool:
 
 
 def build_alias_map(cards: list[dict[str, Any]]) -> dict[str, str]:
-    """Build a flavor_name -> true_name alias map for commander-eligible cards.
+    """Build an alternate-display-name -> true_name alias map for
+    commander-eligible cards (see ``alternate_display_names`` for what
+    counts as an alternate display name -- both ``flavor_name`` and
+    ``printed_name`` are checked).
 
     Only cards that can actually occupy the command zone (see
     ``is_commander_eligible``) are considered, keeping the generated
     artifact scoped to names that can plausibly appear as a ``commanders``
-    row rather than every commander-format-legal, flavor-named card ever
+    row rather than every commander-format-legal, alternate-named card ever
     printed -- most of which are ordinary 99-deck cards, not commanders.
 
-    Flavor names that are themselves a real Oracle name of some *other*
+    Alternate names that are themselves a real Oracle name of some *other*
     card are also skipped: aliasing such a string would be ambiguous, and
     could silently rewrite a distinct real card's name via
     ``clean_commander_card_name()``.
@@ -124,13 +162,12 @@ def build_alias_map(cards: list[dict[str, Any]]) -> dict[str, str]:
         if not is_commander_eligible(card):
             continue
         true_name = front_face_name(str(card.get("name") or ""))
-        flavor_name = front_face_value(card, "flavor_name")
-        flavor_name = front_face_name(flavor_name) if flavor_name else ""
-        if not true_name or not flavor_name or flavor_name == true_name:
+        if not true_name:
             continue
-        if flavor_name in true_oracle_names:
-            continue
-        alias_map.setdefault(flavor_name, true_name)
+        for alt_name in alternate_display_names(card):
+            if alt_name == true_name or alt_name in true_oracle_names:
+                continue
+            alias_map.setdefault(alt_name, true_name)
     return alias_map
 
 

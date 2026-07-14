@@ -161,17 +161,27 @@ def clean_commander_card_name(name: str) -> str:
 
 
 COMMANDER_NAME_ALIASES: dict[str, str] = {
-    # Previously seeded with 8 "Secret Lair x Stranger Things" character-name
-    # -> Innistrad-commander mappings (e.g. "Chief Jim Hopper" -> "Sophina,
-    # Spearsage Deserter"). Verified against live Scryfall data while
-    # investigating PR #265's Codex review: that Secret Lair drop is a real
-    # Universes Beyond product (promo_types includes "universesbeyond"), but
-    # none of its printings actually carry a `flavor_name` -- Wizards kept
-    # the original card names and only changed the art, so none of those 8
-    # flavor names exist anywhere in Scryfall's data. Removed as fabricated.
-    # Add real hand-curated overrides here only when verified against an
-    # actual Scryfall `flavor_name` (see `load_commander_oracle_aliases()`
-    # below for the generated, Scryfall-verified alias source).
+    # "Secret Lair x Stranger Things" character-name -> Innistrad-commander
+    # mappings. An earlier pass on PR #265's Codex review incorrectly
+    # concluded these were fabricated, having checked only the Scryfall
+    # `flavor_name` field. Re-verified: this Secret Lair drop actually
+    # records its rebrand via `printed_name` (normally a foreign-language
+    # localization field, but reused here for an English-language rebrand
+    # while keeping `lang: "en"`) -- e.g. Sophina, Spearsage Deserter's
+    # `sld` printing has `printed_name: "Chief Jim Hopper"`, no
+    # `flavor_name` at all. All 8 confirmed real via oracle_id printing
+    # lookups. `commander_oracle_identity.py`'s `alternate_display_names()`
+    # now checks both fields, so the generated
+    # `commander_oracle_aliases.json` also covers these -- this hardcoded
+    # dict is kept anyway as a guaranteed, generation-independent fallback.
+    "Chief Jim Hopper": "Sophina, Spearsage Deserter",
+    "Dustin, Gadget Genius": "Hargilde, Kindly Runechanter",
+    "Eleven, the Mage": "Cecily, Haunted Mage",
+    "Lucas, the Sharpshooter": "Bjorna, Nightfall Alchemist",
+    "Max, the Daredevil": "Elmar, Ulvenwald Informant",
+    "Mike, the Dungeon Master": "Othelm, Sigardian Outcast",
+    "Mind Flayer, the Shadow": "Arvinox, the Mind Flail",
+    "Will the Wise": "Wernog, Rider's Chaplain",
 }
 
 
