@@ -693,16 +693,6 @@ export async function PlayerProfileGrid({
       <Card className="knd-panel">
         <CardHeader>
           <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-            Hidden Elo
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="text-2xl font-semibold text-foreground">
-          {globalEloRank ? Math.round(globalEloRank.rating) : "—"}
-        </CardContent>
-      </Card>
-      <Card className="knd-panel">
-        <CardHeader>
-          <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
             Games Played
           </CardTitle>
         </CardHeader>

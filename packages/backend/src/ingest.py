@@ -125,6 +125,25 @@ def extract_standing_rates(standing: dict[str, Any]) -> tuple[float | None, floa
     return primary_rate, opponent_rate
 
 
+def resolve_record_fields(info: dict[str, Any]) -> dict[str, int]:
+    """Resolve wins/losses/draws for a standing entry.
+
+    Only returns fields TopDeck reports explicitly. Point totals are not
+    derived into wins/draws: scoring formulas vary per tournament/organizer
+    (flat 5-per-win, league/ladder scoring, etc.), so points is not a
+    reliable stand-in for an explicit record. Deriving from it can fabricate
+    impossible win counts (e.g. points=1866 on a 5-round event).
+    """
+    fields: dict[str, int] = {}
+    if info.get("wins") is not None:
+        fields["wins"] = info["wins"]
+    if info.get("losses") is not None:
+        fields["losses"] = info["losses"]
+    if info.get("draws") is not None:
+        fields["draws"] = info["draws"]
+    return fields
+
+
 def clean_commander_card_name(name: str) -> str:
     """Normalize an individual commander card name.
 
@@ -870,21 +889,9 @@ class DataIngester:
                 "topdeck_entry_id": f"{tid}_{info['topdeck_id']}",
             }
 
-            # Only add W/L/D if they are explicitly present in the data to avoid
-            # overwriting with zeros during re-ingestion.
-            # If not present but points > 0, derive them.
-            if info.get("wins") is not None:
-                entry["wins"] = info["wins"]
-            elif info["points"] > 0:
-                entry["wins"] = info["points"] // 5
-
-            if info.get("losses") is not None:
-                entry["losses"] = info["losses"]
-
-            if info.get("draws") is not None:
-                entry["draws"] = info["draws"]
-            elif info["points"] > 0:
-                entry["draws"] = info["points"] % 5
+            # Only add W/L/D if they are explicitly present in the data, to avoid
+            # overwriting existing values with zeros during re-ingestion.
+            entry.update(resolve_record_fields(info))
 
             entries.append(entry)
 

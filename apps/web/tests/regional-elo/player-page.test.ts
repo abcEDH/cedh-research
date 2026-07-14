@@ -539,7 +539,7 @@ describe("RegionalPlayerPage", () => {
     expect(html).toContain("Inactive Player");
     expect(html).toMatch(/State Rank[\s\S]*?>--</);
     expect(html).toMatch(/Global Rank[\s\S]*?>--</);
-    expect(html).toContain("1600");
+    expect(html).toContain("1502");
   });
 
   it("links opponent records to the head-to-head page", async () => {

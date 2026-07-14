@@ -1,12 +1,24 @@
 import "server-only";
 
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@supabase/supabase-js";
 import {
   distributionFromStandings,
   type Standing,
   type TournamentDetail,
-  tournamentPoints,
 } from "@/lib/tournaments";
+
+// Dedicated client (not the shared @/lib/supabase instance) so tournament
+// detail reads always bypass Next.js's Data Cache. That cache persists
+// across deployments — a page.tsx-level `revalidate` alone isn't enough to
+// keep this route's underlying queries fresh after a backend data
+// correction or re-ingestion. This route renders per-request instead of
+// using the segment's ISR window; every other page keeps its existing
+// caching behavior untouched.
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL || "https://placeholder.supabase.co",
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "placeholder",
+  { global: { fetch: (url, options) => fetch(url, { ...options, cache: "no-store" }) } }
+);
 
 type TournamentRow = {
   id: string;
@@ -138,10 +150,10 @@ function toStanding(entry: EntryRow, topdeckTid: string, index: number, cutSize:
     team: "",
     commander: commander?.name ?? "Unknown Commander",
     colors,
-    wins: entry.wins || (entry.points ? Math.floor(entry.points / 5) : 0),
+    wins: entry.wins ?? 0,
     losses: entry.losses ?? 0,
-    draws: entry.draws || (entry.points ? entry.points % 5 : 0),
-    points: entry.points ?? tournamentPoints(entry.wins ?? 0, entry.draws ?? 0),
+    draws: entry.draws ?? 0,
+    points: entry.points ?? 0,
     cut: cutLabel(rank, cutSize, Boolean(entry.made_top_cut), Boolean(entry.made_top_16)),
     decklistUrl,
     topdeckId,
