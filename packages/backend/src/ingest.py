@@ -155,10 +155,25 @@ def clean_commander_card_name(name: str) -> str:
     cleaned = name.replace("\\'", "'").replace('\\"', '"')
     front_face = cleaned.split(" // ", 1)[0]
     normalized = front_face.split("[", 1)[0].strip()
-    return COMMANDER_NAME_ALIASES.get(normalized, normalized)
+    if normalized in COMMANDER_NAME_ALIASES:
+        return COMMANDER_NAME_ALIASES[normalized]
+    return load_commander_oracle_aliases().get(normalized, normalized)
 
 
 COMMANDER_NAME_ALIASES: dict[str, str] = {
+    # "Secret Lair x Stranger Things" character-name -> Innistrad-commander
+    # mappings. An earlier pass on PR #265's Codex review incorrectly
+    # concluded these were fabricated, having checked only the Scryfall
+    # `flavor_name` field. Re-verified: this Secret Lair drop actually
+    # records its rebrand via `printed_name` (normally a foreign-language
+    # localization field, but reused here for an English-language rebrand
+    # while keeping `lang: "en"`) -- e.g. Sophina, Spearsage Deserter's
+    # `sld` printing has `printed_name: "Chief Jim Hopper"`, no
+    # `flavor_name` at all. All 8 confirmed real via oracle_id printing
+    # lookups. `commander_oracle_identity.py`'s `alternate_display_names()`
+    # now checks both fields, so the generated
+    # `commander_oracle_aliases.json` also covers these -- this hardcoded
+    # dict is kept anyway as a guaranteed, generation-independent fallback.
     "Chief Jim Hopper": "Sophina, Spearsage Deserter",
     "Dustin, Gadget Genius": "Hargilde, Kindly Runechanter",
     "Eleven, the Mage": "Cecily, Haunted Mage",
@@ -168,6 +183,25 @@ COMMANDER_NAME_ALIASES: dict[str, str] = {
     "Mind Flayer, the Shadow": "Arvinox, the Mind Flail",
     "Will the Wise": "Wernog, Rider's Chaplain",
 }
+
+
+@lru_cache(maxsize=1)
+def load_commander_oracle_aliases() -> dict[str, str]:
+    """Load the generated Universes Beyond flavor-name -> true-name alias map.
+
+    This is the ingestion-time half of issue #261's oracle_id dedup: names are
+    pre-resolved into this artifact by ``generate_commander_oracle_aliases.py``
+    (keyed off Scryfall ``oracle_id``) so new UB alternate-name commanders are
+    normalized automatically, without requiring a manual
+    ``COMMANDER_NAME_ALIASES`` entry for every new printing. Falls back to an
+    empty map if the artifact hasn't been generated yet.
+    """
+    data_path = Path(__file__).resolve().parents[1] / "data" / "commander_oracle_aliases.json"
+    if not data_path.exists():
+        return {}
+    payload = json.loads(data_path.read_text())
+    aliases = payload.get("aliases") or {}
+    return {str(key): str(value) for key, value in aliases.items()}
 
 
 @lru_cache(maxsize=1)
