@@ -255,7 +255,7 @@ export function TournamentsList({ initialSort, initialTier, initialPeriod }: Tou
         />
       )}
 
-      <main className="mx-auto max-w-5xl px-6 py-10 pb-20">
+      <main className="mx-auto max-w-5xl px-4 sm:px-6 py-10 pb-20">
         {/* Page header */}
         <div className="mb-7">
           <div
@@ -273,7 +273,7 @@ export function TournamentsList({ initialSort, initialTier, initialPeriod }: Tou
         </div>
 
         {/* Filter bar */}
-        <div className="relative z-41 flex items-end gap-5 flex-wrap px-5 py-4 mb-4 knd-panel">
+        <div className="relative z-41 flex items-end gap-5 flex-wrap px-4 sm:px-5 py-4 mb-4 knd-panel">
           <FilterDropdown
             label="Sort By"
             display={sortBy}
@@ -314,26 +314,26 @@ export function TournamentsList({ initialSort, initialTier, initialPeriod }: Tou
               const tier = t.tier;
               const ts = TIER_STYLE[tier];
               const href = `/tournaments/${t.slug}`;
+              const winnerEntry = t.topCut?.find((c) => c.standing === 1) ?? null;
 
               return (
                 <div
                   key={t.slug}
-                  className="group flex items-center gap-4 px-5 py-4 transition-colors hover:bg-accent/25"
+                  className="group"
                   style={{
                     borderBottom: i < items.length - 1 ? "1px solid var(--border)" : "none",
-                    cursor: "pointer",
                   }}
                 >
                   <Link
                     href={href}
-                    className="flex-1 min-w-0 flex items-center gap-4 no-underline"
+                    className="flex items-start gap-3 px-4 sm:px-5 py-3.5 sm:py-4 no-underline transition-colors hover:bg-accent/25"
                   >
                     {/* Date column */}
-                    <div className="flex flex-col items-center justify-center w-14 flex-shrink-0 border-r border-border pr-4">
-                      <span className="text-[11px] tracking-[0.16em] uppercase text-muted-foreground font-medium">
+                    <div className="flex flex-col items-center justify-center w-11 sm:w-14 flex-shrink-0 border-r border-border pr-3 sm:pr-4 self-center">
+                      <span className="text-[10px] sm:text-[11px] tracking-[0.16em] uppercase text-muted-foreground font-medium">
                         {MONTHS[t.d.getMonth()]}
                       </span>
-                      <span className="font-mono text-[22px] font-semibold leading-none">
+                      <span className="font-mono text-[19px] sm:text-[22px] font-semibold leading-none">
                         {t.d.getDate()}
                       </span>
                       <span className="font-mono text-[10px] text-muted-foreground">
@@ -341,27 +341,84 @@ export function TournamentsList({ initialSort, initialTier, initialPeriod }: Tou
                       </span>
                     </div>
 
-                    {/* Name + winner */}
-                    <div className="flex-1 min-w-0 flex flex-col gap-1.5">
-                      <div className="flex items-center gap-3">
-                        <span className="text-[17px] font-semibold leading-snug text-foreground truncate">
-                          {t.name}
-                        </span>
-                        <span className="text-xs text-muted-foreground whitespace-nowrap">
+                    {/* Content column */}
+                    <div className="flex-1 min-w-0 flex flex-col gap-1">
+
+                      {/* Name row */}
+                      <div className="flex items-start sm:items-center gap-2">
+                        <div className="flex-1 min-w-0">
+                          <span className="block text-[15px] sm:text-[17px] font-semibold leading-snug text-foreground truncate">
+                            {t.name}
+                          </span>
+                          {/* Rel time below name on mobile */}
+                          <span className="block sm:hidden text-[11px] text-muted-foreground mt-0.5">
+                            {relTime(t.days)}
+                          </span>
+                        </div>
+
+                        {/* Rel time inline on desktop */}
+                        <span className="hidden sm:inline text-xs text-muted-foreground whitespace-nowrap flex-shrink-0">
                           {relTime(t.days)}
                         </span>
+
+                        {/* Tier badge — always visible */}
+                        {ts && (
+                          <span
+                            className="flex-shrink-0 whitespace-nowrap self-start sm:self-auto"
+                            style={{
+                              padding: "3px 9px",
+                              borderRadius: 999,
+                              fontSize: 10,
+                              fontWeight: 600,
+                              fontFamily: "var(--font-mono)",
+                              letterSpacing: "0.08em",
+                              textTransform: "uppercase",
+                              color: ts.color,
+                              background: ts.bg,
+                              border: `1px solid ${ts.border}`,
+                            }}
+                          >
+                            {tier}
+                          </span>
+                        )}
+
+                        {/* Desktop-only: player count + chevron */}
+                        <div className="hidden sm:flex items-center gap-3 flex-shrink-0">
+                          <div className="flex flex-col items-end">
+                            <span className="font-mono text-xl font-semibold text-primary leading-none">
+                              {t.players.toLocaleString("en-US")}
+                            </span>
+                            <span className="text-[10px] tracking-[0.2em] uppercase text-muted-foreground font-medium">
+                              Players
+                            </span>
+                          </div>
+                          <svg
+                            width="18"
+                            height="18"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="flex-shrink-0"
+                            style={{ color: "hsl(var(--knd-cyan) / 0.6)" }}
+                          >
+                            <path d="m9 18 6-6-6-6" />
+                          </svg>
+                        </div>
                       </div>
-                      
-                      {/* Top 4 Display */}
-                      {t.topCut && t.topCut.length > 0 ? (
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1">
+
+                      {/* Desktop-only: top-4 entries */}
+                      {t.topCut && t.topCut.length > 0 && (
+                        <div className="hidden sm:flex flex-wrap items-center gap-x-4 gap-y-1">
                           {t.topCut.map((cut, ci) => (
                             <div key={`${cut.standing}-${cut.name}-${ci}`} className="flex items-center gap-1.5 min-w-0 max-w-[200px]">
-                              <span className={`text-[10px] font-mono font-bold flex-shrink-0 ${cut.standing === 1 ? 'text-[hsl(var(--knd-amber))]' : 'text-muted-foreground'}`}>
-                                {cut.standing === 1 ? '★' : `${cut.standing}`}
+                              <span className={`text-[10px] font-mono font-bold flex-shrink-0 ${cut.standing === 1 ? "text-[hsl(var(--knd-amber))]" : "text-muted-foreground"}`}>
+                                {cut.standing === 1 ? "★" : `${cut.standing}`}
                               </span>
                               <div className="flex flex-col min-w-0">
-                                <span className={`text-xs truncate ${cut.standing === 1 ? 'text-foreground font-medium' : 'text-muted-foreground'}`}>
+                                <span className={`text-xs truncate ${cut.standing === 1 ? "text-foreground font-medium" : "text-muted-foreground"}`}>
                                   {cut.name}
                                 </span>
                                 <span className="text-[10px] text-muted-foreground/70 truncate" title={cut.commander}>
@@ -371,81 +428,52 @@ export function TournamentsList({ initialSort, initialTier, initialPeriod }: Tou
                             </div>
                           ))}
                         </div>
-                      ) : (
-                        <span className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
-                          <span className="inline-flex items-center gap-1.5">
-                            <svg
-                              width="13"
-                              height="13"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              style={{ color: "hsl(var(--knd-cyan))", flexShrink: 0 }}
-                            >
-                              <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" />
-                              <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" />
-                              <path d="M4 22h16" />
-                              <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" />
-                              <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" />
-                              <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" />
-                            </svg>
-                            <span className="text-foreground">{t.winner}</span>
-                          </span>
-                        </span>
                       )}
+
+                      {/* Mobile-only: winner summary + player count + chevron */}
+                      <div className="sm:hidden flex items-center gap-1.5 mt-0.5">
+                        {winnerEntry ? (
+                          <>
+                            <span className="text-[hsl(var(--knd-amber))] text-[11px] flex-shrink-0">★</span>
+                            <span className="text-xs font-medium text-foreground truncate flex-1 min-w-0">
+                              {winnerEntry.name}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground/70 truncate max-w-[90px]">
+                              {winnerEntry.commander}
+                            </span>
+                          </>
+                        ) : t.winner && t.winner !== "—" ? (
+                          <>
+                            <span className="text-[hsl(var(--knd-amber))] text-[11px] flex-shrink-0">★</span>
+                            <span className="text-xs font-medium text-foreground truncate flex-1 min-w-0">
+                              {t.winner}
+                            </span>
+                          </>
+                        ) : (
+                          <div className="flex-1" />
+                        )}
+                        <div className="ml-auto flex-shrink-0 flex items-baseline gap-1 pl-2">
+                          <span className="font-mono text-sm font-semibold text-primary">
+                            {t.players.toLocaleString("en-US")}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground">ppl</span>
+                        </div>
+                        <svg
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="flex-shrink-0"
+                          style={{ color: "hsl(var(--knd-cyan) / 0.6)" }}
+                        >
+                          <path d="m9 18 6-6-6-6" />
+                        </svg>
+                      </div>
                     </div>
-
-                    {/* Tier badge */}
-                    {ts && (
-                      <span
-                        className="flex-shrink-0 whitespace-nowrap"
-                        style={{
-                          padding: "3px 9px",
-                          borderRadius: 999,
-                          fontSize: 10,
-                          fontWeight: 600,
-                          fontFamily: "var(--font-mono)",
-                          letterSpacing: "0.08em",
-                          textTransform: "uppercase",
-                          color: ts.color,
-                          background: ts.bg,
-                          border: `1px solid ${ts.border}`,
-                        }}
-                      >
-                        {tier}
-                      </span>
-                    )}
-
-                    {/* Player count */}
-                    <div className="flex flex-col items-end flex-shrink-0 gap-0">
-                      <span className="font-mono text-xl font-semibold text-primary leading-none">
-                        {t.players.toLocaleString("en-US")}
-                      </span>
-                      <span className="text-[10px] tracking-[0.2em] uppercase text-muted-foreground font-medium">
-                        Players
-                      </span>
-                    </div>
-
-                    {/* Chevron */}
-                    <svg
-                      width="18"
-                      height="18"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="flex-shrink-0"
-                      style={{
-                        color: "hsl(var(--knd-cyan) / 0.6)",
-                      }}
-                    >
-                      <path d="m9 18 6-6-6-6" />
-                    </svg>
                   </Link>
                 </div>
               );
