@@ -1,11 +1,24 @@
 import "server-only";
 
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@supabase/supabase-js";
 import {
   distributionFromStandings,
   type Standing,
   type TournamentDetail,
 } from "@/lib/tournaments";
+
+// Dedicated client (not the shared @/lib/supabase instance) so tournament
+// detail reads always bypass Next.js's Data Cache. That cache persists
+// across deployments — a page.tsx-level `revalidate` alone isn't enough to
+// keep this route's underlying queries fresh after a backend data
+// correction or re-ingestion. This route renders per-request instead of
+// using the segment's ISR window; every other page keeps its existing
+// caching behavior untouched.
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL || "https://placeholder.supabase.co",
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "placeholder",
+  { global: { fetch: (url, options) => fetch(url, { ...options, cache: "no-store" }) } }
+);
 
 type TournamentRow = {
   id: string;

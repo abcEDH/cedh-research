@@ -114,10 +114,10 @@ class MockQuery {
 
 vi.mock("server-only", () => ({}));
 
-vi.mock("@/lib/supabase", () => ({
-  supabase: {
+vi.mock("@supabase/supabase-js", () => ({
+  createClient: () => ({
     from: (table: string) => new MockQuery(table),
-  },
+  }),
 }));
 
 describe("loadTournamentDetail", () => {
