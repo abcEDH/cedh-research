@@ -284,10 +284,11 @@ class BuildActiveLeaderboardRowsTests(unittest.TestCase):
             },
             topdeck_elo_by_topdeck_id={},
             state_stats_by_player={
-                "player-low-activity": {"activity_score": 1},
-                "player-high-activity": {"activity_score": 10},
+                "player-low-activity": {"activity_score": 1, "last_game_date": RECENT_LAST_GAME_DATE},
+                "player-high-activity": {"activity_score": 10, "last_game_date": RECENT_LAST_GAME_DATE},
             },
             updated_at="2026-05-01T00:00:00+00:00",
+            reference_date=TEST_REFERENCE_DATE,
         )
 
         ranks_by_name = {
@@ -353,8 +354,12 @@ class BuildActiveLeaderboardRowsTests(unittest.TestCase):
         # The real, rated player must be ranked ahead of the zero-game ghost
         # player even though the ghost's sentinel rating (DEFAULT_RATING,
         # 1500) is numerically higher than the real player's negative rating.
+        # The ghost player gets rank = None (not a fallback ordinal) since
+        # apps/web falls back to `rank` whenever `topdeck_elo_rank` is null --
+        # a non-null fallback would let them show up with what looks like a
+        # real rank again.
         self.assertEqual(global_rows["Real Player"]["rank"], 1)
-        self.assertEqual(global_rows["Ghost Player"]["rank"], 2)
+        self.assertIsNone(global_rows["Ghost Player"]["rank"])
         self.assertEqual(global_rows["Real Player"]["rating"], -75.0)
 
     def test_zero_rating_value_is_preserved_not_coerced_to_default(self) -> None:
@@ -517,10 +522,12 @@ class RankActivityWindowTests(unittest.TestCase):
 
         self.assertIsNone(global_rows["Stale Player"]["topdeck_elo_rank"])
         self.assertEqual(global_rows["Active Player"]["topdeck_elo_rank"], 1)
-        # The stale (but real, games-backed) player must sort after the
-        # active player for `rank` too, despite the higher raw `rating`.
+        # The stale (but real, games-backed) player is excluded from `rank`
+        # too, despite the higher raw `rating` -- rank = None, not a fallback
+        # ordinal, so apps/web's `topdeck_elo_rank ?? rank` fallback can't
+        # surface them as if they were still ranked.
         self.assertEqual(global_rows["Active Player"]["rank"], 1)
-        self.assertEqual(global_rows["Stale Player"]["rank"], 2)
+        self.assertIsNone(global_rows["Stale Player"]["rank"])
 
     def test_last_game_date_exactly_at_window_boundary_stays_eligible(self) -> None:
         boundary_date = "2026-01-08"  # exactly RANK_ACTIVITY_WINDOW_DAYS (183) before REFERENCE_DATE
@@ -580,6 +587,7 @@ class RankActivityWindowTests(unittest.TestCase):
 
         row = next(r for r in rows if r["region_type"] == "global")
         self.assertIsNone(row["topdeck_elo_rank"])
+        self.assertIsNone(row["rank"])
 
     def test_is_rank_eligible_handles_date_and_string_last_game_date(self) -> None:
         recent_string_row = {"games_played": 5, "last_game_date": "2026-07-01"}

@@ -1153,15 +1153,21 @@ def build_active_leaderboard_rows(
         # even land at rank 1 ahead of -- players with real, hard-earned
         # ratings. Only players with at least one recorded game AND recent
         # activity (within RANK_ACTIVITY_WINDOW_DAYS of reference_date) are
-        # eligible for a rating-based rank; everyone else is placed after them.
+        # eligible for a rating-based rank at all; everyone else gets
+        # rank = None rather than a fallback ordinal. Several apps/web read
+        # paths fall back to `rank` whenever `topdeck_elo_rank` is null, so a
+        # non-null fallback rank would let an inactive/zero-game player show
+        # up with what looks like a real rank badge again (Codex P2 review
+        # finding on PR #263).
         eligible_rows = [r for r in partition_rows if _is_rank_eligible(r, reference_date)]
         ineligible_rows = [r for r in partition_rows if not _is_rank_eligible(r, reference_date)]
 
-        for group in (eligible_rows, ineligible_rows):
-            group.sort(key=_leaderboard_rank_sort_key)
+        eligible_rows.sort(key=_leaderboard_rank_sort_key)
 
-        for index, row in enumerate([*eligible_rows, *ineligible_rows], start=1):
+        for index, row in enumerate(eligible_rows, start=1):
             row["rank"] = index
+        for row in ineligible_rows:
+            row["rank"] = None
 
     assign_topdeck_elo_ranks(leaderboard_rows, reference_date)
     return leaderboard_rows

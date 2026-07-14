@@ -271,6 +271,11 @@ async function getLeaderboardPreview(): Promise<LeaderboardPlayer[]> {
       )
       .eq("region_type", "global")
       .eq("region_key", "ALL")
+      // rank is null for players who fail the backend's rank-eligibility
+      // gate (zero games, or no tournament in the last 6 months) -- exclude
+      // them outright rather than risk `row.rank ?? index + 1` below turning
+      // a null into a fabricated-looking position.
+      .not("rank", "is", null)
       .order("topdeck_elo_rank", { ascending: true, nullsFirst: false })
       .order("rank", { ascending: true })
       .limit(10);

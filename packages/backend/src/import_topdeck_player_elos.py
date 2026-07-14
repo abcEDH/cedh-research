@@ -112,6 +112,17 @@ def upsert_elo_rows(
     snapshot is far more likely to indicate a fetch failure than a genuine
     leaderboard wipe.
 
+    Pruning here only removes the raw snapshot row; the public leaderboard
+    actually reads the denormalized `global_elo_active_leaderboard` table,
+    which is rebuilt separately (and much less often) by regional_elo.py. Left
+    alone, a delisted player's already-materialized topdeck_elo/
+    topdeck_elo_rank would keep displaying there until that full rebuild next
+    runs. So in the same transaction as the prune, this also nulls those two
+    columns for every pruned topdeck_id directly (Codex P1 review finding on
+    PR #263). This doesn't re-tighten other players' topdeck_elo_rank gaps
+    left behind (that still needs a full rebuild) but it does immediately
+    clear the stale/phantom rank itself.
+
     Returns the number of rows pruned.
     """
     if not rows:
@@ -165,12 +176,24 @@ def upsert_elo_rows(
             """
             DELETE FROM topdeck_player_elos
             WHERE NOT (topdeck_id = ANY(%s))
+            RETURNING topdeck_id
             """,
             (snapshot_topdeck_ids,),
         )
-        pruned_count = cursor.rowcount
+        pruned_topdeck_ids = [row[0] for row in cursor.fetchall()]
+
+        if pruned_topdeck_ids:
+            cursor.execute(
+                """
+                UPDATE global_elo_active_leaderboard
+                SET topdeck_elo = NULL, topdeck_elo_rank = NULL, updated_at = now()
+                WHERE topdeck_id = ANY(%s)
+                """,
+                (pruned_topdeck_ids,),
+            )
 
     conn.commit()
+    pruned_count = len(pruned_topdeck_ids)
     print(f"Pruned {pruned_count} stale topdeck_player_elos row(s) not present in the latest snapshot.")
     return pruned_count
 
