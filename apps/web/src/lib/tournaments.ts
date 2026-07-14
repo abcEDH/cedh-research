@@ -28,6 +28,7 @@ export interface Standing {
   wins: number;
   losses: number;
   draws: number;
+  points: number;
   cut: "Champion" | "Top 2" | "Top 4" | "Top 10" | "Top 16" | "Top 32" | "Top 40" | "—";
   decklistUrl?: string | null;
   topdeckId?: string | null;

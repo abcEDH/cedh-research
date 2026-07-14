@@ -88,6 +88,7 @@ function Standings({ tournament }: { tournament: TournamentDetail }) {
             <th className="px-3 py-3">Player</th>
             <th className="px-3 py-3">Commander</th>
             <th className="px-3 py-3">Record</th>
+            <th className="px-3 py-3 text-right">Pts</th>
             <th className="px-4 py-3 text-right">Cut</th>
           </tr>
         </thead>
@@ -132,6 +133,9 @@ function Standings({ tournament }: { tournament: TournamentDetail }) {
                 <span className="text-muted-foreground">-</span>
                 <span className="text-[hsl(var(--knd-amber))]">{row.draws}</span>
               </td>
+              <td className="px-3 py-3 text-right font-mono font-semibold whitespace-nowrap">
+                {row.points}
+              </td>
               <td className="px-4 py-3 text-right whitespace-nowrap">
                 <span className={`inline-flex rounded-full border px-2 py-1 font-mono text-[11px] ${cutClass(row.cut)}`}>
                   {row.cut}
@@ -142,7 +146,7 @@ function Standings({ tournament }: { tournament: TournamentDetail }) {
         </tbody>
       </table>
       <div className="border-t border-border/60 px-4 py-3 font-mono text-[11px] text-muted-foreground">
-        Top {tournament.cutSize} of {tournament.players}
+        Top {tournament.cutSize} of {tournament.players} · Pts as reported by the tournament organizer (scoring varies by event)
       </div>
     </div>
   );
