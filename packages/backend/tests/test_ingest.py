@@ -37,7 +37,9 @@ from ingest import (  # noqa: E402
     clean_commander_card_name,
     extract_standing_rates,
     INGESTION_JOB_ALREADY_CLAIMED_EXIT_CODE,
+    load_commander_oracle_aliases,
     normalize_commander_name,
+    resolve_record_fields,
     sanitize_commander_payload,
     SupabaseClient,
     claim_ingestion_job,
@@ -45,6 +47,34 @@ from ingest import (  # noqa: E402
     fail_ingestion_job,
     main,
 )
+
+
+class ResolveRecordFieldsTests(unittest.TestCase):
+    def test_uses_explicit_wins_losses_draws_when_present(self) -> None:
+        info = {"wins": 4, "losses": 1, "draws": 0, "points": 20}
+
+        fields = resolve_record_fields(info)
+
+        self.assertEqual(fields, {"wins": 4, "losses": 1, "draws": 0})
+
+    def test_does_not_derive_wins_or_draws_from_points_when_missing(self) -> None:
+        # Regression guard: merlion-anniversary-cedh reported points=1866 with no
+        # explicit wins/losses/draws. The old fallback (points // 5, points % 5)
+        # fabricated a 373-0-1 record, which is impossible for a 5-round event.
+        # Point-scoring formulas vary per tournament/organizer and are not a
+        # reliable stand-in for an explicit record.
+        info = {"wins": None, "losses": None, "draws": None, "points": 1866}
+
+        fields = resolve_record_fields(info)
+
+        self.assertEqual(fields, {})
+
+    def test_uses_only_the_fields_that_are_explicitly_present(self) -> None:
+        info = {"wins": 3, "losses": None, "draws": None, "points": 15}
+
+        fields = resolve_record_fields(info)
+
+        self.assertEqual(fields, {"wins": 3})
 
 
 class ExtractStandingRatesTests(unittest.TestCase):
@@ -83,6 +113,47 @@ class CommanderNormalizationTests(unittest.TestCase):
             clean_commander_card_name("Etali, Primal Conqueror // Etali, Primal Sickness"),
             "Etali, Primal Conqueror",
         )
+
+    def test_clean_commander_card_name_falls_back_to_generated_oracle_alias_map(self) -> None:
+        # A newly-released Universes Beyond alternate-name printing that hasn't
+        # been hand-added to COMMANDER_NAME_ALIASES yet should still resolve
+        # via the generated commander_oracle_aliases.json artifact, keyed off
+        # the underlying Scryfall oracle_id (see generate_commander_oracle_aliases.py).
+        load_commander_oracle_aliases.cache_clear()
+        try:
+            with patch(
+                "ingest.load_commander_oracle_aliases",
+                return_value={"Totally Radical Skater": "Nadier, Agent of the Duskenel"},
+            ):
+                self.assertEqual(
+                    clean_commander_card_name("Totally Radical Skater"),
+                    "Nadier, Agent of the Duskenel",
+                )
+        finally:
+            load_commander_oracle_aliases.cache_clear()
+
+    def test_hardcoded_alias_takes_precedence_over_generated_alias_map(self) -> None:
+        load_commander_oracle_aliases.cache_clear()
+        try:
+            with patch(
+                "ingest.load_commander_oracle_aliases",
+                return_value={"Lucas, the Sharpshooter": "Some Other Card"},
+            ):
+                self.assertEqual(
+                    clean_commander_card_name("Lucas, the Sharpshooter"),
+                    "Bjorna, Nightfall Alchemist",
+                )
+        finally:
+            load_commander_oracle_aliases.cache_clear()
+
+    def test_load_commander_oracle_aliases_reads_generated_artifact(self) -> None:
+        load_commander_oracle_aliases.cache_clear()
+        try:
+            aliases = load_commander_oracle_aliases()
+        finally:
+            load_commander_oracle_aliases.cache_clear()
+        self.assertIsInstance(aliases, dict)
+        self.assertEqual(aliases.get("Chief Jim Hopper"), "Sophina, Spearsage Deserter")
 
     def test_normalize_commander_name_strips_back_faces_from_partner_pair(self) -> None:
         self.assertEqual(

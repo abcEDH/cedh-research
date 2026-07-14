@@ -947,11 +947,14 @@ export async function PlayerProfileBody({
                                   rel="noreferrer"
                                   className="hover:text-primary"
                                 >
-                                  {formatShortDate(latestTournament.date)} | {latestTournament.name}
+                                  {formatShortDate(latestTournament.date)}
+                                  {/* Tournament names blow out the column width on phones */}
+                                  <span className="hidden sm:inline"> | {latestTournament.name}</span>
                                 </a>
                               ) : (
                                 <span>
-                                  {formatShortDate(latestTournament.date)} | {latestTournament.name}
+                                  {formatShortDate(latestTournament.date)}
+                                  <span className="hidden sm:inline"> | {latestTournament.name}</span>
                                 </span>
                               )
                             ) : (
@@ -1375,12 +1378,12 @@ export async function PlayerProfileBody({
                           achievementDateFrom,
                           achievementDateTo
                         )}
-                        className="rounded-md border border-border/70 px-3 py-1.5 text-foreground hover:border-primary/40 hover:text-primary"
+                        className="rounded-md border border-border/70 px-3 py-2.5 text-foreground hover:border-primary/40 hover:text-primary sm:py-1.5"
                       >
                         Previous
                       </Link>
                     ) : (
-                      <span className="rounded-md border border-border/40 px-3 py-1.5 text-muted-foreground/60">
+                      <span className="rounded-md border border-border/40 px-3 py-2.5 text-muted-foreground/60 sm:py-1.5">
                         Previous
                       </span>
                     )}
@@ -1399,12 +1402,12 @@ export async function PlayerProfileBody({
                           achievementDateFrom,
                           achievementDateTo
                         )}
-                        className="rounded-md border border-border/70 px-3 py-1.5 text-foreground hover:border-primary/40 hover:text-primary"
+                        className="rounded-md border border-border/70 px-3 py-2.5 text-foreground hover:border-primary/40 hover:text-primary sm:py-1.5"
                       >
                         Next
                       </Link>
                     ) : (
-                      <span className="rounded-md border border-border/40 px-3 py-1.5 text-muted-foreground/60">
+                      <span className="rounded-md border border-border/40 px-3 py-2.5 text-muted-foreground/60 sm:py-1.5">
                         Next
                       </span>
                     )}

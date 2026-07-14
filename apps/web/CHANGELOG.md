@@ -1,3 +1,58 @@
+## [1.22.2](https://github.com/abcEDH/cedh-research/compare/v1.22.1...v1.22.2) (2026-07-14)
+
+
+### Bug Fixes
+
+* **schema:** allow nullable SUM/AVG aggregates in CommanderStatsSchema ([5223bb8](https://github.com/abcEDH/cedh-research/commit/5223bb8a3799c28272224aee59d253a5ed9937cb)), closes [#262](https://github.com/abcEDH/cedh-research/issues/262)
+* **tests:** make commander_stats contract test query deterministic ([8c7cd13](https://github.com/abcEDH/cedh-research/commit/8c7cd13dcc0a38f2768538b75b04e9ccee00503e)), closes [#262](https://github.com/abcEDH/cedh-research/issues/262)
+
+## [1.22.1](https://github.com/abcEDH/cedh-research/compare/v1.22.0...v1.22.1) (2026-07-14)
+
+
+### Bug Fixes
+
+* exclude leaderboard rows with no games in the last 6 months ([d555496](https://github.com/abcEDH/cedh-research/commit/d555496b93577f618948424caa5df9971e79a514))
+* null denormalized topdeck rank on prune, exclude ineligible rows from fallback rank ([6ead79e](https://github.com/abcEDH/cedh-research/commit/6ead79e0075afb98d7a1843af4509140f12b34fc))
+* prune stale rows from topdeck_player_elos on import ([e0ed33e](https://github.com/abcEDH/cedh-research/commit/e0ed33e5df5c0db4fc0af6e48ee39576d09058c1))
+* run TopDeck Elo import daily instead of weekly ([d38608c](https://github.com/abcEDH/cedh-research/commit/d38608ceefae42c4026cfecad07bd1b2b2e17b41))
+* use canonical global last_game_date for activity eligibility ([095e228](https://github.com/abcEDH/cedh-research/commit/095e2283867e3eee7730e7888e7a0c730cd359b3))
+
+# [1.22.0](https://github.com/abcEDH/cedh-research/compare/v1.21.0...v1.22.0) (2026-07-14)
+
+
+### Bug Fixes
+
+* clean up frontend verification script ([a8a8043](https://github.com/abcEDH/cedh-research/commit/a8a804307dd5705cbbea61bdcc34287c9c14dce9))
+* close mobile nav without effect state update ([caf31b2](https://github.com/abcEDH/cedh-research/commit/caf31b2006078203fa7b44eb8dce3937da061e6d))
+* install Playwright system dependencies ([614ba35](https://github.com/abcEDH/cedh-research/commit/614ba353e54139ac8bf90972f0dd2056a72f162a))
+* install WebKit for mobile Safari e2e tests ([4749699](https://github.com/abcEDH/cedh-research/commit/4749699b17be49b0a975b54a14b71944132acaa0))
+
+
+### Features
+
+* **web:** add installable web app manifest, icons, and mobile metadata ([5bf8016](https://github.com/abcEDH/cedh-research/commit/5bf8016abce42ccbb4200c5050198b7dcd138994))
+* **web:** add mobile nav drawer, safe-area insets, and motif perf guard ([eced850](https://github.com/abcEDH/cedh-research/commit/eced8503620332dfb058465a02f77811c3af5547))
+* **web:** improve trap-spice touch targets on mobile ([3ce9851](https://github.com/abcEDH/cedh-research/commit/3ce9851dbe42f6321e9d9606a288274232a5e4d8))
+* **web:** make tournaments list responsive with Radix Select filters ([895248f](https://github.com/abcEDH/cedh-research/commit/895248f567dcd2f3044ccf89accd94326d3416ff))
+* **web:** stack pod bracket stages vertically on mobile ([5034bb6](https://github.com/abcEDH/cedh-research/commit/5034bb6ab49c621bcbbc14d0c8ea52eabeef61a6))
+* **web:** tune player profile tables for phone widths ([27dd2cb](https://github.com/abcEDH/cedh-research/commit/27dd2cb8902bef128d5532a42c2314aefa20b703))
+
+# [1.21.0](https://github.com/abcEDH/cedh-research/compare/v1.20.1...v1.21.0) (2026-07-14)
+
+
+### Bug Fixes
+
+* **backend:** stop deriving wins/draws from points during ingestion ([3189b0d](https://github.com/abcEDH/cedh-research/commit/3189b0dc252bb3423e1e3e5f9dfdda7d4aa3c4ec))
+* **ci:** restore --min-players 16 floor per review feedback ([6e82861](https://github.com/abcEDH/cedh-research/commit/6e82861bff8bb7bbd1e4215aadd3d4f1caca0b84))
+* **web:** bypass Data Cache for tournament detail reads ([e5b6bf9](https://github.com/abcEDH/cedh-research/commit/e5b6bf9be523d8cc6f2706d57ab8faabb1755d62))
+* **web:** remove unreliable Pts column from tournament standings ([d3eea41](https://github.com/abcEDH/cedh-research/commit/d3eea413cd135c8851b3b614e2c189a60d16d663)), closes [#b3d0479](https://github.com/abcEDH/cedh-research/issues/b3d0479)
+* **web:** restore Pts column, drop unsafe points-to-record derivation ([d067548](https://github.com/abcEDH/cedh-research/commit/d06754842396df45dd3f399c691824a154c243be))
+
+
+### Features
+
+* **mobile:** two-row card layout and responsive fixes for tournament pages ([79042c3](https://github.com/abcEDH/cedh-research/commit/79042c3fe3809d6958cbf3563c5eea00c8b92071))
+
 ## [1.20.1](https://github.com/abcEDH/cedh-research/compare/v1.20.0...v1.20.1) (2026-07-09)
 
 

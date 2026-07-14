@@ -58,7 +58,7 @@ jobs:
             JOB_FLAGS="--job-id ${{ inputs.job_id }}"
           fi
           set +e
-          uv run --project packages/backend python packages/backend/src/ingest.py --days 7 --min-players 32 $JOB_FLAGS
+          uv run --project packages/backend python packages/backend/src/ingest.py --days 7 --min-players 16 $JOB_FLAGS
           status=$?
           set -e
 
