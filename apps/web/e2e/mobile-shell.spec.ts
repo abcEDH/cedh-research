@@ -37,9 +37,9 @@ test.describe("Mobile navigation", () => {
     await trigger.click();
     const drawer = page.getByRole("dialog");
     await expect(drawer).toBeVisible();
+    // "Commanders" is intentionally omitted from the nav (deprioritized).
     for (const label of [
       "Tournaments",
-      "Commanders",
       "Leaderboard",
       "Tournament Prep",
       "Methodology",

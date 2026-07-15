@@ -56,10 +56,11 @@ test.describe("Home Page", () => {
   });
 
   test("navigation links are valid", async ({ page, isMobile }) => {
+    // "/commanders" is intentionally omitted from the nav (deprioritized);
+    // the page stays reachable by URL but is not surfaced in header/drawer.
     const navPaths = [
       "/tournament-likelihood",
       "/regional-elo",
-      "/commanders",
       "/about",
     ];
 
