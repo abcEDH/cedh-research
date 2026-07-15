@@ -1,3 +1,15 @@
+# [1.23.0](https://github.com/abcEDH/cedh-research/compare/v1.22.3...v1.23.0) (2026-07-15)
+
+
+### Bug Fixes
+
+* **web:** move commander nav removal into shared nav-items source ([c390fcc](https://github.com/abcEDH/cedh-research/commit/c390fcc3af613f5a5d0e50337f9f285e15d14cb1))
+
+
+### Features
+
+* **web:** deprioritize commander page in nav, relabel homepage CTA ([3ee6030](https://github.com/abcEDH/cedh-research/commit/3ee60309418f6dfcae2746878b607875b1108ad3))
+
 ## [1.22.3](https://github.com/abcEDH/cedh-research/compare/v1.22.2...v1.22.3) (2026-07-14)
 
 
