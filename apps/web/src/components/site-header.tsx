@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-
 import { MobileNav } from "@/components/mobile-nav";
 import { navItems, isNavItemActive } from "@/components/nav-items";
 
