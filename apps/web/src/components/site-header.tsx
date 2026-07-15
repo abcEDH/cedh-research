@@ -5,15 +5,6 @@ import { usePathname } from "next/navigation";
 import { MobileNav } from "@/components/mobile-nav";
 import { navItems, isNavItemActive } from "@/components/nav-items";
 
-// Note: "/commanders" is intentionally omitted from the nav — the commander
-// rankings page stays reachable by URL but is deprioritized in the header.
-const navItems = [
-  { href: "/tournaments", label: "Tournaments" },
-  { href: "/regional-elo", label: "Leaderboard" },
-  { href: "/tournament-likelihood", label: "Tournament Prep" },
-  { href: "/about", label: "Methodology" },
-];
-
 export function SiteHeader() {
   const pathname = usePathname();
 
