@@ -125,6 +125,25 @@ def extract_standing_rates(standing: dict[str, Any]) -> tuple[float | None, floa
     return primary_rate, opponent_rate
 
 
+def resolve_record_fields(info: dict[str, Any]) -> dict[str, int]:
+    """Resolve wins/losses/draws for a standing entry.
+
+    Only returns fields TopDeck reports explicitly. Point totals are not
+    derived into wins/draws: scoring formulas vary per tournament/organizer
+    (flat 5-per-win, league/ladder scoring, etc.), so points is not a
+    reliable stand-in for an explicit record. Deriving from it can fabricate
+    impossible win counts (e.g. points=1866 on a 5-round event).
+    """
+    fields: dict[str, int] = {}
+    if info.get("wins") is not None:
+        fields["wins"] = info["wins"]
+    if info.get("losses") is not None:
+        fields["losses"] = info["losses"]
+    if info.get("draws") is not None:
+        fields["draws"] = info["draws"]
+    return fields
+
+
 def clean_commander_card_name(name: str) -> str:
     """Normalize an individual commander card name.
 
@@ -136,10 +155,25 @@ def clean_commander_card_name(name: str) -> str:
     cleaned = name.replace("\\'", "'").replace('\\"', '"')
     front_face = cleaned.split(" // ", 1)[0]
     normalized = front_face.split("[", 1)[0].strip()
-    return COMMANDER_NAME_ALIASES.get(normalized, normalized)
+    if normalized in COMMANDER_NAME_ALIASES:
+        return COMMANDER_NAME_ALIASES[normalized]
+    return load_commander_oracle_aliases().get(normalized, normalized)
 
 
 COMMANDER_NAME_ALIASES: dict[str, str] = {
+    # "Secret Lair x Stranger Things" character-name -> Innistrad-commander
+    # mappings. An earlier pass on PR #265's Codex review incorrectly
+    # concluded these were fabricated, having checked only the Scryfall
+    # `flavor_name` field. Re-verified: this Secret Lair drop actually
+    # records its rebrand via `printed_name` (normally a foreign-language
+    # localization field, but reused here for an English-language rebrand
+    # while keeping `lang: "en"`) -- e.g. Sophina, Spearsage Deserter's
+    # `sld` printing has `printed_name: "Chief Jim Hopper"`, no
+    # `flavor_name` at all. All 8 confirmed real via oracle_id printing
+    # lookups. `commander_oracle_identity.py`'s `alternate_display_names()`
+    # now checks both fields, so the generated
+    # `commander_oracle_aliases.json` also covers these -- this hardcoded
+    # dict is kept anyway as a guaranteed, generation-independent fallback.
     "Chief Jim Hopper": "Sophina, Spearsage Deserter",
     "Dustin, Gadget Genius": "Hargilde, Kindly Runechanter",
     "Eleven, the Mage": "Cecily, Haunted Mage",
@@ -149,6 +183,25 @@ COMMANDER_NAME_ALIASES: dict[str, str] = {
     "Mind Flayer, the Shadow": "Arvinox, the Mind Flail",
     "Will the Wise": "Wernog, Rider's Chaplain",
 }
+
+
+@lru_cache(maxsize=1)
+def load_commander_oracle_aliases() -> dict[str, str]:
+    """Load the generated Universes Beyond flavor-name -> true-name alias map.
+
+    This is the ingestion-time half of issue #261's oracle_id dedup: names are
+    pre-resolved into this artifact by ``generate_commander_oracle_aliases.py``
+    (keyed off Scryfall ``oracle_id``) so new UB alternate-name commanders are
+    normalized automatically, without requiring a manual
+    ``COMMANDER_NAME_ALIASES`` entry for every new printing. Falls back to an
+    empty map if the artifact hasn't been generated yet.
+    """
+    data_path = Path(__file__).resolve().parents[1] / "data" / "commander_oracle_aliases.json"
+    if not data_path.exists():
+        return {}
+    payload = json.loads(data_path.read_text())
+    aliases = payload.get("aliases") or {}
+    return {str(key): str(value) for key, value in aliases.items()}
 
 
 @lru_cache(maxsize=1)
@@ -870,21 +923,9 @@ class DataIngester:
                 "topdeck_entry_id": f"{tid}_{info['topdeck_id']}",
             }
 
-            # Only add W/L/D if they are explicitly present in the data to avoid
-            # overwriting with zeros during re-ingestion.
-            # If not present but points > 0, derive them.
-            if info.get("wins") is not None:
-                entry["wins"] = info["wins"]
-            elif info["points"] > 0:
-                entry["wins"] = info["points"] // 5
-
-            if info.get("losses") is not None:
-                entry["losses"] = info["losses"]
-
-            if info.get("draws") is not None:
-                entry["draws"] = info["draws"]
-            elif info["points"] > 0:
-                entry["draws"] = info["points"] % 5
+            # Only add W/L/D if they are explicitly present in the data, to avoid
+            # overwriting existing values with zeros during re-ingestion.
+            entry.update(resolve_record_fields(info))
 
             entries.append(entry)
 

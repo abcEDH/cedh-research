@@ -4,6 +4,13 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { assignEventTier, TIER_MIN, type EventTier, type TournamentSummary, type TopCutPlayer } from "@/lib/tournaments";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 // ---- Types ----
 type SortOption = "Date" | "Players";
@@ -68,49 +75,32 @@ function firstRelation<T>(value: T | T[] | null | undefined): T | null {
   return Array.isArray(value) ? value[0] ?? null : value;
 }
 
-// ---- FilterDropdown ----
-interface FilterDropdownProps {
+// ---- FilterSelect ----
+interface FilterSelectProps {
   label: string;
-  display: string;
-  isOpen: boolean;
-  onToggle: () => void;
-  options: { label: string; active: boolean; onSelect: () => void }[];
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
 }
 
-function FilterDropdown({ label, display, isOpen, onToggle, options }: FilterDropdownProps) {
+function FilterSelect({ label, value, onChange, options }: FilterSelectProps) {
   return (
-    <div className="relative flex flex-col gap-1.5">
+    <div className="flex min-w-[132px] flex-1 flex-col gap-1.5 sm:flex-none">
       <span className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground font-medium">
         {label}
       </span>
-      <button
-        onClick={onToggle}
-        className="inline-flex items-center justify-between gap-2.5 min-w-[132px] px-3 py-2 border border-border rounded-[10px] bg-muted/55 text-foreground text-sm cursor-pointer transition-colors hover:border-primary/50"
-      >
-        <span>{display}</span>
-        <span className="text-muted-foreground text-[10px]">▾</span>
-      </button>
-      {isOpen && (
-        <div className="absolute top-full left-0 mt-1.5 min-w-[150px] z-50 p-1.5 bg-card border border-border rounded-xl shadow-[0_20px_50px_rgba(2,10,26,.55)] backdrop-blur-md flex flex-col gap-0.5">
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger className="min-h-11 w-full border-border bg-muted/55 hover:border-primary/50 sm:min-h-0 sm:w-fit sm:min-w-[132px]">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
           {options.map((opt) => (
-            <button
-              key={opt.label}
-              onClick={opt.onSelect}
-              className="flex justify-between items-center w-full text-left px-2.5 py-2 border-none rounded-lg text-sm cursor-pointer whitespace-nowrap gap-3 transition-colors"
-              style={{
-                background: opt.active ? "oklch(0.32 0.04 260 / 0.5)" : "transparent",
-                color: opt.active ? "var(--foreground)" : "var(--muted-foreground)",
-                fontWeight: opt.active ? 600 : 400,
-              }}
-            >
-              <span>{opt.label}</span>
-              {opt.active && (
-                <span style={{ color: "hsl(var(--knd-cyan))" }}>★</span>
-              )}
-            </button>
+            <SelectItem key={opt.value} value={opt.value}>
+              {opt.label}
+            </SelectItem>
           ))}
-        </div>
-      )}
+        </SelectContent>
+      </Select>
     </div>
   );
 }
@@ -120,7 +110,6 @@ export function TournamentsList({ initialSort, initialTier, initialPeriod }: Tou
   const [sortBy, setSortBy] = useState<SortOption>(initialSort);
   const [tierFilter, setTierFilter] = useState<TierOption>(initialTier);
   const [period, setPeriod] = useState<PeriodOption>(initialPeriod);
-  const [openMenu, setOpenMenu] = useState<string | null>(null);
   const [events, setEvents] = useState<TournamentSummary[]>([]);
 
   useEffect(() => {
@@ -195,10 +184,6 @@ export function TournamentsList({ initialSort, initialTier, initialPeriod }: Tou
     window.history.replaceState(null, "", window.location.pathname + "?" + p.toString());
   }
 
-  function toggleMenu(name: string) {
-    setOpenMenu((prev) => (prev === name ? null : name));
-  }
-
   // ---- Compute rows ----
   const periodDays = PERIOD_DAYS[period];
 
@@ -214,48 +199,25 @@ export function TournamentsList({ initialSort, initialTier, initialPeriod }: Tou
     tierFilter === "All Tiers" ? "all tiers" : tierFilter.toLowerCase();
   const countText = `${items.length} events · ${period.toLowerCase()} · ${tierLabel}`;
 
-  // ---- Dropdown option builders ----
+  // ---- Select option builders ----
   const sortOptions = (["Date", "Players"] as SortOption[]).map((o) => ({
+    value: o,
     label: o,
-    active: o === sortBy,
-    onSelect: () => {
-      setSortBy(o);
-      setFilter("sort", o);
-      setOpenMenu(null);
-    },
   }));
 
   const tierOptions = (["All Tiers", "Diamond", "Platinum", "Gold", "Silver", "Bronze"] as TierOption[]).map((o) => ({
+    value: o,
     label: o === "All Tiers" ? "All Tiers" : `${o} · ${TIER_MIN[o]}+`,
-    active: o === tierFilter,
-    onSelect: () => {
-      setTierFilter(o);
-      setFilter("tier", o);
-      setOpenMenu(null);
-    },
   }));
 
   const periodOptions = (["3 Months", "6 Months", "1 Year", "All"] as PeriodOption[]).map((o) => ({
+    value: o,
     label: o,
-    active: o === period,
-    onSelect: () => {
-      setPeriod(o);
-      setFilter("period", o);
-      setOpenMenu(null);
-    },
   }));
 
   return (
     <>
-      {/* Click-outside overlay when any menu is open */}
-      {openMenu && (
-        <div
-          className="fixed inset-0 z-40"
-          onClick={() => setOpenMenu(null)}
-        />
-      )}
-
-      <main className="mx-auto max-w-5xl px-6 py-10 pb-20">
+      <main className="mx-auto max-w-5xl px-4 py-8 pb-16 sm:px-6 sm:py-10 sm:pb-20">
         {/* Page header */}
         <div className="mb-7">
           <div
@@ -264,7 +226,7 @@ export function TournamentsList({ initialSort, initialTier, initialPeriod }: Tou
           >
             TOURNAMENTS
           </div>
-          <h1 className="m-0 text-4xl font-semibold tracking-tight">
+          <h1 className="m-0 text-3xl font-semibold tracking-tight sm:text-4xl">
             Latest Tournaments
           </h1>
           <p className="mt-2.5 text-[15px] leading-relaxed text-muted-foreground max-w-xl">
@@ -273,26 +235,32 @@ export function TournamentsList({ initialSort, initialTier, initialPeriod }: Tou
         </div>
 
         {/* Filter bar */}
-        <div className="relative z-41 flex items-end gap-5 flex-wrap px-5 py-4 mb-4 knd-panel">
-          <FilterDropdown
+        <div className="flex flex-wrap items-end gap-3 px-4 py-4 mb-4 knd-panel sm:gap-5 sm:px-5">
+          <FilterSelect
             label="Sort By"
-            display={sortBy}
-            isOpen={openMenu === "sort"}
-            onToggle={() => toggleMenu("sort")}
+            value={sortBy}
+            onChange={(v) => {
+              setSortBy(v as SortOption);
+              setFilter("sort", v);
+            }}
             options={sortOptions}
           />
-          <FilterDropdown
+          <FilterSelect
             label="Event Tier"
-            display={tierFilter === "All Tiers" ? "All Tiers" : `${tierFilter} · ${TIER_MIN[tierFilter]}+`}
-            isOpen={openMenu === "tier"}
-            onToggle={() => toggleMenu("tier")}
+            value={tierFilter}
+            onChange={(v) => {
+              setTierFilter(v as TierOption);
+              setFilter("tier", v);
+            }}
             options={tierOptions}
           />
-          <FilterDropdown
+          <FilterSelect
             label="Time Period"
-            display={period}
-            isOpen={openMenu === "period"}
-            onToggle={() => toggleMenu("period")}
+            value={period}
+            onChange={(v) => {
+              setPeriod(v as PeriodOption);
+              setFilter("period", v);
+            }}
             options={periodOptions}
           />
           <div className="flex-1" />
@@ -318,7 +286,7 @@ export function TournamentsList({ initialSort, initialTier, initialPeriod }: Tou
               return (
                 <div
                   key={t.slug}
-                  className="group flex items-center gap-4 px-5 py-4 transition-colors hover:bg-accent/25"
+                  className="group flex items-center gap-3 px-4 py-4 transition-colors hover:bg-accent/25 sm:gap-4 sm:px-5"
                   style={{
                     borderBottom: i < items.length - 1 ? "1px solid var(--border)" : "none",
                     cursor: "pointer",
@@ -326,10 +294,10 @@ export function TournamentsList({ initialSort, initialTier, initialPeriod }: Tou
                 >
                   <Link
                     href={href}
-                    className="flex-1 min-w-0 flex items-center gap-4 no-underline"
+                    className="flex-1 min-w-0 flex items-center gap-3 no-underline sm:gap-4"
                   >
                     {/* Date column */}
-                    <div className="flex flex-col items-center justify-center w-14 flex-shrink-0 border-r border-border pr-4">
+                    <div className="flex flex-col items-center justify-center w-12 flex-shrink-0 border-r border-border pr-3 sm:w-14 sm:pr-4">
                       <span className="text-[11px] tracking-[0.16em] uppercase text-muted-foreground font-medium">
                         {MONTHS[t.d.getMonth()]}
                       </span>
@@ -344,19 +312,24 @@ export function TournamentsList({ initialSort, initialTier, initialPeriod }: Tou
                     {/* Name + winner */}
                     <div className="flex-1 min-w-0 flex flex-col gap-1.5">
                       <div className="flex items-center gap-3">
-                        <span className="text-[17px] font-semibold leading-snug text-foreground truncate">
+                        <span className="text-[15px] font-semibold leading-snug text-foreground truncate sm:text-[17px]">
                           {t.name}
                         </span>
                         <span className="text-xs text-muted-foreground whitespace-nowrap">
                           {relTime(t.days)}
                         </span>
                       </div>
-                      
-                      {/* Top 4 Display */}
+
+                      {/* Player count moves into a sub-line below sm: */}
+                      <span className="font-mono text-[11px] text-muted-foreground sm:hidden">
+                        {t.players.toLocaleString("en-US")} players
+                      </span>
+
+                      {/* Top 4 Display — winner only below sm:, full top cut above */}
                       {t.topCut && t.topCut.length > 0 ? (
                         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1">
                           {t.topCut.map((cut, ci) => (
-                            <div key={`${cut.standing}-${cut.name}-${ci}`} className="flex items-center gap-1.5 min-w-0 max-w-[200px]">
+                            <div key={`${cut.standing}-${cut.name}-${ci}`} className={`items-center gap-1.5 min-w-0 max-w-[200px] ${ci === 0 ? "flex" : "hidden sm:flex"}`}>
                               <span className={`text-[10px] font-mono font-bold flex-shrink-0 ${cut.standing === 1 ? 'text-[hsl(var(--knd-amber))]' : 'text-muted-foreground'}`}>
                                 {cut.standing === 1 ? '★' : `${cut.standing}`}
                               </span>
@@ -370,6 +343,11 @@ export function TournamentsList({ initialSort, initialTier, initialPeriod }: Tou
                               </div>
                             </div>
                           ))}
+                          {t.topCut.length > 1 && (
+                            <span className="text-[10px] font-mono text-muted-foreground/70 sm:hidden">
+                              +{t.topCut.length - 1} top cut
+                            </span>
+                          )}
                         </div>
                       ) : (
                         <span className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
@@ -419,8 +397,8 @@ export function TournamentsList({ initialSort, initialTier, initialPeriod }: Tou
                       </span>
                     )}
 
-                    {/* Player count */}
-                    <div className="flex flex-col items-end flex-shrink-0 gap-0">
+                    {/* Player count (column above sm:, sub-line below) */}
+                    <div className="hidden flex-col items-end flex-shrink-0 gap-0 sm:flex">
                       <span className="font-mono text-xl font-semibold text-primary leading-none">
                         {t.players.toLocaleString("en-US")}
                       </span>
@@ -439,7 +417,7 @@ export function TournamentsList({ initialSort, initialTier, initialPeriod }: Tou
                       strokeWidth="2"
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      className="flex-shrink-0"
+                      className="hidden flex-shrink-0 sm:block"
                       style={{
                         color: "hsl(var(--knd-cyan) / 0.6)",
                       }}

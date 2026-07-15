@@ -138,6 +138,14 @@
   body {
     @apply bg-background text-foreground antialiased font-sans;
   }
+  /* Backstop against horizontal-scroll regressions from wide content.
+     clip (not hidden) so position: sticky keeps working. The real guard is
+     the e2e overflow assertion in e2e/helpers/overflow.ts — fix overflow at
+     the source rather than relying on this. */
+  html,
+  body {
+    overflow-x: clip;
+  }
 }
 
 @layer components {
@@ -151,6 +159,18 @@
       linear-gradient(0deg, hsl(var(--knd-line) / 0.12) 1px, transparent 1px);
     background-size: auto, auto, auto, 120px 120px, 120px 120px;
     background-attachment: fixed;
+    /* viewport-fit=cover lets content extend under notches/rounded corners;
+       these insets keep it readable there. */
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  /* background-attachment: fixed forces expensive repaints on mobile Safari;
+     scroll is indistinguishable on a phone-sized viewport. */
+  @media (max-width: 767px) {
+    .knd-body {
+      background-attachment: scroll;
+    }
   }
 
   .knd-panel {

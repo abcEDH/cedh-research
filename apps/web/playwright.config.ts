@@ -29,6 +29,16 @@ export default defineConfig({
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
     },
+    {
+      name: "mobile-chrome",
+      use: { ...devices["Pixel 7"] },
+    },
+    // Requires the WebKit browser (npx playwright install webkit);
+    // catches Safari-specific layout issues.
+    {
+      name: "mobile-safari",
+      use: { ...devices["iPhone 14"] },
+    },
   ],
 
   // Start local server if no BASE_URL provided.
