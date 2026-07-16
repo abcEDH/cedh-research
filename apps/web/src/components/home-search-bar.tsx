@@ -75,13 +75,19 @@ export function HomeSearchBar() {
           .ilike("name", pattern)
           .not("topdeck_id", "is", null)
           .limit(5),
+        // The inner join on tournament_entries mirrors the renderability
+        // check in tournament-detail-loader.ts: the detail route 404s for
+        // tournaments with no non-null final_standing (upcoming or
+        // partially ingested events), so exclude those from search hits.
         supabase
           .from("tournaments")
-          .select("topdeck_tid, name, start_date, player_count")
+          .select("topdeck_tid, name, start_date, player_count, tournament_entries!inner(final_standing)")
           .ilike("name", pattern)
           .not("topdeck_tid", "is", null)
+          .not("tournament_entries.final_standing", "is", null)
           .order("start_date", { ascending: false })
-          .limit(5),
+          .limit(5)
+          .limit(1, { referencedTable: "tournament_entries" }),
       ]);
 
       // Discard if a newer request has since been issued
