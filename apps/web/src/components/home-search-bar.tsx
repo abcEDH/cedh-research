@@ -7,7 +7,8 @@ import { normalizeDisplayString } from "@/lib/utils";
 
 type SearchResult =
   | { kind: "commander"; id: string; name: string; color_identity: string[] | null }
-  | { kind: "player"; topdeck_id: string; name: string };
+  | { kind: "player"; topdeck_id: string; name: string }
+  | { kind: "tournament"; slug: string; name: string; date: string | null; players: number | null };
 
 const COLOR_CLASSES: Record<string, string> = {
   W: "bg-amber-200/80 text-amber-950",
@@ -16,6 +17,12 @@ const COLOR_CLASSES: Record<string, string> = {
   R: "bg-red-500/90 text-white",
   G: "bg-emerald-500/90 text-white",
 };
+
+function formatTournamentDate(date: string) {
+  const d = new Date(`${date.slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
 
 function ColorPip({ color }: { color: string }) {
   return (
@@ -54,7 +61,7 @@ export function HomeSearchBar() {
       setLoading(true);
       const pattern = `%${query.trim()}%`;
 
-      const [commanderRes, playerRes] = await Promise.all([
+      const [commanderRes, playerRes, tournamentRes] = await Promise.all([
         supabase
           .from("commander_stats")
           .select("commander_id, commander_name, color_identity")
@@ -68,6 +75,19 @@ export function HomeSearchBar() {
           .ilike("name", pattern)
           .not("topdeck_id", "is", null)
           .limit(5),
+        // The inner join on tournament_entries mirrors the renderability
+        // check in tournament-detail-loader.ts: the detail route 404s for
+        // tournaments with no non-null final_standing (upcoming or
+        // partially ingested events), so exclude those from search hits.
+        supabase
+          .from("tournaments")
+          .select("topdeck_tid, name, start_date, player_count, tournament_entries!inner(final_standing)")
+          .ilike("name", pattern)
+          .not("topdeck_tid", "is", null)
+          .not("tournament_entries.final_standing", "is", null)
+          .order("start_date", { ascending: false })
+          .limit(5)
+          .limit(1, { referencedTable: "tournament_entries" }),
       ]);
 
       // Discard if a newer request has since been issued
@@ -89,7 +109,15 @@ export function HomeSearchBar() {
         name: r.name as string,
       }));
 
-      setResults([...commanders, ...players]);
+      const tournaments: SearchResult[] = (tournamentRes.data ?? []).map((r) => ({
+        kind: "tournament",
+        slug: r.topdeck_tid as string,
+        name: (r.name as string | null) ?? "",
+        date: (r.start_date as string | null) ?? null,
+        players: (r.player_count as number | null) ?? null,
+      }));
+
+      setResults([...commanders, ...players, ...tournaments]);
       setOpen(true);
       setActiveIndex(-1);
       setLoading(false);
@@ -117,8 +145,10 @@ export function HomeSearchBar() {
     setResults([]);
     if (result.kind === "commander") {
       router.push(`/commanders/${result.id}`);
-    } else {
+    } else if (result.kind === "player") {
       router.push(`/regional-elo/player/${result.topdeck_id}`);
+    } else {
+      router.push(`/tournaments/${result.slug}`);
     }
   }
 
@@ -155,7 +185,7 @@ export function HomeSearchBar() {
           ref={inputRef}
           type="text"
           className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
-          placeholder="Search commanders or players…"
+          placeholder="Search commanders, players, or tournaments…"
           value={query}
           onChange={(e) => {
             const val = e.target.value;
@@ -201,7 +231,15 @@ export function HomeSearchBar() {
       {open && results.length > 0 && (
         <ul className="absolute left-0 right-0 top-full z-50 mt-1.5 overflow-hidden rounded-xl border border-border/60 bg-background shadow-xl">
           {results.map((result, i) => (
-            <li key={result.kind === "commander" ? `commander-${result.id}` : `player-${result.topdeck_id}`}>
+            <li
+              key={
+                result.kind === "commander"
+                  ? `commander-${result.id}`
+                  : result.kind === "player"
+                    ? `player-${result.topdeck_id}`
+                    : `tournament-${result.slug}`
+              }
+            >
               <button
                 type="button"
                 className={`flex w-full items-center gap-3 px-4 py-2.5 text-left transition ${
@@ -224,7 +262,7 @@ export function HomeSearchBar() {
                       commander
                     </span>
                   </>
-                ) : (
+                ) : result.kind === "player" ? (
                   <>
                     <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted">
                       <svg className="h-3 w-3 text-muted-foreground" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -239,6 +277,35 @@ export function HomeSearchBar() {
                       player
                     </span>
                   </>
+                ) : (
+                  <>
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted">
+                      <svg className="h-3 w-3 text-muted-foreground" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                        <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" />
+                        <path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" />
+                        <path d="M4 22h16" />
+                        <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" />
+                        <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" />
+                        <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" />
+                      </svg>
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+                      {result.name}
+                      {(result.date || result.players != null) && (
+                        <span className="ml-2 text-xs font-normal text-muted-foreground">
+                          {[
+                            result.date ? formatTournamentDate(result.date) : null,
+                            result.players != null ? `${result.players.toLocaleString()} players` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </span>
+                      )}
+                    </span>
+                    <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      tournament
+                    </span>
+                  </>
                 )}
               </button>
             </li>
@@ -248,7 +315,7 @@ export function HomeSearchBar() {
 
       {open && query.trim().length >= 2 && !loading && results.length === 0 && (
         <div className="absolute left-0 right-0 top-full z-50 mt-1.5 rounded-xl border border-border/60 bg-background px-4 py-3 shadow-xl">
-          <p className="text-sm text-muted-foreground">No commanders or players found.</p>
+          <p className="text-sm text-muted-foreground">No commanders, players, or tournaments found.</p>
         </div>
       )}
     </div>
