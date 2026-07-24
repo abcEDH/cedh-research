@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  exportPlayerMatchups,
+  exportMatchupSummary,
+} from "@/lib/exports/player-matchups";
 
 /**
  * API route to export player matchup data as CSV.
@@ -10,7 +14,7 @@ import { NextRequest, NextResponse } from "next/server";
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const playerName = searchParams.get("player_name");
-  const format = searchParams.get("format") || "csv";
+  const format = (searchParams.get("format") || "csv") as "csv" | "json";
   const summaryOnly = searchParams.get("summary_only") === "true";
 
   if (!playerName) {
@@ -21,11 +25,6 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Import the export function from backend
-    const { exportPlayerMatchups, exportMatchupSummary } = await import(
-      "@/../../packages/backend/src/export_player_matchups"
-    );
-
     let result;
 
     if (summaryOnly) {
