@@ -1,0 +1,6 @@
+# Generated CSV exports
+*.csv
+
+# Keep this directory structure
+!.gitignore
+!README.md

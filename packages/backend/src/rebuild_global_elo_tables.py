@@ -35,6 +35,11 @@ ELO_BASE = 2
 ELO_DIVISOR = 200
 GLOBAL_REGION_TYPE = "global"
 GLOBAL_REGION_KEY = "ALL"
+ELO_TIER_FILTERS = {
+    "ranking": "ranking_eligible",
+    "local": "local_eligible",
+    "all": "all_eligible",
+}
 ACTIVE_LOOKBACK_DAYS = 180
 SEAT_ELO_BONUS = {
     1: 0.0,
@@ -530,10 +535,13 @@ def game_sort_key(item: tuple[str, list[dict[str, Any]]]) -> tuple[Any, ...]:
     )
 
 
-def fetch_results_by_month(client: SupabaseClient) -> list[dict[str, Any]]:
+def fetch_results_by_month(client: SupabaseClient, tier: str = "ranking") -> list[dict[str, Any]]:
+    if tier not in ELO_TIER_FILTERS:
+        raise ValueError(f"Unknown Elo tier: {tier}")
     select = (
         "game_id,tournament_id,start_date,state,country,entry_id,player_id,topdeck_id,"
-        "player_name,result,is_draw,round_number,round_name,table_number"
+        "player_name,result,is_draw,round_number,round_name,table_number,"
+        "seat_position,ranking_eligible,local_eligible,all_eligible"
     )
     all_rows: list[dict[str, Any]] = []
     windows = month_starts(date(2022, 8, 1), datetime.now(UTC).date())
@@ -546,6 +554,7 @@ def fetch_results_by_month(client: SupabaseClient) -> list[dict[str, Any]]:
                 ("select", select),
                 ("start_date", f"gte.{window_start.isoformat()}"),
                 ("start_date", f"lt.{window_end.isoformat()}"),
+                (ELO_TIER_FILTERS[tier], "eq.true"),
             ],
             label=f"global_elo_game_results {window_start:%Y-%m}",
         )
@@ -560,10 +569,14 @@ def fetch_results_by_month(client: SupabaseClient) -> list[dict[str, Any]]:
 def fetch_results_from_tournament_start(
     client: SupabaseClient,
     threshold_start_date: str,
+    tier: str = "ranking",
 ) -> list[dict[str, Any]]:
+    if tier not in ELO_TIER_FILTERS:
+        raise ValueError(f"Unknown Elo tier: {tier}")
     select = (
         "game_id,tournament_id,start_date,state,country,entry_id,player_id,topdeck_id,"
-        "player_name,result,is_draw,round_number,round_name,table_number"
+        "player_name,result,is_draw,round_number,round_name,table_number,"
+        "seat_position,ranking_eligible,local_eligible,all_eligible"
     )
     all_rows: list[dict[str, Any]] = []
     start_day = parse_datetime(threshold_start_date).date() if threshold_start_date else date(2022, 8, 1)
@@ -577,6 +590,7 @@ def fetch_results_from_tournament_start(
                 ("select", select),
                 ("start_date", f"gte.{window_start.isoformat()}"),
                 ("start_date", f"lt.{window_end.isoformat()}"),
+                (ELO_TIER_FILTERS[tier], "eq.true"),
             ],
             label=f"global_elo_game_results {window_start:%Y-%m}",
         )
@@ -1501,11 +1515,23 @@ def main() -> None:
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--preview-topdeck-id", default="")
     parser.add_argument(
+        "--tier",
+        choices=tuple(ELO_TIER_FILTERS),
+        default="ranking",
+        help="Elo dataset to rebuild; ranking is the TopDeck-compatible default",
+    )
+    parser.add_argument(
         "--since-start-date",
         default="",
         help="Incrementally rebuild from tournaments with start_date >= this ISO timestamp/date",
     )
     args = parser.parse_args()
+
+    if args.since_start_date and args.tier != "all":
+        raise SystemExit(
+            "Tiered incremental rebuilds require tier-specific snapshots; "
+            "run a full rebuild without --since-start-date."
+        )
 
     load_local_env()
     url = os.environ.get("SUPABASE_URL")
@@ -1531,6 +1557,7 @@ def main() -> None:
         results = fetch_results_from_tournament_start(
             client,
             str(incremental_start["start_date"]),
+            args.tier,
         )
         relevant_game_ids = {row["game_id"] for row in results if row.get("game_id")}
         seat_positions = fetch_seat_positions_for_games(client, relevant_game_ids)
@@ -1555,7 +1582,7 @@ def main() -> None:
     else:
         seat_positions = fetch_seat_positions(client)
         print(f"Fetched {len(seat_positions):,} seat assignments", flush=True)
-        results = fetch_results_by_month(client)
+        results = fetch_results_by_month(client, args.tier)
         merge_seat_positions(results, seat_positions)
         print(f"Fetched {len(results):,} participant result rows", flush=True)
         rating_rows, state_rows, event_rows, leaderboard_rows, profile_rows = build_rows(client, results)

@@ -1,0 +1,85 @@
+import { NextRequest, NextResponse } from "next/server";
+import {
+  exportPlayerMatchups,
+  exportMatchupSummary,
+} from "@/lib/exports/player-matchups";
+import { ELO_TIER_INFO, parseEloTier } from "@/lib/elo-tiers";
+
+/**
+ * API route to export player matchup data as CSV.
+ * Query params:
+ *   - player_name: Name or part of name to search for
+ *   - format: 'csv' or 'json' (default: csv)
+ *   - summary_only: true for aggregated stats only
+ *   - tier: 'ranking', 'local', or 'all' (default: ranking)
+ */
+export async function GET(request: NextRequest) {
+  const searchParams = request.nextUrl.searchParams;
+  const playerName = searchParams.get("player_name");
+  const requestedFormat = searchParams.get("format") || "csv";
+  if (requestedFormat !== "csv" && requestedFormat !== "json") {
+    return NextResponse.json({ error: "format must be csv or json" }, { status: 400 });
+  }
+  const format = requestedFormat;
+  const summaryOnly = searchParams.get("summary_only") === "true";
+  const tier = parseEloTier(searchParams.get("tier"));
+
+  if (!playerName) {
+    return NextResponse.json(
+      { error: "player_name query parameter is required" },
+      { status: 400 }
+    );
+  }
+
+  try {
+    let result;
+
+    if (summaryOnly) {
+      result = await exportMatchupSummary(playerName, format, tier);
+    } else {
+      result = await exportPlayerMatchups(playerName, format, tier);
+    }
+
+    if (!result) {
+      return NextResponse.json(
+        { error: `Player "${playerName}" not found` },
+        { status: 404 }
+      );
+    }
+
+    // Return as attachment
+    const fileName =
+      format === "csv"
+        ? `${playerName.replace(/\s+/g, "_")}_${tier}_matchups.csv`
+        : `${playerName.replace(/\s+/g, "_")}_${tier}_matchups.json`;
+
+    return new NextResponse(result, {
+      status: 200,
+      headers: {
+        "Content-Type": format === "csv" ? "text/csv" : "application/json",
+        "Content-Disposition": `attachment; filename="${fileName}"`,
+        "X-Elo-Tier": tier,
+        "X-Elo-Tier-Label": ELO_TIER_INFO[tier].label,
+      },
+    });
+  } catch (error) {
+    console.error("Error exporting player matchups:", error);
+    return NextResponse.json(
+      { error: "Failed to export player data" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * List available players for export
+ */
+export async function HEAD(request: NextRequest) {
+  return NextResponse.json({ status: "ok" });
+}
+
+// Keep the existing GET contract while accepting POST for clients that treat
+// exports as a command rather than a cacheable read.
+export async function POST(request: NextRequest) {
+  return GET(request);
+}

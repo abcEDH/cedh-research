@@ -3,9 +3,25 @@ from pathlib import Path
 
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "supabase" / "migrations"
+ELO_TIERS_MIGRATION = MIGRATIONS_DIR / "20260726000000_elo_ranking_eligibility_tiers.sql"
 
 
 class SupabaseMigrationIntegrityTests(unittest.TestCase):
+    def test_elo_tier_migration_exposes_canonical_eligibility_views(self) -> None:
+        sql = ELO_TIERS_MIGRATION.read_text()
+
+        for view_name in (
+            "games_ranking_eligible",
+            "games_local_eligible",
+            "games_all_eligible",
+            "games_elo_tiers",
+        ):
+            self.assertIn(f"CREATE OR REPLACE VIEW public.{view_name}", sql)
+        self.assertIn("NULLIF(BTRIM(te.decklist_text), '')", sql)
+        self.assertIn("ranking_eligible", sql)
+        self.assertIn("local_eligible", sql)
+        self.assertNotIn("WHERE entry_id IN (SELECT", sql)
+
     def test_migration_versions_are_unique(self) -> None:
         versions = []
         for path in MIGRATIONS_DIR.glob("*.sql"):
