@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
+# Optional: psycopg2 for direct connection
+import importlib.util
 import logging
 import os
 from typing import Any
 
 from supabase import Client, create_client
-
-# Optional: psycopg2 for direct connection
-import importlib.util
 
 PSYCOPG2_AVAILABLE = importlib.util.find_spec("psycopg2") is not None
 if PSYCOPG2_AVAILABLE:
@@ -29,10 +28,10 @@ UPSERT_BATCH_SIZE = 500
 # Maps PostgREST-style filter prefixes to (SQL operator, prefix length).
 # Used only by DirectPostgresClient.select() to translate shared filter dicts.
 _FILTER_OPS: dict[str, tuple[str, int]] = {
-    "eq.":    ("=",     3),
-    "neq.":   ("!=",    4),
-    "gte.":   (">=",    4),
-    "lte.":   ("<=",    4),
+    "eq.": ("=", 3),
+    "neq.": ("!=", 4),
+    "gte.": (">=", 4),
+    "lte.": ("<=", 4),
     "ilike.": ("ILIKE", 6),
 }
 
@@ -173,10 +172,7 @@ class SupabaseClient:
         if not isinstance(data, list):
             batches: list[list[dict[str, Any]]] = [[data]]
         else:
-            batches = [
-                data[i : i + UPSERT_BATCH_SIZE]
-                for i in range(0, len(data), UPSERT_BATCH_SIZE)
-            ] or [[]]
+            batches = [data[i : i + UPSERT_BATCH_SIZE] for i in range(0, len(data), UPSERT_BATCH_SIZE)] or [[]]
 
         collected: list[dict[str, Any]] = []
         try:
@@ -256,6 +252,21 @@ class SupabaseClient:
             return result.data if result.data else None
         except Exception as e:
             logger.error("rpc %s failed: %s", function_name, e)
+            raise
+
+    def delete(
+        self,
+        table: str,
+        filters: dict[str, str] | None = None,
+        max_retries: int = 3,
+    ) -> list[dict[str, Any]]:
+        q = self._client.table(table).delete()
+        for col, val in (filters or {}).items():
+            q = _apply_filter(q, col, str(val))
+        try:
+            return q.execute().data
+        except Exception as e:
+            logger.error("delete failed on %s: %s", table, e)
             raise
 
 

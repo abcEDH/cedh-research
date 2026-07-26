@@ -1,6 +1,6 @@
-import unittest
-import types
 import sys
+import types
+import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -24,27 +24,29 @@ except ModuleNotFoundError:
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from supabase_client import (
-    _describe_request_failure,
     SupabaseClient,
+    _describe_request_failure,
 )
+
 
 def _make_sb_client(data: list | None = None) -> tuple[Mock, Mock]:
     mock_inner = Mock()
     chain = Mock()
     chain.execute.return_value.data = data or []
-    for method in ("select", "eq", "neq", "gte", "lte", "gt", "lt",
-                   "ilike", "in_", "order", "limit", "offset"):
+    for method in ("select", "eq", "neq", "gte", "lte", "gt", "lt", "ilike", "in_", "order", "limit", "offset"):
         getattr(chain, method).return_value = chain
     chain.not_ = Mock()
     chain.not_.is_.return_value = chain
     mock_inner.table.return_value.select.return_value = chain
     mock_inner.table.return_value.update.return_value = chain
     mock_inner.table.return_value.upsert.return_value = chain
+    mock_inner.table.return_value.delete.return_value = chain
     mock_inner.rpc.return_value = chain
 
     with patch("supabase_client.create_client", return_value=mock_inner):
         client = SupabaseClient("https://test.supabase.co", "test-service-key")
     return mock_inner, client
+
 
 class SupabaseClientUpdateTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -76,6 +78,29 @@ class SupabaseClientUpdateTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.client.update("t", {"col": "val"})
 
+
+class SupabaseClientDeleteTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.mock_inner, self.client = _make_sb_client([{"id": "row-1"}])
+
+    def test_delete_delegates_to_supabase_table(self) -> None:
+        result = self.client.delete("commanders", {"id": "eq.row-1"})
+        self.mock_inner.table.assert_called_once_with("commanders")
+        self.mock_inner.table.return_value.delete.assert_called_once_with()
+        self.assertEqual(result, [{"id": "row-1"}])
+
+    def test_delete_applies_eq_filter(self) -> None:
+        chain = self.mock_inner.table.return_value.delete.return_value
+        self.client.delete("commanders", {"id": "eq.row-1"})
+        chain.eq.assert_called_once_with("id", "row-1")
+
+    def test_delete_propagates_exception(self) -> None:
+        self.mock_inner.table.return_value.delete.return_value.execute.side_effect = RuntimeError("db error")
+        self.client._client = self.mock_inner
+        with self.assertRaises(RuntimeError):
+            self.client.delete("commanders", {"id": "eq.row-1"})
+
+
 class SupabaseClientRpcTests(unittest.TestCase):
     def setUp(self) -> None:
         self.mock_inner, self.client = _make_sb_client(None)
@@ -91,6 +116,7 @@ class SupabaseClientRpcTests(unittest.TestCase):
         result = self.client.rpc("get_stats", {"p": "v"})
         self.mock_inner.rpc.assert_called_once_with("get_stats", {"p": "v"})
         self.assertEqual(result, [{"ok": True}])
+
 
 class SupabaseClientSelectDiagnosticsTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -134,6 +160,7 @@ class SupabaseClientSelectDiagnosticsTests(unittest.TestCase):
         result = client.select("tournaments", {"id": "eq.row-1"})
         mock_inner.table.assert_called_once_with("tournaments")
         self.assertEqual(result, [{"id": "row-1"}])
+
 
 if __name__ == "__main__":
     unittest.main()

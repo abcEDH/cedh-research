@@ -1,10 +1,9 @@
-import unittest
 import os
 import sys
 import types
+import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
-
 
 try:
     import requests as requests_module
@@ -33,19 +32,18 @@ sys.modules.setdefault("dateutil.parser", dateutil_parser_module)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from ingest import (  # noqa: E402
-    _describe_request_failure,
-    clean_commander_card_name,
-    extract_standing_rates,
     INGESTION_JOB_ALREADY_CLAIMED_EXIT_CODE,
+    DataIngester,
+    claim_ingestion_job,
+    clean_commander_card_name,
+    complete_ingestion_job,
+    extract_standing_rates,
+    fail_ingestion_job,
     load_commander_oracle_aliases,
+    main,
     normalize_commander_name,
     resolve_record_fields,
     sanitize_commander_payload,
-    SupabaseClient,
-    claim_ingestion_job,
-    complete_ingestion_job,
-    fail_ingestion_job,
-    main,
 )
 
 
@@ -122,7 +120,7 @@ class CommanderNormalizationTests(unittest.TestCase):
         load_commander_oracle_aliases.cache_clear()
         try:
             with patch(
-                "ingest.load_commander_oracle_aliases",
+                "commander_normalization.load_commander_oracle_aliases",
                 return_value={"Totally Radical Skater": "Nadier, Agent of the Duskenel"},
             ):
                 self.assertEqual(
@@ -136,7 +134,7 @@ class CommanderNormalizationTests(unittest.TestCase):
         load_commander_oracle_aliases.cache_clear()
         try:
             with patch(
-                "ingest.load_commander_oracle_aliases",
+                "commander_normalization.load_commander_oracle_aliases",
                 return_value={"Lucas, the Sharpshooter": "Some Other Card"},
             ):
                 self.assertEqual(
@@ -204,6 +202,144 @@ class CommanderNormalizationTests(unittest.TestCase):
             normalize_commander_name(["Haldan, Avid Arcanist", "Pako, Arcane Retriever"]),
             "Pako, Arcane Retriever / Haldan, Avid Arcanist",
         )
+
+
+class FakeCommandersClient:
+    """Minimal in-memory stand-in for the ``commanders`` table (plus the two
+    FK tables a merge repoints) that mimics real Supabase upsert-by
+    ``on_conflict="name"`` semantics closely enough to exercise
+    ``resolve_partner_order_conflicts`` end to end through
+    ``batch_upsert_commanders``, without a live database.
+    """
+
+    def __init__(self) -> None:
+        self.commanders: dict[str, dict] = {}
+        self._next_id = 1
+        self.tournament_entries: dict[str, dict] = {}
+        self.commander_matchups: dict[str, dict] = {}
+
+    def _new_id(self) -> str:
+        commander_id = f"cmd-{self._next_id}"
+        self._next_id += 1
+        return commander_id
+
+    def select(self, table: str, filters: dict | None = None) -> list[dict]:
+        assert table == "commanders"
+        return [dict(row) for row in self.commanders.values()]
+
+    def upsert(self, table: str, data, on_conflict: str | None = None) -> list[dict]:
+        assert table == "commanders"
+        rows = data if isinstance(data, list) else [data]
+        results = []
+        for item in rows:
+            existing = next((row for row in self.commanders.values() if row["name"] == item["name"]), None)
+            if existing:
+                existing.update(item)
+                results.append(dict(existing))
+            else:
+                commander_id = self._new_id()
+                row = {"id": commander_id, **item}
+                self.commanders[commander_id] = row
+                results.append(dict(row))
+        return results
+
+    def update(self, table: str, data: dict, filters: dict | None = None) -> list[dict]:
+        target_table = getattr(self, table)
+        eq_filters = {
+            col: val[3:] for col, val in (filters or {}).items() if isinstance(val, str) and val.startswith("eq.")
+        }
+        updated = []
+        for row in target_table.values():
+            if all(row.get(col) == val for col, val in eq_filters.items()):
+                row.update(data)
+                updated.append(dict(row))
+        return updated
+
+    def delete(self, table: str, filters: dict | None = None) -> list[dict]:
+        target_table = getattr(self, table)
+        id_filter = (filters or {}).get("id", "")
+        target_id = id_filter[3:] if id_filter.startswith("eq.") else None
+        if target_id and target_id in target_table:
+            del target_table[target_id]
+        return []
+
+
+class BatchUpsertCommandersPartnerOrderTests(unittest.TestCase):
+    """Regression coverage for issue #260: a partner pair must land in the
+    same ``commanders`` row no matter which name order the decklist that
+    introduced it happened to use.
+    """
+
+    def test_new_pair_ingested_in_both_name_orders_lands_as_one_entry(self) -> None:
+        client = FakeCommandersClient()
+        ingester = DataIngester(Mock(), client)
+
+        # Two separate ingestion runs -- e.g. two different tournaments --
+        # discover the same brand-new partner pair with the decklist writing
+        # the names in opposite order each time.
+        id_map_ab = ingester.batch_upsert_commanders({"any-key-1": ["Abby, Merciless Soldier", "Ellie, Brick Master"]})
+        id_map_ba = ingester.batch_upsert_commanders({"any-key-2": ["Ellie, Brick Master", "Abby, Merciless Soldier"]})
+
+        self.assertEqual(len(client.commanders), 1, "expected a single merged commander row, not a split")
+        commander_id_ab = next(iter(id_map_ab.values()))
+        commander_id_ba = next(iter(id_map_ba.values()))
+        self.assertEqual(commander_id_ab, commander_id_ba)
+        self.assertEqual(
+            next(iter(client.commanders.values()))["name"],
+            "Abby, Merciless Soldier / Ellie, Brick Master",
+        )
+
+    def test_legacy_alt_order_row_is_healed_in_place_on_next_ingest(self) -> None:
+        # Simulates issue #260's actual reported symptom: a row already
+        # exists under the non-canonical order (as if written before this
+        # pair's override existed), and a *new* tournament brings in the
+        # same pair in canonical order. Ingestion must reuse and rename the
+        # existing row instead of creating a second, split entry.
+        client = FakeCommandersClient()
+        client.commanders["legacy-1"] = {
+            "id": "legacy-1",
+            "name": "Kraum, Ludevic's Opus / Tymna the Weaver",
+            "commander_names": ["Kraum, Ludevic's Opus", "Tymna the Weaver"],
+        }
+        ingester = DataIngester(Mock(), client)
+
+        id_map = ingester.batch_upsert_commanders({"any-key": ["Tymna the Weaver", "Kraum, Ludevic's Opus"]})
+
+        self.assertEqual(len(client.commanders), 1)
+        self.assertEqual(id_map["Tymna the Weaver / Kraum, Ludevic's Opus"], "legacy-1")
+        self.assertEqual(client.commanders["legacy-1"]["name"], "Tymna the Weaver / Kraum, Ludevic's Opus")
+
+    def test_true_duplicate_rows_are_merged_and_fk_history_repointed(self) -> None:
+        # Both orders already exist as separate rows with their own history
+        # attached. Ingesting the pair again must merge them: repoint the FK
+        # tables onto the canonical row and delete the duplicate, rather
+        # than leaving two rows (and split history) around.
+        client = FakeCommandersClient()
+        client.commanders["legacy-1"] = {
+            "id": "legacy-1",
+            "name": "Kraum, Ludevic's Opus / Tymna the Weaver",
+            "commander_names": ["Kraum, Ludevic's Opus", "Tymna the Weaver"],
+        }
+        client.commanders["canonical-1"] = {
+            "id": "canonical-1",
+            "name": "Tymna the Weaver / Kraum, Ludevic's Opus",
+            "commander_names": ["Tymna the Weaver", "Kraum, Ludevic's Opus"],
+        }
+        client.tournament_entries["entry-1"] = {"id": "entry-1", "commander_id": "legacy-1"}
+        client.commander_matchups["matchup-1"] = {
+            "id": "matchup-1",
+            "commander_id": "legacy-1",
+            "opponent_commander_id": "someone-else",
+        }
+        ingester = DataIngester(Mock(), client)
+
+        id_map = ingester.batch_upsert_commanders({"any-key": ["Tymna the Weaver", "Kraum, Ludevic's Opus"]})
+
+        self.assertEqual(len(client.commanders), 1)
+        self.assertIn("canonical-1", client.commanders)
+        self.assertEqual(id_map["Tymna the Weaver / Kraum, Ludevic's Opus"], "canonical-1")
+        self.assertEqual(client.tournament_entries["entry-1"]["commander_id"], "canonical-1")
+        self.assertEqual(client.commander_matchups["matchup-1"]["commander_id"], "canonical-1")
 
 
 class IngestionJobLifecycleTests(unittest.TestCase):

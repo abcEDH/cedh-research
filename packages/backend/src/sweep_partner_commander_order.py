@@ -17,7 +17,23 @@ from ingest import (
     PARTNER_ORDER_OVERRIDES,
     SupabaseClient,
     clean_commander_card_name,
+    load_legal_commander_pair_order_map,
 )
+
+
+def format_report_line(
+    commander_id: str,
+    current_name: str,
+    target_name: str,
+    observations: str,
+    current_order: tuple[str, str],
+    target_order: tuple[str, str],
+    status: str,
+) -> str:
+    return (
+        f'{commander_id},"{current_name}","{target_name}","{observations}",'
+        f'"{" / ".join(current_order)}","{" / ".join(target_order)}",{status}'
+    )
 
 
 def canonical_pair_key(names: list[str]) -> tuple[str, ...]:
@@ -103,7 +119,20 @@ def choose_target_order(
     current_order: tuple[str, str],
     observations: collections.Counter[tuple[str, str]],
 ) -> tuple[str, str]:
-    override = PARTNER_ORDER_OVERRIDES.get(canonical_pair_key(list(current_order)))
+    pair_key = canonical_pair_key(list(current_order))
+
+    # The generated legal-pairings dataset is the same authoritative source
+    # ingest.py's normalize_partner_order() consults first at write time. This
+    # sweep used to only check PARTNER_ORDER_OVERRIDES (a much smaller,
+    # hand-maintained list of cEDH staples) and otherwise fell through to
+    # scraped-observation voting, so it silently left every other legal pair
+    # unmerged even after a re-run -- see issue #260. Checking the legal map
+    # first keeps this sweep's notion of "canonical" identical to ingest.py's.
+    legal_order = load_legal_commander_pair_order_map().get(pair_key)
+    if legal_order:
+        return legal_order
+
+    override = PARTNER_ORDER_OVERRIDES.get(pair_key)
     if override:
         return override
     if not observations:
@@ -232,12 +261,14 @@ def main() -> None:
                 if not source_key:
                     players = row.get("players") or {}
                     tournaments = row.get("tournaments") or {}
-                    source_key = f"{tournaments.get('topdeck_tid','')}::{players.get('topdeck_id','')}"
+                    source_key = f"{tournaments.get('topdeck_tid', '')}::{players.get('topdeck_id', '')}"
                 if source_key in seen_sources:
                     continue
                 seen_sources.add(source_key)
 
-                observed = observe_pair_order({**row, **{"commander_names": list(current_order)}}, session, args.timeout)
+                observed = observe_pair_order(
+                    {**row, **{"commander_names": list(current_order)}}, session, args.timeout
+                )
                 if not observed:
                     continue
                 observed_orders[observed] += 1
@@ -247,9 +278,7 @@ def main() -> None:
             target_order = choose_target_order(current_order, observed_orders)
         current_name = commander["name"]
         target_name = " / ".join(target_order)
-        observations = "; ".join(
-            f"{left} / {right}:{count}" for (left, right), count in observed_orders.most_common()
-        )
+        observations = "; ".join(f"{left} / {right}:{count}" for (left, right), count in observed_orders.most_common())
 
         if target_name != current_name:
             conflict_id = name_to_id.get(target_name)
@@ -259,7 +288,9 @@ def main() -> None:
                     delete_commander_row(client, commander["id"])
                 merged += 1
                 report_lines.append(
-                    f'{commander["id"]},"{current_name}","{target_name}","{observations}","{" / ".join(current_order)}","{" / ".join(target_order)}",merged'
+                    format_report_line(
+                        commander["id"], current_name, target_name, observations, current_order, target_order, "merged"
+                    )
                 )
                 continue
             if not args.dry_run:
@@ -268,11 +299,15 @@ def main() -> None:
             name_to_id[target_name] = commander["id"]
             updated += 1
             report_lines.append(
-                f'{commander["id"]},"{current_name}","{target_name}","{observations}","{" / ".join(current_order)}","{" / ".join(target_order)}",yes'
+                format_report_line(
+                    commander["id"], current_name, target_name, observations, current_order, target_order, "yes"
+                )
             )
         else:
             report_lines.append(
-                f'{commander["id"]},"{current_name}","{target_name}","{observations}","{" / ".join(current_order)}","{" / ".join(target_order)}",no'
+                format_report_line(
+                    commander["id"], current_name, target_name, observations, current_order, target_order, "no"
+                )
             )
 
     Path(args.report).parent.mkdir(parents=True, exist_ok=True)
