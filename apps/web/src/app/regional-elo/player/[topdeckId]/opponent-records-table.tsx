@@ -16,11 +16,13 @@ function isOpponentRecord(record: RecordRow): record is OpponentRecord {
 export function OpponentRecordsTable({
   records,
   playerTopdeckId,
+  eloOnly = false,
   entityLabel = "Opponent",
   emptyLabel = "No opponent records found.",
 }: {
   records: RecordRow[];
   playerTopdeckId?: string;
+  eloOnly?: boolean;
   entityLabel?: string;
   emptyLabel?: string;
 }) {
@@ -57,7 +59,7 @@ export function OpponentRecordsTable({
                   {isOpponentRecord(record) ? (
                     record.opponentTopdeckId && playerTopdeckId ? (
                       <Link
-                        href={buildPlayerVersusHref(playerTopdeckId, record.opponentTopdeckId)}
+                        href={buildPlayerVersusHref(playerTopdeckId, record.opponentTopdeckId, eloOnly)}
                         className="font-medium text-foreground hover:text-primary"
                       >
                         {record.opponentName}

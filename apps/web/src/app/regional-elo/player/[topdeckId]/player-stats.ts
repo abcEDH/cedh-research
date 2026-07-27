@@ -200,7 +200,11 @@ export function buildOpponentRecords(logs: PlayerGameLog[]): OpponentRecord[] {
   });
 }
 
-export function summarizePlayerLogs(logs: PlayerGameLog[], playerTopdeckId?: string): PlayerLogSummary {
+export function summarizePlayerLogs(
+  logs: PlayerGameLog[],
+  playerTopdeckId?: string,
+  eloOnly = false
+): PlayerLogSummary {
   const totalGames = logs.length;
   const totalWins = logs.filter((row) => row.result === "win").length;
   const totalDraws = logs.filter((row) => row.result === "draw").length;
@@ -228,7 +232,7 @@ export function summarizePlayerLogs(logs: PlayerGameLog[], playerTopdeckId?: str
       "Opponent",
       OPPONENT_MATCHUP_PRIOR_GAMES,
       record.opponentTopdeckId && playerTopdeckId
-        ? buildPlayerVersusHref(playerTopdeckId, record.opponentTopdeckId)
+        ? buildPlayerVersusHref(playerTopdeckId, record.opponentTopdeckId, eloOnly)
         : undefined
     )
   );

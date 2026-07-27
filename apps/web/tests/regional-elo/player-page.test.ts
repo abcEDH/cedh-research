@@ -556,6 +556,9 @@ describe("RegionalPlayerPage", () => {
     expect(html).toContain('role="switch"');
     expect(html).toContain('aria-checked="true"');
     expect(html).toMatch(/Overall[\s\S]*?>2 games[\s\S]*?>1-0-1</);
+    expect(html).toContain(
+      "/regional-elo/player/CCIQroaCHHQi7EELyNXlHiHQiQy1/vs/opp-a?eloOnly=true"
+    );
   });
 
   it("updates profile game tiles to match the filtered summary", async () => {

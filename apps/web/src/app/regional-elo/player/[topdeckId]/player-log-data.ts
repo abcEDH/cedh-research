@@ -508,3 +508,8 @@ export async function fetchCanonicalPlayerLogs(playerId: string, regionFilter = 
   const entries = await fetchEntries(playerId);
   return buildPlayerLogsFromRawHistory(entries);
 }
+
+export async function fetchRawPlayerLogs(playerId: string): Promise<PlayerGameLog[]> {
+  const entries = await fetchEntries(playerId);
+  return buildPlayerLogsFromRawHistory(entries);
+}

@@ -617,7 +617,7 @@ async function PlayerProfileBodyWrapper({
   const eloOnly = readStringParam(resolvedSearchParams, "eloOnly") === "true";
   const rawEntries = await fetchEntries(player.id);
   const allPlayerLogs = await buildPlayerLogsFromRawHistory(rawEntries);
-  const displaySummary = summarizePlayerLogs(filterPlayerLogs(allPlayerLogs, eloOnly), topdeckId);
+  const displaySummary = summarizePlayerLogs(filterPlayerLogs(allPlayerLogs, eloOnly), topdeckId, eloOnly);
 
   return (
     <>
@@ -704,7 +704,7 @@ export async function PlayerProfileBody({
     worstOpponentMatchup,
     bestCommanderMatchup,
     worstCommanderMatchup,
-  } = summarizePlayerLogs(playerLogs, topdeckId);
+  } = summarizePlayerLogs(playerLogs, topdeckId, eloOnly);
   const achievementResultByTournament = playerLogs.reduce(
     (results, log) => {
       const key = achievementTournamentKey(log.tournamentName, log.startDate);
@@ -1207,7 +1207,7 @@ export async function PlayerProfileBody({
                     )}
                   </div>
                 </div>
-                <OpponentRecordsTable records={opponentRecords} playerTopdeckId={topdeckId} />
+                <OpponentRecordsTable records={opponentRecords} playerTopdeckId={topdeckId} eloOnly={eloOnly} />
               </CardContent>
             </Card>
 
