@@ -40,6 +40,11 @@ type GameRow = {
   winner_id: string | null;
 };
 
+type GameEligibilityRow = {
+  game_id: string;
+  ranking_eligible: boolean;
+};
+
 type TournamentRow = {
   id: string;
   name: string;
@@ -211,6 +216,25 @@ async function fetchGamesAndParticipants(entryIds: string[]) {
   };
 }
 
+async function fetchGameRankingEligibility(gameIds: string[]) {
+  const rows: GameEligibilityRow[] = [];
+  for (const gameIdChunk of chunkValues(gameIds)) {
+    for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
+      const { data, error } = await supabase
+        .from("global_elo_game_results")
+        .select("game_id, ranking_eligible")
+        .in("game_id", gameIdChunk)
+        .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
+
+      if (error) throw new Error(`Error fetching game ranking eligibility: ${error.message}`);
+      rows.push(...((data as GameEligibilityRow[]) ?? []));
+      if (!data || data.length < SUPABASE_PAGE_SIZE) break;
+    }
+  }
+
+  return new Map(rows.map((row) => [row.game_id, row.ranking_eligible]));
+}
+
 async function fetchTournaments(tournamentIds: string[]): Promise<Map<string, TournamentRow>> {
   if (tournamentIds.length === 0) return new Map();
 
@@ -318,6 +342,7 @@ async function buildPlayerLogsFromRawHistory(entries: EntryRow[]): Promise<Playe
     return true;
   });
   const playerGameIds = Array.from(new Set(playerParticipants.map((row) => row.game_id)));
+  const rankingEligibilityByGameId = await fetchGameRankingEligibility(playerGameIds);
   const relatedParticipants = allParticipants.filter((row) => playerGameIds.includes(row.game_id));
   const relatedEntryIds = Array.from(new Set(relatedParticipants.map((row) => row.entry_id)));
 
@@ -381,6 +406,7 @@ async function buildPlayerLogsFromRawHistory(entries: EntryRow[]): Promise<Playe
         seat: participant.seat_position + 1,
         result: participant.result,
         tournamentPlayerCount: tournament?.player_count ?? null,
+        rankingEligible: rankingEligibilityByGameId.get(participant.game_id) ?? null,
         commanderName,
         opponents: pod,
       } satisfies PlayerGameLog];

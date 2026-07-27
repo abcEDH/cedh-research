@@ -130,7 +130,7 @@ describe("summarizePlayerLogs", () => {
   it("filters aggregate logs to 30-player events without changing Elo data", () => {
     const logs: PlayerGameLog[] = [
       { gameId: "large", result: "win", tournamentPlayerCount: 30 } as PlayerGameLog,
-      { gameId: "small", result: "win", tournamentPlayerCount: 29 } as PlayerGameLog,
+      { gameId: "small", result: "win", tournamentPlayerCount: 30, rankingEligible: false } as PlayerGameLog,
       { gameId: "unknown", result: "win", tournamentPlayerCount: null } as PlayerGameLog,
       { gameId: "bye", result: "bye" } as PlayerGameLog,
     ];

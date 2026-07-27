@@ -28,6 +28,7 @@ import {
   sortAchievementsByFinish,
   isKnownCommanderName,
 } from "./player-profile-components";
+import { fetchRawPlayerLogs } from "./player-log-data";
 
 export const revalidate = 86400; // 24 hours
 export const dynamicParams = true;
@@ -569,7 +570,7 @@ async function fetchCommandersById(commanderIds: string[]): Promise<Map<string, 
 const fetchCachedRawPlayerLogs = unstable_cache(
   async (playerId: string) =>
     withTiming("regional-player:raw-history", async () =>
-      buildPlayerLogsFromRawHistory(await fetchEntries(playerId))
+      fetchRawPlayerLogs(playerId)
     ),
   ["regional-player-raw-history-v1"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }

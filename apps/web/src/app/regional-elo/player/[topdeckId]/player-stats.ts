@@ -10,6 +10,7 @@ export type PlayerGameLog = {
   seat: number;
   result: string;
   tournamentPlayerCount?: number | null;
+  rankingEligible?: boolean | null;
   commanderName: string | null;
   opponents: Array<{
     topdeckId: string | null;
@@ -78,6 +79,7 @@ const DRAW_SCORE = 0.2;
 export const ELO_WORTHY_MIN_PLAYERS = 30;
 
 export function isEloWorthyGame(log: PlayerGameLog) {
+  if (typeof log.rankingEligible === "boolean") return log.rankingEligible;
   return (log.tournamentPlayerCount ?? 0) >= ELO_WORTHY_MIN_PLAYERS;
 }
 
