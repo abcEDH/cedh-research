@@ -18,6 +18,8 @@ ELO_TIER_LABELS = {
     "local": "Tier 2: Local / Regional ELO",
     "all": "Tier 3: All Games",
 }
+GAME_ID_BATCH_SIZE = 500
+PARTICIPANT_PAGE_SIZE = 1000
 
 
 def validate_tier(tier: str) -> str:
@@ -54,6 +56,28 @@ def is_tier_eligible(tier: str, tournament: dict, entry: dict, game_status: str 
         if not str(entry.get("decklist_text") or "").strip() and not str(entry.get("decklist_url") or "").strip():
             return False
     return True
+
+
+def fetch_game_participants(client, game_ids: list[str], select: str) -> list[dict]:
+    """Fetch every participant row without crossing PostgREST's page limit."""
+    participants = []
+    for start in range(0, len(game_ids), GAME_ID_BATCH_SIZE):
+        batch = game_ids[start : start + GAME_ID_BATCH_SIZE]
+        offset = 0
+        while True:
+            response = (
+                client.table("game_participants")
+                .select(select)
+                .in_("game_id", batch)
+                .range(offset, offset + PARTICIPANT_PAGE_SIZE - 1)
+                .execute()
+            )
+            page = response.data or []
+            participants.extend(page)
+            if len(page) < PARTICIPANT_PAGE_SIZE:
+                break
+            offset += PARTICIPANT_PAGE_SIZE
+    return participants
 
 
 def export_player_matchups(player_name: str, output_file: str = None, tier: str = "ranking") -> str:
@@ -110,13 +134,9 @@ def export_player_matchups(player_name: str, output_file: str = None, tier: str 
     print(f"Unique games: {len(game_ids)}")
 
     # Get all game participants - batch
-    all_participants = []
-    for i in range(0, len(game_ids), 500):
-        batch = game_ids[i:i+500]
-        response = client.table("game_participants").select(
-            "game_id, entry_id, result"
-        ).in_("game_id", batch).execute()
-        all_participants.extend(response.data)
+    all_participants = fetch_game_participants(
+        client, game_ids, "game_id, entry_id, result"
+    )
 
     # Get tournament info for each game - batch
     games = {}
@@ -296,13 +316,7 @@ def export_matchup_summary(player_name: str, output_file: str = None, tier: str 
     }
 
     # Get all participants
-    all_participants = []
-    for i in range(0, len(game_ids), 500):
-        batch = game_ids[i:i+500]
-        response = client.table("game_participants").select(
-            "game_id, entry_id"
-        ).in_("game_id", batch).execute()
-        all_participants.extend(response.data)
+    all_participants = fetch_game_participants(client, game_ids, "game_id, entry_id")
 
     # Map to opponent data
     opponent_entry_ids = {gp["entry_id"] for gp in all_participants} - set(entry_ids)

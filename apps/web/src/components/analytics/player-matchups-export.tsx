@@ -120,7 +120,7 @@ export function PlayerMatchupsExport() {
               <div>
                 <label className="mb-3 block text-sm font-medium">Format</label>
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-2">
-                  <label className="flex items-center space-x-3">
+                  <label className="flex min-h-11 items-center space-x-3">
                     <input
                       type="radio"
                       name="format"
@@ -132,7 +132,7 @@ export function PlayerMatchupsExport() {
                     />
                     <span>CSV (Spreadsheet)</span>
                   </label>
-                  <label className="flex items-center space-x-3">
+                  <label className="flex min-h-11 items-center space-x-3">
                     <input
                       type="radio"
                       name="format"
@@ -151,7 +151,7 @@ export function PlayerMatchupsExport() {
               <div>
                 <label className="mb-3 block text-sm font-medium">Data Type</label>
                 <div className="space-y-3">
-                  <label className="flex items-center space-x-3">
+                  <label className="flex min-h-11 items-center space-x-3">
                     <input
                       type="radio"
                       name="data_type"
@@ -168,7 +168,7 @@ export function PlayerMatchupsExport() {
                       </p>
                     </div>
                   </label>
-                  <label className="flex items-center space-x-3">
+                  <label className="flex min-h-11 items-center space-x-3">
                     <input
                       type="radio"
                       name="data_type"

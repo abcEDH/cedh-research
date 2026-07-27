@@ -43,7 +43,7 @@ SELECT
     AND t.name NOT ILIKE '%league%'
     AND t.name NOT ILIKE '%casual%'
     AND t.name NOT ILIKE '%exhibition%'
-    AND t.name NOT ILIKE '%fun%'
+    AND t.name !~* '(^|[^[:alnum:]_])fun([^[:alnum:]_]|$)'
   ) AS ranking_eligible,
   (
     t.player_count >= 10
@@ -51,7 +51,7 @@ SELECT
     AND LOWER(COALESCE(g.status, 'completed')) IN ('completed', 'complete', 'done')
     AND t.name NOT ILIKE '%casual%'
     AND t.name NOT ILIKE '%exhibition%'
-    AND t.name NOT ILIKE '%fun%'
+    AND t.name !~* '(^|[^[:alnum:]_])fun([^[:alnum:]_]|$)'
   ) AS local_eligible,
   (t.start_date IS NOT NULL) AS all_eligible
 FROM public.games g

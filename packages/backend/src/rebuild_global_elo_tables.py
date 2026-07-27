@@ -1080,6 +1080,7 @@ def apply_game(
     player_meta: dict[str, dict[str, str | None]],
     now: date,
     update_activity: bool = True,
+    eligibility_flag: str | None = None,
 ) -> list[dict[str, Any]]:
     participants: list[dict[str, Any]] = []
     seen_players: set[str] = set()
@@ -1096,23 +1097,24 @@ def apply_game(
     if not any((score_for_result(row.get("result")) or 0) > 0 for row in participants):
         return []
 
+    eligible_participants = [
+        row
+        for row in participants
+        if eligibility_flag is None or row.get(eligibility_flag) is True
+    ]
+    if not eligible_participants:
+        return []
+
     game_date = parse_date(participants[0].get("start_date"))
     game_datetime = participants[0].get("start_date")
     deltas: dict[str, float] = defaultdict(float)
     expected_scores: dict[str, float] = {}
-    before_ratings: dict[str, float] = {}
-
-    for row in participants:
-        player_id = row["player_id"]
-        ratings.setdefault(player_id, empty_rating(player_id))
-        player_meta.setdefault(
-            player_id,
-            {
-                "player_name": row.get("player_name"),
-                "topdeck_id": row.get("topdeck_id"),
-            },
+    before_ratings = {
+        row["player_id"]: float(
+            ratings.get(row["player_id"], {}).get("rating") or DEFAULT_RATING
         )
-        before_ratings[player_id] = float(ratings[player_id]["rating"])
+        for row in participants
+    }
 
     draw_count = sum(1 for row in participants if row.get("result") == "draw")
     k_factor = K_FACTOR_DRAW if draw_count else K_FACTOR_DECISIVE
@@ -1136,7 +1138,7 @@ def apply_game(
         expected_ratings[player_id] = expected_rating
     total_equity = sum(rating_equity(expected_ratings[row["player_id"]]) for row in participants)
 
-    for row in participants:
+    for row in eligible_participants:
         player_id = row["player_id"]
         score = score_for_result(row.get("result"))
         if score is None:
@@ -1147,13 +1149,21 @@ def apply_game(
         deltas[player_id] = k_factor * (actual - expected)
 
     events: list[dict[str, Any]] = []
-    for row in participants:
+    for row in eligible_participants:
         player_id = row["player_id"]
         result = row.get("result")
         score = score_for_result(result)
         if score is None:
             continue
 
+        ratings.setdefault(player_id, empty_rating(player_id))
+        player_meta.setdefault(
+            player_id,
+            {
+                "player_name": row.get("player_name"),
+                "topdeck_id": row.get("topdeck_id"),
+            },
+        )
         rating_row = ratings[player_id]
         rating_row["rating"] = round(float(rating_row["rating"]) + deltas[player_id], 6)
         rating_row["games_played"] += 1
@@ -1198,6 +1208,7 @@ def build_state_from_results(
     player_meta: dict[str, dict[str, str | None]] | None = None,
     events: list[dict[str, Any]] | None = None,
     update_activity: bool = True,
+    eligibility_flag: str | None = None,
 ) -> tuple[
     dict[str, dict[str, Any]],
     dict[tuple[str, str], dict[str, Any]],
@@ -1222,6 +1233,7 @@ def build_state_from_results(
             player_meta,
             today,
             update_activity=update_activity,
+            eligibility_flag=eligibility_flag,
         )
         events.extend(player_events)
         if index % 25000 == 0:
@@ -1419,6 +1431,7 @@ def build_rows(
     state_activity: dict[tuple[str, str], dict[str, Any]] | None = None,
     player_meta: dict[str, dict[str, str | None]] | None = None,
     events: list[dict[str, Any]] | None = None,
+    eligibility_flag: str | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     print("Fetching TopDeck Elos for enrichment...", flush=True)
     topdeck_elos = fetch_topdeck_elos(client)
@@ -1428,6 +1441,7 @@ def build_rows(
         state_activity=state_activity,
         player_meta=player_meta,
         events=events,
+        eligibility_flag=eligibility_flag,
     )
     return finalize_rows(topdeck_elos, ratings, state_activity, player_meta, events)
 
@@ -1552,7 +1566,7 @@ def recompute_rolling_state_windows(
             activity["games_365d"] += 1
 
 
-def main() -> None:
+def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--preview-topdeck-id", default="")
@@ -1567,13 +1581,19 @@ def main() -> None:
         default="",
         help="Incrementally rebuild from tournaments with start_date >= this ISO timestamp/date",
     )
-    args = parser.parse_args()
+    return parser
+
+
+def main() -> None:
+    args = build_arg_parser().parse_args()
 
     if args.since_start_date and args.tier != "all":
         raise SystemExit(
             "Tiered incremental rebuilds require tier-specific snapshots; "
             "run a full rebuild without --since-start-date."
         )
+
+    eligibility_flag = None if args.tier == "all" else ELO_TIER_FILTERS[args.tier]
 
     load_local_env()
     url = os.environ.get("SUPABASE_URL")
@@ -1611,6 +1631,7 @@ def main() -> None:
             state_activity=base_state_activity,
             player_meta=base_player_meta,
             update_activity=False,
+            eligibility_flag=eligibility_flag,
         )
         print("Fetching TopDeck Elos for enrichment...", flush=True)
         topdeck_elos = fetch_topdeck_elos(client)
@@ -1627,7 +1648,9 @@ def main() -> None:
         results = fetch_results_by_month(client, args.tier)
         merge_seat_positions(results, seat_positions)
         print(f"Fetched {len(results):,} participant result rows", flush=True)
-        rating_rows, state_rows, event_rows, leaderboard_rows, profile_rows = build_rows(client, results)
+        rating_rows, state_rows, event_rows, leaderboard_rows, profile_rows = build_rows(
+            client, results, eligibility_flag=eligibility_flag
+        )
     print(
         "Built "
         f"{len(rating_rows):,} ratings, "

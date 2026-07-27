@@ -1,5 +1,6 @@
 import sys
 import types
+from datetime import date
 from pathlib import Path
 from unittest import TestCase, main
 from unittest.mock import MagicMock
@@ -34,6 +35,43 @@ class RebuildGlobalEloTablesTests(TestCase):
     def test_eligible_game_ids_rejects_unknown_tiers(self) -> None:
         with self.assertRaises(ValueError):
             rebuild.eligible_game_ids([], "unknown")
+
+    def test_apply_game_scores_full_pod_but_updates_only_eligible_players(self) -> None:
+        rows = [
+            {
+                "game_id": "game-1",
+                "tournament_id": "tournament-1",
+                "player_id": f"player-{index}",
+                "entry_id": f"entry-{index}",
+                "player_name": f"Player {index}",
+                "topdeck_id": f"topdeck-{index}",
+                "start_date": "2026-07-01T00:00:00Z",
+                "result": "win" if index == 1 else "loss",
+                "ranking_eligible": index <= 2,
+                "seat_position": index - 1,
+            }
+            for index in range(1, 5)
+        ]
+
+        ratings: dict[str, dict] = {}
+        events = rebuild.apply_game(
+            rows,
+            ratings,
+            {},
+            {},
+            date(2026, 7, 2),
+            update_activity=False,
+            eligibility_flag="ranking_eligible",
+        )
+
+        self.assertEqual(set(ratings), {"player-1", "player-2"})
+        self.assertEqual({event["player_id"] for event in events}, {"player-1", "player-2"})
+        self.assertEqual({event["opponent_count"] for event in events}, {3})
+
+    def test_build_arg_parser_exposes_tier_independently(self) -> None:
+        args = rebuild.build_arg_parser().parse_args(["--tier", "local"])
+
+        self.assertEqual(args.tier, "local")
 
 
 if __name__ == "__main__":
