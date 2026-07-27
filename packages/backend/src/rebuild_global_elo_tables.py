@@ -1534,16 +1534,19 @@ def validate_apply_tier(apply: bool, tier: str) -> None:
         )
 
 
+def validate_incremental_tier(since_start_date: str, tier: str) -> None:
+    if since_start_date and tier != "ranking":
+        raise SystemExit(
+            "Incremental rebuilds are supported only for --tier ranking because "
+            "incremental snapshots contain canonical ranking state."
+        )
+
+
 def main() -> None:
     args = build_arg_parser().parse_args()
 
     validate_apply_tier(args.apply, args.tier)
-
-    if args.since_start_date and args.tier != "all":
-        raise SystemExit(
-            "Tiered incremental rebuilds require tier-specific snapshots; "
-            "run a full rebuild without --since-start-date."
-        )
+    validate_incremental_tier(args.since_start_date, args.tier)
 
     load_local_env()
     url = os.environ.get("SUPABASE_URL")

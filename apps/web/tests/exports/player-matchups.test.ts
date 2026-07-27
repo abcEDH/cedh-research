@@ -64,7 +64,9 @@ function configureSupabaseMock(options: {
       },
       ilike: (column: string, values: unknown) => {
         state.filters.push({ column, values });
-        if (column === "name") state.exactNameQuery = false;
+        if (column === "name") {
+          state.exactNameQuery = typeof values === "string" && !values.includes("%");
+        }
         return query;
       },
       eq: (column: string, values: unknown) => {
@@ -232,6 +234,26 @@ describe("player matchup exports", () => {
     });
 
     const result = await exportPlayerMatchups("Player One", "ranking");
+
+    expect(JSON.parse(result ?? "[]")[0].player).toBe("Player One");
+  });
+
+  it("prefers a case-insensitive exact player-name match", async () => {
+    configureSupabaseMock({
+      ownRanges: [],
+      exactPlayer: null,
+      exactPlayers: [player],
+      partialPlayers: [
+        player,
+        {
+          ...player,
+          id: "player-2",
+          name: "Player One Alt",
+        },
+      ],
+    });
+
+    const result = await exportPlayerMatchups("player one", "ranking");
 
     expect(JSON.parse(result ?? "[]")[0].player).toBe("Player One");
   });

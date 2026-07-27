@@ -64,10 +64,11 @@ export class AmbiguousPlayerMatchError extends Error {
 }
 
 async function fetchPlayerByName(playerName: string): Promise<Player | null> {
+  const normalizedName = playerName.trim();
   const { data: exactPlayers, error: exactPlayerError } = await supabase
     .from("players")
     .select("id, name, topdeck_id")
-    .eq("name", playerName)
+    .eq("name", normalizedName)
     .limit(2);
 
   if (exactPlayerError) throw exactPlayerError;
@@ -78,23 +79,30 @@ async function fetchPlayerByName(playerName: string): Promise<Player | null> {
     return exactPlayers[0] as Player;
   }
 
+  const { data: caseInsensitiveExactPlayers, error: caseInsensitiveExactPlayerError } =
+    await supabase
+      .from("players")
+      .select("id, name, topdeck_id")
+      .ilike("name", normalizedName)
+      .limit(2);
+
+  if (caseInsensitiveExactPlayerError) throw caseInsensitiveExactPlayerError;
+  if (caseInsensitiveExactPlayers && caseInsensitiveExactPlayers.length > 1) {
+    throw new AmbiguousPlayerMatchError(playerName);
+  }
+  if (caseInsensitiveExactPlayers && caseInsensitiveExactPlayers.length > 0) {
+    return caseInsensitiveExactPlayers[0] as Player;
+  }
+
   const { data: partialPlayers, error: partialPlayerError } = await supabase
     .from("players")
     .select("id, name, topdeck_id")
-    .ilike("name", `%${playerName}%`)
+    .ilike("name", `%${normalizedName}%`)
     .limit(2);
 
   if (partialPlayerError) throw partialPlayerError;
 
   const players = (partialPlayers || []) as Player[];
-  const normalizedName = playerName.trim().toLocaleLowerCase();
-  const caseInsensitiveExact = players.find(
-    (player) => player.name.trim().toLocaleLowerCase() === normalizedName
-  );
-
-  if (caseInsensitiveExact) {
-    return caseInsensitiveExact;
-  }
   if (players.length > 1) {
     throw new AmbiguousPlayerMatchError(playerName);
   }
