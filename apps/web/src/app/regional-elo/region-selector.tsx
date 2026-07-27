@@ -15,12 +15,14 @@ export function RegionSelector({
   selectedCountry,
   selectedRegion,
   supportsCountryRegions = true,
+  eloOnly = true,
 }: {
   regions: RegionOption[];
   selectedScope: "global" | "country";
   selectedCountry?: string;
   selectedRegion?: string;
   supportsCountryRegions?: boolean;
+  eloOnly?: boolean;
 }) {
   const [isLoading, setIsLoading] = useState(false);
   const countryRegions = regions.filter((region) => region.region_type === "country");
@@ -63,6 +65,7 @@ export function RegionSelector({
 
       <input type="hidden" name="scope" value={view === "global" ? "global" : "country"} />
       {view !== "global" ? <input type="hidden" name="country" value={view} /> : null}
+      <input type="hidden" name="eloOnly" value={eloOnly ? "true" : "false"} />
 
       {view !== "global" ? (
         <>

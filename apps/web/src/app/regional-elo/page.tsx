@@ -5,6 +5,8 @@ import { RegionalLeaderboardTable } from "./regional-leaderboard-table";
 import { RegionSelector } from "./region-selector";
 import { unstable_cache } from "next/cache";
 import { withTiming } from "@/lib/performance";
+import { EloGameFilter } from "@/components/elo-game-filter";
+import { fetchEloDisplayStats } from "@/lib/elo-display-stats";
 
 export const dynamic = "force-dynamic";
 const GLOBAL_REGION_KEY = "ALL";
@@ -364,14 +366,54 @@ const getCachedLatestCommanders = unstable_cache(
   { revalidate: REGIONAL_ELO_CACHE_REVALIDATE_SECONDS }
 );
 
+function buildLeaderboardFilterHref({
+  selectedScope,
+  selectedCountry,
+  selectedRegion,
+  playerSearch,
+  page,
+  eloOnly,
+}: {
+  selectedScope: "global" | "country";
+  selectedCountry?: string;
+  selectedRegion?: string;
+  playerSearch: string;
+  page: number;
+  eloOnly: boolean;
+}) {
+  const params = new URLSearchParams();
+  params.set("scope", selectedScope);
+  if (selectedScope === "country" && selectedCountry) params.set("country", selectedCountry);
+  if (selectedScope === "country" && selectedRegion) params.set("region", selectedRegion);
+  if (playerSearch) params.set("q", playerSearch);
+  if (page > 1) params.set("page", String(page));
+  if (!eloOnly) params.set("eloOnly", "false");
+  const query = params.toString();
+  return `/regional-elo${query ? `?${query}` : ""}`;
+}
+
 export default async function RegionalEloPage({
   searchParams,
 }: {
   searchParams?:
-    | { country?: string | string[]; q?: string | string[]; region?: string | string[]; scope?: string | string[] }
-    | Promise<{ country?: string | string[]; q?: string | string[]; region?: string | string[]; scope?: string | string[] }>;
+    | {
+        country?: string | string[];
+        q?: string | string[];
+        region?: string | string[];
+        scope?: string | string[];
+        eloOnly?: string | string[];
+      }
+    | Promise<{
+        country?: string | string[];
+        q?: string | string[];
+        region?: string | string[];
+        scope?: string | string[];
+        eloOnly?: string | string[];
+      }>;
 }) {
   const resolvedSearchParams = await Promise.resolve(searchParams);
+  const rawEloOnly = resolvedSearchParams?.eloOnly;
+  const eloOnly = Array.isArray(rawEloOnly) ? rawEloOnly[0] !== "false" : rawEloOnly !== "false";
   const regions = await getCachedRegionRows();
   const requestedScope = readScopeParam(resolvedSearchParams).trim().toLowerCase();
   const requestedCountry = decodeURIComponent(readCountryParam(resolvedSearchParams)).trim();
@@ -434,7 +476,24 @@ export default async function RegionalEloPage({
   // Strip internal-only fields (e.g. `rating`) before this data flows into the client
   // component below — `RegionalLeaderboardTable` is a client component, so anything left on
   // these rows is serialized into the page's payload and inspectable by any visitor.
-  const leaderboard: ClientLeaderboardRow[] = leaderboardRows.map(toClientLeaderboardRow);
+  const displayStats = eloOnly
+    ? await fetchEloDisplayStats(
+        leaderboardRows
+          .map((row) => row.topdeck_id)
+          .filter((value): value is string => Boolean(value))
+      )
+    : null;
+  const leaderboard: ClientLeaderboardRow[] = leaderboardRows.map((row) =>
+    toClientLeaderboardRow({
+      ...row,
+      ...(displayStats?.get(row.topdeck_id ?? "") ?? {
+        games_played: row.games_played,
+        wins: row.wins,
+        draws: row.draws,
+        losses: row.losses,
+      }),
+    })
+  );
 
   const playerKeys = leaderboard
     .map((r) => ({ player_id: r.player_id, topdeck_id: r.topdeck_id }))
@@ -482,6 +541,7 @@ export default async function RegionalEloPage({
                   selectedCountry={selectedCountry}
                   selectedRegion={selectedRegion}
                   supportsCountryRegions={hasCountryOptions}
+                  eloOnly={eloOnly}
                 />
                 <div className="text-xs text-muted-foreground">
                   Updated {updatedAt ? formatDate(updatedAt) : "—"}
@@ -492,6 +552,26 @@ export default async function RegionalEloPage({
         </header>
 
         <div className="mt-8 space-y-6">
+
+          <EloGameFilter
+            eloOnly={eloOnly}
+            allGamesHref={buildLeaderboardFilterHref({
+              selectedScope,
+              selectedCountry,
+              selectedRegion,
+              playerSearch,
+              page: currentPage,
+              eloOnly: false,
+            })}
+            rankingGamesHref={buildLeaderboardFilterHref({
+              selectedScope,
+              selectedCountry,
+              selectedRegion,
+              playerSearch,
+              page: currentPage,
+              eloOnly: true,
+            })}
+          />
 
           <Card className="knd-panel">
             <CardHeader className="gap-4 md:flex-row md:items-end md:justify-between">
@@ -512,6 +592,7 @@ export default async function RegionalEloPage({
                   <input type="hidden" name="region" value={selectedRegion} />
                 ) : null}
                 <input type="hidden" name="page" value="1" />
+                <input type="hidden" name="eloOnly" value={eloOnly ? "true" : "false"} />
                 <label className="sr-only" htmlFor="leaderboard-player-search">
                   Player search
                 </label>
@@ -542,6 +623,7 @@ export default async function RegionalEloPage({
                 selectedCountry={selectedCountry}
                 selectedRegion={selectedRegion}
                 playerSearch={playerSearch}
+                eloOnly={eloOnly}
               />
             </CardContent>
           </Card>

@@ -46,6 +46,12 @@ const tableData: TableData = {
       latest_tournament_topdeck_tid: "event-1",
     },
   ],
+  global_elo_game_results: [
+    { game_id: "eligible-1", topdeck_id: "player-1-topdeck", result: "win", ranking_eligible: true },
+    { game_id: "eligible-2", topdeck_id: "player-1-topdeck", result: "loss", ranking_eligible: true },
+    { game_id: "eligible-3", topdeck_id: "player-1-topdeck", result: "draw", ranking_eligible: true },
+    { game_id: "ineligible-1", topdeck_id: "player-1-topdeck", result: "win", ranking_eligible: false },
+  ],
 };
 
 function applyFilters(rows: Array<Record<string, unknown>>, filters: Array<(row: Record<string, unknown>) => boolean>) {
@@ -187,6 +193,20 @@ describe("RegionalEloPage", () => {
     expect(html).toMatch(/LEVEL SEVEN(?:'|&#x27;)S WEEKLY CEDH EVENT/);
     expect(html).not.toContain("No commander data");
     expect(html).not.toContain("No tournament data");
+    expect(html).toMatch(/Games<\/th>[\s\S]*?>3<\/td>/);
+    expect(html).toContain("Show 30+ player games only");
+  });
+
+  it("uses all leaderboard counters when the filter is explicitly disabled", async () => {
+    const pageModule = await import("@/app/regional-elo/page");
+    const element = await pageModule.default({
+      searchParams: { scope: "global", eloOnly: "false" },
+    });
+
+    const html = renderToStaticMarkup(element);
+
+    expect(html).toMatch(/Games<\/th>[\s\S]*?>754<\/td>/);
+    expect(html).toContain('aria-checked="false"');
   });
 
   it("renders 'No commander data' and 'No tournament data' when enriched profile rows are missing", async () => {
