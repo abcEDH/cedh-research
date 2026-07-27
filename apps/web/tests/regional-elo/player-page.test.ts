@@ -303,11 +303,11 @@ const tableData: TableData = {
     },
   ],
   tournaments: [
-    { id: "tournament-1", name: "California Open I", start_date: "2026-04-03", state: "California" },
-    { id: "tournament-2", name: "California Open II", start_date: "2026-04-02", state: "California" },
-    { id: "tournament-3", name: "California Open III", start_date: "2026-04-01", state: "California" },
-    { id: "tournament-4", name: "Unknown Region Open", start_date: "2026-04-04", state: null },
-    { id: "tournament-5", name: "Inactive Open", start_date: "2025-01-01", state: "California" },
+    { id: "tournament-1", name: "California Open I", start_date: "2026-04-03", state: "California", player_count: 32 },
+    { id: "tournament-2", name: "California Open II", start_date: "2026-04-02", state: "California", player_count: 29 },
+    { id: "tournament-3", name: "California Open III", start_date: "2026-04-01", state: "California", player_count: 32 },
+    { id: "tournament-4", name: "Unknown Region Open", start_date: "2026-04-04", state: null, player_count: 12 },
+    { id: "tournament-5", name: "Inactive Open", start_date: "2025-01-01", state: "California", player_count: 32 },
   ],
   commanders: [
     { id: "cmd-1", name: "Rograkh / Silas" },
@@ -547,6 +547,13 @@ describe("RegionalPlayerPage", () => {
 
     expect(html).toContain("/regional-elo/player/CCIQroaCHHQi7EELyNXlHiHQiQy1/vs/opp-a");
     expect(html).not.toContain('href="/regional-elo/player/opp-a"');
+  });
+
+  it("filters aggregate W-L-D stats to 30-player events when enabled", async () => {
+    const html = await renderPlayerPage("CCIQroaCHHQi7EELyNXlHiHQiQy1", { eloOnly: "true" });
+
+    expect(html).toContain("Showing 30+ player games");
+    expect(html).toMatch(/Overall[\s\S]*?>2 games[\s\S]*?>1-0-1</);
   });
 });
 

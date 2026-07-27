@@ -1,5 +1,5 @@
 -- SQL Queries for Player Matchup Analysis
--- Run these against Supabase directly or export to CSV
+-- Run these against Supabase directly or consume the JSON API export
 --
 -- Tier-aware exports should source game rows from one of these views:
 --   games_ranking_eligible, games_local_eligible, games_all_eligible

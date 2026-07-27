@@ -5,7 +5,6 @@ import { ELO_TIER_INFO, ELO_TIERS, type EloTier } from "@/lib/elo-tiers";
 
 export function PlayerMatchupsExport() {
   const [playerName, setPlayerName] = useState("");
-  const [format, setFormat] = useState<"csv" | "json">("csv");
   const [dataType, setDataType] = useState<"detailed" | "summary">("detailed");
   const [tier, setTier] = useState<EloTier>("ranking");
   const [isLoading, setIsLoading] = useState(false);
@@ -25,7 +24,6 @@ export function PlayerMatchupsExport() {
 
       const params = new URLSearchParams({
         player_name: playerName,
-        format,
         summary_only: dataType === "summary" ? "true" : "false",
         tier,
       });
@@ -41,7 +39,7 @@ export function PlayerMatchupsExport() {
       const contentDisposition = response.headers.get("content-disposition");
       const fileName = contentDisposition
         ? contentDisposition.split("filename=")[1].replaceAll('"', "")
-        : `${playerName.replace(/\s+/g, "_")}_matchups.${format}`;
+        : `${playerName.replace(/\s+/g, "_")}_matchups.json`;
 
       // Create blob and download
       const blob = await response.blob();
@@ -116,37 +114,6 @@ export function PlayerMatchupsExport() {
                 <p className="mt-2 text-xs text-slate-400">{ELO_TIER_INFO[tier].description}</p>
               </div>
 
-              {/* Format Selection */}
-              <div>
-                <label className="mb-3 block text-sm font-medium">Format</label>
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-2">
-                  <label className="flex min-h-11 items-center space-x-3">
-                    <input
-                      type="radio"
-                      name="format"
-                      value="csv"
-                      checked={format === "csv"}
-                      onChange={(e) => setFormat(e.target.value as "csv")}
-                      disabled={isLoading}
-                      className="h-4 w-4"
-                    />
-                    <span>CSV (Spreadsheet)</span>
-                  </label>
-                  <label className="flex min-h-11 items-center space-x-3">
-                    <input
-                      type="radio"
-                      name="format"
-                      value="json"
-                      checked={format === "json"}
-                      onChange={(e) => setFormat(e.target.value as "json")}
-                      disabled={isLoading}
-                      className="h-4 w-4"
-                    />
-                    <span>JSON (Raw Data)</span>
-                  </label>
-                </div>
-              </div>
-
               {/* Data Type Selection */}
               <div>
                 <label className="mb-3 block text-sm font-medium">Data Type</label>
@@ -201,7 +168,7 @@ export function PlayerMatchupsExport() {
                 disabled={isLoading}
                 className="w-full rounded-lg bg-cyan-600 px-6 py-3 font-semibold text-white hover:bg-cyan-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 focus:ring-offset-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isLoading ? "Exporting..." : "Export Data"}
+                {isLoading ? "Exporting..." : "Export JSON"}
               </button>
             </form>
           </div>
@@ -212,12 +179,12 @@ export function PlayerMatchupsExport() {
               <h3 className="mb-3 text-lg font-semibold">About This Tool</h3>
               <p className="text-slate-300">
                 Export comprehensive head-to-head matchup statistics for competitive analysis.
-                Every export includes the selected tier in its filename and data columns.
+                Every JSON export includes the selected tier in its filename and data columns.
               </p>
             </div>
 
             <div>
-              <h3 className="mb-3 text-lg font-semibold">CSV Format</h3>
+              <h3 className="mb-3 text-lg font-semibold">JSON Output</h3>
               <div className="space-y-2 text-sm text-slate-300">
                 <p>
                   <strong>Detailed:</strong> date, tournament, player, player_result, opponent,

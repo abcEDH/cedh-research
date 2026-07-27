@@ -9,6 +9,7 @@ export type PlayerGameLog = {
   tableLabel: string;
   seat: number;
   result: string;
+  tournamentPlayerCount?: number | null;
   commanderName: string | null;
   opponents: Array<{
     topdeckId: string | null;
@@ -74,6 +75,15 @@ export type PlayerLogSummary = {
 const OPPONENT_MATCHUP_PRIOR_GAMES = 60;
 const COMMANDER_MATCHUP_PRIOR_GAMES = 100;
 const DRAW_SCORE = 0.2;
+export const ELO_WORTHY_MIN_PLAYERS = 30;
+
+export function isEloWorthyGame(log: PlayerGameLog) {
+  return (log.tournamentPlayerCount ?? 0) >= ELO_WORTHY_MIN_PLAYERS;
+}
+
+export function filterPlayerLogs(logs: PlayerGameLog[], eloOnly: boolean) {
+  return eloOnly ? logs.filter(isEloWorthyGame) : logs;
+}
 
 function scoreRate(wins: number, draws: number, games: number) {
   if (games <= 0) return 0;

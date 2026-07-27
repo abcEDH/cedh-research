@@ -15,11 +15,7 @@ vi.mock("@/lib/supabase", () => ({
   supabase: { from: fromMock },
 }));
 
-import {
-  convertToCSV,
-  exportMatchupSummary,
-  exportPlayerMatchups,
-} from "@/lib/exports/player-matchups";
+import { exportMatchupSummary, exportPlayerMatchups } from "@/lib/exports/player-matchups";
 
 const player = {
   id: "player-1",
@@ -45,6 +41,7 @@ function makeLargeHistory() {
 function configureSupabaseMock(options: {
   error?: { table: string; column?: string };
   ownRanges: Array<[number, number]>;
+  gameBatches?: number[];
 }) {
   const { ownRows, games } = makeLargeHistory();
 
@@ -117,6 +114,7 @@ function configureSupabaseMock(options: {
             ]);
           } else if (table === "games") {
             const gameIds = filter("id") as string[];
+            options.gameBatches?.push(gameIds.length);
             data = games.filter((game) => gameIds.includes(game.id));
           } else if (table === "tournaments") {
             data = [
@@ -159,23 +157,6 @@ describe("player matchup exports", () => {
     fromMock.mockReset();
   });
 
-  it("neutralizes spreadsheet formulas while preserving zero values", () => {
-    const csv = convertToCSV([
-      {
-        equals: "=SUM(A1:A2)",
-        plus: "+malicious",
-        minus: "-malicious",
-        at: "@malicious",
-        zero: 0,
-        empty: null,
-      },
-    ]);
-
-    expect(csv).toBe(
-      "equals,plus,minus,at,zero,empty\n'=SUM(A1:A2),'+malicious,'-malicious,'@malicious,0,"
-    );
-  });
-
   it.each([
     ["detailed", exportPlayerMatchups],
     ["summary", exportMatchupSummary],
@@ -183,14 +164,16 @@ describe("player matchup exports", () => {
     "pages the player's own participant history for %s exports",
     async (_label, exporter) => {
       const ownRanges: Array<[number, number]> = [];
-      configureSupabaseMock({ ownRanges });
+      const gameBatches: number[] = [];
+      configureSupabaseMock({ ownRanges, gameBatches });
 
-      const result = await exporter("Player One", "json", "ranking");
+      const result = await exporter("Player One", "ranking");
 
       expect(ownRanges).toEqual([
         [0, 999],
         [1000, 1999],
       ]);
+      expect(gameBatches).toEqual([200, 200, 200, 200, 200, 1]);
       expect(JSON.parse(result ?? "[]")).toHaveLength(1001);
     }
   );
@@ -204,7 +187,7 @@ describe("player matchup exports", () => {
       error: { table: "game_participants", column: "entry_id" },
     });
 
-    await expect(exporter("Player One", "json", "ranking")).rejects.toThrow(
+    await expect(exporter("Player One", "ranking")).rejects.toThrow(
       "game_participants query failed"
     );
   });

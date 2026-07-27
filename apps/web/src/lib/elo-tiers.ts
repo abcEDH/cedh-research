@@ -12,12 +12,12 @@ export const ELO_TIER_INFO: Record<EloTier, EloTierInfo> = {
   ranking: {
     key: "ranking",
     label: "Tier 1: Ranking ELO",
-    description: "30+ player tournaments with a decklist; leagues and casual events excluded.",
+    description: "30+ player tournaments; leagues and casual events excluded.",
   },
   local: {
     key: "local",
     label: "Tier 2: Local / Regional ELO",
-    description: "10+ player finalized tournaments, including local events; obvious casual events excluded.",
+    description: "10+ player finalized tournaments, including leagues; obvious casual events excluded.",
   },
   all: {
     key: "all",
@@ -37,21 +37,12 @@ export type TierTournament = {
   start_date?: string | null;
 };
 
-export type TierEntry = {
-  decklist_text?: string | null;
-  decklist_url?: string | null;
-};
-
 function isObviousCasualEvent(name: string) {
   return /casual|exhibition|\bfun\b/i.test(name);
 }
 
 function isLeagueEvent(tournament: TierTournament) {
   return /league/i.test(`${tournament.topdeck_tid ?? ""} ${tournament.name}`);
-}
-
-function hasDecklist(entry: TierEntry) {
-  return Boolean(entry.decklist_text?.trim() || entry.decklist_url?.trim());
 }
 
 function isFinalized(tournament: TierTournament) {
@@ -61,7 +52,6 @@ function isFinalized(tournament: TierTournament) {
 export function isEloTierEligible(
   tier: EloTier,
   tournament: TierTournament | null | undefined,
-  entry: TierEntry | null | undefined,
   gameStatus?: string | null
 ) {
   if (!tournament || !isFinalized(tournament)) return false;
@@ -74,7 +64,6 @@ export function isEloTierEligible(
   if (tier === "local") return (tournament.player_count ?? 0) >= 10;
   return (
     (tournament.player_count ?? 0) >= 30 &&
-    !isLeagueEvent(tournament) &&
-    hasDecklist(entry ?? {})
+    !isLeagueEvent(tournament)
   );
 }

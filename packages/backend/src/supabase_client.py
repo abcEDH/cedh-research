@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
+# Optional: psycopg2 for direct connection
+import importlib.util
 import logging
 import os
 from typing import Any
 
 from supabase import Client, create_client
-
-# Optional: psycopg2 for direct connection
-import importlib.util
 
 PSYCOPG2_AVAILABLE = importlib.util.find_spec("psycopg2") is not None
 if PSYCOPG2_AVAILABLE:
@@ -194,18 +193,20 @@ class SupabaseClient:
     def select(
         self,
         table: str,
-        filters: dict[str, Any] | None = None,
+        filters: dict[str, Any] | list[tuple[str, Any]] | None = None,
         max_retries: int = 8,
     ) -> list[dict[str, Any]]:
         params = filters or {}
-        columns = str(params.get("select", "*"))
-        limit_raw = params.get("limit")
-        offset_raw = params.get("offset")
-        order_raw = params.get("order")
+        filter_items = params.items() if isinstance(params, dict) else params
+        structural_params = params if isinstance(params, dict) else dict(params)
+        columns = str(structural_params.get("select", "*"))
+        limit_raw = structural_params.get("limit")
+        offset_raw = structural_params.get("offset")
+        order_raw = structural_params.get("order")
 
         q = self._client.table(table).select(columns)
 
-        for col, val in params.items():
+        for col, val in filter_items:
             if col in _STRUCTURAL_PARAMS:
                 continue
             q = _apply_filter(q, col, str(val))

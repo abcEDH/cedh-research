@@ -2,14 +2,16 @@
 
 Issue #288 defines three reusable datasets:
 
-- `ranking`: at least 30 players, a non-empty decklist, a dated completed event, and no league/casual markers.
-- `local`: at least 10 players, a dated completed event, and no obvious casual markers.
+- `ranking`: at least 30 players, a dated completed event, and no league/casual markers.
+- `local`: at least 10 players, a dated completed event, and no obvious casual markers; league games may qualify.
 - `all`: every game with a date.
 
-The migration `20260726000000_elo_ranking_eligibility_tiers.sql` appends
+The migrations `20260726000000_elo_ranking_eligibility_tiers.sql` and
+`20260727042641_ranking_game_level_eligibility.sql` append and refine
 `ranking_eligible`, `local_eligible`, and `all_eligible` flags to
 `global_elo_game_results` and exposes the `games_*_eligible` views for exports and
-analysis. Blank decklist strings are treated as missing.
+analysis. Ranking eligibility is game-level: every participant in an eligible game
+is included, regardless of that entry's decklist presence.
 
 To rebuild the persisted Elo tables for a tier, run a full rebuild with the service
 environment loaded:

@@ -1,9 +1,9 @@
 import unittest
 from pathlib import Path
 
-
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "supabase" / "migrations"
 ELO_TIERS_MIGRATION = MIGRATIONS_DIR / "20260726000000_elo_ranking_eligibility_tiers.sql"
+GAME_LEVEL_ELIGIBILITY_MIGRATION = MIGRATIONS_DIR / "20260727042641_ranking_game_level_eligibility.sql"
 
 
 class SupabaseMigrationIntegrityTests(unittest.TestCase):
@@ -33,6 +33,14 @@ class SupabaseMigrationIntegrityTests(unittest.TestCase):
 
         self.assertEqual(duplicates, [], f"duplicate migration versions found: {duplicates}")
 
+    def test_ranking_eligibility_is_game_level_without_decklist_filter(self) -> None:
+        sql = GAME_LEVEL_ELIGIBILITY_MIGRATION.read_text()
+
+        self.assertIn("t.player_count >= 30", sql)
+        self.assertIn("AS ranking_eligible", sql)
+        self.assertNotIn("decklist_text", sql)
+        self.assertNotIn("decklist_url", sql)
+
     def test_security_hardening_part2_uses_valid_plpgsql_array_loop(self) -> None:
         sql = (MIGRATIONS_DIR / "20260408000000_security_hardening_part2.sql").read_text()
 
@@ -51,14 +59,24 @@ class SupabaseMigrationIntegrityTests(unittest.TestCase):
     def test_regional_elo_leaderboard_preserves_existing_column_order(self) -> None:
         sql = (MIGRATIONS_DIR / "20260408010000_include_unknown_state_global_elo_games.sql").read_text()
 
-        self.assertIn("s.region_key AS primary_region_key,\n    s.country_key AS primary_country_key,\n    NULL::text AS country_key", sql)
+        expected_columns = (
+            "s.region_key AS primary_region_key,\n"
+            "    s.country_key AS primary_country_key,\n"
+            "    NULL::text AS country_key"
+        )
+        self.assertIn(expected_columns, sql)
         self.assertNotIn("s.country_key AS primary_country_key,\n    s.region_key AS primary_region_key,", sql)
 
     def test_canonical_leaderboard_counts_preserves_existing_column_order(self) -> None:
         sql = (MIGRATIONS_DIR / "20260409140000_fix_global_leaderboard_canonical_counts.sql").read_text()
 
         self.assertIn("g.player_id,\n    p.name AS player_name", sql)
-        self.assertIn("s.region_key AS primary_region_key,\n    s.country_key AS primary_country_key,\n    NULL::text AS country_key", sql)
+        expected_columns = (
+            "s.region_key AS primary_region_key,\n"
+            "    s.country_key AS primary_country_key,\n"
+            "    NULL::text AS country_key"
+        )
+        self.assertIn(expected_columns, sql)
         self.assertNotIn("NULL::text AS country_key,\n    g.player_id", sql)
         self.assertIn("MAX(game_date)::date AS last_game_date", sql)
 

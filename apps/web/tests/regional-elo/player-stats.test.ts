@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { summarizePlayerLogs, type PlayerGameLog } from "@/app/regional-elo/player/[topdeckId]/player-stats";
+import {
+  filterPlayerLogs,
+  summarizePlayerLogs,
+  type PlayerGameLog,
+} from "@/app/regional-elo/player/[topdeckId]/player-stats";
 
 describe("summarizePlayerLogs", () => {
   it("builds consistent totals, seat summaries, and opponent records", () => {
@@ -121,5 +125,16 @@ describe("summarizePlayerLogs", () => {
         games: 1,
       },
     ]);
+  });
+
+  it("filters aggregate logs to 30-player events without changing Elo data", () => {
+    const logs: PlayerGameLog[] = [
+      { gameId: "large", tournamentPlayerCount: 30 } as PlayerGameLog,
+      { gameId: "small", tournamentPlayerCount: 29 } as PlayerGameLog,
+      { gameId: "unknown", tournamentPlayerCount: null } as PlayerGameLog,
+    ];
+
+    expect(filterPlayerLogs(logs, false)).toHaveLength(3);
+    expect(filterPlayerLogs(logs, true).map((log) => log.gameId)).toEqual(["large"]);
   });
 });

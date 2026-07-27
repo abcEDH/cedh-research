@@ -6,21 +6,20 @@ import {
 import { ELO_TIER_INFO, parseEloTier } from "@/lib/elo-tiers";
 
 /**
- * API route to export player matchup data as CSV.
+ * API route to export player matchup data as JSON.
  * Query params:
  *   - player_name: Name or part of name to search for
- *   - format: 'csv' or 'json' (default: csv)
+ *   - format: 'json' (optional; JSON is the only supported format)
  *   - summary_only: true for aggregated stats only
  *   - tier: 'ranking', 'local', or 'all' (default: ranking)
  */
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const playerName = searchParams.get("player_name");
-  const requestedFormat = searchParams.get("format") || "csv";
-  if (requestedFormat !== "csv" && requestedFormat !== "json") {
-    return NextResponse.json({ error: "format must be csv or json" }, { status: 400 });
+  const requestedFormat = searchParams.get("format");
+  if (requestedFormat && requestedFormat !== "json") {
+    return NextResponse.json({ error: "format must be json" }, { status: 400 });
   }
-  const format = requestedFormat;
   const summaryOnly = searchParams.get("summary_only") === "true";
   const tier = parseEloTier(searchParams.get("tier"));
 
@@ -35,9 +34,9 @@ export async function GET(request: NextRequest) {
     let result;
 
     if (summaryOnly) {
-      result = await exportMatchupSummary(playerName, format, tier);
+      result = await exportMatchupSummary(playerName, tier);
     } else {
-      result = await exportPlayerMatchups(playerName, format, tier);
+      result = await exportPlayerMatchups(playerName, tier);
     }
 
     if (!result) {
@@ -48,15 +47,12 @@ export async function GET(request: NextRequest) {
     }
 
     // Return as attachment
-    const fileName =
-      format === "csv"
-        ? `${playerName.replace(/\s+/g, "_")}_${tier}_matchups.csv`
-        : `${playerName.replace(/\s+/g, "_")}_${tier}_matchups.json`;
+    const fileName = `${playerName.replace(/\s+/g, "_")}_${tier}_matchups.json`;
 
     return new NextResponse(result, {
       status: 200,
       headers: {
-        "Content-Type": format === "csv" ? "text/csv" : "application/json",
+        "Content-Type": "application/json",
         "Content-Disposition": `attachment; filename="${fileName}"`,
         "X-Elo-Tier": tier,
         "X-Elo-Tier-Label": ELO_TIER_INFO[tier].label,

@@ -36,7 +36,7 @@ class RebuildGlobalEloTablesTests(TestCase):
         with self.assertRaises(ValueError):
             rebuild.eligible_game_ids([], "unknown")
 
-    def test_apply_game_scores_full_pod_but_updates_only_eligible_players(self) -> None:
+    def test_apply_game_scores_every_player_in_an_eligible_full_pod(self) -> None:
         rows = [
             {
                 "game_id": "game-1",
@@ -47,7 +47,6 @@ class RebuildGlobalEloTablesTests(TestCase):
                 "topdeck_id": f"topdeck-{index}",
                 "start_date": "2026-07-01T00:00:00Z",
                 "result": "win" if index == 1 else "loss",
-                "ranking_eligible": index <= 2,
                 "seat_position": index - 1,
             }
             for index in range(1, 5)
@@ -61,11 +60,13 @@ class RebuildGlobalEloTablesTests(TestCase):
             {},
             date(2026, 7, 2),
             update_activity=False,
-            eligibility_flag="ranking_eligible",
         )
 
-        self.assertEqual(set(ratings), {"player-1", "player-2"})
-        self.assertEqual({event["player_id"] for event in events}, {"player-1", "player-2"})
+        self.assertEqual(set(ratings), {"player-1", "player-2", "player-3", "player-4"})
+        self.assertEqual(
+            {event["player_id"] for event in events},
+            {"player-1", "player-2", "player-3", "player-4"},
+        )
         self.assertEqual({event["opponent_count"] for event in events}, {3})
 
     def test_build_arg_parser_exposes_tier_independently(self) -> None:

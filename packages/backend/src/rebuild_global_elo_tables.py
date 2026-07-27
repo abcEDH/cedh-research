@@ -4,15 +4,12 @@
 from __future__ import annotations
 
 import argparse
-import ast
 import math
 import os
 import re
 import time
 from collections import defaultdict
-from datetime import date, datetime, timedelta, timezone
-UTC = timezone.utc
-from pathlib import Path
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import requests
@@ -21,8 +18,8 @@ from ingest import SupabaseClient, load_local_env
 
 try:
     import psycopg2
-    import psycopg2.extras
     import psycopg2.extensions
+    import psycopg2.extras
 
     PSYCOPG2_AVAILABLE = True
 except ImportError:
@@ -1080,7 +1077,6 @@ def apply_game(
     player_meta: dict[str, dict[str, str | None]],
     now: date,
     update_activity: bool = True,
-    eligibility_flag: str | None = None,
 ) -> list[dict[str, Any]]:
     participants: list[dict[str, Any]] = []
     seen_players: set[str] = set()
@@ -1095,14 +1091,6 @@ def apply_game(
     if len(participants) < 2:
         return []
     if not any((score_for_result(row.get("result")) or 0) > 0 for row in participants):
-        return []
-
-    eligible_participants = [
-        row
-        for row in participants
-        if eligibility_flag is None or row.get(eligibility_flag) is True
-    ]
-    if not eligible_participants:
         return []
 
     game_date = parse_date(participants[0].get("start_date"))
@@ -1138,7 +1126,7 @@ def apply_game(
         expected_ratings[player_id] = expected_rating
     total_equity = sum(rating_equity(expected_ratings[row["player_id"]]) for row in participants)
 
-    for row in eligible_participants:
+    for row in participants:
         player_id = row["player_id"]
         score = score_for_result(row.get("result"))
         if score is None:
@@ -1149,7 +1137,7 @@ def apply_game(
         deltas[player_id] = k_factor * (actual - expected)
 
     events: list[dict[str, Any]] = []
-    for row in eligible_participants:
+    for row in participants:
         player_id = row["player_id"]
         result = row.get("result")
         score = score_for_result(result)
@@ -1208,7 +1196,6 @@ def build_state_from_results(
     player_meta: dict[str, dict[str, str | None]] | None = None,
     events: list[dict[str, Any]] | None = None,
     update_activity: bool = True,
-    eligibility_flag: str | None = None,
 ) -> tuple[
     dict[str, dict[str, Any]],
     dict[tuple[str, str], dict[str, Any]],
@@ -1233,7 +1220,6 @@ def build_state_from_results(
             player_meta,
             today,
             update_activity=update_activity,
-            eligibility_flag=eligibility_flag,
         )
         events.extend(player_events)
         if index % 25000 == 0:
@@ -1248,7 +1234,13 @@ def finalize_rows(
     state_activity: dict[tuple[str, str], dict[str, Any]],
     player_meta: dict[str, dict[str, str | None]],
     events: list[dict[str, Any]],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
     today = datetime.now(UTC).date()
 
     for activity in state_activity.values():
@@ -1431,8 +1423,13 @@ def build_rows(
     state_activity: dict[tuple[str, str], dict[str, Any]] | None = None,
     player_meta: dict[str, dict[str, str | None]] | None = None,
     events: list[dict[str, Any]] | None = None,
-    eligibility_flag: str | None = None,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
     print("Fetching TopDeck Elos for enrichment...", flush=True)
     topdeck_elos = fetch_topdeck_elos(client)
     ratings, state_activity, player_meta, events = build_state_from_results(
@@ -1441,7 +1438,6 @@ def build_rows(
         state_activity=state_activity,
         player_meta=player_meta,
         events=events,
-        eligibility_flag=eligibility_flag,
     )
     return finalize_rows(topdeck_elos, ratings, state_activity, player_meta, events)
 
@@ -1593,8 +1589,6 @@ def main() -> None:
             "run a full rebuild without --since-start-date."
         )
 
-    eligibility_flag = None if args.tier == "all" else ELO_TIER_FILTERS[args.tier]
-
     load_local_env()
     url = os.environ.get("SUPABASE_URL")
     key = os.environ.get("SUPABASE_SERVICE_KEY")
@@ -1631,7 +1625,6 @@ def main() -> None:
             state_activity=base_state_activity,
             player_meta=base_player_meta,
             update_activity=False,
-            eligibility_flag=eligibility_flag,
         )
         print("Fetching TopDeck Elos for enrichment...", flush=True)
         topdeck_elos = fetch_topdeck_elos(client)
@@ -1648,9 +1641,7 @@ def main() -> None:
         results = fetch_results_by_month(client, args.tier)
         merge_seat_positions(results, seat_positions)
         print(f"Fetched {len(results):,} participant result rows", flush=True)
-        rating_rows, state_rows, event_rows, leaderboard_rows, profile_rows = build_rows(
-            client, results, eligibility_flag=eligibility_flag
-        )
+        rating_rows, state_rows, event_rows, leaderboard_rows, profile_rows = build_rows(client, results)
     print(
         "Built "
         f"{len(rating_rows):,} ratings, "

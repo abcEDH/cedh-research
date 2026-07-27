@@ -14,23 +14,24 @@ describe("ELO tier eligibility", () => {
     expect(parseEloTier("all")).toBe("all");
   });
 
-  it("requires a non-empty decklist for ranking games", () => {
-    expect(isEloTierEligible("ranking", tournament, { decklist_text: "1 Mana Crypt" })).toBe(true);
-    expect(isEloTierEligible("ranking", tournament, { decklist_text: "  ", decklist_url: null })).toBe(false);
+  it("uses tournament and game rules for ranking eligibility", () => {
+    expect(isEloTierEligible("ranking", tournament)).toBe(true);
+    expect(isEloTierEligible("ranking", { ...tournament, player_count: 29 })).toBe(false);
   });
 
   it("allows decklist-free local events once they reach ten players", () => {
-    expect(isEloTierEligible("local", { ...tournament, player_count: 10 }, {})).toBe(true);
-    expect(isEloTierEligible("local", { ...tournament, player_count: 9 }, {})).toBe(false);
+    expect(isEloTierEligible("local", { ...tournament, player_count: 10 })).toBe(true);
+    expect(isEloTierEligible("local", { ...tournament, player_count: 9 })).toBe(false);
   });
 
-  it("excludes league and obvious casual events from filtered tiers", () => {
-    expect(isEloTierEligible("ranking", { ...tournament, topdeck_tid: "spring-league" }, { decklist_url: "https://deck" })).toBe(false);
-    expect(isEloTierEligible("local", { ...tournament, name: "Casual cEDH Night" }, {})).toBe(false);
+  it("excludes leagues from ranking but allows them in local", () => {
+    expect(isEloTierEligible("ranking", { ...tournament, topdeck_tid: "spring-league" })).toBe(false);
+    expect(isEloTierEligible("local", { ...tournament, topdeck_tid: "spring-league" })).toBe(true);
+    expect(isEloTierEligible("local", { ...tournament, name: "Casual cEDH Night" })).toBe(false);
   });
 
   it("keeps dated games in the all-games tier", () => {
-    expect(isEloTierEligible("all", tournament, {})).toBe(true);
-    expect(isEloTierEligible("all", { ...tournament, start_date: null }, {})).toBe(false);
+    expect(isEloTierEligible("all", tournament)).toBe(true);
+    expect(isEloTierEligible("all", { ...tournament, start_date: null })).toBe(false);
   });
 });
