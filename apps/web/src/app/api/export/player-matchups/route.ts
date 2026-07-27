@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  AmbiguousPlayerMatchError,
   exportPlayerMatchups,
   exportMatchupSummary,
 } from "@/lib/exports/player-matchups";
@@ -59,6 +60,10 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
+    if (error instanceof AmbiguousPlayerMatchError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
     console.error("Error exporting player matchups:", error);
     return NextResponse.json(
       { error: "Failed to export player data" },

@@ -5,6 +5,7 @@ type QueryState = {
   select?: string;
   filters: Array<{ column: string; values: unknown }>;
   range?: [number, number];
+  exactNameQuery?: boolean;
 };
 
 const { fromMock } = vi.hoisted(() => ({
@@ -15,7 +16,10 @@ vi.mock("@/lib/supabase", () => ({
   supabase: { from: fromMock },
 }));
 
-import { exportMatchupSummary, exportPlayerMatchups } from "@/lib/exports/player-matchups";
+import {
+  exportMatchupSummary,
+  exportPlayerMatchups,
+} from "@/lib/exports/player-matchups";
 
 const player = {
   id: "player-1",
@@ -42,6 +46,8 @@ function configureSupabaseMock(options: {
   error?: { table: string; column?: string };
   ownRanges: Array<[number, number]>;
   gameBatches?: number[];
+  exactPlayer?: typeof player | null;
+  partialPlayers?: Array<typeof player>;
 }) {
   const { ownRows, games } = makeLargeHistory();
 
@@ -54,10 +60,12 @@ function configureSupabaseMock(options: {
       },
       ilike: (column: string, values: unknown) => {
         state.filters.push({ column, values });
+        if (column === "name") state.exactNameQuery = false;
         return query;
       },
       eq: (column: string, values: unknown) => {
         state.filters.push({ column, values });
+        if (column === "name") state.exactNameQuery = true;
         return query;
       },
       in: (column: string, values: unknown[]) => {
@@ -87,7 +95,11 @@ function configureSupabaseMock(options: {
 
           let data: unknown[] = [];
           if (table === "players" && !filter("id")) {
-            data = [player];
+            data = state.exactNameQuery
+              ? options.exactPlayer === null
+                ? []
+                : [options.exactPlayer ?? player]
+              : options.partialPlayers ?? [player];
           } else if (table === "tournament_entries" && filter("player_id")) {
             data = [
               {
@@ -189,6 +201,49 @@ describe("player matchup exports", () => {
 
     await expect(exporter("Player One", "ranking")).rejects.toThrow(
       "game_participants query failed"
+    );
+  });
+
+  it("prefers an exact player-name match", async () => {
+    const ownRanges: Array<[number, number]> = [];
+    const gameBatches: number[] = [];
+    configureSupabaseMock({
+      ownRanges,
+      gameBatches,
+      partialPlayers: [
+        player,
+        {
+          ...player,
+          id: "player-2",
+          name: "Player One Alt",
+        },
+      ],
+    });
+
+    const result = await exportPlayerMatchups("Player One", "ranking");
+
+    expect(JSON.parse(result ?? "[]")[0].player).toBe("Player One");
+  });
+
+  it.each([
+    exportPlayerMatchups,
+    exportMatchupSummary,
+  ])("rejects ambiguous partial player-name matches", async (exporter) => {
+    configureSupabaseMock({
+      ownRanges: [],
+      exactPlayer: null,
+      partialPlayers: [
+        player,
+        {
+          ...player,
+          id: "player-2",
+          name: "Player One Alt",
+        },
+      ],
+    });
+
+    await expect(exporter("Player", "ranking")).rejects.toThrow(
+      'Multiple players matched "Player"'
     );
   });
 });

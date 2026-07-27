@@ -55,6 +55,49 @@ const GAME_PARTICIPANT_PAGE_SIZE = 1000;
 const GAME_ID_BATCH_SIZE = 200;
 const LOOKUP_BATCH_SIZE = 500;
 
+export class AmbiguousPlayerMatchError extends Error {
+  constructor(playerName: string) {
+    super(`Multiple players matched "${playerName}". Use the exact player name.`);
+    this.name = "AmbiguousPlayerMatchError";
+  }
+}
+
+async function fetchPlayerByName(playerName: string): Promise<Player | null> {
+  const { data: exactPlayers, error: exactPlayerError } = await supabase
+    .from("players")
+    .select("id, name, topdeck_id")
+    .eq("name", playerName)
+    .limit(1);
+
+  if (exactPlayerError) throw exactPlayerError;
+  if (exactPlayers && exactPlayers.length > 0) {
+    return exactPlayers[0] as Player;
+  }
+
+  const { data: partialPlayers, error: partialPlayerError } = await supabase
+    .from("players")
+    .select("id, name, topdeck_id")
+    .ilike("name", `%${playerName}%`)
+    .limit(2);
+
+  if (partialPlayerError) throw partialPlayerError;
+
+  const players = (partialPlayers || []) as Player[];
+  const normalizedName = playerName.trim().toLocaleLowerCase();
+  const caseInsensitiveExact = players.find(
+    (player) => player.name.trim().toLocaleLowerCase() === normalizedName
+  );
+
+  if (caseInsensitiveExact) {
+    return caseInsensitiveExact;
+  }
+  if (players.length > 1) {
+    throw new AmbiguousPlayerMatchError(playerName);
+  }
+
+  return players[0] || null;
+}
+
 async function fetchPlayerGameParticipants(
   entryIds: string[]
 ): Promise<GameParticipant[]> {
@@ -164,19 +207,11 @@ export async function exportPlayerMatchups(
   playerName: string,
   tier: EloTier = "ranking"
 ): Promise<string | null> {
-  const { data: players, error: playersError } = await supabase
-    .from("players")
-    .select("id, name, topdeck_id")
-    .ilike("name", `%${playerName}%`)
-    .limit(1);
-
-  if (playersError) throw playersError;
-
-  if (!players || players.length === 0) {
+  const player = await fetchPlayerByName(playerName);
+  if (!player) {
     return null;
   }
 
-  const player = players[0] as Player;
   const playerId = player.id;
 
   const { data: entries, error: entriesError } = await supabase
@@ -288,19 +323,11 @@ export async function exportMatchupSummary(
   playerName: string,
   tier: EloTier = "ranking"
 ): Promise<string | null> {
-  const { data: players, error: playersError } = await supabase
-    .from("players")
-    .select("id, name, topdeck_id")
-    .ilike("name", `%${playerName}%`)
-    .limit(1);
-
-  if (playersError) throw playersError;
-
-  if (!players || players.length === 0) {
+  const player = await fetchPlayerByName(playerName);
+  if (!player) {
     return null;
   }
 
-  const player = players[0] as Player;
   const playerId = player.id;
 
   const { data: entries, error: entriesError } = await supabase
