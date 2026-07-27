@@ -87,6 +87,7 @@ function convertToCSV(rows: unknown[]): string {
 
 const GAME_PARTICIPANT_PAGE_SIZE = 1000;
 const GAME_ID_BATCH_SIZE = 200;
+const LOOKUP_BATCH_SIZE = 500;
 
 async function fetchGameParticipants(gameIds: string[]): Promise<GameParticipant[]> {
   const rows: GameParticipant[] = [];
@@ -110,6 +111,44 @@ async function fetchGameParticipants(gameIds: string[]): Promise<GameParticipant
   }
 
   return rows;
+}
+
+async function fetchEntryToPlayerMap(entryIds: string[]): Promise<Map<string, string>> {
+  const entryToPlayerMap = new Map<string, string>();
+
+  for (let start = 0; start < entryIds.length; start += LOOKUP_BATCH_SIZE) {
+    const batch = entryIds.slice(start, start + LOOKUP_BATCH_SIZE);
+    const { data, error } = await supabase
+      .from("tournament_entries")
+      .select("id, player_id")
+      .in("id", batch);
+
+    if (error) throw error;
+    (data || []).forEach((entry: { id: string; player_id: string }) => {
+      entryToPlayerMap.set(entry.id, entry.player_id);
+    });
+  }
+
+  return entryToPlayerMap;
+}
+
+async function fetchPlayerMap(playerIds: string[]): Promise<Map<string, Player>> {
+  const playerMap = new Map<string, Player>();
+
+  for (let start = 0; start < playerIds.length; start += LOOKUP_BATCH_SIZE) {
+    const batch = playerIds.slice(start, start + LOOKUP_BATCH_SIZE);
+    const { data, error } = await supabase
+      .from("players")
+      .select("id, name, topdeck_id")
+      .in("id", batch);
+
+    if (error) throw error;
+    (data || []).forEach((player: Player) => {
+      playerMap.set(player.id, player);
+    });
+  }
+
+  return playerMap;
 }
 
 export async function exportPlayerMatchups(
@@ -208,31 +247,11 @@ export async function exportPlayerMatchups(
   );
 
   // Map entries to player IDs
-  const entryToPlayerMap = new Map<string, string>();
-  if (opponentEntryIds.size > 0) {
-    const { data: entryData } = await supabase
-      .from("tournament_entries")
-      .select("id, player_id")
-      .in("id", Array.from(opponentEntryIds));
-
-    (entryData || []).forEach((e: { id: string; player_id: string }) => {
-      entryToPlayerMap.set(e.id, e.player_id);
-    });
-  }
+  const entryToPlayerMap = await fetchEntryToPlayerMap(Array.from(opponentEntryIds));
 
   // Get opponent player info
   const opponentPlayerIds = new Set(entryToPlayerMap.values());
-  const playerMap = new Map<string, Player>();
-  if (opponentPlayerIds.size > 0) {
-    const { data: opponentData } = await supabase
-      .from("players")
-      .select("id, name, topdeck_id")
-      .in("id", Array.from(opponentPlayerIds));
-
-    (opponentData || []).forEach((p: Player) => {
-      playerMap.set(p.id, p);
-    });
-  }
+  const playerMap = await fetchPlayerMap(Array.from(opponentPlayerIds));
 
   // Build matchup rows
   const csvRows: MatchupRow[] = [];
@@ -372,31 +391,11 @@ export async function exportMatchupSummary(
   );
 
   // Map entries to player IDs
-  const entryToPlayerMap = new Map<string, string>();
-  if (opponentEntryIds.size > 0) {
-    const { data: entryData } = await supabase
-      .from("tournament_entries")
-      .select("id, player_id")
-      .in("id", Array.from(opponentEntryIds));
-
-    (entryData || []).forEach((e: { id: string; player_id: string }) => {
-      entryToPlayerMap.set(e.id, e.player_id);
-    });
-  }
+  const entryToPlayerMap = await fetchEntryToPlayerMap(Array.from(opponentEntryIds));
 
   // Get opponent player info
   const opponentPlayerIds = new Set(entryToPlayerMap.values());
-  const playerMap = new Map<string, Player>();
-  if (opponentPlayerIds.size > 0) {
-    const { data: opponentData } = await supabase
-      .from("players")
-      .select("id, name, topdeck_id")
-      .in("id", Array.from(opponentPlayerIds));
-
-    (opponentData || []).forEach((p: Player) => {
-      playerMap.set(p.id, p);
-    });
-  }
+  const playerMap = await fetchPlayerMap(Array.from(opponentPlayerIds));
 
   // Build matchup stats
   const matchups = new Map<

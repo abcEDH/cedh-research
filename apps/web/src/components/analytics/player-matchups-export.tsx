@@ -91,7 +91,7 @@ export function PlayerMatchupsExport() {
                   value={playerName}
                   onChange={(e) => setPlayerName(e.target.value)}
                   placeholder="e.g., Jason Doan, Dexter Idzikowski, Jordan Callister"
-                  className="w-full rounded-lg border border-slate-600 bg-slate-700 px-4 py-2 text-white placeholder-slate-400 focus:border-cyan-500 focus:outline-none"
+                  className="min-h-11 w-full rounded-lg border border-slate-600 bg-slate-700 px-4 py-2 text-white placeholder-slate-400 focus:border-cyan-500 focus:outline-none"
                   disabled={isLoading}
                 />
               </div>
