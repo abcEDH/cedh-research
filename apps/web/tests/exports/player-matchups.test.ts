@@ -6,6 +6,8 @@ type QueryState = {
   filters: Array<{ column: string; values: unknown }>;
   range?: [number, number];
   exactNameQuery?: boolean;
+  nameLookup?: "eq" | "ilike";
+  expectSingle?: boolean;
 };
 
 const { fromMock } = vi.hoisted(() => ({
@@ -50,8 +52,11 @@ function configureSupabaseMock(options: {
   entryCount?: number;
   exactPlayer?: typeof player | null;
   exactPlayers?: Array<typeof player>;
+  caseInsensitiveExactPlayers?: Array<typeof player>;
   partialPlayers?: Array<typeof player>;
+  topdeckPlayer?: typeof player | null;
   opponentName?: string;
+  nameQueries?: string[];
 }) {
   const { ownRows, games } = makeLargeHistory();
 
@@ -64,14 +69,19 @@ function configureSupabaseMock(options: {
       },
       ilike: (column: string, values: unknown) => {
         state.filters.push({ column, values });
-        if (column === "name") {
-          state.exactNameQuery = typeof values === "string" && !values.includes("%");
+        if (column === "name" && typeof values === "string") {
+          options.nameQueries?.push(values);
+          state.exactNameQuery = !(values.startsWith("%") && values.endsWith("%"));
+          state.nameLookup = "ilike";
         }
         return query;
       },
       eq: (column: string, values: unknown) => {
         state.filters.push({ column, values });
-        if (column === "name") state.exactNameQuery = true;
+        if (column === "name") {
+          state.exactNameQuery = true;
+          state.nameLookup = "eq";
+        }
         return query;
       },
       in: (column: string, values: unknown[]) => {
@@ -79,6 +89,10 @@ function configureSupabaseMock(options: {
         return query;
       },
       limit: () => query,
+      maybeSingle: () => {
+        state.expectSingle = true;
+        return query;
+      },
       range: (from: number, to: number) => {
         state.range = [from, to];
         return query;
@@ -100,11 +114,17 @@ function configureSupabaseMock(options: {
             state.filters.find((item) => item.column === column)?.values;
 
           let data: unknown[] = [];
-          if (table === "players" && !filter("id")) {
-            data = state.exactNameQuery
+          if (table === "players" && filter("topdeck_id")) {
+            data = options.topdeckPlayer === null
+              ? []
+              : [options.topdeckPlayer ?? player];
+          } else if (table === "players" && !filter("id")) {
+            data = state.nameLookup === "eq"
               ? options.exactPlayers ??
                 (options.exactPlayer === null ? [] : [options.exactPlayer ?? player])
-              : options.partialPlayers ?? [player];
+              : state.exactNameQuery
+                ? options.caseInsensitiveExactPlayers ?? []
+                : options.partialPlayers ?? [player];
           } else if (table === "tournament_entries" && filter("player_id")) {
             const range = state.range ?? [0, 999];
             options.entryRanges?.push([range[0], range[1]]);
@@ -113,7 +133,7 @@ function configureSupabaseMock(options: {
               { length: Math.max(0, Math.min(entryCount - range[0], range[1] - range[0] + 1)) },
               (_, index) => ({
                 id: `entry-${range[0] + index + 1}`,
-                player_id: player.id,
+                player_id: options.topdeckPlayer?.id ?? player.id,
                 tournament_id: "tournament-1",
                 decklist_text: "decklist",
                 decklist_url: null,
@@ -164,7 +184,9 @@ function configureSupabaseMock(options: {
             }));
           }
 
-          return Promise.resolve(onFulfilled({ data, error: null }));
+          return Promise.resolve(
+            onFulfilled({ data: state.expectSingle ? data[0] ?? null : data, error: null })
+          );
         } catch (error) {
           return onRejected ? Promise.resolve(onRejected(error)) : Promise.reject(error);
         }
@@ -242,7 +264,8 @@ describe("player matchup exports", () => {
     configureSupabaseMock({
       ownRanges: [],
       exactPlayer: null,
-      exactPlayers: [player],
+      exactPlayers: [],
+      caseInsensitiveExactPlayers: [player],
       partialPlayers: [
         player,
         {
@@ -256,6 +279,50 @@ describe("player matchup exports", () => {
     const result = await exportPlayerMatchups("player one", "ranking");
 
     expect(JSON.parse(result ?? "[]")[0].player).toBe("Player One");
+  });
+
+  it("escapes LIKE metacharacters in exact and partial player-name lookups", async () => {
+    const exactNameQueries: string[] = [];
+    const specialPlayer = { ...player, name: "Player_One" };
+    configureSupabaseMock({
+      ownRanges: [],
+      exactPlayer: null,
+      exactPlayers: [],
+      caseInsensitiveExactPlayers: [specialPlayer],
+      partialPlayers: [specialPlayer],
+      nameQueries: exactNameQueries,
+    });
+
+    await exportPlayerMatchups("player_one", "ranking");
+
+    expect(exactNameQueries).toContain("player\\_one");
+
+    const partialNameQueries: string[] = [];
+    configureSupabaseMock({
+      ownRanges: [],
+      exactPlayer: null,
+      exactPlayers: [],
+      partialPlayers: [specialPlayer],
+      nameQueries: partialNameQueries,
+    });
+
+    await exportPlayerMatchups("Player%", "ranking");
+
+    expect(partialNameQueries).toContain("%Player\\%%");
+  });
+
+  it("uses the selected TopDeck ID instead of resolving the name again", async () => {
+    const selectedPlayer = { ...player, id: "player-2", name: "Player One Alt" };
+    configureSupabaseMock({
+      ownRanges: [],
+      topdeckPlayer: selectedPlayer,
+      exactPlayers: [player],
+      partialPlayers: [player],
+    });
+
+    const result = await exportPlayerMatchups("Player One", "ranking", "selected-topdeck-id");
+
+    expect(JSON.parse(result ?? "[]")[0].player).toBe("Player One Alt");
   });
 
   it.each([

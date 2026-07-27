@@ -9,7 +9,8 @@ import { ELO_TIER_INFO, parseEloTier } from "@/lib/elo-tiers";
 /**
  * API route to export player matchup data as JSON.
  * Query params:
- *   - player_name: Name or part of name to search for
+ *   - player_name: Selected player's display name (legacy name lookup supported)
+ *   - topdeck_id: Deterministic selected player identity
  *   - format: 'json' (optional; JSON is the only supported format)
  *   - summary_only: true for aggregated stats only
  *   - tier: 'ranking', 'local', or 'all' (default: ranking)
@@ -17,16 +18,18 @@ import { ELO_TIER_INFO, parseEloTier } from "@/lib/elo-tiers";
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const playerName = searchParams.get("player_name");
+  const topdeckId = searchParams.get("topdeck_id");
   const requestedFormat = searchParams.get("format");
   if (requestedFormat && requestedFormat !== "json") {
     return NextResponse.json({ error: "format must be json" }, { status: 400 });
   }
   const summaryOnly = searchParams.get("summary_only") === "true";
   const tier = parseEloTier(searchParams.get("tier"));
+  const playerLabel = playerName ?? topdeckId ?? "selected player";
 
-  if (!playerName) {
+  if (!playerName && !topdeckId) {
     return NextResponse.json(
-      { error: "player_name query parameter is required" },
+      { error: "player_name or topdeck_id query parameter is required" },
       { status: 400 }
     );
   }
@@ -35,20 +38,20 @@ export async function GET(request: NextRequest) {
     let result;
 
     if (summaryOnly) {
-      result = await exportMatchupSummary(playerName, tier);
+      result = await exportMatchupSummary(playerName ?? "", tier, topdeckId ?? undefined);
     } else {
-      result = await exportPlayerMatchups(playerName, tier);
+      result = await exportPlayerMatchups(playerName ?? "", tier, topdeckId ?? undefined);
     }
 
     if (!result) {
       return NextResponse.json(
-        { error: `Player "${playerName}" not found` },
+        { error: `Player "${playerLabel}" not found` },
         { status: 404 }
       );
     }
 
     // Return as attachment
-    const fileName = `${playerName.replace(/\s+/g, "_")}_${tier}_matchups.json`;
+    const fileName = `${(playerName ?? topdeckId ?? "player").replace(/\s+/g, "_")}_${tier}_matchups.json`;
     const asciiFileName = fileName
       .replace(/[^\x20-\x7e]/g, "_")
       .replace(/[\\"/]/g, "_");

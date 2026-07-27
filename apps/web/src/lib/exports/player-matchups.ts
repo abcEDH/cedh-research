@@ -63,8 +63,13 @@ export class AmbiguousPlayerMatchError extends Error {
   }
 }
 
+function escapeLikePattern(value: string) {
+  return value.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+}
+
 async function fetchPlayerByName(playerName: string): Promise<Player | null> {
   const normalizedName = playerName.trim();
+  const escapedName = escapeLikePattern(normalizedName);
   const { data: exactPlayers, error: exactPlayerError } = await supabase
     .from("players")
     .select("id, name, topdeck_id")
@@ -83,7 +88,7 @@ async function fetchPlayerByName(playerName: string): Promise<Player | null> {
     await supabase
       .from("players")
       .select("id, name, topdeck_id")
-      .ilike("name", normalizedName)
+      .ilike("name", escapedName)
       .limit(2);
 
   if (caseInsensitiveExactPlayerError) throw caseInsensitiveExactPlayerError;
@@ -97,7 +102,7 @@ async function fetchPlayerByName(playerName: string): Promise<Player | null> {
   const { data: partialPlayers, error: partialPlayerError } = await supabase
     .from("players")
     .select("id, name, topdeck_id")
-    .ilike("name", `%${normalizedName}%`)
+    .ilike("name", `%${escapedName}%`)
     .limit(2);
 
   if (partialPlayerError) throw partialPlayerError;
@@ -108,6 +113,17 @@ async function fetchPlayerByName(playerName: string): Promise<Player | null> {
   }
 
   return players[0] || null;
+}
+
+async function fetchPlayerByTopdeckId(topdeckId: string): Promise<Player | null> {
+  const { data, error } = await supabase
+    .from("players")
+    .select("id, name, topdeck_id")
+    .eq("topdeck_id", topdeckId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data as Player | null) ?? null;
 }
 
 async function fetchPlayerGameParticipants(
@@ -254,9 +270,12 @@ async function fetchTournaments(tournamentIds: string[]): Promise<Tournament[]> 
 
 export async function exportPlayerMatchups(
   playerName: string,
-  tier: EloTier = "ranking"
+  tier: EloTier = "ranking",
+  topdeckId?: string
 ): Promise<string | null> {
-  const player = await fetchPlayerByName(playerName);
+  const player = topdeckId
+    ? await fetchPlayerByTopdeckId(topdeckId)
+    : await fetchPlayerByName(playerName);
   if (!player) {
     return null;
   }
@@ -358,9 +377,12 @@ export async function exportPlayerMatchups(
 
 export async function exportMatchupSummary(
   playerName: string,
-  tier: EloTier = "ranking"
+  tier: EloTier = "ranking",
+  topdeckId?: string
 ): Promise<string | null> {
-  const player = await fetchPlayerByName(playerName);
+  const player = topdeckId
+    ? await fetchPlayerByTopdeckId(topdeckId)
+    : await fetchPlayerByName(playerName);
   if (!player) {
     return null;
   }

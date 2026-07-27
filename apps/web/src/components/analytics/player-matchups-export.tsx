@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ELO_TIER_INFO, ELO_TIERS, type EloTier } from "@/lib/elo-tiers";
+import { PlayerPicker, type PlayerPickerOption } from "./player-picker";
 
 export function parseContentDispositionFilename(
   contentDisposition: string | null,
@@ -27,7 +28,7 @@ export function parseContentDispositionFilename(
 }
 
 export function PlayerMatchupsExport() {
-  const [playerName, setPlayerName] = useState("");
+  const [selectedPlayer, setSelectedPlayer] = useState<PlayerPickerOption | null>(null);
   const [dataType, setDataType] = useState<"detailed" | "summary">("detailed");
   const [tier, setTier] = useState<EloTier>("ranking");
   const [isLoading, setIsLoading] = useState(false);
@@ -39,14 +40,15 @@ export function PlayerMatchupsExport() {
     setError(null);
 
     try {
-      if (!playerName.trim()) {
-        setError("Please enter a player name");
+      if (!selectedPlayer) {
+        setError("Please choose a player from the search results");
         setIsLoading(false);
         return;
       }
 
       const params = new URLSearchParams({
-        player_name: playerName,
+        player_name: selectedPlayer.name,
+        topdeck_id: selectedPlayer.topdeck_id,
         summary_only: dataType === "summary" ? "true" : "false",
         tier,
       });
@@ -62,7 +64,7 @@ export function PlayerMatchupsExport() {
       const contentDisposition = response.headers.get("content-disposition");
       const fileName = parseContentDispositionFilename(
         contentDisposition,
-        `${playerName.replace(/\s+/g, "_")}_matchups.json`
+        `${selectedPlayer.name.replace(/\s+/g, "_")}_matchups.json`
       );
 
       // Create blob and download
@@ -93,7 +95,7 @@ export function PlayerMatchupsExport() {
               Player Matchup Analysis
             </h1>
             <p className="text-lg text-slate-300">
-              Export and analyze head-to-head matchup data for any player in the database.
+              Search for and select a player, then export deterministic head-to-head matchup data.
             </p>
           </div>
 
@@ -102,21 +104,14 @@ export function PlayerMatchupsExport() {
             <h2 className="mb-6 text-2xl font-semibold">Export Data</h2>
 
             <form onSubmit={handleExport} className="space-y-6">
-              {/* Player Search */}
-              <div>
-                <label htmlFor="player" className="mb-2 block text-sm font-medium">
-                  Player Name
-                </label>
-                <input
-                  id="player"
-                  type="text"
-                  value={playerName}
-                  onChange={(e) => setPlayerName(e.target.value)}
-                  placeholder="e.g., Jason Doan, Dexter Idzikowski, Jordan Callister"
-                  className="min-h-11 w-full rounded-lg border border-slate-600 bg-slate-700 px-4 py-2 text-white placeholder-slate-400 focus:border-cyan-500 focus:outline-none"
-                  disabled={isLoading}
-                />
-              </div>
+              <PlayerPicker
+                selectedPlayer={selectedPlayer}
+                onSelect={(player) => {
+                  setSelectedPlayer(player);
+                  setError(null);
+                }}
+                disabled={isLoading}
+              />
 
               <div>
                 <label htmlFor="elo-tier" className="mb-2 block text-sm font-medium">

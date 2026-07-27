@@ -36,7 +36,7 @@ competitive analysis.
 
 Export JSON data via the analytics page:
 - Visit `/analytics/player-matchups`
-- Enter a player name
+- Search for and select a player from the deterministic player picker
 - Select detailed or summary data
 - Download the file
 
