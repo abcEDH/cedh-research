@@ -49,6 +49,7 @@ function configureSupabaseMock(options: {
   entryRanges?: Array<[number, number]>;
   entryCount?: number;
   exactPlayer?: typeof player | null;
+  exactPlayers?: Array<typeof player>;
   partialPlayers?: Array<typeof player>;
   opponentName?: string;
 }) {
@@ -99,9 +100,8 @@ function configureSupabaseMock(options: {
           let data: unknown[] = [];
           if (table === "players" && !filter("id")) {
             data = state.exactNameQuery
-              ? options.exactPlayer === null
-                ? []
-                : [options.exactPlayer ?? player]
+              ? options.exactPlayers ??
+                (options.exactPlayer === null ? [] : [options.exactPlayer ?? player])
               : options.partialPlayers ?? [player];
           } else if (table === "tournament_entries" && filter("player_id")) {
             const range = state.range ?? [0, 999];
@@ -257,6 +257,27 @@ describe("player matchup exports", () => {
       'Multiple players matched "Player"'
     );
   });
+
+  it.each([exportPlayerMatchups, exportMatchupSummary])(
+    "rejects duplicate exact player-name matches",
+    async (exporter) => {
+      configureSupabaseMock({
+        ownRanges: [],
+        exactPlayers: [
+          player,
+          {
+            ...player,
+            id: "player-2",
+            topdeck_id: "player-2-topdeck-id",
+          },
+        ],
+      });
+
+      await expect(exporter("Player One", "ranking")).rejects.toThrow(
+        'Multiple players matched "Player One"'
+      );
+    }
+  );
 
   it("preserves opponent names containing pipe characters in summaries", async () => {
     configureSupabaseMock({

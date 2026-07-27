@@ -68,9 +68,12 @@ async function fetchPlayerByName(playerName: string): Promise<Player | null> {
     .from("players")
     .select("id, name, topdeck_id")
     .eq("name", playerName)
-    .limit(1);
+    .limit(2);
 
   if (exactPlayerError) throw exactPlayerError;
+  if (exactPlayers && exactPlayers.length > 1) {
+    throw new AmbiguousPlayerMatchError(playerName);
+  }
   if (exactPlayers && exactPlayers.length > 0) {
     return exactPlayers[0] as Player;
   }
