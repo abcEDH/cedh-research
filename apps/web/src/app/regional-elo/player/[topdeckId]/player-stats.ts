@@ -81,8 +81,13 @@ export function isEloWorthyGame(log: PlayerGameLog) {
   return (log.tournamentPlayerCount ?? 0) >= ELO_WORTHY_MIN_PLAYERS;
 }
 
+function isScoredGame(log: PlayerGameLog) {
+  return log.result === "win" || log.result === "loss" || log.result === "draw";
+}
+
 export function filterPlayerLogs(logs: PlayerGameLog[], eloOnly: boolean) {
-  return eloOnly ? logs.filter(isEloWorthyGame) : logs;
+  const scoredLogs = logs.filter(isScoredGame);
+  return eloOnly ? scoredLogs.filter(isEloWorthyGame) : scoredLogs;
 }
 
 function scoreRate(wins: number, draws: number, games: number) {
