@@ -1,8 +1,10 @@
 import { Suspense } from "react";
 import Link from "next/link";
+import { unstable_cache } from "next/cache";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { CommanderUsageRow } from "@/lib/meta-prep";
+import { withTiming } from "@/lib/performance";
 import { supabase } from "@/lib/supabase";
 import { OpponentRecordsTable } from "./opponent-records-table";
 import {
@@ -33,6 +35,7 @@ export const dynamicParams = true;
 const SUPABASE_PAGE_SIZE = 1000;
 const SUPABASE_IN_CHUNK_SIZE = 100;
 const ACHIEVEMENTS_PAGE_SIZE = 10;
+const PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS = 60 * 60 * 24;
 
 export async function generateStaticParams() {
   try {
@@ -563,6 +566,15 @@ async function fetchCommandersById(commanderIds: string[]): Promise<Map<string, 
   return new Map(rows.map((row) => [row.id, row]));
 }
 
+const fetchCachedRawPlayerLogs = unstable_cache(
+  async (playerId: string) =>
+    withTiming("regional-player:raw-history", async () =>
+      buildPlayerLogsFromRawHistory(await fetchEntries(playerId))
+    ),
+  ["regional-player-raw-history-v1"],
+  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
+);
+
 export default async function RegionalPlayerPage({
   params,
   searchParams,
@@ -615,8 +627,7 @@ async function PlayerProfileBodyWrapper({
   const requestedRegion = decodeURIComponent(readRegionParam(resolvedSearchParams)).trim().toUpperCase();
   const regionFilter = requestedRegion === "ALL" ? "" : requestedRegion;
   const eloOnly = readStringParam(resolvedSearchParams, "eloOnly") === "true";
-  const rawEntries = await fetchEntries(player.id);
-  const allPlayerLogs = await buildPlayerLogsFromRawHistory(rawEntries);
+  const allPlayerLogs = await fetchCachedRawPlayerLogs(player.id);
   const displaySummary = summarizePlayerLogs(filterPlayerLogs(allPlayerLogs, eloOnly), topdeckId, eloOnly);
 
   return (
@@ -690,7 +701,7 @@ export async function PlayerProfileBody({
   const activeCommander = commanderProfile?.active_commander ?? null;
 
   const allPlayerLogs: PlayerGameLog[] =
-    rawPlayerLogs ?? (await buildPlayerLogsFromRawHistory(await fetchEntries(player.id)));
+    rawPlayerLogs ?? (await fetchCachedRawPlayerLogs(player.id));
   const playerLogs = filterPlayerLogs(allPlayerLogs, eloOnly);
   const {
     totalGames,
