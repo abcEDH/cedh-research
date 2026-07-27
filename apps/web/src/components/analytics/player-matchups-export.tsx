@@ -3,6 +3,29 @@
 import { useState } from "react";
 import { ELO_TIER_INFO, ELO_TIERS, type EloTier } from "@/lib/elo-tiers";
 
+export function parseContentDispositionFilename(
+  contentDisposition: string | null,
+  fallback: string
+) {
+  if (!contentDisposition) return fallback;
+
+  const encodedMatch = contentDisposition.match(
+    /(?:^|;)\s*filename\*\s*=\s*UTF-8''([^;]*)/i
+  );
+  if (encodedMatch?.[1]) {
+    try {
+      return decodeURIComponent(encodedMatch[1]);
+    } catch {
+      // Fall through to the ASCII filename when the header is malformed.
+    }
+  }
+
+  const plainMatch = contentDisposition.match(
+    /(?:^|;)\s*filename\s*=\s*(?:"([^"]*)"|([^;]*))/i
+  );
+  return plainMatch?.[1] ?? plainMatch?.[2]?.trim() ?? fallback;
+}
+
 export function PlayerMatchupsExport() {
   const [playerName, setPlayerName] = useState("");
   const [dataType, setDataType] = useState<"detailed" | "summary">("detailed");
@@ -37,9 +60,10 @@ export function PlayerMatchupsExport() {
 
       // Get filename from Content-Disposition header
       const contentDisposition = response.headers.get("content-disposition");
-      const fileName = contentDisposition
-        ? contentDisposition.split("filename=")[1].replaceAll('"', "")
-        : `${playerName.replace(/\s+/g, "_")}_matchups.json`;
+      const fileName = parseContentDispositionFilename(
+        contentDisposition,
+        `${playerName.replace(/\s+/g, "_")}_matchups.json`
+      );
 
       // Create blob and download
       const blob = await response.blob();

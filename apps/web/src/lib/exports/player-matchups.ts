@@ -227,6 +227,23 @@ async function fetchPlayerMap(playerIds: string[]): Promise<Map<string, Player>>
   return playerMap;
 }
 
+async function fetchTournaments(tournamentIds: string[]): Promise<Tournament[]> {
+  const rows: Tournament[] = [];
+
+  for (let start = 0; start < tournamentIds.length; start += GAME_ID_BATCH_SIZE) {
+    const tournamentIdBatch = tournamentIds.slice(start, start + GAME_ID_BATCH_SIZE);
+    const { data, error } = await supabase
+      .from("tournaments")
+      .select("id, name, start_date, topdeck_tid, player_count")
+      .in("id", tournamentIdBatch);
+
+    if (error) throw error;
+    rows.push(...((data || []) as Tournament[]));
+  }
+
+  return rows;
+}
+
 export async function exportPlayerMatchups(
   playerName: string,
   tier: EloTier = "ranking"
@@ -267,12 +284,7 @@ export async function exportPlayerMatchups(
   const tournamentIds = [
     ...new Set(Object.values(games).map((g: Game) => g.tournament_id)),
   ];
-  const { data: tournamentData, error: tournamentError } = await supabase
-    .from("tournaments")
-    .select("id, name, start_date, topdeck_tid, player_count")
-    .in("id", tournamentIds);
-
-  if (tournamentError) throw tournamentError;
+  const tournamentData = await fetchTournaments(tournamentIds);
 
   const tournaments = Object.fromEntries(
     (tournamentData || []).map((t: Tournament) => [t.id, t])
@@ -374,12 +386,7 @@ export async function exportMatchupSummary(
   const tournamentIds = [
     ...new Set(Object.values(games).map((g: Game) => g.tournament_id)),
   ];
-  const { data: tournamentData, error: tournamentError } = await supabase
-    .from("tournaments")
-    .select("id, name, start_date, topdeck_tid, player_count")
-    .in("id", tournamentIds);
-
-  if (tournamentError) throw tournamentError;
+  const tournamentData = await fetchTournaments(tournamentIds);
   const tournaments = Object.fromEntries(
     (tournamentData || []).map((t: Tournament) => [t.id, t])
   );
