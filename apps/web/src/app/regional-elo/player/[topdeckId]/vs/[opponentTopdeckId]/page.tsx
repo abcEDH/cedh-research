@@ -330,7 +330,7 @@ export default async function RegionalPlayerVsPage({
                 </div>
                 <div className="text-sm text-muted-foreground">
                   Perspective:{" "}
-                  <Link href={buildPlayerVersusHref(topdeckId, opponentTopdeckId)} className="hover:text-primary">
+                  <Link href={buildPlayerVersusHref(topdeckId, opponentTopdeckId, eloOnly)} className="hover:text-primary">
                     {player.name}
                   </Link>
                 </div>
@@ -348,7 +348,7 @@ export default async function RegionalPlayerVsPage({
                 </div>
                 <div className="text-sm text-muted-foreground">
                   Perspective:{" "}
-                  <Link href={buildPlayerVersusHref(opponentTopdeckId, topdeckId)} className="hover:text-primary">
+                  <Link href={buildPlayerVersusHref(opponentTopdeckId, topdeckId, eloOnly)} className="hover:text-primary">
                     {opponent.name}
                   </Link>
                 </div>

@@ -643,6 +643,12 @@ describe("RegionalPlayerVsPage", () => {
     expect(html).toMatch(/Alex Lien Record[\s\S]*?>1-0-0</);
     expect(html).toMatch(/Opponent A Record[\s\S]*?>0-1-0</);
     expect(html).toMatch(/Shared Games[\s\S]*?>1</);
+    expect(html).toContain(
+      "/regional-elo/player/CCIQroaCHHQi7EELyNXlHiHQiQy1/vs/opp-a?eloOnly=true"
+    );
+    expect(html).toContain(
+      "/regional-elo/player/opp-a/vs/CCIQroaCHHQi7EELyNXlHiHQiQy1?eloOnly=true"
+    );
     expect(html).toContain("California Open I");
     expect(html).not.toContain("California Open II");
   });
