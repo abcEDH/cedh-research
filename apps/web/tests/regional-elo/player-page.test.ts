@@ -561,6 +561,12 @@ describe("RegionalPlayerPage", () => {
     );
   });
 
+  it("preserves the all-games selection when returning to the leaderboard", async () => {
+    const html = await renderPlayerPage("CCIQroaCHHQi7EELyNXlHiHQiQy1", { eloOnly: "false" });
+
+    expect(html).toContain('href="/regional-elo?eloOnly=false"');
+  });
+
   it("updates profile game tiles to match the filtered summary", async () => {
     const componentsModule = await import(
       "@/app/regional-elo/player/[topdeckId]/player-profile-components"
@@ -646,6 +652,10 @@ describe("RegionalPlayerVsPage", () => {
     expect(html).toContain(
       "/regional-elo/player/CCIQroaCHHQi7EELyNXlHiHQiQy1/vs/opp-a?eloOnly=true"
     );
+    expect(html).toContain(
+      'href="/regional-elo/player/CCIQroaCHHQi7EELyNXlHiHQiQy1?eloOnly=true"'
+    );
+    expect(html).toContain('href="/regional-elo/player/opp-a?eloOnly=true"');
     expect(html).toContain(
       "/regional-elo/player/opp-a/vs/CCIQroaCHHQi7EELyNXlHiHQiQy1?eloOnly=true"
     );

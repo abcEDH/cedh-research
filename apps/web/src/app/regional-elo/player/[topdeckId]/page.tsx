@@ -679,9 +679,13 @@ export async function PlayerProfileBody({
   const achievementDateFrom = readStringParam(resolvedSearchParams, "achievementDateFrom");
   const achievementDateTo = readStringParam(resolvedSearchParams, "achievementDateTo");
   const eloOnly = readStringParam(resolvedSearchParams, "eloOnly") === "true";
-  const backHref = regionFilter
-    ? `/regional-elo?scope=state&region=${encodeURIComponent(regionFilter)}`
-    : "/regional-elo";
+  const backParams = new URLSearchParams();
+  if (regionFilter) {
+    backParams.set("scope", "state");
+    backParams.set("region", regionFilter);
+  }
+  if (!eloOnly) backParams.set("eloOnly", "false");
+  const backHref = `/regional-elo${backParams.toString() ? `?${backParams.toString()}` : ""}`;
 
   const [
     globalEloRank,

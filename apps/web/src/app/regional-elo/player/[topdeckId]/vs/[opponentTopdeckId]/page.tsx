@@ -32,6 +32,11 @@ function formatRecord(wins: number, losses: number, draws: number) {
   return `${wins}-${losses}-${draws}`;
 }
 
+function buildPlayerProfileHref(topdeckId: string, eloOnly: boolean) {
+  const path = `/regional-elo/player/${topdeckId}`;
+  return eloOnly ? `${path}?eloOnly=true` : path;
+}
+
 function participantTone(role: "subject" | "opponent" | "other") {
   if (role === "subject") return "font-semibold text-foreground";
   if (role === "opponent") return "font-semibold text-foreground";
@@ -253,7 +258,7 @@ export default async function RegionalPlayerVsPage({
       <main className="container mx-auto px-4 pb-20 pt-10">
         <div className="space-y-8">
           <div className="space-y-3">
-            <Link href={`/regional-elo/player/${topdeckId}`} className="text-sm text-muted-foreground hover:text-foreground">
+            <Link href={buildPlayerProfileHref(topdeckId, eloOnly)} className="text-sm text-muted-foreground hover:text-foreground">
               ← Back to player profile
             </Link>
             <div className="flex flex-wrap items-end justify-between gap-4">
@@ -267,13 +272,13 @@ export default async function RegionalPlayerVsPage({
               </div>
               <div className="flex flex-wrap gap-2 text-sm">
                 <Link
-                  href={`/regional-elo/player/${topdeckId}`}
+                  href={buildPlayerProfileHref(topdeckId, eloOnly)}
                   className="w-full rounded-md border border-border/70 px-3 py-2 text-center text-foreground hover:border-primary/40 hover:text-primary sm:w-auto"
                 >
                   {player.name} profile
                 </Link>
                 <Link
-                  href={`/regional-elo/player/${opponentTopdeckId}`}
+                  href={buildPlayerProfileHref(opponentTopdeckId, eloOnly)}
                   className="w-full rounded-md border border-border/70 px-3 py-2 text-center text-foreground hover:border-primary/40 hover:text-primary sm:w-auto"
                 >
                   {opponent.name} profile
