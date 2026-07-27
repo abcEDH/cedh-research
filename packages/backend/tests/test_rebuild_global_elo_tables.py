@@ -10,9 +10,15 @@ sys.modules["psycopg2"] = None
 fake_ingest = types.ModuleType("ingest")
 fake_ingest.SupabaseClient = MagicMock
 fake_ingest.load_local_env = MagicMock
+_real_ingest = sys.modules.get("ingest")
 sys.modules["ingest"] = fake_ingest
 
 import rebuild_global_elo_tables as rebuild  # noqa: E402
+
+if _real_ingest is not None:
+    sys.modules["ingest"] = _real_ingest
+else:
+    del sys.modules["ingest"]
 
 
 class RebuildGlobalEloTablesTests(TestCase):
