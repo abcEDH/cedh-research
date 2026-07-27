@@ -9,6 +9,7 @@ export type EloDisplayStats = {
 
 const PLAYER_ID_BATCH_SIZE = 50;
 const GAME_PAGE_SIZE = 1000;
+type EloDisplayTier = "ranking" | "all";
 
 function emptyStats(): EloDisplayStats {
   return { games_played: 0, wins: 0, draws: 0, losses: 0 };
@@ -22,7 +23,8 @@ function emptyStats(): EloDisplayStats {
  * through the game-level view so long player histories are complete.
  */
 export async function fetchEloDisplayStats(
-  topdeckIds: string[]
+  topdeckIds: string[],
+  tier: EloDisplayTier = "ranking"
 ): Promise<Map<string, EloDisplayStats>> {
   const uniqueTopdeckIds = Array.from(new Set(topdeckIds.filter(Boolean)));
   const statsByTopdeckId = new Map<string, EloDisplayStats>();
@@ -33,13 +35,14 @@ export async function fetchEloDisplayStats(
 
   for (let batchStart = 0; batchStart < uniqueTopdeckIds.length; batchStart += PLAYER_ID_BATCH_SIZE) {
     const batch = uniqueTopdeckIds.slice(batchStart, batchStart + PLAYER_ID_BATCH_SIZE);
+    const eligibilityColumn = tier === "ranking" ? "ranking_eligible" : "all_eligible";
 
     for (let pageStart = 0; ; pageStart += GAME_PAGE_SIZE) {
       const { data, error } = await supabase
         .from("global_elo_game_results")
         .select("game_id, topdeck_id, result")
         .in("topdeck_id", batch)
-        .eq("ranking_eligible", true)
+        .eq(eligibilityColumn, true)
         .order("game_id", { ascending: true })
         .range(pageStart, pageStart + GAME_PAGE_SIZE - 1);
 

@@ -476,13 +476,12 @@ export default async function RegionalEloPage({
   // Strip internal-only fields (e.g. `rating`) before this data flows into the client
   // component below — `RegionalLeaderboardTable` is a client component, so anything left on
   // these rows is serialized into the page's payload and inspectable by any visitor.
-  const displayStats = eloOnly
-    ? await fetchEloDisplayStats(
-        leaderboardRows
-          .map((row) => row.topdeck_id)
-          .filter((value): value is string => Boolean(value))
-      )
-    : null;
+  const displayStats = await fetchEloDisplayStats(
+    leaderboardRows
+      .map((row) => row.topdeck_id)
+      .filter((value): value is string => Boolean(value)),
+    eloOnly ? "ranking" : "all"
+  );
   const leaderboard: ClientLeaderboardRow[] = leaderboardRows.map((row) =>
     toClientLeaderboardRow({
       ...row,

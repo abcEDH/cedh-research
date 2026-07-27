@@ -293,9 +293,10 @@ export default async function Home({
       return [];
     }),
   ]);
-  const displayStats = eloOnly
-    ? await fetchEloDisplayStats(allLeaderboardPlayers.map((player) => player.topdeck_id))
-    : null;
+  const displayStats = await fetchEloDisplayStats(
+    allLeaderboardPlayers.map((player) => player.topdeck_id),
+    eloOnly ? "ranking" : "all"
+  );
   const leaderboardPlayers = allLeaderboardPlayers.map((player) => ({
     ...player,
     ...(displayStats?.get(player.topdeck_id) ?? {

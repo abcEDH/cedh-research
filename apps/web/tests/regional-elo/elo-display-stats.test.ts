@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
   rows: [] as Array<{ topdeck_id: string; result: string }>,
   ranges: [] as Array<[number, number]>,
+  eligibilityColumns: [] as string[],
   error: null as Error | null,
 }));
 
@@ -12,7 +13,10 @@ vi.mock("@/lib/supabase", () => ({
       const query = {
         select: () => query,
         in: () => query,
-        eq: () => query,
+        eq: (column: string) => {
+          if (column.endsWith("_eligible")) state.eligibilityColumns.push(column);
+          return query;
+        },
         order: () => query,
         range: (start: number, end: number) => {
           state.ranges.push([start, end]);
@@ -37,6 +41,7 @@ describe("fetchEloDisplayStats", () => {
   beforeEach(() => {
     state.rows = [];
     state.ranges = [];
+    state.eligibilityColumns = [];
     state.error = null;
   });
 
@@ -60,6 +65,15 @@ describe("fetchEloDisplayStats", () => {
       [0, 999],
       [1000, 1999],
     ]);
+    expect(state.eligibilityColumns).toEqual(["ranking_eligible", "ranking_eligible"]);
+  });
+
+  it("uses all-game eligibility for the explicit drill-down", async () => {
+    state.rows = [{ topdeck_id: "player-1", result: "win" }];
+
+    await fetchEloDisplayStats(["player-1"], "all");
+
+    expect(state.eligibilityColumns).toEqual(["all_eligible"]);
   });
 
   it("propagates a failed display aggregate query", async () => {

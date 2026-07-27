@@ -47,10 +47,10 @@ const tableData: TableData = {
     },
   ],
   global_elo_game_results: [
-    { game_id: "eligible-1", topdeck_id: "player-1-topdeck", result: "win", ranking_eligible: true },
-    { game_id: "eligible-2", topdeck_id: "player-1-topdeck", result: "loss", ranking_eligible: true },
-    { game_id: "eligible-3", topdeck_id: "player-1-topdeck", result: "draw", ranking_eligible: true },
-    { game_id: "ineligible-1", topdeck_id: "player-1-topdeck", result: "win", ranking_eligible: false },
+    { game_id: "eligible-1", topdeck_id: "player-1-topdeck", result: "win", ranking_eligible: true, all_eligible: true },
+    { game_id: "eligible-2", topdeck_id: "player-1-topdeck", result: "loss", ranking_eligible: true, all_eligible: true },
+    { game_id: "eligible-3", topdeck_id: "player-1-topdeck", result: "draw", ranking_eligible: true, all_eligible: true },
+    { game_id: "ineligible-1", topdeck_id: "player-1-topdeck", result: "win", ranking_eligible: false, all_eligible: true },
   ],
 };
 
@@ -205,7 +205,7 @@ describe("RegionalEloPage", () => {
 
     const html = renderToStaticMarkup(element);
 
-    expect(html).toMatch(/Games<\/th>[\s\S]*?>754<\/td>/);
+    expect(html).toMatch(/Games<\/th>[\s\S]*?>4<\/td>/);
     expect(html).toContain('aria-checked="false"');
   });
 

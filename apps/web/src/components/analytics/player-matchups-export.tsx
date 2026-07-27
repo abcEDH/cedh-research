@@ -2,30 +2,13 @@
 
 import { useState } from "react";
 import { ELO_TIER_INFO, ELO_TIERS, type EloTier } from "@/lib/elo-tiers";
+import {
+  fetchPlayerMatchupExport,
+  parseContentDispositionFilename,
+} from "@/lib/analytics/fetchers";
 import { PlayerPicker, type PlayerPickerOption } from "./player-picker";
 
-export function parseContentDispositionFilename(
-  contentDisposition: string | null,
-  fallback: string
-) {
-  if (!contentDisposition) return fallback;
-
-  const encodedMatch = contentDisposition.match(
-    /(?:^|;)\s*filename\*\s*=\s*UTF-8''([^;]*)/i
-  );
-  if (encodedMatch?.[1]) {
-    try {
-      return decodeURIComponent(encodedMatch[1]);
-    } catch {
-      // Fall through to the ASCII filename when the header is malformed.
-    }
-  }
-
-  const plainMatch = contentDisposition.match(
-    /(?:^|;)\s*filename\s*=\s*(?:"([^"]*)"|([^;]*))/i
-  );
-  return plainMatch?.[1] ?? plainMatch?.[2]?.trim() ?? fallback;
-}
+export { parseContentDispositionFilename } from "@/lib/analytics/fetchers";
 
 export function PlayerMatchupsExport() {
   const [selectedPlayer, setSelectedPlayer] = useState<PlayerPickerOption | null>(null);
@@ -46,29 +29,13 @@ export function PlayerMatchupsExport() {
         return;
       }
 
-      const params = new URLSearchParams({
-        player_name: selectedPlayer.name,
-        topdeck_id: selectedPlayer.topdeck_id,
-        summary_only: dataType === "summary" ? "true" : "false",
+      const { blob, fileName } = await fetchPlayerMatchupExport({
+        player: selectedPlayer,
+        dataType,
         tier,
       });
 
-      const response = await fetch(`/api/export/player-matchups?${params}`);
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Export failed");
-      }
-
-      // Get filename from Content-Disposition header
-      const contentDisposition = response.headers.get("content-disposition");
-      const fileName = parseContentDispositionFilename(
-        contentDisposition,
-        `${selectedPlayer.name.replace(/\s+/g, "_")}_matchups.json`
-      );
-
       // Create blob and download
-      const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;

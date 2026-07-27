@@ -1,12 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { searchPlayers, type PlayerPickerOption } from "@/lib/analytics/fetchers";
 
-export type PlayerPickerOption = {
-  id: string;
-  name: string;
-  topdeck_id: string;
-};
+export type { PlayerPickerOption } from "@/lib/analytics/fetchers";
 
 export function PlayerPicker({
   disabled = false,
@@ -34,13 +31,7 @@ export function PlayerPicker({
     const timeout = window.setTimeout(async () => {
       setIsSearching(true);
       try {
-        const response = await fetch(
-          `/api/players/search?q=${encodeURIComponent(trimmedQuery)}`,
-          { signal: controller.signal }
-        );
-        if (!response.ok) throw new Error("Player search failed");
-        const data = (await response.json()) as { players?: PlayerPickerOption[] };
-        setOptions(data.players ?? []);
+        setOptions(await searchPlayers(trimmedQuery, controller.signal));
         setIsOpen(true);
       } catch (error) {
         if (!(error instanceof DOMException && error.name === "AbortError")) {
