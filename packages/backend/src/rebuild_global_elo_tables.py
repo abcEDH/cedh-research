@@ -1535,10 +1535,11 @@ def validate_apply_tier(apply: bool, tier: str) -> None:
 
 
 def validate_incremental_tier(since_start_date: str, tier: str) -> None:
-    if since_start_date and tier != "ranking":
+    if since_start_date:
         raise SystemExit(
-            "Incremental rebuilds are supported only for --tier ranking because "
-            "incremental snapshots contain canonical ranking state."
+            "Incremental rebuilds are disabled because the available state snapshots "
+            "are not guaranteed to contain ranking-eligible games only. Run a full "
+            "rebuild without --since-start-date."
         )
 
 

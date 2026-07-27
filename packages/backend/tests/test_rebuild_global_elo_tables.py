@@ -80,8 +80,9 @@ class RebuildGlobalEloTablesTests(TestCase):
 
         rebuild.validate_apply_tier(False, "local")
 
-    def test_validate_incremental_tier_allows_only_ranking(self) -> None:
-        rebuild.validate_incremental_tier("2026-07-01", "ranking")
+    def test_validate_incremental_tier_rejects_incremental_rebuilds(self) -> None:
+        with self.assertRaises(SystemExit):
+            rebuild.validate_incremental_tier("2026-07-01", "ranking")
 
         with self.assertRaises(SystemExit):
             rebuild.validate_incremental_tier("2026-07-01", "all")

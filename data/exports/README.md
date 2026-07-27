@@ -40,8 +40,9 @@ Export JSON data via the analytics page:
 - Select detailed or summary data
 - Download the file
 
-The API also accepts `format=json` and `type=detailed|summary`; CSV requests are
-rejected because JSON is the supported export format.
+The API accepts `format=json`, `summary_only=true` for summary output, and
+`summary_only=false` (or omission) for detailed output. CSV requests are rejected
+because JSON is the supported export format.
 
 ## Data Accuracy
 
