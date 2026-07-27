@@ -397,7 +397,13 @@ export async function exportMatchupSummary(
 
   const matchups = new Map<
     string,
-    { wins: number; losses: number; draws: number }
+    {
+      opponent: string;
+      opponent_topdeck_id: string;
+      wins: number;
+      losses: number;
+      draws: number;
+    }
   >();
 
   for (const gameId of gameIds) {
@@ -415,10 +421,16 @@ export async function exportMatchupSummary(
       const opponentPlayerId = entryToPlayerMap.get(gp.entry_id);
       const opponent = opponentPlayerId ? playerMap.get(opponentPlayerId) : null;
 
-      if (opponent) {
-        const key = `${opponent.name}|${opponent.topdeck_id}`;
+      if (opponent && opponentPlayerId) {
+        const key = opponentPlayerId;
         if (!matchups.has(key)) {
-          matchups.set(key, { wins: 0, losses: 0, draws: 0 });
+          matchups.set(key, {
+            opponent: opponent.name,
+            opponent_topdeck_id: opponent.topdeck_id,
+            wins: 0,
+            losses: 0,
+            draws: 0,
+          });
         }
 
         const stats = matchups.get(key)!;
@@ -434,22 +446,18 @@ export async function exportMatchupSummary(
     }
   }
 
-  const rows: MatchupSummaryRow[] = Array.from(matchups.entries())
+  const rows: MatchupSummaryRow[] = Array.from(matchups.values())
     .sort(
       (a, b) =>
-        b[1].wins +
-        b[1].losses +
-        b[1].draws -
-        (a[1].wins + a[1].losses + a[1].draws)
+        b.wins + b.losses + b.draws - (a.wins + a.losses + a.draws)
     )
-    .map(([key, stats]) => {
-      const [opponentName, opponentId] = key.split("|");
+    .map((stats) => {
       const total = stats.wins + stats.losses + stats.draws;
       const winPct = total > 0 ? ((stats.wins / total) * 100).toFixed(1) : "0.0";
 
       return {
-        opponent: opponentName,
-        opponent_topdeck_id: opponentId,
+        opponent: stats.opponent,
+        opponent_topdeck_id: stats.opponent_topdeck_id,
         games: total,
         wins: stats.wins,
         losses: stats.losses,

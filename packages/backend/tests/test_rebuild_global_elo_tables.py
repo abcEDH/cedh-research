@@ -74,6 +74,12 @@ class RebuildGlobalEloTablesTests(TestCase):
 
         self.assertEqual(args.tier, "local")
 
+    def test_validate_apply_tier_rejects_alternate_tiers(self) -> None:
+        with self.assertRaises(SystemExit):
+            rebuild.validate_apply_tier(True, "local")
+
+        rebuild.validate_apply_tier(False, "local")
+
 
 if __name__ == "__main__":
     main()

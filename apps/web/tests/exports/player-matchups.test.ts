@@ -48,6 +48,7 @@ function configureSupabaseMock(options: {
   gameBatches?: number[];
   exactPlayer?: typeof player | null;
   partialPlayers?: Array<typeof player>;
+  opponentName?: string;
 }) {
   const { ownRows, games } = makeLargeHistory();
 
@@ -148,7 +149,9 @@ function configureSupabaseMock(options: {
             const playerIds = filter("id") as string[];
             data = playerIds.map((id) => ({
               id,
-              name: `Opponent ${id.replace("opponent-player-", "")}`,
+              name:
+                options.opponentName ??
+                `Opponent ${id.replace("opponent-player-", "")}`,
               topdeck_id: `${id}-topdeck`,
             }));
           }
@@ -245,5 +248,18 @@ describe("player matchup exports", () => {
     await expect(exporter("Player", "ranking")).rejects.toThrow(
       'Multiple players matched "Player"'
     );
+  });
+
+  it("preserves opponent names containing pipe characters in summaries", async () => {
+    configureSupabaseMock({
+      ownRanges: [],
+      opponentName: "Opponent | Pipe",
+    });
+
+    const result = await exportMatchupSummary("Player One", "ranking");
+    const [summary] = JSON.parse(result ?? "[]");
+
+    expect(summary.opponent).toBe("Opponent | Pipe");
+    expect(summary.opponent_topdeck_id).toBe("opponent-player-0-topdeck");
   });
 });
