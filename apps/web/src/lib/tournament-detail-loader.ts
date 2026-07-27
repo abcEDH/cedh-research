@@ -6,6 +6,7 @@ import {
   type Standing,
   type TournamentDetail,
 } from "@/lib/tournaments";
+import { resolveSupabaseUrl } from "@/lib/supabase-config";
 
 // Dedicated client (not the shared @/lib/supabase instance) so tournament
 // detail reads always bypass Next.js's Data Cache. That cache persists
@@ -15,7 +16,7 @@ import {
 // using the segment's ISR window; every other page keeps its existing
 // caching behavior untouched.
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || "https://placeholder.supabase.co",
+  resolveSupabaseUrl(process.env.NEXT_PUBLIC_SUPABASE_URL),
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "placeholder",
   { global: { fetch: (url, options) => fetch(url, { ...options, cache: "no-store" }) } }
 );
