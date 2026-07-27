@@ -382,6 +382,68 @@ def fetch_all(
     return rows
 
 
+def eligible_game_ids(rows: list[dict[str, Any]], tier: str) -> set[str]:
+    if tier not in ELO_TIER_FILTERS:
+        raise ValueError(f"Unknown Elo tier: {tier}")
+    flag = ELO_TIER_FILTERS[tier]
+    return {str(row["game_id"]) for row in rows if row.get("game_id") and row.get(flag) is True}
+
+
+def fetch_complete_game_rows(
+    client: SupabaseClient,
+    game_ids: set[str],
+    select: str,
+    label: str,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    ordered_ids = sorted(game_ids)
+    for start in range(0, len(ordered_ids), 200):
+        chunk = ordered_ids[start : start + 200]
+        rows.extend(
+            fetch_all(
+                client,
+                "global_elo_game_results",
+                [("select", select), ("game_id", f"in.({','.join(chunk)})")],
+                label=f"{label} complete pods",
+            )
+        )
+    return rows
+
+
+def fetch_tier_results_for_window(
+    client: SupabaseClient,
+    window_start: date,
+    window_end: date,
+    tier: str,
+    select: str,
+) -> list[dict[str, Any]]:
+    if tier not in ELO_TIER_FILTERS:
+        raise ValueError(f"Unknown Elo tier: {tier}")
+
+    params = [
+        ("select", select),
+        ("start_date", f"gte.{window_start.isoformat()}"),
+        ("start_date", f"lt.{window_end.isoformat()}"),
+        (ELO_TIER_FILTERS[tier], "eq.true"),
+    ]
+    eligible_rows = fetch_all(
+        client,
+        "global_elo_game_results",
+        params,
+        label=f"global_elo_game_results {window_start:%Y-%m}",
+    )
+    if tier == "all":
+        return eligible_rows
+
+    game_ids = eligible_game_ids(eligible_rows, tier)
+    return fetch_complete_game_rows(
+        client,
+        game_ids,
+        select,
+        label=f"global_elo_game_results {window_start:%Y-%m}",
+    )
+
+
 def rpc_fetch_all(
     client: SupabaseClient,
     function_name: str,
@@ -547,17 +609,7 @@ def fetch_results_by_month(client: SupabaseClient, tier: str = "ranking") -> lis
     windows = month_starts(date(2022, 8, 1), datetime.now(UTC).date())
     for window_start in windows:
         window_end = next_month(window_start)
-        rows = fetch_all(
-            client,
-            "global_elo_game_results",
-            [
-                ("select", select),
-                ("start_date", f"gte.{window_start.isoformat()}"),
-                ("start_date", f"lt.{window_end.isoformat()}"),
-                (ELO_TIER_FILTERS[tier], "eq.true"),
-            ],
-            label=f"global_elo_game_results {window_start:%Y-%m}",
-        )
+        rows = fetch_tier_results_for_window(client, window_start, window_end, tier, select)
         all_rows.extend(rows)
         print(
             f"Fetched {len(rows):,} rows for {window_start:%Y-%m}; total {len(all_rows):,}",
@@ -583,17 +635,7 @@ def fetch_results_from_tournament_start(
     windows = month_starts(start_day, datetime.now(UTC).date())
     for window_start in windows:
         window_end = next_month(window_start)
-        rows = fetch_all(
-            client,
-            "global_elo_game_results",
-            [
-                ("select", select),
-                ("start_date", f"gte.{window_start.isoformat()}"),
-                ("start_date", f"lt.{window_end.isoformat()}"),
-                (ELO_TIER_FILTERS[tier], "eq.true"),
-            ],
-            label=f"global_elo_game_results {window_start:%Y-%m}",
-        )
+        rows = fetch_tier_results_for_window(client, window_start, window_end, tier, select)
         filtered = [
             row
             for row in rows

@@ -28,7 +28,7 @@ interface MatchupSummaryRow {
 interface GameParticipant {
   game_id: string;
   entry_id: string;
-  result: string;
+  result?: string;
 }
 
 interface TournamentEntry {
@@ -72,7 +72,7 @@ function convertToCSV(rows: unknown[]): string {
         .map((header) => {
           const value = record[header];
           // Escape quotes and wrap in quotes if needed
-          const stringValue = String(value || "");
+          const stringValue = String(value ?? "");
           if (stringValue.includes(",") || stringValue.includes('"')) {
             return `"${stringValue.replace(/"/g, '""')}"`;
           }
@@ -83,6 +83,33 @@ function convertToCSV(rows: unknown[]): string {
   ].join("\n");
 
   return csvContent;
+}
+
+const GAME_PARTICIPANT_PAGE_SIZE = 1000;
+const GAME_ID_BATCH_SIZE = 200;
+
+async function fetchGameParticipants(gameIds: string[]): Promise<GameParticipant[]> {
+  const rows: GameParticipant[] = [];
+
+  for (let start = 0; start < gameIds.length; start += GAME_ID_BATCH_SIZE) {
+    const gameIdBatch = gameIds.slice(start, start + GAME_ID_BATCH_SIZE);
+
+    for (let offset = 0; ; offset += GAME_PARTICIPANT_PAGE_SIZE) {
+      const { data, error } = await supabase
+        .from("game_participants")
+        .select("game_id, entry_id, result")
+        .in("game_id", gameIdBatch)
+        .range(offset, offset + GAME_PARTICIPANT_PAGE_SIZE - 1);
+
+      if (error) throw error;
+
+      const page = (data || []) as GameParticipant[];
+      rows.push(...page);
+      if (page.length < GAME_PARTICIPANT_PAGE_SIZE) break;
+    }
+  }
+
+  return rows;
 }
 
 export async function exportPlayerMatchups(
@@ -133,12 +160,7 @@ export async function exportPlayerMatchups(
   }
 
   // Get all participants in these games
-  const { data: allParticipants } = await supabase
-    .from("game_participants")
-    .select("game_id, entry_id, result")
-    .in("game_id", gameIds);
-
-  const gameParticipants = (allParticipants || []) as GameParticipant[];
+  const gameParticipants = await fetchGameParticipants(gameIds);
 
   // Get game info and completion status.
   const { data: gameData } = await supabase
@@ -305,12 +327,7 @@ export async function exportMatchupSummary(
   }
 
   // Get all participants
-  const { data: allParticipants } = await supabase
-    .from("game_participants")
-    .select("game_id, entry_id")
-    .in("game_id", gameIds);
-
-  const gameParticipants = (allParticipants || []) as GameParticipant[];
+  const gameParticipants = await fetchGameParticipants(gameIds);
 
   const { data: gameData } = await supabase
     .from("games")

@@ -17,6 +17,7 @@ const ROUTES = [
   "/commanders",
   "/commanders/trends",
   "/regional-elo",
+  "/analytics/player-matchups",
   "/tournament-likelihood",
   "/trap-spice",
   "/about",
