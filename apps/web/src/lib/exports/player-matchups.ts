@@ -59,7 +59,11 @@ interface Player {
   topdeck_id: string;
 }
 
-function convertToCSV(rows: unknown[]): string {
+function neutralizeSpreadsheetFormula(value: string): string {
+  return /^[=+\-@]/.test(value) ? `'${value}` : value;
+}
+
+export function convertToCSV(rows: unknown[]): string {
   if (rows.length === 0) return "";
 
   const firstRow = rows[0] as Record<string, unknown>;
@@ -71,8 +75,7 @@ function convertToCSV(rows: unknown[]): string {
       return headers
         .map((header) => {
           const value = record[header];
-          // Escape quotes and wrap in quotes if needed
-          const stringValue = String(value ?? "");
+          const stringValue = neutralizeSpreadsheetFormula(String(value ?? ""));
           if (stringValue.includes(",") || stringValue.includes('"')) {
             return `"${stringValue.replace(/"/g, '""')}"`;
           }
@@ -88,6 +91,32 @@ function convertToCSV(rows: unknown[]): string {
 const GAME_PARTICIPANT_PAGE_SIZE = 1000;
 const GAME_ID_BATCH_SIZE = 200;
 const LOOKUP_BATCH_SIZE = 500;
+
+async function fetchPlayerGameParticipants(
+  entryIds: string[]
+): Promise<GameParticipant[]> {
+  const rows: GameParticipant[] = [];
+
+  for (let start = 0; start < entryIds.length; start += GAME_ID_BATCH_SIZE) {
+    const entryIdBatch = entryIds.slice(start, start + GAME_ID_BATCH_SIZE);
+
+    for (let offset = 0; ; offset += GAME_PARTICIPANT_PAGE_SIZE) {
+      const { data, error } = await supabase
+        .from("game_participants")
+        .select("game_id, entry_id, result")
+        .in("entry_id", entryIdBatch)
+        .range(offset, offset + GAME_PARTICIPANT_PAGE_SIZE - 1);
+
+      if (error) throw error;
+
+      const page = (data || []) as GameParticipant[];
+      rows.push(...page);
+      if (page.length < GAME_PARTICIPANT_PAGE_SIZE) break;
+    }
+  }
+
+  return rows;
+}
 
 async function fetchGameParticipants(gameIds: string[]): Promise<GameParticipant[]> {
   const rows: GameParticipant[] = [];
@@ -156,12 +185,13 @@ export async function exportPlayerMatchups(
   format: "csv" | "json" = "csv",
   tier: EloTier = "ranking"
 ): Promise<string | null> {
-  // Get player
-  const { data: players } = await supabase
+  const { data: players, error: playersError } = await supabase
     .from("players")
     .select("id, name, topdeck_id")
     .ilike("name", `%${playerName}%`)
     .limit(1);
+
+  if (playersError) throw playersError;
 
   if (!players || players.length === 0) {
     return null;
@@ -170,11 +200,12 @@ export async function exportPlayerMatchups(
   const player = players[0] as Player;
   const playerId = player.id;
 
-  // Get all tournament entries for this player
-  const { data: entries } = await supabase
+  const { data: entries, error: entriesError } = await supabase
     .from("tournament_entries")
     .select("id, player_id, tournament_id, decklist_text, decklist_url")
     .eq("player_id", playerId);
+
+  if (entriesError) throw entriesError;
 
   const entryIds = (entries || []).map((e) => e.id);
 
@@ -182,13 +213,9 @@ export async function exportPlayerMatchups(
     return format === "csv" ? convertToCSV([]) : "[]";
   }
 
-  // Get all games this player participated in
-  const { data: playerGames } = await supabase
-    .from("game_participants")
-    .select("game_id, entry_id, result")
-    .in("entry_id", entryIds);
+  const playerGames = await fetchPlayerGameParticipants(entryIds);
 
-  const allGames = (playerGames || []) as GameParticipant[];
+  const allGames = playerGames;
   const gameIds = [...new Set(allGames.map((g) => g.game_id))];
   const playerGameResults = Object.fromEntries(
     allGames.map((g) => [g.game_id, g.result])
@@ -198,27 +225,28 @@ export async function exportPlayerMatchups(
     return format === "csv" ? convertToCSV([]) : "[]";
   }
 
-  // Get all participants in these games
   const gameParticipants = await fetchGameParticipants(gameIds);
 
-  // Get game info and completion status.
-  const { data: gameData } = await supabase
+  const { data: gameData, error: gameError } = await supabase
     .from("games")
     .select("id, tournament_id, status")
     .in("id", gameIds);
+
+  if (gameError) throw gameError;
 
   const games = Object.fromEntries(
     (gameData || []).map((g: Game) => [g.id, g])
   );
 
-  // Get tournament info
   const tournamentIds = [
     ...new Set(Object.values(games).map((g: Game) => g.tournament_id)),
   ];
-  const { data: tournamentData } = await supabase
+  const { data: tournamentData, error: tournamentError } = await supabase
     .from("tournaments")
     .select("id, name, start_date, topdeck_tid, player_count")
     .in("id", tournamentIds);
+
+  if (tournamentError) throw tournamentError;
 
   const tournaments = Object.fromEntries(
     (tournamentData || []).map((t: Tournament) => [t.id, t])
@@ -241,19 +269,15 @@ export async function exportPlayerMatchups(
     })
   );
 
-  // Get opponent entry IDs
   const opponentEntryIds = new Set(
     gameParticipants.map((gp) => gp.entry_id).filter((id) => !entryIds.includes(id))
   );
 
-  // Map entries to player IDs
   const entryToPlayerMap = await fetchEntryToPlayerMap(Array.from(opponentEntryIds));
 
-  // Get opponent player info
   const opponentPlayerIds = new Set(entryToPlayerMap.values());
   const playerMap = await fetchPlayerMap(Array.from(opponentPlayerIds));
 
-  // Build matchup rows
   const csvRows: MatchupRow[] = [];
 
   for (const gameId of gameIds) {
@@ -267,7 +291,6 @@ export async function exportPlayerMatchups(
     );
 
     for (const gp of gameParticipantsForGame) {
-      // Skip the player's own entry
       if (entryIds.includes(gp.entry_id)) {
         continue;
       }
@@ -303,12 +326,13 @@ export async function exportMatchupSummary(
   format: "csv" | "json" = "csv",
   tier: EloTier = "ranking"
 ): Promise<string | null> {
-  // Get player
-  const { data: players } = await supabase
+  const { data: players, error: playersError } = await supabase
     .from("players")
     .select("id, name, topdeck_id")
     .ilike("name", `%${playerName}%`)
     .limit(1);
+
+  if (playersError) throw playersError;
 
   if (!players || players.length === 0) {
     return null;
@@ -317,11 +341,12 @@ export async function exportMatchupSummary(
   const player = players[0] as Player;
   const playerId = player.id;
 
-  // Get all entries
-  const { data: entries } = await supabase
+  const { data: entries, error: entriesError } = await supabase
     .from("tournament_entries")
     .select("id, player_id, tournament_id, decklist_text, decklist_url")
     .eq("player_id", playerId);
+
+  if (entriesError) throw entriesError;
 
   const entryIds = (entries || []).map((e) => e.id);
 
@@ -329,13 +354,9 @@ export async function exportMatchupSummary(
     return format === "csv" ? convertToCSV([]) : "[]";
   }
 
-  // Get all games
-  const { data: playerGames } = await supabase
-    .from("game_participants")
-    .select("game_id, entry_id, result")
-    .in("entry_id", entryIds);
+  const playerGames = await fetchPlayerGameParticipants(entryIds);
 
-  const allGames = (playerGames || []) as GameParticipant[];
+  const allGames = playerGames;
   const gameIds = [...new Set(allGames.map((g) => g.game_id))];
   const playerGameResults = Object.fromEntries(
     allGames.map((g) => [g.game_id, g.result])
@@ -345,23 +366,26 @@ export async function exportMatchupSummary(
     return format === "csv" ? convertToCSV([]) : "[]";
   }
 
-  // Get all participants
   const gameParticipants = await fetchGameParticipants(gameIds);
 
-  const { data: gameData } = await supabase
+  const { data: gameData, error: gameError } = await supabase
     .from("games")
     .select("id, tournament_id, status")
     .in("id", gameIds);
+
+  if (gameError) throw gameError;
   const games = Object.fromEntries(
     (gameData || []).map((g: Game) => [g.id, g])
   );
   const tournamentIds = [
     ...new Set(Object.values(games).map((g: Game) => g.tournament_id)),
   ];
-  const { data: tournamentData } = await supabase
+  const { data: tournamentData, error: tournamentError } = await supabase
     .from("tournaments")
     .select("id, name, start_date, topdeck_tid, player_count")
     .in("id", tournamentIds);
+
+  if (tournamentError) throw tournamentError;
   const tournaments = Object.fromEntries(
     (tournamentData || []).map((t: Tournament) => [t.id, t])
   );
@@ -383,21 +407,17 @@ export async function exportMatchupSummary(
     })
   );
 
-  // Get opponent entries
   const opponentEntryIds = new Set(
     gameParticipants
       .map((gp) => gp.entry_id)
       .filter((id) => !entryIds.includes(id))
   );
 
-  // Map entries to player IDs
   const entryToPlayerMap = await fetchEntryToPlayerMap(Array.from(opponentEntryIds));
 
-  // Get opponent player info
   const opponentPlayerIds = new Set(entryToPlayerMap.values());
   const playerMap = await fetchPlayerMap(Array.from(opponentPlayerIds));
 
-  // Build matchup stats
   const matchups = new Map<
     string,
     { wins: number; losses: number; draws: number }
@@ -437,7 +457,6 @@ export async function exportMatchupSummary(
     }
   }
 
-  // Convert to CSV rows, sorted by total games
   const csvRows: MatchupSummaryRow[] = Array.from(matchups.entries())
     .sort(
       (a, b) =>
