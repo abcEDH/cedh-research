@@ -716,7 +716,7 @@ export async function PlayerProfileBody({
       const gameResults = achievementResultByTournament.get(
         achievementTournamentKey(row.tournamentName, row.startDate)
       );
-      if (!gameResults?.games) return row;
+      if (!gameResults?.games) return eloOnly ? null : row;
       return {
         ...row,
         wins: gameResults.wins,
@@ -725,7 +725,7 @@ export async function PlayerProfileBody({
         recordGames: gameResults.games,
       };
     })
-    .filter((row: PlayerAchievementRow) => row.recordGames > 0);
+    .filter((row): row is PlayerAchievementRow => Boolean(row && row.recordGames > 0));
 
   const normalizedAchievementTournamentSearch = achievementTournamentSearch.toLocaleLowerCase();
   const normalizedAchievementCommanderSearch = achievementCommanderSearch.toLocaleLowerCase();
@@ -1247,6 +1247,7 @@ export async function PlayerProfileBody({
             <CardContent>
               <form method="get" className="mb-4 grid gap-3 md:grid-cols-[1fr_1fr_auto_auto_auto_auto_auto]">
                 {regionFilter ? <input type="hidden" name="region" value={regionFilter} /> : null}
+                {eloOnly ? <input type="hidden" name="eloOnly" value="true" /> : null}
                 <label className="space-y-1 text-xs uppercase tracking-[0.2em] text-muted-foreground">
                   Tournament
                   <input

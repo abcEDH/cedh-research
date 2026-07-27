@@ -49,12 +49,18 @@ export async function GET(request: NextRequest) {
 
     // Return as attachment
     const fileName = `${playerName.replace(/\s+/g, "_")}_${tier}_matchups.json`;
+    const asciiFileName = fileName
+      .replace(/[^\x20-\x7e]/g, "_")
+      .replace(/[\\"/]/g, "_");
+    const encodedFileName = encodeURIComponent(fileName).replace(/['()]/g, (character) =>
+      `%${character.charCodeAt(0).toString(16).toUpperCase()}`
+    );
 
     return new NextResponse(result, {
       status: 200,
       headers: {
         "Content-Type": "application/json",
-        "Content-Disposition": `attachment; filename="${fileName}"`,
+        "Content-Disposition": `attachment; filename="${asciiFileName}"; filename*=UTF-8''${encodedFileName}`,
         "X-Elo-Tier": tier,
         "X-Elo-Tier-Label": ELO_TIER_INFO[tier].label,
       },

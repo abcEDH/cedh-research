@@ -46,6 +46,8 @@ function configureSupabaseMock(options: {
   error?: { table: string; column?: string };
   ownRanges: Array<[number, number]>;
   gameBatches?: number[];
+  entryRanges?: Array<[number, number]>;
+  entryCount?: number;
   exactPlayer?: typeof player | null;
   partialPlayers?: Array<typeof player>;
   opponentName?: string;
@@ -102,15 +104,19 @@ function configureSupabaseMock(options: {
                 : [options.exactPlayer ?? player]
               : options.partialPlayers ?? [player];
           } else if (table === "tournament_entries" && filter("player_id")) {
-            data = [
-              {
-                id: "entry-1",
+            const range = state.range ?? [0, 999];
+            options.entryRanges?.push([range[0], range[1]]);
+            const entryCount = options.entryCount ?? 1;
+            data = Array.from(
+              { length: Math.max(0, Math.min(entryCount - range[0], range[1] - range[0] + 1)) },
+              (_, index) => ({
+                id: `entry-${range[0] + index + 1}`,
                 player_id: player.id,
                 tournament_id: "tournament-1",
                 decklist_text: "decklist",
                 decklist_url: null,
-              },
-            ];
+              })
+            );
           } else if (table === "game_participants" && filter("entry_id")) {
             const range = state.range ?? [0, 999];
             options.ownRanges.push([range[0], range[1]]);
@@ -180,7 +186,8 @@ describe("player matchup exports", () => {
     async (_label, exporter) => {
       const ownRanges: Array<[number, number]> = [];
       const gameBatches: number[] = [];
-      configureSupabaseMock({ ownRanges, gameBatches });
+      const entryRanges: Array<[number, number]> = [];
+      configureSupabaseMock({ ownRanges, gameBatches, entryRanges });
 
       const result = await exporter("Player One", "ranking");
 
@@ -188,6 +195,7 @@ describe("player matchup exports", () => {
         [0, 999],
         [1000, 1999],
       ]);
+      expect(entryRanges).toEqual([[0, 999]]);
       expect(gameBatches).toEqual([200, 200, 200, 200, 200, 1]);
       expect(JSON.parse(result ?? "[]")).toHaveLength(1001);
     }
@@ -262,4 +270,24 @@ describe("player matchup exports", () => {
     expect(summary.opponent).toBe("Opponent | Pipe");
     expect(summary.opponent_topdeck_id).toBe("opponent-player-0-topdeck");
   });
+
+  it.each([exportPlayerMatchups, exportMatchupSummary])(
+    "pages the player's tournament entries for %s exports",
+    async (_exporter) => {
+      const ownRanges: Array<[number, number]> = [];
+      const entryRanges: Array<[number, number]> = [];
+      configureSupabaseMock({
+        ownRanges,
+        entryRanges,
+        entryCount: 1001,
+      });
+
+      await _exporter("Player One", "ranking");
+
+      expect(entryRanges).toEqual([
+        [0, 999],
+        [1000, 1999],
+      ]);
+    }
+  );
 });

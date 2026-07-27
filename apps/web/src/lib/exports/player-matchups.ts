@@ -52,6 +52,7 @@ interface Player {
 }
 
 const GAME_PARTICIPANT_PAGE_SIZE = 1000;
+const TOURNAMENT_ENTRY_PAGE_SIZE = 1000;
 const GAME_ID_BATCH_SIZE = 200;
 const LOOKUP_BATCH_SIZE = 500;
 
@@ -122,6 +123,26 @@ async function fetchPlayerGameParticipants(
   }
 
   return rows;
+}
+
+async function fetchPlayerEntryIds(playerId: string): Promise<string[]> {
+  const entryIds: string[] = [];
+
+  for (let offset = 0; ; offset += TOURNAMENT_ENTRY_PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("tournament_entries")
+      .select("id")
+      .eq("player_id", playerId)
+      .range(offset, offset + TOURNAMENT_ENTRY_PAGE_SIZE - 1);
+
+    if (error) throw error;
+
+    const page = (data || []) as Array<{ id: string }>;
+    entryIds.push(...page.map((entry) => entry.id));
+    if (page.length < TOURNAMENT_ENTRY_PAGE_SIZE) break;
+  }
+
+  return entryIds;
 }
 
 async function fetchGameParticipants(gameIds: string[]): Promise<GameParticipant[]> {
@@ -214,14 +235,7 @@ export async function exportPlayerMatchups(
 
   const playerId = player.id;
 
-  const { data: entries, error: entriesError } = await supabase
-    .from("tournament_entries")
-    .select("id")
-    .eq("player_id", playerId);
-
-  if (entriesError) throw entriesError;
-
-  const entryIds = (entries || []).map((e) => e.id);
+  const entryIds = await fetchPlayerEntryIds(playerId);
 
   if (entryIds.length === 0) {
     return "[]";
@@ -330,14 +344,7 @@ export async function exportMatchupSummary(
 
   const playerId = player.id;
 
-  const { data: entries, error: entriesError } = await supabase
-    .from("tournament_entries")
-    .select("id")
-    .eq("player_id", playerId);
-
-  if (entriesError) throw entriesError;
-
-  const entryIds = (entries || []).map((e) => e.id);
+  const entryIds = await fetchPlayerEntryIds(playerId);
 
   if (entryIds.length === 0) {
     return "[]";
