@@ -1,3 +1,44 @@
+# [1.24.0](https://github.com/abcEDH/cedh-research/compare/v1.23.0...v1.24.0) (2026-07-27)
+
+
+### Bug Fixes
+
+* address ELO tier review feedback ([9b4040c](https://github.com/abcEDH/cedh-research/commit/9b4040c5296616e4db371c1f2419b7c7dcd45e44))
+* address export review details ([a821fc6](https://github.com/abcEDH/cedh-research/commit/a821fc6ae921207d1a85874491884f6202ab120c))
+* address remaining review comments ([547a6d7](https://github.com/abcEDH/cedh-research/commit/547a6d7c9554f50b07c42c7e1cee5ba5df775be8))
+* align player filters with eligibility ([570a04e](https://github.com/abcEDH/cedh-research/commit/570a04edb0d2044ef3f9fed2eb621772626a0876))
+* close remaining Elo review findings ([f40fafb](https://github.com/abcEDH/cedh-research/commit/f40fafbc92f781067cbcededa6f599ec9be26280))
+* complete leaderboard and analytics review ([e828172](https://github.com/abcEDH/cedh-research/commit/e8281725d471c168a141b9f5aadcffc6dd9a7416))
+* default leaderboards to ranking games ([cf374f1](https://github.com/abcEDH/cedh-research/commit/cf374f18f25426a61ceeed17520b5cf4273f3e99))
+* disable unsafe incremental rebuilds ([a982a2e](https://github.com/abcEDH/cedh-research/commit/a982a2e09bcb06695aaf826cf7ae62a71a8de966))
+* disambiguate matchup player searches ([e0e33ee](https://github.com/abcEDH/cedh-research/commit/e0e33eec45cdf5744335412508b56a8566c6c9a7))
+* exclude byes from player aggregates ([1b445d0](https://github.com/abcEDH/cedh-research/commit/1b445d0108bf00d3239dfb80d90e3f4aa3c843ef))
+* finish matchup mobile and lookup review ([ac6b183](https://github.com/abcEDH/cedh-research/commit/ac6b183ec3fbb396cc44f109f9b2046e11476060))
+* harden export download handling ([374697b](https://github.com/abcEDH/cedh-research/commit/374697b3210d2bf050c9c292cb610b02ffabeb19))
+* harden player export and achievement filters ([677d0d3](https://github.com/abcEDH/cedh-research/commit/677d0d37c16b44076448a6818a92c092462a470d))
+* preserve Elo filter context ([5443abd](https://github.com/abcEDH/cedh-research/commit/5443abdd98836a1035d1bc867e52b24a3eadb867))
+* preserve player filter navigation ([eb204e8](https://github.com/abcEDH/cedh-research/commit/eb204e86295f43e8e9c422f0fd4fb30fb37244e3))
+* preserve VS filter navigation ([2c0a635](https://github.com/abcEDH/cedh-research/commit/2c0a6353c0967037ee6e6c966ba1c3c3ca493d10))
+* reject duplicate player names ([e9d02d7](https://github.com/abcEDH/cedh-research/commit/e9d02d788470018ab915c3edb1ee0112b8ce6688))
+* tighten incremental and player matching ([e98079c](https://github.com/abcEDH/cedh-research/commit/e98079c112eecb4801072c4f8a4fef5d010e0707))
+* tolerate malformed Supabase URL in builds ([6a55540](https://github.com/abcEDH/cedh-research/commit/6a555402046c7f7dcc7dea2684fabe6b80fbb9c0))
+* **web:** harden player matchup exports ([3244568](https://github.com/abcEDH/cedh-research/commit/32445688ec4a7eed910e89f228b3d880808d7267))
+* **web:** resolve player-matchups export module import error ([3163b2f](https://github.com/abcEDH/cedh-research/commit/3163b2f34967a2e1ea379c4f87997306d109904e))
+
+
+### Features
+
+* add deterministic analytics player picker ([89285ed](https://github.com/abcEDH/cedh-research/commit/89285ed4bd4c4bf7094923e7f3c08d83144a65ab))
+* add ELO eligibility tiers ([57f292a](https://github.com/abcEDH/cedh-research/commit/57f292ac2806e0437a01792281726e7750c61155))
+* add Elo game filter switches ([8b8cfc9](https://github.com/abcEDH/cedh-research/commit/8b8cfc9c56aeda93eda27b71c05ed42443331d2b))
+* add player Elo game filter ([d3961e8](https://github.com/abcEDH/cedh-research/commit/d3961e8823654c185ae9324447130e319c0b5932))
+* add player matchup analytics export feature ([69b6cd4](https://github.com/abcEDH/cedh-research/commit/69b6cd47fa221d85802746ad027e7f34ed170c28))
+
+
+### Performance Improvements
+
+* cache player raw history ([080d32b](https://github.com/abcEDH/cedh-research/commit/080d32bb775dba8f5aaededa4c92a9f16a7e4f64))
+
 # [1.23.0](https://github.com/abcEDH/cedh-research/compare/v1.22.3...v1.23.0) (2026-07-15)
 
 
