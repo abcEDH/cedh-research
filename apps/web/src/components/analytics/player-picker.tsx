@@ -101,7 +101,7 @@ export function PlayerPicker({
               setIsOpen(false);
               onSelect(null);
             }}
-            className="absolute right-2 top-1/2 min-h-9 min-w-9 -translate-y-1/2 rounded-md text-slate-300 hover:bg-slate-600 hover:text-white"
+            className="absolute right-2 top-1/2 min-h-11 min-w-11 -translate-y-1/2 rounded-md text-slate-300 hover:bg-slate-600 hover:text-white"
             disabled={disabled}
           >
             ×

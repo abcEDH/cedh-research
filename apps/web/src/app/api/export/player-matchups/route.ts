@@ -6,6 +6,23 @@ import {
 } from "@/lib/exports/player-matchups";
 import { ELO_TIER_INFO, parseEloTier } from "@/lib/elo-tiers";
 
+export function buildMatchupExportFilenames(
+  playerLabel: string,
+  tier: string,
+  summaryOnly: boolean
+) {
+  const baseName = playerLabel.replace(/\s+/g, "_");
+  const fileName = `${baseName}_${tier}_matchups${summaryOnly ? "_summary" : ""}.json`;
+  const asciiFileName = fileName
+    .replace(/[^\x20-\x7e]/g, "_")
+    .replace(/[\\"/]/g, "_");
+  const encodedFileName = encodeURIComponent(fileName).replace(/['()]/g, (character) =>
+    `%${character.charCodeAt(0).toString(16).toUpperCase()}`
+  );
+
+  return { asciiFileName, encodedFileName };
+}
+
 /**
  * API route to export player matchup data as JSON.
  * Query params:
@@ -51,12 +68,10 @@ export async function GET(request: NextRequest) {
     }
 
     // Return as attachment
-    const fileName = `${(playerName ?? topdeckId ?? "player").replace(/\s+/g, "_")}_${tier}_matchups.json`;
-    const asciiFileName = fileName
-      .replace(/[^\x20-\x7e]/g, "_")
-      .replace(/[\\"/]/g, "_");
-    const encodedFileName = encodeURIComponent(fileName).replace(/['()]/g, (character) =>
-      `%${character.charCodeAt(0).toString(16).toUpperCase()}`
+    const { asciiFileName, encodedFileName } = buildMatchupExportFilenames(
+      playerName ?? topdeckId ?? "player",
+      tier,
+      summaryOnly
     );
 
     return new NextResponse(result, {
