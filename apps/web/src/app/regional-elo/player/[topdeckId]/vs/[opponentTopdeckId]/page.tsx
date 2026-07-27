@@ -4,18 +4,18 @@ import { withTiming } from "@/lib/performance";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  fetchCanonicalPlayerLogs,
+  fetchRawPlayerLogs,
   fetchPlayer,
   type PlayerRow,
 } from "../../player-log-data";
 import { buildPlayerVersusHref } from "../../player-routes";
+import { filterPlayerLogs } from "../../player-stats";
 
 const PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS = 60 * 60 * 24; // 24 hours
 
-const fetchCachedCanonicalPlayerLogs = unstable_cache(
-  async (playerId: string) =>
-    withTiming("regional-player:canonical-logs", () => fetchCanonicalPlayerLogs(playerId)),
-  ["regional-player-canonical-logs-v1"],
+const fetchCachedRawPlayerLogs = unstable_cache(
+  async (playerId: string) => withTiming("regional-player:raw-logs", () => fetchRawPlayerLogs(playerId)),
+  ["regional-player-raw-logs-v1"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -30,6 +30,11 @@ function formatShortDate(value: string | null | undefined) {
 
 function formatRecord(wins: number, losses: number, draws: number) {
   return `${wins}-${losses}-${draws}`;
+}
+
+function buildPlayerProfileHref(topdeckId: string, eloOnly: boolean) {
+  const path = `/regional-elo/player/${topdeckId}`;
+  return eloOnly ? `${path}?eloOnly=true` : path;
 }
 
 function participantTone(role: "subject" | "opponent" | "other") {
@@ -114,7 +119,11 @@ function formatPlayerSeatCommanderLabel(
   return `${playerName}: Seat ${seat ?? "?"}, ${commanderName ?? "Unknown Commander"}`;
 }
 
-function buildPodRows(player: PlayerRow, opponent: PlayerRow, log: Awaited<ReturnType<typeof fetchCanonicalPlayerLogs>>[number]) {
+function buildPodRows(
+  player: PlayerRow,
+  opponent: PlayerRow,
+  log: Awaited<ReturnType<typeof fetchRawPlayerLogs>>[number]
+) {
   return [
     {
       seat: log.seat,
@@ -188,10 +197,14 @@ function buildCommanderStats(
 
 export default async function RegionalPlayerVsPage({
   params,
+  searchParams,
 }: {
   params:
     | Promise<{ topdeckId: string; opponentTopdeckId: string }>
     | { topdeckId: string; opponentTopdeckId: string };
+  searchParams?:
+    | Promise<Record<string, string | string[] | undefined>>
+    | Record<string, string | string[] | undefined>;
 }) {
   const resolvedParams = await Promise.resolve(params);
   const { topdeckId, opponentTopdeckId } = resolvedParams;
@@ -205,7 +218,10 @@ export default async function RegionalPlayerVsPage({
     );
   }
 
-  const playerLogs = await fetchCachedCanonicalPlayerLogs(player.id);
+  const resolvedSearchParams = await Promise.resolve(searchParams);
+  const rawEloOnly = resolvedSearchParams?.eloOnly;
+  const eloOnly = Array.isArray(rawEloOnly) ? rawEloOnly[0] === "true" : rawEloOnly === "true";
+  const playerLogs = filterPlayerLogs(await fetchCachedRawPlayerLogs(player.id), eloOnly);
   const sharedLogs = playerLogs.filter((log) =>
     log.opponents.some((podPlayer) => podPlayer.topdeckId === opponentTopdeckId)
   );
@@ -233,13 +249,16 @@ export default async function RegionalPlayerVsPage({
   );
   const latestSharedDate = sharedLogs[0]?.startDate ?? null;
   const earliestSharedDate = sharedLogs[sharedLogs.length - 1]?.startDate ?? null;
+  const toggleHref = eloOnly
+    ? buildPlayerVersusHref(topdeckId, opponentTopdeckId)
+    : `${buildPlayerVersusHref(topdeckId, opponentTopdeckId)}?eloOnly=true`;
 
   return (
     <div className="min-h-screen">
       <main className="container mx-auto px-4 pb-20 pt-10">
         <div className="space-y-8">
           <div className="space-y-3">
-            <Link href={`/regional-elo/player/${topdeckId}`} className="text-sm text-muted-foreground hover:text-foreground">
+            <Link href={buildPlayerProfileHref(topdeckId, eloOnly)} className="text-sm text-muted-foreground hover:text-foreground">
               ← Back to player profile
             </Link>
             <div className="flex flex-wrap items-end justify-between gap-4">
@@ -253,13 +272,13 @@ export default async function RegionalPlayerVsPage({
               </div>
               <div className="flex flex-wrap gap-2 text-sm">
                 <Link
-                  href={`/regional-elo/player/${topdeckId}`}
+                  href={buildPlayerProfileHref(topdeckId, eloOnly)}
                   className="w-full rounded-md border border-border/70 px-3 py-2 text-center text-foreground hover:border-primary/40 hover:text-primary sm:w-auto"
                 >
                   {player.name} profile
                 </Link>
                 <Link
-                  href={`/regional-elo/player/${opponentTopdeckId}`}
+                  href={buildPlayerProfileHref(opponentTopdeckId, eloOnly)}
                   className="w-full rounded-md border border-border/70 px-3 py-2 text-center text-foreground hover:border-primary/40 hover:text-primary sm:w-auto"
                 >
                   {opponent.name} profile
@@ -267,6 +286,41 @@ export default async function RegionalPlayerVsPage({
               </div>
             </div>
           </div>
+
+          <Card className="knd-panel">
+            <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
+              <div>
+                <div className="text-sm font-medium text-foreground">Game filter</div>
+                <p className="text-xs text-muted-foreground">
+                  Shared W-L-D stats can be limited to Elo-worthy events with 30+ players; Elo
+                  rankings are unchanged.
+                </p>
+              </div>
+              <div className="flex min-h-11 items-center gap-3">
+                <span className="text-sm text-foreground">Show 30+ player games only</span>
+                <Link
+                  href={toggleHref}
+                  role="switch"
+                  aria-checked={eloOnly}
+                  aria-label="Show 30+ player games only"
+                  className="inline-flex min-h-11 min-w-11 items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`relative block h-6 w-11 rounded-full transition-colors ${
+                      eloOnly ? "bg-primary" : "bg-muted-foreground/40"
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-1 h-4 w-4 rounded-full bg-background shadow-sm transition-transform ${
+                        eloOnly ? "translate-x-6" : "translate-x-1"
+                      }`}
+                    />
+                  </span>
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
 
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
             <Card className="knd-panel xl:col-span-2">
@@ -281,7 +335,7 @@ export default async function RegionalPlayerVsPage({
                 </div>
                 <div className="text-sm text-muted-foreground">
                   Perspective:{" "}
-                  <Link href={buildPlayerVersusHref(topdeckId, opponentTopdeckId)} className="hover:text-primary">
+                  <Link href={buildPlayerVersusHref(topdeckId, opponentTopdeckId, eloOnly)} className="hover:text-primary">
                     {player.name}
                   </Link>
                 </div>
@@ -299,7 +353,7 @@ export default async function RegionalPlayerVsPage({
                 </div>
                 <div className="text-sm text-muted-foreground">
                   Perspective:{" "}
-                  <Link href={buildPlayerVersusHref(opponentTopdeckId, topdeckId)} className="hover:text-primary">
+                  <Link href={buildPlayerVersusHref(opponentTopdeckId, topdeckId, eloOnly)} className="hover:text-primary">
                     {opponent.name}
                   </Link>
                 </div>

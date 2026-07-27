@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { summarizePlayerLogs, type PlayerGameLog } from "@/app/regional-elo/player/[topdeckId]/player-stats";
+import {
+  filterPlayerLogs,
+  summarizePlayerLogs,
+  type PlayerGameLog,
+} from "@/app/regional-elo/player/[topdeckId]/player-stats";
 
 describe("summarizePlayerLogs", () => {
   it("builds consistent totals, seat summaries, and opponent records", () => {
@@ -121,5 +125,51 @@ describe("summarizePlayerLogs", () => {
         games: 1,
       },
     ]);
+  });
+
+  it("filters aggregate logs to 30-player events without changing Elo data", () => {
+    const logs: PlayerGameLog[] = [
+      { gameId: "large", result: "win", tournamentPlayerCount: 30 } as PlayerGameLog,
+      { gameId: "small", result: "win", tournamentPlayerCount: 30, rankingEligible: false } as PlayerGameLog,
+      { gameId: "unknown", result: "win", tournamentPlayerCount: null } as PlayerGameLog,
+      { gameId: "bye", result: "bye" } as PlayerGameLog,
+    ];
+
+    expect(filterPlayerLogs(logs, false).map((log) => log.gameId)).toEqual([
+      "large",
+      "small",
+      "unknown",
+    ]);
+    expect(filterPlayerLogs(logs, true).map((log) => log.gameId)).toEqual(["large"]);
+  });
+
+  it("keeps displayed game totals equal to W-L-D totals when byes are present", () => {
+    const logs: PlayerGameLog[] = [
+      {
+        gameId: "win",
+        result: "win",
+        seat: 1,
+        opponents: [],
+      } as PlayerGameLog,
+      {
+        gameId: "bye",
+        result: "bye",
+        seat: 1,
+        opponents: [],
+      } as PlayerGameLog,
+      {
+        gameId: "draw",
+        result: "draw",
+        seat: 1,
+        opponents: [],
+      } as PlayerGameLog,
+    ];
+
+    const summary = summarizePlayerLogs(filterPlayerLogs(logs, false));
+
+    expect(summary.totalGames).toBe(2);
+    expect(summary.totalWins + summary.totalDraws + summary.totalLosses).toBe(
+      summary.totalGames
+    );
   });
 });

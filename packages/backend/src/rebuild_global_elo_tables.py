@@ -4,25 +4,23 @@
 from __future__ import annotations
 
 import argparse
-import ast
 import math
 import os
 import re
 import time
 from collections import defaultdict
-from datetime import date, datetime, timedelta, timezone
-UTC = timezone.utc
-from pathlib import Path
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import requests
 
 from ingest import SupabaseClient, load_local_env
+from supabase_client import fetch_tier_results_for_window
 
 try:
     import psycopg2
-    import psycopg2.extras
     import psycopg2.extensions
+    import psycopg2.extras
 
     PSYCOPG2_AVAILABLE = True
 except ImportError:
@@ -35,6 +33,11 @@ ELO_BASE = 2
 ELO_DIVISOR = 200
 GLOBAL_REGION_TYPE = "global"
 GLOBAL_REGION_KEY = "ALL"
+ELO_TIER_FILTERS = {
+    "ranking": "ranking_eligible",
+    "local": "local_eligible",
+    "all": "all_eligible",
+}
 ACTIVE_LOOKBACK_DAYS = 180
 SEAT_ELO_BONUS = {
     1: 0.0,
@@ -377,6 +380,13 @@ def fetch_all(
     return rows
 
 
+def eligible_game_ids(rows: list[dict[str, Any]], tier: str) -> set[str]:
+    if tier not in ELO_TIER_FILTERS:
+        raise ValueError(f"Unknown Elo tier: {tier}")
+    flag = ELO_TIER_FILTERS[tier]
+    return {str(row["game_id"]) for row in rows if row.get("game_id") and row.get(flag) is True}
+
+
 def rpc_fetch_all(
     client: SupabaseClient,
     function_name: str,
@@ -530,25 +540,19 @@ def game_sort_key(item: tuple[str, list[dict[str, Any]]]) -> tuple[Any, ...]:
     )
 
 
-def fetch_results_by_month(client: SupabaseClient) -> list[dict[str, Any]]:
+def fetch_results_by_month(client: SupabaseClient, tier: str = "ranking") -> list[dict[str, Any]]:
+    if tier not in ELO_TIER_FILTERS:
+        raise ValueError(f"Unknown Elo tier: {tier}")
     select = (
         "game_id,tournament_id,start_date,state,country,entry_id,player_id,topdeck_id,"
-        "player_name,result,is_draw,round_number,round_name,table_number"
+        "player_name,result,is_draw,round_number,round_name,table_number,"
+        "seat_position,ranking_eligible,local_eligible,all_eligible"
     )
     all_rows: list[dict[str, Any]] = []
     windows = month_starts(date(2022, 8, 1), datetime.now(UTC).date())
     for window_start in windows:
         window_end = next_month(window_start)
-        rows = fetch_all(
-            client,
-            "global_elo_game_results",
-            [
-                ("select", select),
-                ("start_date", f"gte.{window_start.isoformat()}"),
-                ("start_date", f"lt.{window_end.isoformat()}"),
-            ],
-            label=f"global_elo_game_results {window_start:%Y-%m}",
-        )
+        rows = fetch_tier_results_for_window(client, window_start, window_end, tier, select)
         all_rows.extend(rows)
         print(
             f"Fetched {len(rows):,} rows for {window_start:%Y-%m}; total {len(all_rows):,}",
@@ -560,26 +564,21 @@ def fetch_results_by_month(client: SupabaseClient) -> list[dict[str, Any]]:
 def fetch_results_from_tournament_start(
     client: SupabaseClient,
     threshold_start_date: str,
+    tier: str = "ranking",
 ) -> list[dict[str, Any]]:
+    if tier not in ELO_TIER_FILTERS:
+        raise ValueError(f"Unknown Elo tier: {tier}")
     select = (
         "game_id,tournament_id,start_date,state,country,entry_id,player_id,topdeck_id,"
-        "player_name,result,is_draw,round_number,round_name,table_number"
+        "player_name,result,is_draw,round_number,round_name,table_number,"
+        "seat_position,ranking_eligible,local_eligible,all_eligible"
     )
     all_rows: list[dict[str, Any]] = []
     start_day = parse_datetime(threshold_start_date).date() if threshold_start_date else date(2022, 8, 1)
     windows = month_starts(start_day, datetime.now(UTC).date())
     for window_start in windows:
         window_end = next_month(window_start)
-        rows = fetch_all(
-            client,
-            "global_elo_game_results",
-            [
-                ("select", select),
-                ("start_date", f"gte.{window_start.isoformat()}"),
-                ("start_date", f"lt.{window_end.isoformat()}"),
-            ],
-            label=f"global_elo_game_results {window_start:%Y-%m}",
-        )
+        rows = fetch_tier_results_for_window(client, window_start, window_end, tier, select)
         filtered = [
             row
             for row in rows
@@ -1044,19 +1043,12 @@ def apply_game(
     game_datetime = participants[0].get("start_date")
     deltas: dict[str, float] = defaultdict(float)
     expected_scores: dict[str, float] = {}
-    before_ratings: dict[str, float] = {}
-
-    for row in participants:
-        player_id = row["player_id"]
-        ratings.setdefault(player_id, empty_rating(player_id))
-        player_meta.setdefault(
-            player_id,
-            {
-                "player_name": row.get("player_name"),
-                "topdeck_id": row.get("topdeck_id"),
-            },
+    before_ratings = {
+        row["player_id"]: float(
+            ratings.get(row["player_id"], {}).get("rating") or DEFAULT_RATING
         )
-        before_ratings[player_id] = float(ratings[player_id]["rating"])
+        for row in participants
+    }
 
     draw_count = sum(1 for row in participants if row.get("result") == "draw")
     k_factor = K_FACTOR_DRAW if draw_count else K_FACTOR_DECISIVE
@@ -1098,6 +1090,14 @@ def apply_game(
         if score is None:
             continue
 
+        ratings.setdefault(player_id, empty_rating(player_id))
+        player_meta.setdefault(
+            player_id,
+            {
+                "player_name": row.get("player_name"),
+                "topdeck_id": row.get("topdeck_id"),
+            },
+        )
         rating_row = ratings[player_id]
         rating_row["rating"] = round(float(rating_row["rating"]) + deltas[player_id], 6)
         rating_row["games_played"] += 1
@@ -1180,7 +1180,13 @@ def finalize_rows(
     state_activity: dict[tuple[str, str], dict[str, Any]],
     player_meta: dict[str, dict[str, str | None]],
     events: list[dict[str, Any]],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
     today = datetime.now(UTC).date()
 
     for activity in state_activity.values():
@@ -1363,7 +1369,13 @@ def build_rows(
     state_activity: dict[tuple[str, str], dict[str, Any]] | None = None,
     player_meta: dict[str, dict[str, str | None]] | None = None,
     events: list[dict[str, Any]] | None = None,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
     print("Fetching TopDeck Elos for enrichment...", flush=True)
     topdeck_elos = fetch_topdeck_elos(client)
     ratings, state_activity, player_meta, events = build_state_from_results(
@@ -1496,16 +1508,46 @@ def recompute_rolling_state_windows(
             activity["games_365d"] += 1
 
 
-def main() -> None:
+def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--preview-topdeck-id", default="")
+    parser.add_argument(
+        "--tier",
+        choices=tuple(ELO_TIER_FILTERS),
+        default="ranking",
+        help="Elo dataset to rebuild; ranking is the TopDeck-compatible default",
+    )
     parser.add_argument(
         "--since-start-date",
         default="",
         help="Incrementally rebuild from tournaments with start_date >= this ISO timestamp/date",
     )
-    args = parser.parse_args()
+    return parser
+
+
+def validate_apply_tier(apply: bool, tier: str) -> None:
+    if apply and tier != "ranking":
+        raise SystemExit(
+            "--apply is supported only for --tier ranking because alternate tiers "
+            "must not overwrite canonical Elo tables."
+        )
+
+
+def validate_incremental_tier(since_start_date: str, tier: str) -> None:
+    if since_start_date:
+        raise SystemExit(
+            "Incremental rebuilds are disabled because the available state snapshots "
+            "are not guaranteed to contain ranking-eligible games only. Run a full "
+            "rebuild without --since-start-date."
+        )
+
+
+def main() -> None:
+    args = build_arg_parser().parse_args()
+
+    validate_apply_tier(args.apply, args.tier)
+    validate_incremental_tier(args.since_start_date, args.tier)
 
     load_local_env()
     url = os.environ.get("SUPABASE_URL")
@@ -1531,6 +1573,7 @@ def main() -> None:
         results = fetch_results_from_tournament_start(
             client,
             str(incremental_start["start_date"]),
+            args.tier,
         )
         relevant_game_ids = {row["game_id"] for row in results if row.get("game_id")}
         seat_positions = fetch_seat_positions_for_games(client, relevant_game_ids)
@@ -1555,7 +1598,7 @@ def main() -> None:
     else:
         seat_positions = fetch_seat_positions(client)
         print(f"Fetched {len(seat_positions):,} seat assignments", flush=True)
-        results = fetch_results_by_month(client)
+        results = fetch_results_by_month(client, args.tier)
         merge_seat_positions(results, seat_positions)
         print(f"Fetched {len(results):,} participant result rows", flush=True)
         rating_rows, state_rows, event_rows, leaderboard_rows, profile_rows = build_rows(client, results)

@@ -13,6 +13,8 @@ import { supabase } from "@/lib/supabase";
 import { ChevronRight, Trophy } from "lucide-react";
 import Link from "next/link";
 import { HomeSearchBar } from "@/components/home-search-bar";
+import { EloGameFilter } from "@/components/elo-game-filter";
+import { fetchEloDisplayStats } from "@/lib/elo-display-stats";
 
 const HOME_CACHE_REVALIDATE_SECONDS = 60 * 60 * 6; // 6 hours
 
@@ -271,14 +273,39 @@ const getCachedLeaderboardPreview = unstable_cache(
   { revalidate: HOME_CACHE_REVALIDATE_SECONDS }
 );
 
-export default async function Home() {
-  const [leaderboardPlayers, recentTournaments] = await Promise.all([
+type HomeSearchParams = Record<string, string | string[] | undefined>;
+
+function isEloOnlyParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] !== "false" : value !== "false";
+}
+
+export default async function Home({
+  searchParams,
+}: {
+  searchParams?: Promise<HomeSearchParams> | HomeSearchParams;
+}) {
+  const resolvedSearchParams = await Promise.resolve(searchParams);
+  const eloOnly = isEloOnlyParam(resolvedSearchParams?.eloOnly);
+  const [allLeaderboardPlayers, recentTournaments] = await Promise.all([
     getCachedLeaderboardPreview(),
     getCachedRecentTournaments().catch((error) => {
       console.error("Home recent tournaments cache refresh failed:", error);
       return [];
     }),
   ]);
+  const displayStats = await fetchEloDisplayStats(
+    allLeaderboardPlayers.map((player) => player.topdeck_id),
+    eloOnly ? "ranking" : "all"
+  );
+  const leaderboardPlayers = allLeaderboardPlayers.map((player) => ({
+    ...player,
+    ...(displayStats?.get(player.topdeck_id) ?? {
+      games_played: player.games_played,
+      wins: player.wins,
+      draws: player.draws,
+      losses: player.losses,
+    }),
+  }));
 
   return (
     <div className="min-h-screen">
@@ -342,7 +369,13 @@ export default async function Home() {
         </section>
 
         <section className="mt-12">
-          <Card data-testid="global-leaderboard-card" className="border-primary/20 bg-primary/5">
+          <div className="space-y-4">
+            <EloGameFilter
+              eloOnly={eloOnly}
+              allGamesHref="/?eloOnly=false"
+              rankingGamesHref="/"
+            />
+            <Card data-testid="global-leaderboard-card" className="border-primary/20 bg-primary/5">
             <CardHeader className="flex flex-row items-center justify-between pb-3 sm:pb-4">
               <div className="min-w-0 flex-1">
                 <CardTitle className="text-base sm:text-lg truncate">Global Leaderboard</CardTitle>
@@ -375,7 +408,7 @@ export default async function Home() {
                             </TableCell>
                             <TableCell className="py-3 px-2">
                               <Link
-                                href={`/regional-elo/player/${player.topdeck_id}`}
+                                href={`/regional-elo/player/${player.topdeck_id}${eloOnly ? "?eloOnly=true" : ""}`}
                                 className="font-medium text-foreground hover:text-primary text-xs sm:text-sm"
                               >
                                 {player.player_name}
@@ -417,7 +450,8 @@ export default async function Home() {
                 </Table>
               </div>
             </CardContent>
-          </Card>
+            </Card>
+          </div>
         </section>
 
         <section className="mt-12">
@@ -466,4 +500,3 @@ function DateBlock({ date }: { date: string }) {
     </span>
   );
 }
-

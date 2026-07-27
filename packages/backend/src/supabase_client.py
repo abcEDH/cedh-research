@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+# Optional: psycopg2 for direct connection
+import importlib.util
 import logging
 import os
+import time
+from datetime import date
 from typing import Any
 
 from supabase import Client, create_client
-
-# Optional: psycopg2 for direct connection
-import importlib.util
 
 PSYCOPG2_AVAILABLE = importlib.util.find_spec("psycopg2") is not None
 if PSYCOPG2_AVAILABLE:
@@ -38,6 +39,11 @@ _FILTER_OPS: dict[str, tuple[str, int]] = {
 
 # Params that control query structure, not row filtering.
 _STRUCTURAL_PARAMS = frozenset({"select", "limit", "offset", "order"})
+ELO_TIER_FILTERS = {
+    "ranking": "ranking_eligible",
+    "local": "local_eligible",
+    "all": "all_eligible",
+}
 
 
 def get_supabase_client(
@@ -91,6 +97,92 @@ def _apply_filter(q: Any, col: str, val: str) -> Any:
         return q.not_.is_(col, "null")
     logger.warning("Unknown PostgREST filter for column %s: %r — skipped", col, val)
     return q
+
+
+def _with_page_params(
+    params: dict[str, str] | list[tuple[str, str]], limit: int, offset: int
+) -> dict[str, str] | list[tuple[str, str]]:
+    if isinstance(params, list):
+        return [*params, ("limit", str(limit)), ("offset", str(offset))]
+    return {**params, "limit": str(limit), "offset": str(offset)}
+
+
+def _fetch_all_paginated(
+    client: SupabaseClient,
+    table: str,
+    params: dict[str, str] | list[tuple[str, str]],
+    limit: int = 1000,
+    label: str | None = None,
+    max_retries: int = 8,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    offset = 0
+    started = time.time()
+    while True:
+        page = client.select(
+            table,
+            _with_page_params(params, limit, offset),
+            max_retries=max_retries,
+        )
+        if not page:
+            break
+        rows.extend(page)
+        if len(page) < limit:
+            break
+        offset += limit
+        if offset % 25000 == 0:
+            elapsed = time.time() - started
+            source = label or table
+            print(f"Fetched {offset:,} rows from {source} in {elapsed:.1f}s", flush=True)
+    return rows
+
+
+def eligible_game_ids(rows: list[dict[str, Any]], tier: str) -> set[str]:
+    if tier not in ELO_TIER_FILTERS:
+        raise ValueError(f"Unknown Elo tier: {tier}")
+    flag = ELO_TIER_FILTERS[tier]
+    return {str(row["game_id"]) for row in rows if row.get("game_id") and row.get(flag) is True}
+
+
+def fetch_tier_results_for_window(
+    client: SupabaseClient,
+    window_start: date,
+    window_end: date,
+    tier: str,
+    select: str,
+) -> list[dict[str, Any]]:
+    if tier not in ELO_TIER_FILTERS:
+        raise ValueError(f"Unknown Elo tier: {tier}")
+
+    params = [
+        ("select", select),
+        ("start_date", f"gte.{window_start.isoformat()}"),
+        ("start_date", f"lt.{window_end.isoformat()}"),
+        (ELO_TIER_FILTERS[tier], "eq.true"),
+    ]
+    eligible_rows = _fetch_all_paginated(
+        client,
+        "global_elo_game_results",
+        params,
+        label=f"global_elo_game_results {window_start:%Y-%m}",
+    )
+    if tier == "all":
+        return eligible_rows
+
+    game_ids = eligible_game_ids(eligible_rows, tier)
+    complete_rows: list[dict[str, Any]] = []
+    ordered_ids = sorted(game_ids)
+    for start in range(0, len(ordered_ids), 200):
+        chunk = ordered_ids[start : start + 200]
+        complete_rows.extend(
+            _fetch_all_paginated(
+                client,
+                "global_elo_game_results",
+                [("select", select), ("game_id", f"in.({','.join(chunk)})")],
+                label=f"global_elo_game_results {window_start:%Y-%m} complete pods",
+            )
+        )
+    return complete_rows
 
 
 def fetch_existing_tids(
@@ -194,18 +286,20 @@ class SupabaseClient:
     def select(
         self,
         table: str,
-        filters: dict[str, Any] | None = None,
+        filters: dict[str, Any] | list[tuple[str, Any]] | None = None,
         max_retries: int = 8,
     ) -> list[dict[str, Any]]:
         params = filters or {}
-        columns = str(params.get("select", "*"))
-        limit_raw = params.get("limit")
-        offset_raw = params.get("offset")
-        order_raw = params.get("order")
+        filter_items = params.items() if isinstance(params, dict) else params
+        structural_params = params if isinstance(params, dict) else dict(params)
+        columns = str(structural_params.get("select", "*"))
+        limit_raw = structural_params.get("limit")
+        offset_raw = structural_params.get("offset")
+        order_raw = structural_params.get("order")
 
         q = self._client.table(table).select(columns)
 
-        for col, val in params.items():
+        for col, val in filter_items:
             if col in _STRUCTURAL_PARAMS:
                 continue
             q = _apply_filter(q, col, str(val))

@@ -1,6 +1,6 @@
-import unittest
-import types
 import sys
+import types
+import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -24,9 +24,10 @@ except ModuleNotFoundError:
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from supabase_client import (
-    _describe_request_failure,
     SupabaseClient,
+    _describe_request_failure,
 )
+
 
 def _make_sb_client(data: list | None = None) -> tuple[Mock, Mock]:
     mock_inner = Mock()
@@ -133,6 +134,21 @@ class SupabaseClientSelectDiagnosticsTests(unittest.TestCase):
         mock_inner, client = _make_sb_client([{"id": "row-1"}])
         result = client.select("tournaments", {"id": "eq.row-1"})
         mock_inner.table.assert_called_once_with("tournaments")
+        self.assertEqual(result, [{"id": "row-1"}])
+
+    def test_select_applies_repeated_filters(self) -> None:
+        mock_inner, client = _make_sb_client([{"id": "row-1"}])
+        result = client.select(
+            "games",
+            [
+                ("select", "id,start_date"),
+                ("start_date", "gte.2026-01-01"),
+                ("start_date", "lt.2026-02-01"),
+            ],
+        )
+        chain = mock_inner.table.return_value.select.return_value
+        chain.gte.assert_called_once_with("start_date", "2026-01-01")
+        chain.lt.assert_called_once_with("start_date", "2026-02-01")
         self.assertEqual(result, [{"id": "row-1"}])
 
 if __name__ == "__main__":

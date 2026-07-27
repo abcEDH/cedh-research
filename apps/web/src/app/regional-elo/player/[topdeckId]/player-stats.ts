@@ -9,6 +9,8 @@ export type PlayerGameLog = {
   tableLabel: string;
   seat: number;
   result: string;
+  tournamentPlayerCount?: number | null;
+  rankingEligible?: boolean | null;
   commanderName: string | null;
   opponents: Array<{
     topdeckId: string | null;
@@ -74,6 +76,21 @@ export type PlayerLogSummary = {
 const OPPONENT_MATCHUP_PRIOR_GAMES = 60;
 const COMMANDER_MATCHUP_PRIOR_GAMES = 100;
 const DRAW_SCORE = 0.2;
+export const ELO_WORTHY_MIN_PLAYERS = 30;
+
+export function isEloWorthyGame(log: PlayerGameLog) {
+  if (typeof log.rankingEligible === "boolean") return log.rankingEligible;
+  return (log.tournamentPlayerCount ?? 0) >= ELO_WORTHY_MIN_PLAYERS;
+}
+
+function isScoredGame(log: PlayerGameLog) {
+  return log.result === "win" || log.result === "loss" || log.result === "draw";
+}
+
+export function filterPlayerLogs(logs: PlayerGameLog[], eloOnly: boolean) {
+  const scoredLogs = logs.filter(isScoredGame);
+  return eloOnly ? scoredLogs.filter(isEloWorthyGame) : scoredLogs;
+}
 
 function scoreRate(wins: number, draws: number, games: number) {
   if (games <= 0) return 0;
@@ -185,7 +202,11 @@ export function buildOpponentRecords(logs: PlayerGameLog[]): OpponentRecord[] {
   });
 }
 
-export function summarizePlayerLogs(logs: PlayerGameLog[], playerTopdeckId?: string): PlayerLogSummary {
+export function summarizePlayerLogs(
+  logs: PlayerGameLog[],
+  playerTopdeckId?: string,
+  eloOnly = false
+): PlayerLogSummary {
   const totalGames = logs.length;
   const totalWins = logs.filter((row) => row.result === "win").length;
   const totalDraws = logs.filter((row) => row.result === "draw").length;
@@ -213,7 +234,7 @@ export function summarizePlayerLogs(logs: PlayerGameLog[], playerTopdeckId?: str
       "Opponent",
       OPPONENT_MATCHUP_PRIOR_GAMES,
       record.opponentTopdeckId && playerTopdeckId
-        ? buildPlayerVersusHref(playerTopdeckId, record.opponentTopdeckId)
+        ? buildPlayerVersusHref(playerTopdeckId, record.opponentTopdeckId, eloOnly)
         : undefined
     )
   );

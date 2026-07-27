@@ -20,7 +20,7 @@ import {
   PlayerEventOpponentRow,
   EntryRow,
 } from "./page";
-import { summarizePlayerLogs, type PlayerGameLog } from "./player-stats";
+import { summarizePlayerLogs, type PlayerGameLog, type PlayerLogSummary } from "./player-stats";
 
 const PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS = 60 * 60 * 24;
 
@@ -480,10 +480,12 @@ export async function PlayerProfileGrid({
   player,
   topdeckId,
   regionFilter,
+  displaySummary,
 }: {
   player: PlayerRow;
   topdeckId: string;
   regionFilter: string;
+  displaySummary?: PlayerLogSummary;
 }) {
   const [globalSnapshot, globalEloRank, regionalRanks, profileSummary] = await Promise.all([
     fetchCachedGlobalSnapshot(topdeckId),
@@ -555,6 +557,11 @@ export async function PlayerProfileGrid({
   const canonicalWins = profileSummary?.wins ?? 0;
   const canonicalDraws = profileSummary?.draws ?? 0;
   const canonicalLosses = profileSummary?.losses ?? 0;
+  const displayedGames = displaySummary?.totalGames ?? canonicalGames;
+  const displayedWins = displaySummary?.totalWins ?? canonicalWins;
+  const displayedDraws = displaySummary?.totalDraws ?? canonicalDraws;
+  const displayedLosses = displaySummary?.totalLosses ?? canonicalLosses;
+  const displayedUniqueOpponents = displaySummary?.opponentRecords.length;
 
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-9">
@@ -697,7 +704,7 @@ export async function PlayerProfileGrid({
           </CardTitle>
         </CardHeader>
         <CardContent className="text-2xl font-semibold text-foreground">
-          {canonicalGames}
+          {displayedGames}
         </CardContent>
       </Card>
       <Card className="knd-panel">
@@ -707,24 +714,45 @@ export async function PlayerProfileGrid({
           </CardTitle>
         </CardHeader>
         <CardContent className="text-2xl font-semibold text-foreground">
-          {canonicalWins}-{canonicalLosses}-{canonicalDraws}
+          {displayedWins}-{displayedLosses}-{displayedDraws}
         </CardContent>
       </Card>
       <Suspense
-        fallback={
-          <Card className="knd-panel animate-pulse">
-            <CardHeader>
-              <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                Unique Opponents
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="h-8 w-16 rounded bg-muted/40" />
-          </Card>
-        }
+        fallback={<UniqueOpponentsCardSkeleton />}
       >
-        <UniqueOpponentsCard player={player} />
+        {displayedUniqueOpponents !== undefined ? (
+          <DisplayedUniqueOpponentsCard count={displayedUniqueOpponents} />
+        ) : (
+          <UniqueOpponentsCard player={player} />
+        )}
       </Suspense>
     </div>
+  );
+}
+
+function DisplayedUniqueOpponentsCard({ count }: { count: number }) {
+  return (
+    <Card className="knd-panel">
+      <CardHeader>
+        <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+          Unique Opponents
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="text-2xl font-semibold text-foreground">{count}</CardContent>
+    </Card>
+  );
+}
+
+function UniqueOpponentsCardSkeleton() {
+  return (
+    <Card className="knd-panel animate-pulse">
+      <CardHeader>
+        <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+          Unique Opponents
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="h-8 w-16 rounded bg-muted/40" />
+    </Card>
   );
 }
 
