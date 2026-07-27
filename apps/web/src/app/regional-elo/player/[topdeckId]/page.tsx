@@ -5,7 +5,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { CommanderUsageRow } from "@/lib/meta-prep";
 import { supabase } from "@/lib/supabase";
 import { OpponentRecordsTable } from "./opponent-records-table";
-import { filterPlayerLogs, summarizePlayerLogs, type PlayerGameLog } from "./player-stats";
+import {
+  filterPlayerLogs,
+  summarizePlayerLogs,
+  type PlayerGameLog,
+} from "./player-stats";
 import {
   PlayerHeader,
   PlayerHeaderSkeleton,
@@ -610,6 +614,10 @@ async function PlayerProfileBodyWrapper({
   const resolvedSearchParams = await Promise.resolve(searchParams);
   const requestedRegion = decodeURIComponent(readRegionParam(resolvedSearchParams)).trim().toUpperCase();
   const regionFilter = requestedRegion === "ALL" ? "" : requestedRegion;
+  const eloOnly = readStringParam(resolvedSearchParams, "eloOnly") === "true";
+  const rawEntries = await fetchEntries(player.id);
+  const allPlayerLogs = await buildPlayerLogsFromRawHistory(rawEntries);
+  const displaySummary = summarizePlayerLogs(filterPlayerLogs(allPlayerLogs, eloOnly), topdeckId);
 
   return (
     <>
@@ -618,6 +626,7 @@ async function PlayerProfileBodyWrapper({
           topdeckId={topdeckId}
           player={player}
           regionFilter={regionFilter}
+          displaySummary={displaySummary}
         />
       </Suspense>
 
@@ -625,6 +634,7 @@ async function PlayerProfileBodyWrapper({
         topdeckId={topdeckId}
         player={player}
         searchParams={searchParams}
+        rawPlayerLogs={allPlayerLogs}
       />
     </>
   );
@@ -636,12 +646,14 @@ export async function PlayerProfileBody({
   topdeckId,
   player,
   searchParams,
+  rawPlayerLogs,
 }: {
   topdeckId: string;
   player: PlayerRow;
   searchParams?:
     | Promise<Record<string, string | string[] | undefined>>
     | Record<string, string | string[] | undefined>;
+  rawPlayerLogs?: PlayerGameLog[];
 }) {
   const resolvedSearchParams = await Promise.resolve(searchParams);
   const requestedRegion = decodeURIComponent(readRegionParam(resolvedSearchParams)).trim().toUpperCase();
@@ -666,7 +678,6 @@ export async function PlayerProfileBody({
     commanderProfile,
     commanderUsageRows,
     fetchedAchievementRows,
-    rawEntries,
   ] = await Promise.all([
     fetchCachedGlobalEloRank(player.id),
     fetchCachedRegionalRanks(player.id),
@@ -674,12 +685,12 @@ export async function PlayerProfileBody({
     fetchCachedPlayerCommanderProfile(topdeckId),
     fetchCachedPlayerCommanderUsageRows(player.id, topdeckId, player.name),
     fetchCachedPlayerAchievements(player.id, topdeckId),
-    fetchEntries(player.id),
   ]);
 
   const activeCommander = commanderProfile?.active_commander ?? null;
 
-  const allPlayerLogs: PlayerGameLog[] = await buildPlayerLogsFromRawHistory(rawEntries);
+  const allPlayerLogs: PlayerGameLog[] =
+    rawPlayerLogs ?? (await buildPlayerLogsFromRawHistory(await fetchEntries(player.id)));
   const playerLogs = filterPlayerLogs(allPlayerLogs, eloOnly);
   const {
     totalGames,
@@ -898,14 +909,29 @@ export async function PlayerProfileBody({
               rankings are unchanged.
             </p>
           </div>
-          <Link
-            href={eloToggleHref}
-            role="switch"
-            aria-checked={eloOnly}
-            className="min-h-11 rounded-md border border-border/70 px-3 py-2 text-sm text-foreground hover:border-primary/40 hover:text-primary"
-          >
-            {eloOnly ? "Showing 30+ player games" : "Show 30+ player games only"}
-          </Link>
+          <div className="flex min-h-11 items-center gap-3">
+            <span className="text-sm text-foreground">Show 30+ player games only</span>
+            <Link
+              href={eloToggleHref}
+              role="switch"
+              aria-checked={eloOnly}
+              aria-label="Show 30+ player games only"
+              className="inline-flex min-h-11 min-w-11 items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+            >
+              <span
+                aria-hidden="true"
+                className={`relative block h-6 w-11 rounded-full transition-colors ${
+                  eloOnly ? "bg-primary" : "bg-muted-foreground/40"
+                }`}
+              >
+                <span
+                  className={`absolute top-1 h-4 w-4 rounded-full bg-background shadow-sm transition-transform ${
+                    eloOnly ? "translate-x-6" : "translate-x-1"
+                  }`}
+                />
+              </span>
+            </Link>
+          </div>
         </CardContent>
       </Card>
 

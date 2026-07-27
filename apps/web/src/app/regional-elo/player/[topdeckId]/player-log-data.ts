@@ -45,6 +45,7 @@ type TournamentRow = {
   name: string;
   start_date: string;
   state: string | null;
+  player_count: number | null;
 };
 
 type PlayerEventLogRow = {
@@ -217,7 +218,7 @@ async function fetchTournaments(tournamentIds: string[]): Promise<Map<string, To
   for (const tournamentIdChunk of chunkValues(tournamentIds)) {
     const { data, error } = await supabase
       .from("tournaments")
-      .select("id, name, start_date, state")
+      .select("id, name, start_date, state, player_count")
       .in("id", tournamentIdChunk);
 
     if (error) throw new Error(`Error fetching tournaments: ${error.message}`);
@@ -225,6 +226,28 @@ async function fetchTournaments(tournamentIds: string[]): Promise<Map<string, To
   }
 
   return new Map(rows.map((row) => [row.id, row]));
+}
+
+async function fetchTournamentPlayerCountsForGames(
+  gameIds: string[]
+): Promise<Map<string, number | null>> {
+  const gameRows: Array<{ id: string; tournament_id: string }> = [];
+  for (const gameIdChunk of chunkValues(gameIds)) {
+    const { data, error } = await supabase
+      .from("games")
+      .select("id, tournament_id")
+      .in("id", gameIdChunk);
+
+    if (error) throw new Error(`Error fetching game tournaments: ${error.message}`);
+    gameRows.push(...((data as Array<{ id: string; tournament_id: string }>) ?? []));
+  }
+
+  const tournamentsById = await fetchTournaments(
+    Array.from(new Set(gameRows.map((row) => row.tournament_id)))
+  );
+  return new Map(
+    gameRows.map((row) => [row.id, tournamentsById.get(row.tournament_id)?.player_count ?? null])
+  );
 }
 
 async function fetchEntriesById(entryIds: string[]): Promise<Map<string, EntryRow>> {
@@ -320,10 +343,10 @@ async function buildPlayerLogsFromRawHistory(entries: EntryRow[]): Promise<Playe
   ]);
 
   return playerParticipants
-    .map((participant) => {
+    .flatMap((participant): PlayerGameLog[] => {
       const game = gamesById.get(participant.game_id);
       const playerEntry = entryById.get(participant.entry_id);
-      if (!game || !playerEntry) return null;
+      if (!game || !playerEntry) return [];
 
       const tournament = tournamentsById.get(game.tournament_id);
       const commanderName = playerEntry.commander_id
@@ -348,7 +371,7 @@ async function buildPlayerLogsFromRawHistory(entries: EntryRow[]): Promise<Playe
         })
         .sort((a, b) => a.seat - b.seat);
 
-      return {
+      return [{
         gameId: participant.game_id,
         startDate: tournament?.start_date ?? "",
         tournamentName: tournament?.name ?? "Unknown tournament",
@@ -357,11 +380,11 @@ async function buildPlayerLogsFromRawHistory(entries: EntryRow[]): Promise<Playe
         tableLabel: game.table_number !== null ? `Table ${game.table_number}` : "Bracket",
         seat: participant.seat_position + 1,
         result: participant.result,
+        tournamentPlayerCount: tournament?.player_count ?? null,
         commanderName,
         opponents: pod,
-      } satisfies PlayerGameLog;
+      } satisfies PlayerGameLog];
     })
-    .filter((value): value is PlayerGameLog => Boolean(value))
     .sort((a, b) => b.startDate.localeCompare(a.startDate));
 }
 
@@ -446,6 +469,8 @@ async function fetchPlayerEventLogs(playerId: string, regionFilter: string): Pro
     opponentRows.push(...chunk);
   }
 
+  const tournamentPlayerCounts = await fetchTournamentPlayerCountsForGames(gameIds);
+
   const opponentsByGameId = new Map<string, PlayerGameLog["opponents"]>();
   for (const row of opponentRows) {
     const existing = opponentsByGameId.get(row.game_id) ?? [];
@@ -471,6 +496,7 @@ async function fetchPlayerEventLogs(playerId: string, regionFilter: string): Pro
     tableLabel: row.table_number !== null ? `Table ${row.table_number}` : "Bracket",
     seat: (row.seat_position ?? 0) + 1,
     result: row.game_result,
+    tournamentPlayerCount: tournamentPlayerCounts.get(row.game_id) ?? null,
     commanderName: row.commander_name,
     opponents: opponentsByGameId.get(row.game_id) ?? [],
   }));

@@ -9,6 +9,7 @@ import {
   type PlayerRow,
 } from "../../player-log-data";
 import { buildPlayerVersusHref } from "../../player-routes";
+import { filterPlayerLogs } from "../../player-stats";
 
 const PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS = 60 * 60 * 24; // 24 hours
 
@@ -188,10 +189,14 @@ function buildCommanderStats(
 
 export default async function RegionalPlayerVsPage({
   params,
+  searchParams,
 }: {
   params:
     | Promise<{ topdeckId: string; opponentTopdeckId: string }>
     | { topdeckId: string; opponentTopdeckId: string };
+  searchParams?:
+    | Promise<Record<string, string | string[] | undefined>>
+    | Record<string, string | string[] | undefined>;
 }) {
   const resolvedParams = await Promise.resolve(params);
   const { topdeckId, opponentTopdeckId } = resolvedParams;
@@ -205,7 +210,10 @@ export default async function RegionalPlayerVsPage({
     );
   }
 
-  const playerLogs = await fetchCachedCanonicalPlayerLogs(player.id);
+  const resolvedSearchParams = await Promise.resolve(searchParams);
+  const rawEloOnly = resolvedSearchParams?.eloOnly;
+  const eloOnly = Array.isArray(rawEloOnly) ? rawEloOnly[0] === "true" : rawEloOnly === "true";
+  const playerLogs = filterPlayerLogs(await fetchCachedCanonicalPlayerLogs(player.id), eloOnly);
   const sharedLogs = playerLogs.filter((log) =>
     log.opponents.some((podPlayer) => podPlayer.topdeckId === opponentTopdeckId)
   );
@@ -233,6 +241,9 @@ export default async function RegionalPlayerVsPage({
   );
   const latestSharedDate = sharedLogs[0]?.startDate ?? null;
   const earliestSharedDate = sharedLogs[sharedLogs.length - 1]?.startDate ?? null;
+  const toggleHref = eloOnly
+    ? buildPlayerVersusHref(topdeckId, opponentTopdeckId)
+    : `${buildPlayerVersusHref(topdeckId, opponentTopdeckId)}?eloOnly=true`;
 
   return (
     <div className="min-h-screen">
@@ -267,6 +278,41 @@ export default async function RegionalPlayerVsPage({
               </div>
             </div>
           </div>
+
+          <Card className="knd-panel">
+            <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
+              <div>
+                <div className="text-sm font-medium text-foreground">Game filter</div>
+                <p className="text-xs text-muted-foreground">
+                  Shared W-L-D stats can be limited to Elo-worthy events with 30+ players; Elo
+                  rankings are unchanged.
+                </p>
+              </div>
+              <div className="flex min-h-11 items-center gap-3">
+                <span className="text-sm text-foreground">Show 30+ player games only</span>
+                <Link
+                  href={toggleHref}
+                  role="switch"
+                  aria-checked={eloOnly}
+                  aria-label="Show 30+ player games only"
+                  className="inline-flex min-h-11 min-w-11 items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`relative block h-6 w-11 rounded-full transition-colors ${
+                      eloOnly ? "bg-primary" : "bg-muted-foreground/40"
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-1 h-4 w-4 rounded-full bg-background shadow-sm transition-transform ${
+                        eloOnly ? "translate-x-6" : "translate-x-1"
+                      }`}
+                    />
+                  </span>
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
 
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
             <Card className="knd-panel xl:col-span-2">
