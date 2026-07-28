@@ -40,9 +40,25 @@ const tableData: TableData = {
       topdeck_id: "player-1-topdeck",
       active_commander: "Kinnan, Bonder Prodigy",
       latest_decklist_url: "https://topdeck.gg/deck/event-1/player-1-topdeck",
-      latest_tournament_name: "LEVEL SEVEN'S WEEKLY CEDH EVENT",
-      latest_tournament_date: "2026-04-25",
-      latest_tournament_topdeck_tid: "event-1",
+      latest_tournament_name: "FUTURE SIGNUP WITHOUT GAMES",
+      latest_tournament_date: "2026-05-25",
+      latest_tournament_topdeck_tid: "future-event",
+    },
+  ],
+  global_elo_game_event_log: [
+    {
+      player_id: "player-1",
+      game_date: "2026-04-24T12:00:00Z",
+      tournament_name: "LEVEL SEVEN'S WEEKLY CEDH EVENT",
+      tournament_id: "tournament-1",
+    },
+  ],
+  tournaments: [
+    {
+      id: "tournament-1",
+      name: "LEVEL SEVEN'S WEEKLY CEDH EVENT",
+      start_date: "2026-04-24",
+      topdeck_tid: "event-1",
     },
   ],
 };
@@ -160,11 +176,12 @@ describe("RegionalEloPage", () => {
     expect(html).toContain("Jason Doan // CriticalEDH");
     expect(html).toContain("Kinnan, Bonder Prodigy");
     expect(html).toMatch(/LEVEL SEVEN(?:'|&#x27;)S WEEKLY CEDH EVENT/);
+    expect(html).not.toContain("FUTURE SIGNUP WITHOUT GAMES");
     expect(html).not.toContain("No commander data");
     expect(html).not.toContain("No tournament data");
   });
 
-  it("renders 'No commander data' and 'No tournament data' when enriched profile rows are missing", async () => {
+  it("renders latest played tournament even when enriched profile rows are missing", async () => {
     // Clear the profile data for this test
     const originalProfiles = [...tableData.player_commander_profiles];
     tableData.player_commander_profiles = [];
@@ -179,7 +196,8 @@ describe("RegionalEloPage", () => {
 
       expect(html).toContain("Jason Doan // CriticalEDH");
       expect(html).toContain("No commander data");
-      expect(html).toContain("No tournament data");
+      expect(html).toMatch(/LEVEL SEVEN(?:'|&#x27;)S WEEKLY CEDH EVENT/);
+      expect(html).not.toContain("No tournament data");
     } finally {
       tableData.player_commander_profiles = originalProfiles;
     }

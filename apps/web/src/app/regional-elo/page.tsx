@@ -237,6 +237,103 @@ function chunkArray<T>(values: T[], chunkSize: number) {
   return chunks;
 }
 
+async function fetchLatestPlayedTournaments(playerIds: string[]) {
+  const uniquePlayerIds = Array.from(new Set(playerIds.filter(Boolean)));
+  const latestByPlayerId = new Map<
+    string,
+    {
+      name: string | null;
+      date: string | null;
+      topdeck_tid: string | null;
+      tournament_id: string | null;
+    }
+  >();
+  if (uniquePlayerIds.length === 0) return latestByPlayerId;
+
+  for (const playerIdChunk of chunkArray(uniquePlayerIds, 50)) {
+    let offset = 0;
+    while (!playerIdChunk.every((playerId) => latestByPlayerId.has(playerId))) {
+      const { data, error } = await supabase
+        .from("global_elo_game_event_log")
+        .select("player_id, game_date, tournament_name, tournament_id")
+        .in("player_id", playerIdChunk)
+        .order("game_date", { ascending: false })
+        .range(offset, offset + 999);
+
+      if (error) {
+        console.error("[regional-elo] Latest played tournament query failed:", error.message);
+        break;
+      }
+
+      const rows = (data ?? []) as Array<{
+        player_id: string;
+        game_date: string | null;
+        tournament_name: string | null;
+        tournament_id: string | null;
+      }>;
+      for (const row of rows) {
+        if (latestByPlayerId.has(row.player_id)) continue;
+        latestByPlayerId.set(row.player_id, {
+          name: row.tournament_name ?? null,
+          date: row.game_date ?? null,
+          topdeck_tid: null,
+          tournament_id: row.tournament_id ?? null,
+        });
+      }
+
+      if (rows.length < 1000 || playerIdChunk.every((playerId) => latestByPlayerId.has(playerId))) break;
+      offset += 1000;
+    }
+  }
+
+  const tournamentIds = Array.from(
+    new Set(
+      Array.from(latestByPlayerId.values())
+        .map((row) => row.tournament_id)
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+  if (tournamentIds.length === 0) return latestByPlayerId;
+
+  const tournamentRows: Array<{
+    id: string;
+    name: string | null;
+    start_date: string | null;
+    topdeck_tid: string | null;
+  }> = [];
+  for (const tournamentIdChunk of chunkArray(tournamentIds, 250)) {
+    const { data, error } = await supabase
+      .from("tournaments")
+      .select("id, name, start_date, topdeck_tid")
+      .in("id", tournamentIdChunk);
+
+    if (error) {
+      console.error("[regional-elo] Tournament metadata query failed:", error.message);
+      continue;
+    }
+    tournamentRows.push(
+      ...((data ?? []) as Array<{
+        id: string;
+        name: string | null;
+        start_date: string | null;
+        topdeck_tid: string | null;
+      }>)
+    );
+  }
+
+  const tournamentsById = new Map(tournamentRows.map((row) => [row.id, row]));
+  for (const latest of latestByPlayerId.values()) {
+    if (!latest.tournament_id) continue;
+    const tournament = tournamentsById.get(latest.tournament_id);
+    if (!tournament) continue;
+    latest.name = tournament.name ?? latest.name;
+    latest.date = tournament.start_date ?? latest.date;
+    latest.topdeck_tid = tournament.topdeck_tid ?? null;
+  }
+
+  return latestByPlayerId;
+}
+
 async function fetchLatestCommanders(
   rows: Array<{ player_id?: string; topdeck_id: string | null }>
 ): Promise<Map<string, LatestCommanderRow>> {
@@ -244,17 +341,22 @@ async function fetchLatestCommanders(
     .map((row) => row.topdeck_id)
     .filter((value): value is string => Boolean(value));
   if (topdeckIds.length === 0) return new Map();
+  const playerIds = rows
+    .map((row) => row.player_id)
+    .filter((value): value is string => Boolean(value));
+  const latestPlayedTournamentByPlayerId = await fetchLatestPlayedTournaments(playerIds);
 
   const latestByPlayer = new Map<string, LatestCommanderRow>();
   for (const row of rows) {
     if (!row.topdeck_id) continue;
+    const latestPlayedTournament = row.player_id ? latestPlayedTournamentByPlayerId.get(row.player_id) : null;
     latestByPlayer.set(row.topdeck_id, {
       topdeck_id: row.topdeck_id,
       active_commander: null,
       active_commander_decklist_url: null,
-      latest_tournament_name: null,
-      latest_tournament_date: null,
-      latest_tournament_topdeck_tid: null,
+      latest_tournament_name: latestPlayedTournament?.name ?? null,
+      latest_tournament_date: latestPlayedTournament?.date ?? null,
+      latest_tournament_topdeck_tid: latestPlayedTournament?.topdeck_tid ?? null,
     });
   }
 
@@ -298,14 +400,12 @@ async function fetchLatestCommanders(
     if (!existing) continue;
     existing.active_commander = isKnownCommander(row.active_commander) ? row.active_commander : null;
     existing.active_commander_decklist_url = row.latest_decklist_url ?? null;
-    existing.latest_tournament_name = row.latest_tournament_name ?? null;
-    existing.latest_tournament_date = row.latest_tournament_date ?? null;
-    existing.latest_tournament_topdeck_tid = row.latest_tournament_topdeck_tid ?? null;
   }
 
   logReadSummary("latest-commanders-cache-miss", {
     players: rows.length,
     profilesFound: profileRows.length,
+    playedTournamentProfilesFound: latestPlayedTournamentByPlayerId.size,
   });
 
   return latestByPlayer;
@@ -328,7 +428,7 @@ const getCachedLeaderboardRows = unstable_cache(
     withTiming("regional-elo:leaderboard", () =>
       fetchLeaderboardRows(regionType, regionKey, page, pageSize, searchQuery)
     ),
-  ["regional-elo-leaderboard-v4"],
+  ["regional-elo-leaderboard-v6"],
   { revalidate: REGIONAL_ELO_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -340,7 +440,7 @@ const getCachedLatestCommanders = unstable_cache(
       return Object.fromEntries(map.entries());
     });
   },
-  ["regional-elo-latest-commanders-v4"],
+  ["regional-elo-latest-commanders-v5"],
   { revalidate: REGIONAL_ELO_CACHE_REVALIDATE_SECONDS }
 );
 

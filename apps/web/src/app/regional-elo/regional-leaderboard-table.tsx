@@ -93,7 +93,7 @@ export function RegionalLeaderboardTable({
             <tr>
               <th className="px-2 py-3">Rank</th>
               <th className="px-2 py-3">Player</th>
-              <th className="px-2 py-3">Elo</th>
+              <th className="px-2 py-3">TopDeck Elo</th>
               <th className="px-2 py-3 hidden md:table-cell">Active Commander</th>
               <th className="px-2 py-3 hidden sm:table-cell">Games</th>
               <th className="px-2 py-3 hidden md:table-cell">W-L-D</th>
@@ -175,7 +175,7 @@ export function RegionalLeaderboardTable({
             {leaderboard.length === 0 && (
               <tr>
                 <td colSpan={7} className="py-6 text-center text-sm text-muted-foreground">
-                  No TopDeck Elo data available for this view.
+                  No leaderboard data available for this view.
                 </td>
               </tr>
             )}

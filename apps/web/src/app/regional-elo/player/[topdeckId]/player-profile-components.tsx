@@ -130,7 +130,7 @@ async function fetchActiveRankRow(
 
 export const fetchCachedGlobalEloRank = unstable_cache(
   async (playerId: string) => fetchActiveRankRow("global", "ALL", playerId),
-  ["regional-player-global-rank-v4"],
+  ["regional-player-global-rank-v7"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -160,7 +160,7 @@ async function fetchRegionalRanks(playerId: string): Promise<LeaderboardRankRow[
 
 export const fetchCachedRegionalRanks = unstable_cache(
   async (playerId: string) => fetchRegionalRanks(playerId),
-  ["regional-player-regional-ranks-v3"],
+  ["regional-player-regional-ranks-v5"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -175,7 +175,7 @@ export const fetchCachedPlayerProfileSummary = unstable_cache(
     if (error) return null;
     return data as PlayerProfileSummaryRow | null;
   },
-  ["regional-player-profile-summary-v4"],
+  ["regional-player-profile-summary-v5"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -207,20 +207,22 @@ export const fetchCachedGlobalSnapshot = unstable_cache(
 
 export const fetchCachedRegionalRank = unstable_cache(
   async (playerId: string, regionKey: string) => fetchActiveRankRow("state", regionKey, playerId),
-  ["regional-player-local-rank-v4"],
+  ["regional-player-local-rank-v6"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
 export const fetchCachedCountryRank = unstable_cache(
   async (playerId: string, countryKey: string) => fetchCountryRank(playerId, countryKey),
-  ["regional-player-country-rank-v4"],
+  ["regional-player-country-rank-v7"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
 async function fetchPlayerCommanderProfile(topdeckId: string): Promise<PlayerCommanderProfileRow | null> {
   const { data: profileRow, error: profileError } = await supabase
     .from("player_commander_profiles")
-    .select("active_commander, latest_decklist_url, latest_tournament_name, latest_tournament_date, latest_tournament_topdeck_tid")
+    .select(
+      "active_commander, active_commander_prediction_score, latest_commander, latest_commander_date, commander_predictions"
+    )
     .eq("topdeck_id", topdeckId)
     .maybeSingle();
 
@@ -230,7 +232,7 @@ async function fetchPlayerCommanderProfile(topdeckId: string): Promise<PlayerCom
 
 export const fetchCachedPlayerCommanderProfile = unstable_cache(
   async (topdeckId: string) => fetchPlayerCommanderProfile(topdeckId),
-  ["regional-player-commander-profile-v1"],
+  ["regional-player-commander-profile-v2"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -283,7 +285,7 @@ export const fetchCachedPlayerAchievements = unstable_cache(
     const rows = await fetchPlayerTournamentEntries(playerId);
     return buildPlayerAchievements(rows, topdeckId);
   },
-  ["regional-player-achievements-v3"],
+  ["regional-player-achievements-v4"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -313,7 +315,7 @@ export const fetchCachedPlayerCommanderUsageRows = unstable_cache(
     const rows = await fetchPlayerTournamentEntries(playerId);
     return buildPlayerCommanderUsageRows(rows, topdeckId, playerName);
   },
-  ["regional-player-commander-usage-v3"],
+  ["regional-player-commander-usage-v4"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -431,7 +433,7 @@ async function fetchPlayerEventLogs(playerId: string, regionFilter: string): Pro
 
 export const fetchCachedPlayerEventLogs = unstable_cache(
   async (playerId: string, regionFilter: string) => fetchPlayerEventLogs(playerId, regionFilter),
-  ["regional-player-event-logs-v3"],
+  ["regional-player-event-logs-v4"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -513,14 +515,14 @@ export async function PlayerProfileGrid({
       })[0]?.region_key ?? null;
 
   const homeRegion =
-    profileSummary?.home_region_key ??
     globalEloRank?.primary_region_key ??
+    profileSummary?.home_region_key ??
     regionalRanks[0]?.region_key ??
     derivedHomeRegion;
 
   const homeCountry =
-    profileSummary?.home_country_key ??
     globalEloRank?.primary_country_key ??
+    profileSummary?.home_country_key ??
     (homeRegion ? inferCountryForRegion(homeRegion) : null) ??
     (regionalRankRows[0]?.country_key ?? null);
 
