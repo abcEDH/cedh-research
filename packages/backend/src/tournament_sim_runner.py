@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from sim_engine import run_monte_carlo_from_state
-from sim_models import LoadedDrawModel
+from sim_models import LoadedCandidateWinnerModel, LoadedDrawModel
 from sim_types import Pod, TournamentState
 
 DEFAULT_ADVANCEMENT_SIZES = (64, 40, 16, 10, 4)
@@ -15,6 +15,7 @@ def run_simulation_from_state(
     state: TournamentState,
     draw_model: LoadedDrawModel,
     *,
+    winner_model: LoadedCandidateWinnerModel | None = None,
     simulations: int,
     seed: int,
     workers: int | None,
@@ -27,6 +28,7 @@ def run_simulation_from_state(
     return run_monte_carlo_from_state(
         state,
         draw_model,
+        winner_model=winner_model,
         simulations=simulations,
         seed=seed,
         workers=workers,
@@ -102,7 +104,13 @@ def build_common_output(
         "simulations": summary["simulations"],
     }
 
-    for cut_size in DEFAULT_ADVANCEMENT_SIZES:
+    ordered_cut_sizes = [
+        cut_size for cut_size in DEFAULT_ADVANCEMENT_SIZES if cut_size in advancement_probability
+    ]
+    ordered_cut_sizes.extend(
+        sorted(set(advancement_probability) - set(ordered_cut_sizes), reverse=True)
+    )
+    for cut_size in ordered_cut_sizes:
         output[f"top_top{cut_size}_probabilities"] = top_probability_rows(
             advancement_probability.get(cut_size, {}),
             player_name_by_id,

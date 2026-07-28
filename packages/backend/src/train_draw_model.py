@@ -24,6 +24,7 @@ from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import LogisticRegression
 
 from ingest import SupabaseClient, load_local_env
+from sim_types import DEFAULT_DRAW_MODEL_FEATURES
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 DEFAULT_CACHE_PATH = DATA_DIR / "draw_model_rich_cache.pkl"
@@ -37,6 +38,8 @@ RESULTS_SELECT = (
 EVENTS_SELECT = "game_id,player_id,rating_before"
 SEATS_SELECT = "game_id,entry_id,seat_position"
 TOURNAMENTS_SELECT = "id,start_date,player_count,name,topdeck_tid,top_cut,state,country"
+TOPDECK_ELOS_SELECT = "player_id,elo"
+ENTRY_COMMANDERS_SELECT = "tournament_id,player_id,commanders(color_identity)"
 
 
 def parse_datetime_value(value: Any) -> datetime:
@@ -148,6 +151,7 @@ class DrawPodRow:
     state_prior_draw_rate: float
     country_prior_draw_rate: float
     count_players_near_cut_band: int
+    winner_index: int = -1
     tournament_id: str = ""
     tournament_name: str = ""
     series_key: str = ""
@@ -235,6 +239,20 @@ class DrawPodRow:
     draw_vs_win_status_same_count: int = 0
     pairwise_mutual_draw_benefit_count: int = 0
     count_players_draw_as_good_as_win_for_bye: int = 0
+    topdeck_elo_spread: float = 0.0
+    topdeck_elo_mean: float = 0.0
+    topdeck_elo_std: float = 0.0
+    topdeck_elo_missing_count: int = 0
+    topdeck_elo_minus_internal_mean: float = 0.0
+    count_white_commanders: int = 0
+    count_blue_commanders: int = 0
+    count_black_commanders: int = 0
+    count_red_commanders: int = 0
+    count_green_commanders: int = 0
+    avg_commander_color_count: float = 0.0
+    max_commander_color_count: int = 0
+    unique_commander_color_count: int = 0
+    commander_color_data_missing_count: int = 0
 
 
 @dataclass(slots=True)
@@ -376,7 +394,29 @@ def load_pods(cache_path: Path) -> list[DrawPodRow] | None:
         return None
     with cache_path.open("rb") as handle:
         raw_rows = pickle.load(handle)
-    return [DrawPodRow(**row) if isinstance(row, dict) else row for row in raw_rows]
+    rows = [DrawPodRow(**row) if isinstance(row, dict) else row for row in raw_rows]
+    defaults = {
+        "winner_index": -1,
+        "topdeck_elo_spread": 0.0,
+        "topdeck_elo_mean": 0.0,
+        "topdeck_elo_std": 0.0,
+        "topdeck_elo_missing_count": 0,
+        "topdeck_elo_minus_internal_mean": 0.0,
+        "count_white_commanders": 0,
+        "count_blue_commanders": 0,
+        "count_black_commanders": 0,
+        "count_red_commanders": 0,
+        "count_green_commanders": 0,
+        "avg_commander_color_count": 0.0,
+        "max_commander_color_count": 0,
+        "unique_commander_color_count": 0,
+        "commander_color_data_missing_count": 0,
+    }
+    for row in rows:
+        for key, value in defaults.items():
+            if not hasattr(row, key):
+                setattr(row, key, value)
+    return rows
 
 
 def save_pods(cache_path: Path, pods: list[DrawPodRow]) -> None:
@@ -451,6 +491,39 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
         for row in events
         if row.get("game_id") and row.get("player_id") and row.get("rating_before") is not None
     }
+
+    print("Fetching TopDeck Elo inputs...", flush=True)
+    topdeck_elo_rows = fetch_or_load_raw_rows(
+        client,
+        "topdeck_player_elos",
+        {"select": TOPDECK_ELOS_SELECT},
+        raw_data_cache_dir=raw_data_cache_dir,
+        label="topdeck_player_elos",
+    )
+    topdeck_elo_by_player_id = {
+        str(row["player_id"]): float(row["elo"])
+        for row in topdeck_elo_rows
+        if row.get("player_id") and row.get("elo") is not None
+    }
+
+    print("Fetching commander color inputs...", flush=True)
+    entry_commander_rows = fetch_or_load_raw_rows(
+        client,
+        "tournament_entries",
+        {"select": ENTRY_COMMANDERS_SELECT},
+        raw_data_cache_dir=raw_data_cache_dir,
+        label="tournament_entries_commanders",
+    )
+    commander_colors_by_entry = {}
+    for row in entry_commander_rows:
+        tournament_id = row.get("tournament_id")
+        player_id = row.get("player_id")
+        commander = row.get("commanders") or {}
+        colors = commander.get("color_identity") or ()
+        if tournament_id and player_id:
+            commander_colors_by_entry[(str(tournament_id), str(player_id))] = tuple(
+                sorted({str(color).upper() for color in colors if color})
+            )
 
     print("Fetching seats...", flush=True)
     seats = fetch_or_load_raw_rows(
@@ -564,6 +637,15 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
         round_name = str(first.get("round_name") or "")
         return (1, bracket_round_sort_value(round_name), round_name, parse_int(first.get("table_number"), 10_000))
 
+    def model_round_number_for_bracket(round_name: str | None, max_round: int | None) -> int:
+        base_round = max_round or 0
+        lowered = str(round_name or "").strip().lower()
+        if lowered == "finals":
+            return base_round + 3
+        if lowered == "semifinals":
+            return base_round + 2
+        return base_round + 1
+
     def score_delta(result: str | None) -> int:
         normalized = str(result or "").lower()
         if normalized == "win":
@@ -633,8 +715,6 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
             round_number = int(raw_round_number) if raw_round_number is not None else None
         except (TypeError, ValueError):
             round_number = None
-        if round_number is None:
-            continue
 
         tournament_id = rows[0].get("tournament_id")
         tournament_id_str = str(tournament_id or "")
@@ -645,14 +725,31 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
         if tournament_id_str:
             last_round_key_by_tournament[tournament_id_str] = current_round_key
         max_round = max_swiss_round.get(str(tournament_id)) if tournament_id else None
+        is_swiss = 1 if round_number is not None else 0
+        model_round_number = (
+            round_number
+            if round_number is not None
+            else model_round_number_for_bracket(rows[0].get("round_name"), max_round)
+        )
         if round_number is not None and max_round and max_round > 1:
             swiss_progress = (round_number - 1) / (max_round - 1)
             rounds_remaining = max(0, max_round - round_number)
         else:
-            swiss_progress = 0.0
+            swiss_progress = 0.0 if is_swiss else 1.0
             rounds_remaining = 0
 
-        is_draw = 1 if any(str(row.get("result") or "") == "draw" for row in rows) else 0
+        has_draw_result = any(str(row.get("result") or "") == "draw" for row in rows)
+        if not is_swiss and has_draw_result:
+            continue
+        is_draw = 1 if is_swiss and has_draw_result else 0
+        winner_index = -1
+        if not is_draw:
+            for index, row in enumerate(rows):
+                if str(row.get("result") or "").lower() == "win":
+                    winner_index = index
+                    break
+            if winner_index < 0:
+                continue
         sorted_ratings = sorted(ratings, reverse=True)
         mean_elo = sum(ratings) / len(ratings)
         median_elo = float(np.median(np.asarray(ratings, dtype=float)))
@@ -972,7 +1069,7 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
         all_players_above_projected_cut_line = 1 if player_points and all(points >= expected_cut_line_points for points in player_points) else 0
         all_players_within_one_point_of_cut_line = 1 if player_points and all(abs(points - expected_cut_line_points) <= 1 for points in player_points) else 0
 
-        round_size_cut_key = (round_number if round_number is not None else -1, size_bucket, cut_size_bucket)
+        round_size_cut_key = (model_round_number, size_bucket, cut_size_bucket)
         round_size_cut_draws, round_size_cut_total = round_size_cut_history[round_size_cut_key]
         round_size_cut_prior_draw_rate_smoothed_100 = smoothed_rate(
             round_size_cut_draws,
@@ -988,7 +1085,6 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
             global_recent_draw_rate_90d,
             100.0,
         )
-        is_swiss = 1 if round_number is not None else 0
         series_swiss_key = (series_key, is_swiss)
         series_swiss_draws, series_swiss_total = series_swiss_history[series_swiss_key]
         series_swiss_prior_draw_rate_smoothed_100 = smoothed_rate(
@@ -1002,6 +1098,19 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
         count_players_with_no_history = sum(1 for games in player_prior_games if games == 0)
         count_players_with_low_history = sum(1 for games in player_prior_games if games < 10)
         count_default_elos = sum(1 for rating in ratings if abs(rating - 1500.0) < 1e-9)
+        topdeck_ratings = [topdeck_elo_by_player_id[player_id] for player_id in player_ids if player_id in topdeck_elo_by_player_id]
+        topdeck_elo_mean = float(sum(topdeck_ratings) / len(topdeck_ratings)) if topdeck_ratings else 0.0
+        topdeck_elo_std = float(np.std(np.asarray(topdeck_ratings, dtype=float))) if topdeck_ratings else 0.0
+        topdeck_elo_spread = float(max(topdeck_ratings) - min(topdeck_ratings)) if len(topdeck_ratings) >= 2 else 0.0
+        topdeck_elo_missing_count = len(player_ids) - len(topdeck_ratings)
+        topdeck_elo_minus_internal_mean = topdeck_elo_mean - mean_elo if topdeck_ratings else 0.0
+        commander_color_sets = [
+            commander_colors_by_entry.get((tournament_id_str, player_id), ())
+            for player_id in player_ids
+        ]
+        commander_color_data_missing_count = sum(1 for colors in commander_color_sets if not colors)
+        commander_color_counts = [len(colors) for colors in commander_color_sets]
+        unique_commander_colors = {color for colors in commander_color_sets for color in colors}
         min_draw_secure_rank = min(pod_draw_secure_ranks) if pod_draw_secure_ranks else 0
         max_draw_secure_rank = max(pod_draw_secure_ranks) if pod_draw_secure_ranks else 0
         bye_rank = topdeck_bye_rank(top_cut)
@@ -1094,6 +1203,7 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
                 game_id=game_id,
                 date=game_date,
                 is_draw=is_draw,
+                winner_index=winner_index,
                 is_swiss=is_swiss,
                 pod_size=len(rows),
                 spread=max(ratings) - min(ratings),
@@ -1113,7 +1223,7 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
                 seat_second=seat_second,
                 top2_adjacent=top2_adjacent,
                 swiss_progress=swiss_progress,
-                round_number=round_number if round_number is not None else -1,
+                round_number=model_round_number,
                 rounds_remaining=rounds_remaining,
                 cut_fraction=cut_fraction,
                 cut_size_bucket=cut_size_bucket,
@@ -1228,9 +1338,9 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
                 all_players_within_one_point_of_cut_line=all_players_within_one_point_of_cut_line,
                 last_round_cut_fraction=cut_fraction if is_last_swiss_round else 0.0,
                 penultimate_round_cut_fraction=cut_fraction if is_penultimate_swiss_round else 0.0,
-                round_number_size_bucket=float((round_number if round_number is not None else -1) * (size_bucket + 1)),
+                round_number_size_bucket=float(model_round_number * (size_bucket + 1)),
                 last_round_size_bucket=size_bucket if is_last_swiss_round else 0,
-                round_size_cut_bucket_key=((round_number if round_number is not None else -1) * 100) + (size_bucket * 10) + cut_size_bucket,
+                round_size_cut_bucket_key=(model_round_number * 100) + (size_bucket * 10) + cut_size_bucket,
                 round_size_cut_prior_draw_rate_smoothed_100=round_size_cut_prior_draw_rate_smoothed_100,
                 decisive_win_probability_entropy=decisive_entropy,
                 max_decisive_win_probability=decisive_max,
@@ -1238,7 +1348,7 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
                 decisive_win_probability_spread=decisive_spread,
                 any_repeat_pair=1 if count_repeat_pairs > 0 else 0,
                 count_repeat_pairs=count_repeat_pairs,
-                pod_size_round_number=float(len(rows) * (round_number if round_number is not None else -1)),
+                pod_size_round_number=float(len(rows) * model_round_number),
                 pod_size_is_last_swiss_round=len(rows) if is_last_swiss_round else 0,
                 pod_size_cut_fraction=float(len(rows) * cut_fraction),
                 pod_size_series_prior_draw_rate=float(len(rows) * series_prior_draw_rate),
@@ -1283,6 +1393,24 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
                 draw_vs_win_status_same_count=draw_vs_win_status_same_count,
                 pairwise_mutual_draw_benefit_count=pairwise_mutual_draw_benefit_count,
                 count_players_draw_as_good_as_win_for_bye=count_players_draw_as_good_as_win_for_bye,
+                topdeck_elo_spread=topdeck_elo_spread,
+                topdeck_elo_mean=topdeck_elo_mean,
+                topdeck_elo_std=topdeck_elo_std,
+                topdeck_elo_missing_count=topdeck_elo_missing_count,
+                topdeck_elo_minus_internal_mean=topdeck_elo_minus_internal_mean,
+                count_white_commanders=sum(1 for colors in commander_color_sets if "W" in colors),
+                count_blue_commanders=sum(1 for colors in commander_color_sets if "U" in colors),
+                count_black_commanders=sum(1 for colors in commander_color_sets if "B" in colors),
+                count_red_commanders=sum(1 for colors in commander_color_sets if "R" in colors),
+                count_green_commanders=sum(1 for colors in commander_color_sets if "G" in colors),
+                avg_commander_color_count=(
+                    float(sum(commander_color_counts) / len(commander_color_counts))
+                    if commander_color_counts
+                    else 0.0
+                ),
+                max_commander_color_count=max(commander_color_counts) if commander_color_counts else 0,
+                unique_commander_color_count=len(unique_commander_colors),
+                commander_color_data_missing_count=commander_color_data_missing_count,
             )
         )
 
@@ -1819,7 +1947,14 @@ def main() -> None:
         "draw_vs_win_status_same_count",
         "pairwise_mutual_draw_benefit_count",
         "count_players_draw_as_good_as_win_for_bye",
+        "topdeck_elo_spread",
+        "topdeck_elo_mean",
+        "topdeck_elo_std",
+        "topdeck_elo_missing_count",
+        "topdeck_elo_minus_internal_mean",
     ]
+    default_feature_names = set(DEFAULT_DRAW_MODEL_FEATURES)
+    full_features = [feature for feature in full_features if feature in default_feature_names]
     raw_series_features = {"series_prior_draw_rate", "series_events_seen"}
     smoothed_series_features = {
         "series_prior_draw_rate_smoothed_50",
@@ -1994,6 +2129,10 @@ def main() -> None:
         for feature in feature_sets["projected_cut_only"]
         if feature not in v11_direct_incentive_features or feature in v11b_core_direct_incentive_features
     ]
+    feature_sets = {
+        name: [feature for feature in features if feature in default_feature_names]
+        for name, features in feature_sets.items()
+    }
 
     base_params = {
         "learning_rate": 0.08,

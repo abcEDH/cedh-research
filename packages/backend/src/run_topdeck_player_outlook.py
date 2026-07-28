@@ -26,12 +26,12 @@ from sim_engine import (
     clone_state,
     simulate_from_state,
     simulate_pod,
+    simulate_swiss,
 )
 from sim_models import (
     build_round_snapshot,
     load_draw_model_artifact,
-    predict_decisive_win_probabilities,
-    predict_draw_probabilities,
+    predict_pod_outcome_probabilities,
 )
 from sim_pairings import select_top_cut, sort_standings_rows
 from sim_types import Pod, PodResult
@@ -137,8 +137,13 @@ def simulate_distribution(
         rng = random.Random(seed + simulation_index)
         state = clone_state(base_state)
         round_snapshot = build_round_snapshot(state, tournament_context, active_round_index + 1)
-        draw_probabilities = predict_draw_probabilities(active_round_pods, state, tournament_context, draw_model, round_snapshot)
-        win_probabilities = predict_decisive_win_probabilities(active_round_pods, state)
+        draw_probabilities, win_probabilities = predict_pod_outcome_probabilities(
+            active_round_pods,
+            state,
+            tournament_context,
+            draw_model,
+            round_snapshot,
+        )
         round_results: list[PodResult] = []
         for pod in active_round_pods:
             pod_key = (pod.round_index, pod.table_number)
@@ -170,6 +175,84 @@ def simulate_distribution(
     return normalize_distribution(standing_counts, simulations), tournament_wins / simulations
 
 
+def top_cut_probability_from_distribution(distribution: dict[str, float], top_cut: int) -> float:
+    return sum(probability for rank, probability in distribution.items() if int(rank) <= top_cut)
+
+
+def simulate_top_cut_probability_given_current_result(
+    base_state,
+    active_round_index: int,
+    active_round_pods: list[Pod],
+    target_player_id: str,
+    target_pod: Pod,
+    draw_model,
+    draw_probabilities: dict[tuple[int, int], float],
+    win_probabilities: dict[tuple[int, int], tuple[float, ...]],
+    *,
+    simulations: int,
+    seed: int,
+    forced_outcome: str,
+) -> float:
+    top_cut_hits = 0
+    tournament_context = build_tournament_context(base_state.spec)
+    for simulation_index in range(simulations):
+        rng = random.Random(seed + simulation_index)
+        state = clone_state(base_state)
+        for pod in active_round_pods:
+            pod_key = (pod.round_index, pod.table_number)
+            pod_draw_probability = draw_probabilities[pod_key]
+            pod_win_probabilities = win_probabilities[pod_key]
+            if pod.table_number == target_pod.table_number:
+                result = force_target_pod_result(
+                    pod,
+                    target_player_id,
+                    forced_outcome,
+                    pod_draw_probability,
+                    pod_win_probabilities,
+                    rng,
+                )
+            else:
+                result = simulate_pod(pod, rng, pod_draw_probability, pod_win_probabilities)
+            apply_pod_result(state, result)
+        state.current_round_index = active_round_index + 1
+        simulate_swiss(
+            state,
+            rng,
+            draw_model,
+            tournament_context,
+            start_round_index=active_round_index + 1,
+            locked_round_pods=None,
+        )
+        if target_player_id in set(select_top_cut(state, rng=rng)):
+            top_cut_hits += 1
+    return top_cut_hits / simulations
+
+
+def simulate_top_cut_probability_from_current_state(
+    base_state,
+    active_round_index: int,
+    active_round_pods: list[Pod] | None,
+    target_player_id: str,
+    draw_model,
+    *,
+    simulations: int,
+    seed: int,
+) -> float:
+    top_cut_hits = 0
+    for simulation_index in range(simulations):
+        state = clone_state(base_state)
+        state, _, top_cut, _ = simulate_from_state(
+            state,
+            draw_model,
+            seed=seed + simulation_index,
+            start_round_index=active_round_index,
+            locked_round_pods=active_round_pods,
+        )
+        if target_player_id in set(top_cut):
+            top_cut_hits += 1
+    return top_cut_hits / simulations
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--event-id", required=True)
@@ -185,7 +268,7 @@ def main() -> None:
     load_local_env()
     topdeck = TopDeckClient(os.environ["TOPDECK_API_KEY"])
     tournament = topdeck.get_tournament(args.event_id)
-    event_html = fetch_event_page_html(args.event_id)
+    event_html = "" if args.swiss_rounds is not None and args.top_cut is not None else fetch_event_page_html(args.event_id)
     swiss_rounds, top_cut = infer_structure(
         tournament,
         event_html,
@@ -204,97 +287,25 @@ def main() -> None:
     }
     known_player_ids = [record["id"] for record in player_records.values() if not record["id"].startswith("topdeck:")]
     feature_context = build_feature_context(client, known_player_ids, start_date.isoformat()) if known_player_ids else None
-    state, active_round_index, active_round_pods = build_base_state(
+    state, active_round_index, active_round_pods, _ = build_base_state(
         client,
         tournament,
         swiss_rounds=swiss_rounds,
         top_cut=top_cut,
         feature_context=feature_context,
         player_records=player_records,
+        repeat_avoidance_max_pods=32,
     )
-    if not active_round_pods or active_round_index >= swiss_rounds:
-        raise RuntimeError("This script currently supports active Swiss rounds with posted pods")
-
+    state.fast_live_mode = True
+    state.track_round_stats = False
     target_player_id = resolve_target_player_id(
         player_records,
         player_topdeck_id=args.player_topdeck_id,
         player_id=args.player_id,
     )
-    target_pod = next((pod for pod in active_round_pods if target_player_id in pod.player_ids), None)
-    if target_pod is None:
-        raise RuntimeError("Target player is not in a currently posted active Swiss pod")
 
     draw_model = load_draw_model_artifact(args.draw_model_path)
-    tournament_context = __import__("sim_engine").build_tournament_context(state.spec)
-    round_snapshot = build_round_snapshot(state, tournament_context, active_round_index + 1)
-    draw_probabilities = predict_draw_probabilities(active_round_pods, state, tournament_context, draw_model, round_snapshot)
-    win_probabilities = predict_decisive_win_probabilities(active_round_pods, state)
-    pod_key = (target_pod.round_index, target_pod.table_number)
-    pod_draw_probability = draw_probabilities[pod_key]
-    pod_win_probabilities = win_probabilities[pod_key]
-
-    table_players = []
-    for player_id, decisive_probability in zip(target_pod.player_ids, pod_win_probabilities, strict=True):
-        overall_win_probability = (1.0 - pod_draw_probability) * decisive_probability
-        table_players.append(
-            {
-                "player_id": player_id,
-                "name": state.players[player_id].name,
-                "decisive_win_probability": decisive_probability,
-                "overall_pod_win_probability": overall_win_probability,
-            }
-        )
-
-    final_distribution, tournament_win_probability = simulate_distribution(
-        state,
-        active_round_index,
-        active_round_pods,
-        target_player_id,
-        target_pod,
-        draw_model,
-        simulations=args.simulations,
-        seed=args.seed,
-        forced_outcome=None,
-    )
-    distribution_given_win, tournament_win_given_win = simulate_distribution(
-        state,
-        active_round_index,
-        active_round_pods,
-        target_player_id,
-        target_pod,
-        draw_model,
-        simulations=args.simulations,
-        seed=args.seed + 1_000_000,
-        forced_outcome="win",
-    )
-    distribution_given_loss, tournament_win_given_loss = simulate_distribution(
-        state,
-        active_round_index,
-        active_round_pods,
-        target_player_id,
-        target_pod,
-        draw_model,
-        simulations=args.simulations,
-        seed=args.seed + 2_000_000,
-        forced_outcome="loss",
-    )
-    distribution_given_draw, tournament_win_given_draw = simulate_distribution(
-        state,
-        active_round_index,
-        active_round_pods,
-        target_player_id,
-        target_pod,
-        draw_model,
-        simulations=args.simulations,
-        seed=args.seed + 3_000_000,
-        forced_outcome="draw",
-    )
-
     currently_in_top_cut = target_player_id in set(select_top_cut(state))
-    target_overall_pod_win_probability = next(
-        player["overall_pod_win_probability"] for player in table_players if player["player_id"] == target_player_id
-    )
-
     output = {
         "tournament": {
             "id": state.spec.tournament_id,
@@ -308,31 +319,103 @@ def main() -> None:
             "name": state.players[target_player_id].name,
             "currently_in_top_cut": currently_in_top_cut,
         },
-        "current_round": {
+        "target_player": {
+            "top_cut_probability_current_state": simulate_top_cut_probability_from_current_state(
+                state,
+                active_round_index,
+                active_round_pods,
+                target_player_id,
+                draw_model,
+                simulations=args.simulations,
+                seed=args.seed,
+            ),
+        },
+        "simulations": args.simulations,
+    }
+
+    target_pod = next((pod for pod in active_round_pods or [] if target_player_id in pod.player_ids), None)
+    if target_pod is not None:
+        tournament_context = __import__("sim_engine").build_tournament_context(state.spec)
+        round_snapshot = build_round_snapshot(state, tournament_context, active_round_index + 1)
+        draw_probabilities, win_probabilities = predict_pod_outcome_probabilities(
+            active_round_pods or [],
+            state,
+            tournament_context,
+            draw_model,
+            round_snapshot,
+        )
+        pod_key = (target_pod.round_index, target_pod.table_number)
+        pod_draw_probability = draw_probabilities[pod_key]
+        pod_win_probabilities = win_probabilities[pod_key]
+        table_players = []
+        for player_id, decisive_probability in zip(target_pod.player_ids, pod_win_probabilities, strict=True):
+            overall_win_probability = (1.0 - pod_draw_probability) * decisive_probability
+            table_players.append(
+                {
+                    "player_id": player_id,
+                    "name": state.players[player_id].name,
+                    "decisive_win_probability": decisive_probability,
+                    "overall_pod_win_probability": overall_win_probability,
+                }
+            )
+        target_overall_pod_win_probability = next(
+            player["overall_pod_win_probability"] for player in table_players if player["player_id"] == target_player_id
+        )
+        output["current_round"] = {
             "round_number": active_round_index + 1,
             "table_number": target_pod.table_number,
             "draw_probability": pod_draw_probability,
             "table_win_probabilities": table_players,
-        },
-        "final_swiss_standing_distribution": final_distribution,
-        "final_swiss_standing_distribution_given_win": distribution_given_win,
-        "final_swiss_standing_distribution_given_loss": distribution_given_loss,
-        "final_swiss_standing_distribution_given_draw": distribution_given_draw,
-        "target_player": {
-            "current_pod_win_probability": target_overall_pod_win_probability,
-            "current_pod_loss_probability": max(
-                0.0,
-                1.0 - pod_draw_probability - target_overall_pod_win_probability,
-            ),
-            "current_pod_draw_probability": pod_draw_probability,
-        },
-        "simulations": args.simulations,
-    }
-    if currently_in_top_cut:
-        output["target_player"]["tournament_win_probability"] = tournament_win_probability
-        output["target_player"]["tournament_win_probability_given_win"] = tournament_win_given_win
-        output["target_player"]["tournament_win_probability_given_loss"] = tournament_win_given_loss
-        output["target_player"]["tournament_win_probability_given_draw"] = tournament_win_given_draw
+        }
+        output["target_player"].update(
+            {
+                "current_pod_win_probability": target_overall_pod_win_probability,
+                "current_pod_loss_probability": max(
+                    0.0,
+                    1.0 - pod_draw_probability - target_overall_pod_win_probability,
+                ),
+                "current_pod_draw_probability": pod_draw_probability,
+                "top_cut_probability_given_win": simulate_top_cut_probability_given_current_result(
+                    state,
+                    active_round_index,
+                    active_round_pods or [],
+                    target_player_id,
+                    target_pod,
+                    draw_model,
+                    draw_probabilities,
+                    win_probabilities,
+                    simulations=args.simulations,
+                    seed=args.seed + 1_000_000,
+                    forced_outcome="win",
+                ),
+                "top_cut_probability_given_loss": simulate_top_cut_probability_given_current_result(
+                    state,
+                    active_round_index,
+                    active_round_pods or [],
+                    target_player_id,
+                    target_pod,
+                    draw_model,
+                    draw_probabilities,
+                    win_probabilities,
+                    simulations=args.simulations,
+                    seed=args.seed + 2_000_000,
+                    forced_outcome="loss",
+                ),
+                "top_cut_probability_given_draw": simulate_top_cut_probability_given_current_result(
+                    state,
+                    active_round_index,
+                    active_round_pods or [],
+                    target_player_id,
+                    target_pod,
+                    draw_model,
+                    draw_probabilities,
+                    win_probabilities,
+                    simulations=args.simulations,
+                    seed=args.seed + 3_000_000,
+                    forced_outcome="draw",
+                ),
+            }
+        )
 
     print(json.dumps(output, indent=2))
 

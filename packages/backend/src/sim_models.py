@@ -7,6 +7,7 @@ import pickle
 import re
 import os
 from bisect import bisect_left
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -27,7 +28,13 @@ from sim_types import ALL_DRAW_FEATURES, FeatureContext, Pod, RoundFeatureSnapsh
 
 ELO_BASE = 2.0
 ELO_DIVISOR = 200.0
-DEFAULT_DRAW_MODEL_PATH = Path(__file__).resolve().parents[1] / "data" / "draw_model_artifact.pkl"
+DEFAULT_DRAW_MODEL_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "reports"
+    / "pod-outcome-model"
+    / "v4"
+    / "pod_outcome_model_artifact_v4_draw_elo_hybrid.pkl"
+)
 SEAT_ELO_BONUS = {
     1: 0.0,
     2: -52.0,
@@ -43,6 +50,50 @@ class LoadedDrawModel:
     calibration: str
     calibrator: Any | None = None
     feature_indexes: np.ndarray | None = None
+    target: str = "draw"
+    classes: tuple[int, ...] = ()
+    draw_class: int = 1
+    winner_source: str = "external"
+
+
+@dataclass(slots=True)
+class LoadedCandidateWinnerModel:
+    features: list[str]
+    model: Any
+    blend_weight: float = 1.0
+    model_type: str = "hist_gradient_boosting"
+    classes: tuple[int, ...] = ()
+
+
+CANDIDATE_WINNER_FEATURES = [
+    "pod_size",
+    "is_swiss",
+    "round_number",
+    "swiss_progress",
+    "is_last_swiss_round",
+    "is_penultimate_swiss_round",
+    "tournament_size",
+    "cut_fraction",
+    "size_bucket",
+    "candidate_seat",
+    "candidate_has_seat",
+    "candidate_seat_bonus",
+    "candidate_elo",
+    "candidate_effective_elo",
+    "candidate_elo_share",
+    "candidate_elo_rank",
+    "candidate_elo_percentile",
+    "candidate_gap_to_best",
+    "candidate_gap_to_second",
+    "candidate_gap_to_mean",
+    "candidate_gap_to_min",
+    "candidate_is_best_elo",
+    "candidate_is_second_elo",
+    "candidate_is_worst_elo",
+    "pod_elo_spread",
+    "pod_elo_mean",
+    "pod_elo_std",
+]
 
 
 def normalize_series_key(name: str | None) -> str:
@@ -102,17 +153,77 @@ def smoothed_rate(successes: float, total: float, fallback_rate: float, prior_we
     return (successes + (fallback_rate * prior_weight)) / (total + prior_weight)
 
 
+def outcome_v3_family_flags(series_key: str | None, tournament_name: str | None) -> dict[str, float]:
+    text = f"{series_key or ''} {tournament_name or ''}".lower()
+    topdeck_invitational = 1.0 if "topdeck invitational" in text else 0.0
+    midseason_showdown = 1.0 if "midseason showdown" in text or "mid season showdown" in text else 0.0
+    commander_invitational = 1.0 if "commander invitational" in text else 0.0
+    invitational_like = 1.0 if "invitational" in text else 0.0
+    championship_like = 1.0 if "championship" in text or "championships" in text else 0.0
+    qualifier_like = 1.0 if "qualifier" in text or "qualification" in text else 0.0
+    redemption_like = 1.0 if "redemption" in text else 0.0
+    league_like = 1.0 if "league" in text else 0.0
+    open_like = 1.0 if "open" in text else 0.0
+    high_stakes_like = max(
+        topdeck_invitational,
+        midseason_showdown,
+        commander_invitational,
+        invitational_like,
+        championship_like,
+        qualifier_like,
+        redemption_like,
+    )
+    return {
+        "is_topdeck_invitational_family": topdeck_invitational,
+        "is_midseason_showdown_family": midseason_showdown,
+        "is_commander_invitational_family": commander_invitational,
+        "is_invitational_like_family": invitational_like,
+        "is_championship_like_family": championship_like,
+        "is_qualifier_like_family": qualifier_like,
+        "is_redemption_like_family": redemption_like,
+        "is_league_like_family": league_like,
+        "is_open_like_family": open_like,
+        "is_high_stakes_like_family": high_stakes_like,
+    }
+
+
 def load_draw_model_artifact(path: Path | str = DEFAULT_DRAW_MODEL_PATH) -> LoadedDrawModel:
     with Path(path).open("rb") as handle:
         artifact = pickle.load(handle)
     selection = artifact["selection"]
     feature_indexes = np.asarray([ALL_DRAW_FEATURES.index(feature) for feature in selection["features"]], dtype=int)
+    target = str(artifact.get("target") or "draw")
     return LoadedDrawModel(
         features=list(selection["features"]),
         model=artifact["model"],
         calibration=str(artifact.get("calibration") or "uncalibrated"),
         calibrator=artifact.get("calibrator"),
         feature_indexes=feature_indexes,
+        target=target,
+        classes=tuple(int(value) for value in artifact.get("classes", ())),
+        draw_class=int(artifact.get("draw_class", 0 if target == "pod_outcome" else 1)),
+        winner_source=str(
+            artifact.get(
+                "winner_source",
+                "artifact" if target == "pod_outcome" else "external",
+            )
+        ),
+    )
+
+
+def load_candidate_winner_model_artifact(path: Path | str) -> LoadedCandidateWinnerModel:
+    with Path(path).open("rb") as handle:
+        artifact = pickle.load(handle)
+    features = list(artifact.get("features") or artifact.get("candidate_features") or CANDIDATE_WINNER_FEATURES)
+    unknown_features = [feature for feature in features if feature not in CANDIDATE_WINNER_FEATURES]
+    if unknown_features:
+        raise ValueError(f"candidate winner artifact references unknown features: {unknown_features}")
+    return LoadedCandidateWinnerModel(
+        features=features,
+        model=artifact["model"],
+        blend_weight=max(0.0, min(1.0, float(artifact.get("blend_weight", artifact.get("selected_blend_weight", 1.0))))),
+        model_type=str(artifact.get("model_type") or "hist_gradient_boosting"),
+        classes=tuple(int(value) for value in artifact.get("classes", ())),
     )
 
 
@@ -298,6 +409,25 @@ def build_draw_feature_row(
 ) -> np.ndarray:
     player_ids = pod.player_ids
     ratings = [state.players[player_id].elo for player_id in player_ids]
+    topdeck_ratings = [
+        state.players[player_id].topdeck_elo
+        for player_id in player_ids
+        if state.players[player_id].topdeck_elo is not None
+    ]
+    topdeck_elo_mean = small_mean([float(rating) for rating in topdeck_ratings])
+    topdeck_elo_std = small_std([float(rating) for rating in topdeck_ratings])
+    topdeck_elo_spread = (
+        float(max(topdeck_ratings) - min(topdeck_ratings)) if len(topdeck_ratings) >= 2 else 0.0
+    )
+    topdeck_elo_missing_count = len(player_ids) - len(topdeck_ratings)
+    topdeck_elo_minus_internal_mean = topdeck_elo_mean - small_mean(ratings) if topdeck_ratings else 0.0
+    commander_color_sets = [
+        tuple(sorted({color.upper() for color in state.players[player_id].commander_colors if color}))
+        for player_id in player_ids
+    ]
+    commander_color_data_missing_count = sum(1 for colors in commander_color_sets if not colors)
+    commander_color_counts = [len(colors) for colors in commander_color_sets]
+    unique_commander_colors = sorted({color for colors in commander_color_sets for color in colors})
     sorted_ratings = sorted(ratings, reverse=True)
     mean_elo = small_mean(ratings)
     median_elo = small_median(ratings)
@@ -552,11 +682,17 @@ def build_draw_feature_row(
     series_smoothed_100 = smoothed_rate(series_draws, series_total, feature_context.global_recent_draw_rate_90d, 100.0)
     series_smoothed_250 = smoothed_rate(series_draws, series_total, feature_context.global_recent_draw_rate_90d, 250.0)
     series_smoothed_500 = smoothed_rate(series_draws, series_total, feature_context.global_recent_draw_rate_90d, 500.0)
+    family_flags = outcome_v3_family_flags(context.series_key, state.spec.name)
+    series_minus_global_prior = feature_context.series_prior_draw_rate - feature_context.global_recent_draw_rate_90d
+    high_stakes_like = family_flags["is_high_stakes_like_family"]
+    high1700 = float(high_thresholds["high1700"])
+    high1800 = float(high_thresholds["high1800"])
+    pod_size = len(player_ids)
 
     return np.asarray(
         [
             1.0,
-            float(len(player_ids)),
+            float(pod_size),
             max(ratings) - min(ratings),
             mean_elo,
             median_elo,
@@ -736,9 +872,219 @@ def build_draw_feature_row(
             float(draw_vs_win_status_same_count),
             float(pairwise_mutual_draw_benefit_count),
             float(count_players_draw_as_good_as_win_for_bye),
+            topdeck_elo_spread,
+            topdeck_elo_mean,
+            topdeck_elo_std,
+            float(topdeck_elo_missing_count),
+            topdeck_elo_minus_internal_mean,
+            float(sum(1 for colors in commander_color_sets if "W" in colors)),
+            float(sum(1 for colors in commander_color_sets if "U" in colors)),
+            float(sum(1 for colors in commander_color_sets if "B" in colors)),
+            float(sum(1 for colors in commander_color_sets if "R" in colors)),
+            float(sum(1 for colors in commander_color_sets if "G" in colors)),
+            small_mean([float(count) for count in commander_color_counts]),
+            float(max(commander_color_counts) if commander_color_counts else 0),
+            float(len(unique_commander_colors)),
+            float(commander_color_data_missing_count),
+            family_flags["is_topdeck_invitational_family"],
+            family_flags["is_midseason_showdown_family"],
+            family_flags["is_commander_invitational_family"],
+            family_flags["is_invitational_like_family"],
+            family_flags["is_championship_like_family"],
+            family_flags["is_qualifier_like_family"],
+            family_flags["is_redemption_like_family"],
+            family_flags["is_league_like_family"],
+            family_flags["is_open_like_family"],
+            high_stakes_like,
+            float(high_thresholds["high1600"]) * round_snapshot.cut_fraction,
+            high1700 * round_snapshot.cut_fraction,
+            high1800 * round_snapshot.cut_fraction,
+            high1700 * feature_context.series_prior_draw_rate,
+            high1800 * feature_context.series_prior_draw_rate,
+            1.0 if pod_size > 0 and high1700 >= pod_size else 0.0,
+            1.0 if pod_size > 0 and high1800 >= pod_size else 0.0,
+            top2_mean_elo * feature_context.series_prior_draw_rate,
+            top3_mean_elo * feature_context.series_prior_draw_rate,
+            top3_mean_elo * float(round_number),
+            mean_elo * feature_context.global_recent_draw_rate_90d,
+            series_minus_global_prior,
+            abs(series_minus_global_prior),
+            family_flags["is_topdeck_invitational_family"] * feature_context.series_prior_draw_rate,
+            family_flags["is_midseason_showdown_family"] * feature_context.series_prior_draw_rate,
+            family_flags["is_invitational_like_family"] * feature_context.series_prior_draw_rate,
+            high_stakes_like * feature_context.series_prior_draw_rate,
+            family_flags["is_invitational_like_family"] * high1700,
+            high_stakes_like * high1700,
+            high_stakes_like * round_snapshot.cut_fraction,
+            high_stakes_like * float(round_number),
+            float(count_must_win_for_cut + count_must_win_for_bye),
+            1.0 if all_players_draw_lock_cut or all_players_draw_lock_bye else 0.0,
+            1.0 if draw_hurts_any_player_cut_status or draw_hurts_any_player_bye_status else 0.0,
+            1.0 if pod_has_asymmetric_cut_incentive or pod_has_asymmetric_bye_incentive else 0.0,
+            float(draw_vs_win_status_same_count + count_players_draw_as_good_as_win_for_bye),
+            float(count_players_win_only_live + count_players_win_only_live_for_bye),
         ],
         dtype=float,
     )
+
+
+def normalize_probability_tuple(probabilities: list[float], size: int) -> tuple[float, ...]:
+    values = [max(0.0, float(probability)) for probability in probabilities[:size]]
+    if len(values) < size:
+        values.extend([0.0] * (size - len(values)))
+    total = sum(values)
+    if total <= 0:
+        return tuple([1.0 / size] * size) if size > 0 else tuple()
+    return tuple(value / total for value in values)
+
+
+def _model_class_labels(model: Any, stored_classes: tuple[int, ...], class_count: int) -> list[int]:
+    raw_classes = getattr(model, "classes_", stored_classes)
+    labels = [int(value) for value in raw_classes] if raw_classes is not None else []
+    if len(labels) == class_count:
+        return labels
+    if class_count == 2:
+        return [0, 1]
+    return list(range(class_count))
+
+
+def _candidate_seat_bonus(seat: int | None, *, use_seat_bonus: bool) -> float:
+    if seat is None or not use_seat_bonus:
+        return 0.0
+    return float(SEAT_ELO_BONUS.get(seat, 0.0))
+
+
+def build_candidate_winner_feature_row(
+    pod: Pod,
+    state: TournamentState,
+    context: TournamentContext,
+    round_snapshot: RoundFeatureSnapshot,
+    player_id: str,
+    elo_shares: dict[str, float],
+) -> np.ndarray:
+    player_ids = [candidate_id for candidate_id in pod.player_ids if candidate_id in state.players]
+    pod_size = len(player_ids)
+    seats = pod.seats_by_player or {}
+    seat_values = [seats.get(candidate_id) for candidate_id in player_ids]
+    use_seat_bonus = pod_size == 4 and all(seat is not None for seat in seat_values) and sorted(seat_values) == [1, 2, 3, 4]
+
+    effective_elos: dict[str, float] = {}
+    for candidate_id in player_ids:
+        seat = seats.get(candidate_id)
+        effective_elos[candidate_id] = float(state.players[candidate_id].elo) + _candidate_seat_bonus(
+            seat,
+            use_seat_bonus=use_seat_bonus,
+        )
+
+    raw_seat = seats.get(player_id)
+    candidate_elo = float(state.players[player_id].elo)
+    candidate_seat_bonus = _candidate_seat_bonus(raw_seat, use_seat_bonus=use_seat_bonus)
+    candidate_effective_elo = candidate_elo + candidate_seat_bonus
+    sorted_elos = sorted(effective_elos.values(), reverse=True)
+    candidate_rank = 1 + sum(1 for value in effective_elos.values() if value > candidate_effective_elo)
+    candidate_percentile = 1.0 if pod_size <= 1 else 1.0 - ((candidate_rank - 1) / (pod_size - 1))
+    best_elo = sorted_elos[0] if sorted_elos else candidate_effective_elo
+    second_elo = sorted_elos[1] if len(sorted_elos) > 1 else best_elo
+    min_elo = sorted_elos[-1] if sorted_elos else candidate_effective_elo
+    mean_elo = small_mean(sorted_elos)
+    std_elo = small_std(sorted_elos)
+    is_swiss = pod.round_index < state.spec.swiss_rounds
+    swiss_progress = round_snapshot.swiss_progress if is_swiss else 1.0
+
+    values = {
+        "pod_size": float(pod_size),
+        "is_swiss": 1.0 if is_swiss else 0.0,
+        "round_number": float(pod.round_index + 1),
+        "swiss_progress": float(swiss_progress),
+        "is_last_swiss_round": 1.0 if is_swiss and pod.round_index == state.spec.swiss_rounds - 1 else 0.0,
+        "is_penultimate_swiss_round": 1.0 if is_swiss and pod.round_index == state.spec.swiss_rounds - 2 else 0.0,
+        "tournament_size": float(context_top_size(context, len(state.players))),
+        "cut_fraction": float(round_snapshot.cut_fraction),
+        "size_bucket": float(round_snapshot.size_bucket),
+        "candidate_seat": float(raw_seat or 0),
+        "candidate_has_seat": 1.0 if raw_seat is not None else 0.0,
+        "candidate_seat_bonus": candidate_seat_bonus,
+        "candidate_elo": candidate_elo,
+        "candidate_effective_elo": candidate_effective_elo,
+        "candidate_elo_share": float(elo_shares.get(player_id, 1.0 / max(1, pod_size))),
+        "candidate_elo_rank": float(candidate_rank),
+        "candidate_elo_percentile": float(candidate_percentile),
+        "candidate_gap_to_best": candidate_effective_elo - best_elo,
+        "candidate_gap_to_second": candidate_effective_elo - second_elo,
+        "candidate_gap_to_mean": candidate_effective_elo - mean_elo,
+        "candidate_gap_to_min": candidate_effective_elo - min_elo,
+        "candidate_is_best_elo": 1.0 if candidate_rank == 1 else 0.0,
+        "candidate_is_second_elo": 1.0 if candidate_rank == 2 else 0.0,
+        "candidate_is_worst_elo": 1.0 if candidate_rank == pod_size else 0.0,
+        "pod_elo_spread": best_elo - min_elo,
+        "pod_elo_mean": mean_elo,
+        "pod_elo_std": std_elo,
+    }
+    return np.asarray([values[feature] for feature in CANDIDATE_WINNER_FEATURES], dtype=float)
+
+
+def predict_candidate_winner_probabilities(
+    pods: list[Pod],
+    state: TournamentState,
+    context: TournamentContext,
+    winner_model: LoadedCandidateWinnerModel,
+) -> dict[tuple[int, int], tuple[float, ...]]:
+    if not pods:
+        return {}
+
+    elo_probabilities = predict_decisive_win_probabilities(pods, state)
+    rows: list[np.ndarray] = []
+    row_refs: list[tuple[Pod, str]] = []
+    round_snapshots: dict[int, RoundFeatureSnapshot] = {}
+    for pod in pods:
+        round_number = pod.round_index + 1
+        round_snapshot = round_snapshots.get(round_number)
+        if round_snapshot is None:
+            round_snapshot = build_round_snapshot(state, context, round_number)
+            round_snapshots[round_number] = round_snapshot
+        elo_shares = {
+            player_id: probability
+            for player_id, probability in zip(
+                pod.player_ids,
+                elo_probabilities.get((pod.round_index, pod.table_number), ()),
+                strict=False,
+            )
+        }
+        for player_id in pod.player_ids:
+            rows.append(build_candidate_winner_feature_row(pod, state, context, round_snapshot, player_id, elo_shares))
+            row_refs.append((pod, player_id))
+
+    if not rows:
+        return {}
+
+    feature_indexes = [CANDIDATE_WINNER_FEATURES.index(feature) for feature in winner_model.features]
+    x_matrix = np.vstack(rows)[:, feature_indexes]
+    probabilities = winner_model.model.predict_proba(x_matrix)
+    model_classes = [int(value) for value in getattr(winner_model.model, "classes_", winner_model.classes)]
+    positive_index = model_classes.index(1) if 1 in model_classes else -1
+
+    raw_scores_by_pod: dict[tuple[int, int], dict[str, float]] = defaultdict(dict)
+    for (pod, player_id), row_probabilities in zip(row_refs, probabilities, strict=False):
+        score = float(row_probabilities[positive_index]) if positive_index >= 0 else 0.0
+        raw_scores_by_pod[(pod.round_index, pod.table_number)][player_id] = max(0.0, score)
+
+    output: dict[tuple[int, int], tuple[float, ...]] = {}
+    for pod in pods:
+        key = (pod.round_index, pod.table_number)
+        normalized_candidate = normalize_probability_tuple(
+            [raw_scores_by_pod.get(key, {}).get(player_id, 0.0) for player_id in pod.player_ids],
+            len(pod.player_ids),
+        )
+        elo_tuple = elo_probabilities.get(key, tuple([1.0 / len(pod.player_ids)] * len(pod.player_ids)))
+        weight = winner_model.blend_weight
+        output[key] = normalize_probability_tuple(
+            [
+                (weight * candidate_probability) + ((1.0 - weight) * elo_probability)
+                for candidate_probability, elo_probability in zip(normalized_candidate, elo_tuple, strict=False)
+            ],
+            len(pod.player_ids),
+        )
+    return output
 
 
 def predict_draw_probabilities(
@@ -752,16 +1098,74 @@ def predict_draw_probabilities(
         return {}
     full_matrix = np.vstack([build_draw_feature_row(pod, state, context, round_snapshot) for pod in pods])
     x_matrix = full_matrix[:, draw_model.feature_indexes]
-    probabilities = draw_model.model.predict_proba(x_matrix)[:, 1]
+    probability_matrix = draw_model.model.predict_proba(x_matrix)
+    model_classes = _model_class_labels(draw_model.model, draw_model.classes, probability_matrix.shape[1])
+    if draw_model.draw_class in model_classes:
+        probabilities = probability_matrix[:, model_classes.index(draw_model.draw_class)].astype(float)
+    else:
+        probabilities = np.zeros(x_matrix.shape[0], dtype=float)
     if draw_model.calibrator is not None:
         if draw_model.calibration == "platt":
             probabilities = draw_model.calibrator.predict_proba(probabilities.reshape(-1, 1))[:, 1]
         else:
             probabilities = draw_model.calibrator.predict(probabilities)
-    return {
-        (pod.round_index, pod.table_number): float(probability)
-        for pod, probability in zip(pods, probabilities, strict=False)
-    }
+    output: dict[tuple[int, int], float] = {}
+    for pod, probability in zip(pods, probabilities, strict=False):
+        is_top_cut_pod = draw_model.target == "pod_outcome" and pod.round_index >= state.spec.swiss_rounds
+        output[(pod.round_index, pod.table_number)] = (
+            0.0 if is_top_cut_pod else float(max(0.0, min(1.0, probability)))
+        )
+    return output
+
+
+def predict_pod_outcome_probabilities(
+    pods: list[Pod],
+    state: TournamentState,
+    context: TournamentContext,
+    draw_model: LoadedDrawModel,
+    round_snapshot: RoundFeatureSnapshot,
+    winner_model: LoadedCandidateWinnerModel | None = None,
+) -> tuple[dict[tuple[int, int], float], dict[tuple[int, int], tuple[float, ...]]]:
+    """Return draw and per-seat overall win probabilities for each pod.
+
+    Draw-only artifacts retain the historical behavior: the model predicts
+    P(draw), then non-draw winner share comes from internal Elo or an external
+    candidate-winner model. ``target=pod_outcome`` artifacts with
+    ``winner_source="artifact"`` predict class 0 as draw and classes 1..N as
+    the winner position in ``pod.player_ids``. Pod-outcome artifacts with an
+    external winner source use only the configured draw class.
+    """
+    if not pods:
+        return {}, {}
+    if draw_model.target != "pod_outcome" or draw_model.winner_source != "artifact":
+        return (
+            predict_draw_probabilities(pods, state, context, draw_model, round_snapshot),
+            predict_candidate_winner_probabilities(pods, state, context, winner_model)
+            if winner_model is not None
+            else predict_decisive_win_probabilities(pods, state),
+        )
+
+    full_matrix = np.vstack([build_draw_feature_row(pod, state, context, round_snapshot) for pod in pods])
+    x_matrix = full_matrix[:, draw_model.feature_indexes]
+    probabilities = draw_model.model.predict_proba(x_matrix)
+    model_classes = _model_class_labels(draw_model.model, draw_model.classes, probabilities.shape[1])
+    draw_probabilities: dict[tuple[int, int], float] = {}
+    win_probabilities: dict[tuple[int, int], tuple[float, ...]] = {}
+    for pod, row_probabilities in zip(pods, probabilities, strict=False):
+        class_probability = {
+            class_label: float(probability)
+            for class_label, probability in zip(model_classes, row_probabilities, strict=False)
+        }
+        overall_wins = [class_probability.get(index + 1, 0.0) for index in range(len(pod.player_ids))]
+        is_top_cut_pod = pod.round_index >= state.spec.swiss_rounds
+        draw_probability = 0.0 if is_top_cut_pod else max(0.0, min(1.0, class_probability.get(0, 0.0)))
+        decisive_probability = max(1e-12, 1.0 - draw_probability)
+        win_probabilities[(pod.round_index, pod.table_number)] = normalize_probability_tuple(
+            overall_wins if is_top_cut_pod else [probability / decisive_probability for probability in overall_wins],
+            len(pod.player_ids),
+        )
+        draw_probabilities[(pod.round_index, pod.table_number)] = draw_probability
+    return draw_probabilities, win_probabilities
 
 
 def context_top_month(context: TournamentContext) -> int:
@@ -795,7 +1199,12 @@ def predict_decisive_win_probs(pod: Pod, state: TournamentState) -> dict[str, fl
 def predict_decisive_win_probabilities(
     pods: list[Pod],
     state: TournamentState,
+    context: TournamentContext | None = None,
+    winner_model: LoadedCandidateWinnerModel | None = None,
 ) -> dict[tuple[int, int], tuple[float, ...]]:
+    if winner_model is not None and context is not None:
+        return predict_candidate_winner_probabilities(pods, state, context, winner_model)
+
     probabilities: dict[tuple[int, int], tuple[float, ...]] = {}
     for pod in pods:
         adjusted_ratings = []
