@@ -37,6 +37,13 @@ class BackendIngestionWorkflowTests(unittest.TestCase):
         self.assertIn('echo "claimed=true" >> "$GITHUB_OUTPUT"', workflow)
         self.assertIn('echo "claimed=false" >> "$GITHUB_OUTPUT"', workflow)
 
+    def test_scheduled_ingestion_uses_45_days_with_default_leagues_and_no_player_floor(self) -> None:
+        workflow = WORKFLOW_PATH.read_text()
+        self.assertIn("ingest.py --days 45 $JOB_FLAGS", workflow)
+        self.assertNotIn("--days 7", workflow)
+        self.assertNotIn("--min-players", workflow)
+        self.assertNotIn("--no-leagues", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()

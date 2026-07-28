@@ -18,7 +18,7 @@ from collections import defaultdict
 from functools import lru_cache
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 import requests
 from dateutil import parser as date_parser
@@ -43,6 +43,7 @@ TOPDECK_STANDING_RATE_FIELDS = [
     ("winRate", "opponentWinRate"),
     ("successRate", "opponentSuccessRate"),
 ]
+T = TypeVar("T")
 
 
 def normalize_topdeck_tournament_payload(
@@ -55,7 +56,7 @@ def normalize_topdeck_tournament_payload(
 
     if isinstance(tournament.get("data"), dict):
         normalized = dict(tournament["data"])
-        for key in ("standings", "rounds", "eventData"):
+        for key in ("standings", "rounds", "eventData", "isLeague"):
             if key in tournament and key not in normalized:
                 normalized[key] = tournament[key]
     else:
@@ -103,6 +104,40 @@ def load_local_env() -> None:
                 continue
             key, value = line.split("=", 1)
             os.environ.setdefault(key, value)
+
+
+def load_tids(path: Path) -> list[str]:
+    """Load unique TopDeck tournament IDs from a manifest file."""
+    seen: set[str] = set()
+    tids: list[str] = []
+    for line in path.read_text().splitlines():
+        value = line.strip()
+        if not value or value.startswith("#"):
+            continue
+        tid = value.split()[0].strip()
+        if not tid or tid in seen:
+            continue
+        seen.add(tid)
+        tids.append(tid)
+    return tids
+
+
+def write_tids(path: Path, tids: list[str], header_lines: list[str] | None = None) -> None:
+    """Write a TopDeck tournament ID manifest."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = list(header_lines or [])
+    lines.extend(tids)
+    path.write_text("\n".join(lines) + "\n")
+
+
+def chunk_items(items: list[T], chunk_size: int) -> list[list[T]]:
+    """Split a list into fixed-size chunks."""
+    return [items[index : index + chunk_size] for index in range(0, len(items), chunk_size)]
+
+
+def default_backfill_run_key(tids_path: Path, batch_size: int) -> str:
+    """Build a stable default run key for a manifest backfill."""
+    return f"{tids_path.stem}:batch-{batch_size}"
 
 
 def normalize_rate_value(value: Any) -> float | None:
@@ -992,10 +1027,15 @@ class TopDeckClient:
         tournaments = response if isinstance(response, list) else response.get("tournaments", [])
         logger.info(f"Found {len(tournaments)} tournaments in search")
 
-        return [
+        normalized_tournaments = [
             normalize_topdeck_tournament_payload(t)
             for t in tournaments
         ]
+        if leagues:
+            for tournament in normalized_tournaments:
+                tournament.setdefault("isLeague", False)
+
+        return normalized_tournaments
 
     def get_tournament(self, tid: str) -> dict[str, Any]:
         """Get detailed tournament data including standings."""
@@ -1373,13 +1413,17 @@ class DirectPostgresClient:
         # Get columns from first record
         columns = list(data[0].keys())
         cols_str = ", ".join(columns)
+        values = [tuple(row.get(column) for column in columns) for row in data]
 
         # Build ON CONFLICT clause
         if on_conflict:
             conflict_cols = on_conflict.replace(" ", "").split(",")
             update_cols = [c for c in columns if c not in conflict_cols]
-            update_str = ", ".join([f"{c} = EXCLUDED.{c}" for c in update_cols])
-            conflict_clause = f"ON CONFLICT ({on_conflict}) DO UPDATE SET {update_str}"
+            if update_cols:
+                update_str = ", ".join([f"{c} = EXCLUDED.{c}" for c in update_cols])
+                conflict_clause = f"ON CONFLICT ({on_conflict}) DO UPDATE SET {update_str}"
+            else:
+                conflict_clause = f"ON CONFLICT ({on_conflict}) DO NOTHING"
         else:
             conflict_clause = ""
 
@@ -1393,7 +1437,7 @@ class DirectPostgresClient:
         self.connect()
         with self._conn.cursor() as cursor:
             psycopg2.extras.execute_values(
-                cursor, sql, [(tuple(d.values()) for d in data)], page_size=1000
+                cursor, sql, values, page_size=1000
             )
             self._conn.commit()
             results = cursor.fetchall()
@@ -1407,23 +1451,60 @@ class DirectPostgresClient:
         self.connect()
 
         where_clauses: list[str] = []
-        params: list[Any] = []
+        where_params: list[Any] = []
+        suffix_params: list[Any] = []
+        selected_columns = "*"
+        order_clause = ""
+        limit_clause = ""
+        offset_clause = ""
 
         if filters:
             for col, val in filters.items():
+                if col == "select":
+                    selected_columns = val
+                    continue
+                if col == "order":
+                    order_parts: list[str] = []
+                    for item in val.split(","):
+                        pieces = item.strip().split(".")
+                        if not pieces or not pieces[0]:
+                            continue
+                        direction = "DESC" if len(pieces) > 1 and pieces[1].lower() == "desc" else "ASC"
+                        order_parts.append(f"{pieces[0]} {direction}")
+                    if order_parts:
+                        order_clause = " ORDER BY " + ", ".join(order_parts)
+                    continue
+                if col == "limit":
+                    limit_clause = " LIMIT %s"
+                    suffix_params.append(int(val))
+                    continue
+                if col == "offset":
+                    offset_clause = " OFFSET %s"
+                    suffix_params.append(int(val))
+                    continue
                 if val.startswith("eq."):
                     where_clauses.append(f"{col} = %s")
-                    params.append(val[3:])
+                    where_params.append(val[3:])
                 elif val.startswith("ilike."):
                     where_clauses.append(f"{col} ILIKE %s")
-                    params.append(val[6:])
+                    where_params.append(val[6:])
+                elif val.startswith("in.(") and val.endswith(")"):
+                    raw_values = val[4:-1]
+                    in_values = [item for item in raw_values.split(",") if item]
+                    where_clauses.append(f"{col} = ANY(%s)")
+                    where_params.append(in_values)
+                elif val == "not.is.null":
+                    where_clauses.append(f"{col} IS NOT NULL")
+                elif val == "is.null":
+                    where_clauses.append(f"{col} IS NULL")
 
-        sql = f"SELECT * FROM {table}"
+        sql = f"SELECT {selected_columns} FROM {table}"
         if where_clauses:
             sql += " WHERE " + " AND ".join(where_clauses)
+        sql += order_clause + limit_clause + offset_clause
 
         with self._conn.cursor() as cursor:
-            cursor.execute(sql, params)
+            cursor.execute(sql, where_params + suffix_params)
             results = cursor.fetchall()
             if not results:
                 return []
@@ -1575,17 +1656,30 @@ class DataIngester:
         if not commander_data:
             return {}
 
-        data = []
+        data_by_name: dict[str, dict[str, Any]] = {}
+        aliases: dict[str, str] = {}
         for name, names in commander_data.items():
             canonical_name, canonical_names = sanitize_commander_payload(name, names)
-            data.append({"name": canonical_name, "commander_names": canonical_names})
+            aliases[name] = canonical_name
+            if canonical_name not in data_by_name:
+                data_by_name[canonical_name] = {
+                    "name": canonical_name,
+                    "commander_names": canonical_names,
+                }
 
-        result = self.supabase.upsert("commanders", data, on_conflict="name")
+        result = self.supabase.upsert(
+            "commanders", list(data_by_name.values()), on_conflict="name"
+        )
         if not result:
             logger.error("Failed to batch upsert commanders")
             return {}
 
-        return {r["name"]: r["id"] for r in result}
+        commander_ids = {r["name"]: r["id"] for r in result}
+        for raw_name, canonical_name in aliases.items():
+            commander_id = commander_ids.get(canonical_name)
+            if commander_id:
+                commander_ids[raw_name] = commander_id
+        return commander_ids
 
     def batch_upsert_players(self, player_data: dict[str, str]) -> dict[str, str]:
         """Batch upsert players and return topdeck_id -> id mapping."""
@@ -1711,19 +1805,33 @@ class DataIngester:
             "top_elo": (
                 int(tournament.get("topElo")) if tournament.get("topElo") else None
             ),
-            "city": event_data.get("city"),
-            "state": normalize_region_name(
-                event_data.get("state"),
-                city=event_data.get("city"),
-                country=event_data.get("country"),
-                venue=event_data.get("location"),
-            ),
-            "venue": event_data.get("location"),
-            "latitude": event_data.get("lat"),
-            "longitude": event_data.get("lng"),
-            "header_image_url": event_data.get("headerImage"),
-            "tier": tier,
         }
+        if event_data:
+            location_data = {
+                "city": event_data.get("city"),
+                "state": normalize_region_name(
+                    event_data.get("state"),
+                    city=event_data.get("city"),
+                    country=event_data.get("country"),
+                    venue=event_data.get("location"),
+                ),
+                "country": event_data.get("country"),
+                "venue": event_data.get("location"),
+                "latitude": event_data.get("lat"),
+                "longitude": event_data.get("lng"),
+                "header_image_url": event_data.get("headerImage"),
+            }
+            tournament_data.update(
+                {
+                    key: value
+                    for key, value in location_data.items()
+                    if value is not None
+                }
+            )
+        if tier is not None:
+            tournament_data["tier"] = tier
+        if "isLeague" in tournament:
+            tournament_data["is_league"] = bool(tournament.get("isLeague"))
 
         result = self.supabase.upsert(
             "tournaments", tournament_data, on_conflict="topdeck_tid"
@@ -2021,6 +2129,7 @@ class DataIngester:
                                     "points_earned": 1 if is_draw else 5 if is_winner else 0,
                                 }
                                 participant_records.append(participant_record)
+                            participant_records = dedupe_game_participants(participant_records)
                             if participant_records:
                                 self.supabase.upsert(
                                     "game_participants",
@@ -2090,6 +2199,7 @@ class DataIngester:
                                     "points_earned": 1 if is_draw else 5 if is_winner else 0,
                                 }
                                 participant_records.append(participant_record)
+                            participant_records = dedupe_game_participants(participant_records)
                             if participant_records:
                                 self.supabase.upsert(
                                     "game_participants",
@@ -2147,6 +2257,20 @@ def build_game_key(
             str(is_bracket).lower(),
         ]
     )
+
+
+def dedupe_game_participants(
+    participant_records: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Avoid duplicate constrained values in a single game_participants upsert."""
+    deduped: dict[tuple[Any, Any], dict[str, Any]] = {}
+    for record in participant_records:
+        game_id = record.get("game_id")
+        entry_id = record.get("entry_id")
+        if not game_id or not entry_id:
+            continue
+        deduped[(game_id, entry_id)] = record
+    return list(deduped.values())
 
 
 def is_draw_winner_id(winner_id: Any) -> bool:
@@ -2237,7 +2361,7 @@ def main():
     parser.add_argument(
         "--days",
         type=int,
-        default=7,
+        default=45,
         help="Number of recent days to search for tournaments",
     )
     parser.add_argument(
@@ -2269,7 +2393,8 @@ def main():
         "--leagues",
         "--league",
         dest="leagues",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help="Include leagues=true in the TopDeck tournament search payload",
     )
     parser.add_argument(
@@ -2309,9 +2434,16 @@ def main():
     topdeck = TopDeckClient(topdeck_api_key)
     supabase = SupabaseClient(supabase_url, supabase_key)
     db_client = None
+    ingestion_client = supabase
+    if args.direct:
+        db_url = os.environ.get("SUPABASE_DB_URL")
+        if not db_url:
+            raise SystemExit("SUPABASE_DB_URL is required when --direct is set")
+        db_client = DirectPostgresClient(db_url)
+        ingestion_client = db_client
 
     # Initialize ingester
-    ingester = DataIngester(topdeck, supabase)
+    ingester = DataIngester(topdeck, ingestion_client)
 
     # Job lifecycle management
     job_id = getattr(args, 'job_id', '') or ''
@@ -2331,22 +2463,20 @@ def main():
 
     try:
         _run_ingestion(args, topdeck, supabase, ingester, job_id)
+
+        duration = round(time.time() - start_time, 2)
+        if job_id:
+            complete_ingestion_job(supabase, job_id, {
+                "duration_seconds": duration,
+            })
     except Exception as exc:
         if job_id:
             fail_ingestion_job(supabase, job_id, str(exc))
         raise
-
-    duration = round(time.time() - start_time, 2)
-    if job_id:
-        complete_ingestion_job(supabase, job_id, {
-            "duration_seconds": duration,
-        })
-
-    # Cleanup direct Postgres connection
-    db_client = None
-    if args.direct and db_client:
-        db_client.close()
-        logger.info("Closed direct Postgres connection")
+    finally:
+        if db_client:
+            db_client.close()
+            logger.info("Closed direct Postgres connection")
 
     logger.info("Ingestion complete")
 
@@ -2796,8 +2926,9 @@ def _run_ingestion(args, topdeck, supabase, ingester, job_id):
     else:
         # Search and ingest recent tournaments
         start_date = (datetime.now() - timedelta(days=args.days)).date().isoformat()
-        end_date = datetime.now().date().isoformat()
-        logger.info(f"Searching for tournaments from {start_date} through {end_date} ({args.days} days)")
+        display_end_date = datetime.now().date()
+        end_date = (display_end_date + timedelta(days=1)).isoformat()
+        logger.info(f"Searching for tournaments from {start_date} through {display_end_date.isoformat()} ({args.days} days)")
         tournaments = topdeck.search_tournaments(
             start_date=start_date, end_date=end_date, leagues=args.leagues
         )
@@ -2844,8 +2975,12 @@ def _run_ingestion(args, topdeck, supabase, ingester, job_id):
                     "medianElo",
                     "topElo",
                     "eventData",
+                    "isLeague",
                 ):
-                    if key not in tournament and key in t:
+                    if key == "eventData":
+                        if not tournament.get("eventData") and t.get("eventData"):
+                            tournament[key] = t[key]
+                    elif key not in tournament and key in t:
                         tournament[key] = t[key]
             if ingester:
                 try:

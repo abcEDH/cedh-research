@@ -297,7 +297,18 @@ def parse_datetime(value: str | None) -> datetime | None:
     return datetime.fromisoformat(normalized)
 
 
+def parse_datetime_utc(value: str | None) -> datetime | None:
+    parsed = parse_datetime(value)
+    if not parsed:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
 def parse_date(value: str | None) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
     if isinstance(value, date):
         return value
     parsed = parse_datetime(value)
@@ -546,6 +557,7 @@ def fetch_results_by_month(client: SupabaseClient) -> list[dict[str, Any]]:
                 ("select", select),
                 ("start_date", f"gte.{window_start.isoformat()}"),
                 ("start_date", f"lt.{window_end.isoformat()}"),
+                ("order", "start_date.asc,tournament_id.asc,game_id.asc,entry_id.asc"),
             ],
             label=f"global_elo_game_results {window_start:%Y-%m}",
         )
@@ -566,7 +578,8 @@ def fetch_results_from_tournament_start(
         "player_name,result,is_draw,round_number,round_name,table_number"
     )
     all_rows: list[dict[str, Any]] = []
-    start_day = parse_datetime(threshold_start_date).date() if threshold_start_date else date(2022, 8, 1)
+    threshold_dt = parse_datetime_utc(threshold_start_date)
+    start_day = threshold_dt.date() if threshold_dt else date(2022, 8, 1)
     windows = month_starts(start_day, datetime.now(UTC).date())
     for window_start in windows:
         window_end = next_month(window_start)
@@ -577,13 +590,17 @@ def fetch_results_from_tournament_start(
                 ("select", select),
                 ("start_date", f"gte.{window_start.isoformat()}"),
                 ("start_date", f"lt.{window_end.isoformat()}"),
+                ("order", "start_date.asc,tournament_id.asc,game_id.asc,entry_id.asc"),
             ],
             label=f"global_elo_game_results {window_start:%Y-%m}",
         )
         filtered = [
             row
             for row in rows
-            if (row.get("start_date") or "") >= threshold_start_date
+            if not threshold_dt or (
+                (row_start_date := parse_datetime_utc(row.get("start_date"))) is not None
+                and row_start_date >= threshold_dt
+            )
         ]
         all_rows.extend(filtered)
         print(
@@ -1174,6 +1191,24 @@ def build_state_from_results(
     return ratings, state_activity, player_meta, events
 
 
+def reconcile_rating_last_game_dates_from_events(
+    ratings: dict[str, dict[str, Any]],
+    events: list[dict[str, Any]],
+) -> None:
+    """Keep denormalized summary dates aligned with generated Elo event rows."""
+    for event in events:
+        player_id = event.get("player_id")
+        game_date = parse_date(event.get("game_date"))
+        if not player_id or game_date is None or player_id not in ratings:
+            continue
+        rating_row = ratings[player_id]
+        current_date = parse_date(rating_row.get("last_game_date"))
+        if current_date is not None:
+            rating_row["last_game_date"] = current_date
+        if current_date is None or game_date > current_date:
+            rating_row["last_game_date"] = game_date
+
+
 def finalize_rows(
     topdeck_elos: dict[str, float],
     ratings: dict[str, dict[str, Any]],
@@ -1182,6 +1217,8 @@ def finalize_rows(
     events: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
     today = datetime.now(UTC).date()
+
+    reconcile_rating_last_game_dates_from_events(ratings, events)
 
     for activity in state_activity.values():
         activity["activity_score"] = round(float(activity["activity_score"]), 6)

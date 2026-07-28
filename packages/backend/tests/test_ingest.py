@@ -34,8 +34,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from ingest import (  # noqa: E402
     clean_commander_card_name,
+    DataIngester,
+    DirectPostgresClient,
     extract_standing_rates,
     INGESTION_JOB_ALREADY_CLAIMED_EXIT_CODE,
+    _run_ingestion,
+    chunk_items,
+    default_backfill_run_key,
+    load_tids,
     normalize_commander_name,
     sanitize_commander_payload,
     SupabaseClient,
@@ -43,6 +49,7 @@ from ingest import (  # noqa: E402
     complete_ingestion_job,
     fail_ingestion_job,
     main,
+    TopDeckClient,
 )
 
 
@@ -68,6 +75,316 @@ class ExtractStandingRatesTests(unittest.TestCase):
 
         self.assertEqual(win_rate, 0.71)
         self.assertEqual(opponent_win_rate, 0.48)
+
+
+class IngestCliDefaultsTests(unittest.TestCase):
+    @patch.dict(
+        os.environ,
+        {
+            "TOPDECK_API_KEY": "topdeck-key",
+            "SUPABASE_SERVICE_KEY": "supabase-key",
+            "SUPABASE_URL": "https://test.supabase.co",
+        },
+        clear=False,
+    )
+    @patch("ingest._run_ingestion")
+    @patch("ingest.DataIngester")
+    @patch("ingest.SupabaseClient")
+    @patch("ingest.TopDeckClient")
+    @patch("ingest.load_local_env")
+    def test_recent_ingest_defaults_to_45_days_leagues_and_no_player_floor(
+        self,
+        mock_load_local_env: Mock,
+        mock_topdeck_client: Mock,
+        mock_supabase_client: Mock,
+        mock_data_ingester: Mock,
+        mock_run_ingestion: Mock,
+    ) -> None:
+        with patch.object(sys, "argv", ["ingest.py"]):
+            main()
+
+        args = mock_run_ingestion.call_args.args[0]
+        self.assertEqual(args.days, 45)
+        self.assertTrue(args.leagues)
+        self.assertEqual(args.min_players, 0)
+
+    @patch.dict(
+        os.environ,
+        {
+            "TOPDECK_API_KEY": "topdeck-key",
+            "SUPABASE_SERVICE_KEY": "supabase-key",
+            "SUPABASE_URL": "https://test.supabase.co",
+        },
+        clear=False,
+    )
+    @patch("ingest._run_ingestion")
+    @patch("ingest.DataIngester")
+    @patch("ingest.SupabaseClient")
+    @patch("ingest.TopDeckClient")
+    @patch("ingest.load_local_env")
+    def test_recent_ingest_can_opt_out_of_leagues(
+        self,
+        mock_load_local_env: Mock,
+        mock_topdeck_client: Mock,
+        mock_supabase_client: Mock,
+        mock_data_ingester: Mock,
+        mock_run_ingestion: Mock,
+    ) -> None:
+        with patch.object(sys, "argv", ["ingest.py", "--no-leagues"]):
+            main()
+
+        args = mock_run_ingestion.call_args.args[0]
+        self.assertFalse(args.leagues)
+
+    @patch.dict(
+        os.environ,
+        {
+            "TOPDECK_API_KEY": "topdeck-key",
+            "SUPABASE_SERVICE_KEY": "supabase-key",
+            "SUPABASE_URL": "https://test.supabase.co",
+            "SUPABASE_DB_URL": "postgres://test",
+        },
+        clear=False,
+    )
+    @patch("ingest._run_ingestion")
+    @patch("ingest.DirectPostgresClient")
+    @patch("ingest.SupabaseClient")
+    @patch("ingest.TopDeckClient")
+    @patch("ingest.load_local_env")
+    def test_direct_mode_uses_direct_postgres_for_ingester(
+        self,
+        mock_load_local_env: Mock,
+        mock_topdeck_client: Mock,
+        mock_supabase_client: Mock,
+        mock_direct_client: Mock,
+        mock_run_ingestion: Mock,
+    ) -> None:
+        with patch.object(sys, "argv", ["ingest.py", "--direct"]):
+            main()
+
+        mock_direct_client.assert_called_once_with("postgres://test")
+        ingester = mock_run_ingestion.call_args.args[3]
+        self.assertIs(ingester.supabase, mock_direct_client.return_value)
+        mock_direct_client.return_value.close.assert_called_once()
+
+    def test_recent_ingest_uses_exclusive_next_day_end_boundary(self) -> None:
+        args = types.SimpleNamespace(
+            tournament_id=None,
+            tids_file=None,
+            days=60,
+            leagues=True,
+            min_players=0,
+            skip_existing_tournaments=False,
+            limit=0,
+        )
+        topdeck = Mock()
+        topdeck.search_tournaments.return_value = []
+        ingester = Mock()
+
+        with patch("ingest.datetime") as mock_datetime:
+            mock_datetime.now.return_value = __import__("datetime").datetime(2026, 5, 11, 18, 0)
+            _run_ingestion(args, topdeck, Mock(), ingester, "")
+
+        topdeck.search_tournaments.assert_called_once_with(
+            start_date="2026-03-12",
+            end_date="2026-05-12",
+            leagues=True,
+        )
+
+    def test_recent_ingest_preserves_search_event_data_when_detail_payload_is_empty(self) -> None:
+        args = types.SimpleNamespace(
+            tournament_id=None,
+            tids_file=None,
+            names_file=None,
+            days=1,
+            leagues=True,
+            min_players=0,
+            skip_existing_tournaments=False,
+            limit=0,
+        )
+        event_data = {
+            "city": "Mission Viejo",
+            "state": "California",
+            "country": "United States",
+            "location": "23854 Via Fabricante unit b 1, Mission Viejo, CA 92691, USA",
+            "lat": 33.616879,
+            "lng": -117.681948,
+        }
+        topdeck = Mock()
+        topdeck.search_tournaments.return_value = [
+            {
+                "id": "event-1",
+                "name": "Event 1",
+                "standings": [{"id": "player-1"}],
+                "eventData": event_data,
+                "isLeague": True,
+            }
+        ]
+        topdeck.get_tournament.return_value = {
+            "id": "event-1",
+            "name": "Event 1",
+            "standings": [{"id": "player-1"}],
+            "rounds": [],
+            "eventData": {},
+        }
+        ingester = Mock()
+        ingester.process_tournament.return_value = None
+
+        _run_ingestion(args, topdeck, Mock(), ingester, "")
+
+        processed_tournament = ingester.process_tournament.call_args.args[0]
+        self.assertEqual(processed_tournament["eventData"], event_data)
+        self.assertTrue(processed_tournament["isLeague"])
+
+    @patch("ingest.requests.post")
+    def test_topdeck_search_defaults_is_league_false_when_league_search_enabled(
+        self, mock_post: Mock
+    ) -> None:
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = [
+            {"TID": "event-1", "tournamentName": "Event 1"},
+            {"TID": "league-1", "tournamentName": "League 1", "isLeague": True},
+        ]
+        mock_post.return_value = mock_response
+
+        tournaments = TopDeckClient("topdeck-key").search_tournaments(leagues=True)
+
+        self.assertFalse(tournaments[0]["isLeague"])
+        self.assertTrue(tournaments[1]["isLeague"])
+
+    def test_process_tournament_writes_is_league_when_topdeck_supplies_flag(self) -> None:
+        topdeck = Mock()
+        topdeck.get_tournament_tier.return_value = None
+        supabase = Mock()
+        supabase.upsert.return_value = [{"id": "tournament-1"}]
+        ingester = DataIngester(topdeck, supabase)
+
+        ingester.process_tournament(
+            {
+                "id": "league-1",
+                "name": "League 1",
+                "startDate": 1777618800,
+                "standings": [],
+                "rounds": [],
+                "swissNum": 0,
+                "topCut": 0,
+                "isLeague": True,
+            }
+        )
+
+        tournament_data = supabase.upsert.call_args.args[1]
+        self.assertTrue(tournament_data["is_league"])
+
+    def test_process_tournament_does_not_clear_missing_location_or_tier(self) -> None:
+        topdeck = Mock()
+        topdeck.get_tournament_tier.return_value = None
+        supabase = Mock()
+        supabase.upsert.return_value = [{"id": "tournament-1"}]
+        ingester = DataIngester(topdeck, supabase)
+
+        ingester.process_tournament(
+            {
+                "id": "event-1",
+                "name": "Event 1",
+                "startDate": 1777618800,
+                "standings": [],
+                "rounds": [],
+                "eventData": {},
+            }
+        )
+
+        tournament_data = supabase.upsert.call_args.args[1]
+        self.assertNotIn("city", tournament_data)
+        self.assertNotIn("state", tournament_data)
+        self.assertNotIn("country", tournament_data)
+        self.assertNotIn("venue", tournament_data)
+        self.assertNotIn("tier", tournament_data)
+
+
+class DirectPostgresClientTests(unittest.TestCase):
+    @patch("ingest.psycopg2.extras.execute_values")
+    @patch("ingest.psycopg2.connect")
+    def test_upsert_sends_row_value_tuples(self, mock_connect: Mock, mock_execute_values: Mock) -> None:
+        cursor = Mock()
+        cursor.__enter__ = Mock(return_value=cursor)
+        cursor.__exit__ = Mock(return_value=None)
+        cursor.fetchall.return_value = [("player-1", "Alice")]
+        cursor.description = [("id",), ("name",)]
+        connection = Mock()
+        connection.closed = False
+        connection.cursor.return_value = cursor
+        mock_connect.return_value = connection
+
+        result = DirectPostgresClient("postgres://test").upsert(
+            "players",
+            [{"topdeck_id": "td-1", "name": "Alice"}],
+            on_conflict="topdeck_id",
+        )
+
+        self.assertEqual(result, [{"id": "player-1", "name": "Alice"}])
+        execute_args = mock_execute_values.call_args.args
+        self.assertEqual(execute_args[2], [("td-1", "Alice")])
+        connection.commit.assert_called_once()
+
+    @patch("ingest.psycopg2.connect")
+    def test_select_supports_rest_style_in_filter_projection_order_and_paging(
+        self, mock_connect: Mock
+    ) -> None:
+        cursor = Mock()
+        cursor.__enter__ = Mock(return_value=cursor)
+        cursor.__exit__ = Mock(return_value=None)
+        cursor.fetchall.return_value = [("td-1",)]
+        cursor.description = [("topdeck_tid",)]
+        connection = Mock()
+        connection.closed = False
+        connection.cursor.return_value = cursor
+        mock_connect.return_value = connection
+
+        result = DirectPostgresClient("postgres://test").select(
+            "tournaments",
+            {
+                "select": "topdeck_tid",
+                "topdeck_tid": "in.(td-1,td-2)",
+                "order": "start_date.desc,topdeck_tid.asc",
+                "limit": "10",
+                "offset": "20",
+            },
+        )
+
+        self.assertEqual(result, [{"topdeck_tid": "td-1"}])
+        cursor.execute.assert_called_once_with(
+            "SELECT topdeck_tid FROM tournaments WHERE topdeck_tid = ANY(%s) "
+            "ORDER BY start_date DESC, topdeck_tid ASC LIMIT %s OFFSET %s",
+            [["td-1", "td-2"], 10, 20],
+        )
+
+
+class TidManifestTests(unittest.TestCase):
+    def test_load_tids_ignores_comments_blanks_and_duplicates(self) -> None:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "tids.txt"
+            path.write_text(
+                "\n".join(
+                    [
+                        "# manifest",
+                        "",
+                        "event-a",
+                        "event-b extra metadata",
+                        "event-a",
+                    ]
+                )
+            )
+
+            self.assertEqual(load_tids(path), ["event-a", "event-b"])
+
+    def test_chunk_items_splits_fixed_size_batches(self) -> None:
+        self.assertEqual(chunk_items(["a", "b", "c", "d", "e"], 2), [["a", "b"], ["c", "d"], ["e"]])
+
+    def test_default_backfill_run_key_uses_manifest_name_and_batch_size(self) -> None:
+        self.assertEqual(default_backfill_run_key(Path("logs/example.txt"), 50), "example:batch-50")
 
 
 class CommanderNormalizationTests(unittest.TestCase):
