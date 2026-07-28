@@ -35,7 +35,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from ingest import (  # noqa: E402
     _describe_request_failure,
     clean_commander_card_name,
+    DataIngester,
     extract_standing_rates,
+    fetch_existing_partner_order_map,
     INGESTION_JOB_ALREADY_CLAIMED_EXIT_CODE,
     load_commander_oracle_aliases,
     normalize_commander_name,
@@ -204,6 +206,109 @@ class CommanderNormalizationTests(unittest.TestCase):
             normalize_commander_name(["Haldan, Avid Arcanist", "Pako, Arcane Retriever"]),
             "Pako, Arcane Retriever / Haldan, Avid Arcanist",
         )
+
+    def test_normalize_commander_name_is_order_independent_for_unregistered_pair(self) -> None:
+        # A pair with no legal_commander_pairings.json entry and no
+        # PARTNER_ORDER_OVERRIDES entry falls back to an alphabetical sort, which
+        # must be reached regardless of which order the decklist listed the two
+        # commanders in.
+        self.assertEqual(
+            normalize_commander_name(["Zndrsplt, Eye of Wisdom", "Okaun, Eye of Chaos"]),
+            normalize_commander_name(["Okaun, Eye of Chaos", "Zndrsplt, Eye of Wisdom"]),
+        )
+
+
+class PartnerOrderReconciliationTests(unittest.TestCase):
+    """Issue #260: partner pairs ingested in either name order must resolve to
+    one canonical commander row instead of splitting into "A, B" vs "B, A".
+    """
+
+    def test_fetch_existing_partner_order_map_builds_sorted_pair_lookup(self) -> None:
+        client = Mock()
+        client.select.return_value = [
+            {
+                "commander_names": ["Tymna the Weaver", "Kraum, Ludevic's Opus"],
+                "created_at": "2026-01-01T00:00:00Z",
+            },
+            {"commander_names": ["Some Single Commander"], "created_at": "2026-01-02T00:00:00Z"},
+            {"commander_names": None, "created_at": "2026-01-03T00:00:00Z"},
+        ]
+
+        order_map = fetch_existing_partner_order_map(client)
+
+        self.assertEqual(
+            order_map[tuple(sorted(["Tymna the Weaver", "Kraum, Ludevic's Opus"]))],
+            ("Tymna the Weaver", "Kraum, Ludevic's Opus"),
+        )
+        self.assertEqual(len(order_map), 1)
+
+    def test_reconcile_partner_order_prefers_existing_db_row(self) -> None:
+        supabase = Mock()
+        supabase.select.return_value = [
+            {
+                "commander_names": ["Zzzephyr, Test Commander", "Aaardvark, Test Partner"],
+                "created_at": "2025-01-01T00:00:00Z",
+            }
+        ]
+        ingester = DataIngester(Mock(), supabase)
+
+        reconciled_name, reconciled_names = ingester._reconcile_partner_order(
+            "Aaardvark, Test Partner / Zzzephyr, Test Commander",
+            ["Aaardvark, Test Partner", "Zzzephyr, Test Commander"],
+        )
+
+        self.assertEqual(reconciled_name, "Zzzephyr, Test Commander / Aaardvark, Test Partner")
+        self.assertEqual(reconciled_names, ["Zzzephyr, Test Commander", "Aaardvark, Test Partner"])
+        # The lookup is cached: a second call must not re-query Supabase.
+        ingester._reconcile_partner_order("x", ["Aaardvark, Test Partner", "Zzzephyr, Test Commander"])
+        supabase.select.assert_called_once()
+
+    @patch("ingest.load_legal_commander_pair_order_map", return_value={})
+    @patch(
+        "ingest.load_legal_commander_pair_names",
+        return_value={"Aaardvark, Test Partner / Zzzephyr, Test Commander"},
+    )
+    def test_batch_upsert_commanders_merges_both_orders_into_existing_row(
+        self, _mock_legal_names: Mock, _mock_legal_order: Mock
+    ) -> None:
+        """Simulates a pair whose DB row order (e.g. from a legacy insert, or a
+        prior ``sweep_partner_commander_order.py`` rename) disagrees with the
+        alphabetical fallback ``normalize_partner_order()`` would compute fresh.
+        Ingesting that pair from two independent tournaments -- one where the
+        decklist lists the commanders alphabetically, one where it lists them in
+        the DB's established order -- must both resolve to the *same* existing
+        commander row rather than one of them creating a duplicate.
+        """
+        existing_order = ("Zzzephyr, Test Commander", "Aaardvark, Test Partner")
+        pair_key = tuple(sorted(existing_order))  # the alphabetical fallback order
+
+        supabase = Mock()
+        supabase.select.return_value = [{"commander_names": list(existing_order), "created_at": "2025-01-01T00:00:00Z"}]
+
+        def fake_upsert(table, data, on_conflict=None, max_retries=3):
+            return [{"name": row["name"], "id": "commander-1"} for row in data]
+
+        supabase.upsert.side_effect = fake_upsert
+
+        # Tournament A's decklist lists the commanders alphabetically.
+        ingester_a = DataIngester(Mock(), supabase)
+        commander_name_a = normalize_commander_name(list(pair_key))
+        id_map_a = ingester_a.batch_upsert_commanders({commander_name_a: list(pair_key)})
+
+        # Tournament B's decklist lists the same two commanders in the other order.
+        ingester_b = DataIngester(Mock(), supabase)
+        commander_name_b = normalize_commander_name(list(reversed(pair_key)))
+        id_map_b = ingester_b.batch_upsert_commanders({commander_name_b: list(reversed(pair_key))})
+
+        # Both must resolve to the single existing commander row.
+        self.assertEqual(id_map_a[commander_name_a], "commander-1")
+        self.assertEqual(id_map_b[commander_name_b], "commander-1")
+
+        for call in supabase.upsert.call_args_list:
+            _table, data = call.args[0], call.args[1]
+            self.assertEqual(len(data), 1)
+            self.assertEqual(data[0]["name"], " / ".join(existing_order))
+            self.assertEqual(data[0]["commander_names"], list(existing_order))
 
 
 class IngestionJobLifecycleTests(unittest.TestCase):

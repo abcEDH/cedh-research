@@ -17,6 +17,7 @@ from ingest import (
     PARTNER_ORDER_OVERRIDES,
     SupabaseClient,
     clean_commander_card_name,
+    load_legal_commander_pair_order_map,
 )
 
 
@@ -103,7 +104,21 @@ def choose_target_order(
     current_order: tuple[str, str],
     observations: collections.Counter[tuple[str, str]],
 ) -> tuple[str, str]:
-    override = PARTNER_ORDER_OVERRIDES.get(canonical_pair_key(list(current_order)))
+    """Pick the canonical order for a partner pair.
+
+    Consults the same authoritative sources ``ingest.py``'s
+    ``normalize_partner_order()`` does -- ``legal_commander_pairings.json`` first,
+    then the hand-curated ``PARTNER_ORDER_OVERRIDES`` -- before falling back to
+    observed decklist orders. Skipping the legal-pairing map here (as this
+    function previously did) meant the sweep could leave two rows unmerged, or
+    pick an order that disagreed with what ingestion would write for the same
+    pair going forward, re-splitting it on the next tournament import.
+    """
+    pair_key = canonical_pair_key(list(current_order))
+    legal_order = load_legal_commander_pair_order_map().get(pair_key)
+    if legal_order:
+        return legal_order
+    override = PARTNER_ORDER_OVERRIDES.get(pair_key)
     if override:
         return override
     if not observations:
@@ -219,10 +234,11 @@ def main() -> None:
         current_order = current_pair_order(commander)
         if not current_order:
             continue
-        override = PARTNER_ORDER_OVERRIDES.get(canonical_pair_key(list(current_order)))
+        pair_key = canonical_pair_key(list(current_order))
+        known_order = load_legal_commander_pair_order_map().get(pair_key) or PARTNER_ORDER_OVERRIDES.get(pair_key)
         observed_orders: collections.Counter[tuple[str, str]] = collections.Counter()
-        if override:
-            target_order = override
+        if known_order:
+            target_order = known_order
         else:
             rows = fetch_entries_for_commander(client, commander["id"], args.sample_limit)
             seen_sources: set[str] = set()
