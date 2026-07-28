@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
   const scriptPath = path.join(pythonPath, "run_topdeck_ongoing_tournament_sim.py");
   const drawModelPath = path.join(
     repoRoot,
-    "packages/backend/reports/pod-outcome-model/v4/pod_outcome_model_artifact_v4_draw_elo_hybrid.pkl"
+    "packages/backend/models/pod-outcome/v4/pod_outcome_model_artifact_v4_draw_elo_hybrid.pkl"
   );
 
   const encoder = new TextEncoder();

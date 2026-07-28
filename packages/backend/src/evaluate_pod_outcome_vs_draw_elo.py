@@ -44,10 +44,11 @@ from train_pod_outcome_model import feature_value, select_outcome_features
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 REPORTS_DIR = Path(__file__).resolve().parents[1] / "reports"
+MODELS_DIR = Path(__file__).resolve().parents[1] / "models"
 DEFAULT_REPORT_PATH = DATA_DIR / "pod_outcome_vs_draw_elo_eval.json"
 DEFAULT_PARTICIPANT_CACHE_PATH = DATA_DIR / "pod_outcome_eval_participants.pkl"
 DEFAULT_DRAW_ARTIFACT_PATHS = [
-    REPORTS_DIR / "pod-outcome-model" / "v4" / "pod_outcome_model_artifact_v4_draw_elo_hybrid.pkl",
+    MODELS_DIR / "pod-outcome" / "v4" / "pod_outcome_model_artifact_v4_draw_elo_hybrid.pkl",
 ]
 EPSILON = 1e-9
 

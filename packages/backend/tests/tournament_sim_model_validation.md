@@ -22,7 +22,7 @@ Example:
 
 ```bash
 PYTHONPATH=packages/backend/src python3 packages/backend/src/backtest_tournament_sim_models.py \
-  --model v4-hybrid=packages/backend/reports/pod-outcome-model/v4/pod_outcome_model_artifact_v4_draw_elo_hybrid.pkl \
+  --model v4-hybrid=packages/backend/models/pod-outcome/v4/pod_outcome_model_artifact_v4_draw_elo_hybrid.pkl \
   --model candidate=packages/backend/reports/draw-model/<candidate>/cedh_draw_model_artifact_<candidate>.pkl \
   --simulations 500 \
   --workers 4 \

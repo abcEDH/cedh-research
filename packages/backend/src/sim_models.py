@@ -30,8 +30,8 @@ ELO_BASE = 2.0
 ELO_DIVISOR = 200.0
 DEFAULT_DRAW_MODEL_PATH = (
     Path(__file__).resolve().parents[1]
-    / "reports"
-    / "pod-outcome-model"
+    / "models"
+    / "pod-outcome"
     / "v4"
     / "pod_outcome_model_artifact_v4_draw_elo_hybrid.pkl"
 )
