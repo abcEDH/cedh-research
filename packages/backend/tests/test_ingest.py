@@ -310,6 +310,208 @@ class PartnerOrderReconciliationTests(unittest.TestCase):
             self.assertEqual(data[0]["name"], " / ".join(existing_order))
             self.assertEqual(data[0]["commander_names"], list(existing_order))
 
+    @patch("ingest.load_legal_commander_pair_order_map", return_value={})
+    @patch(
+        "ingest.load_legal_commander_pair_names",
+        return_value={"Aaardvark, Test Partner / Zzzephyr, Test Commander"},
+    )
+    def test_batch_upsert_commanders_dedupes_two_keys_reconciling_to_same_row(
+        self, _mock_legal_names: Mock, _mock_legal_order: Mock
+    ) -> None:
+        """Reconciliation can make two distinct original keys resolve to the
+        same existing row (the explicit reason the return map is keyed by the
+        pre-reconciliation name). The upsert payload must contain a single
+        deduped row (PostgREST can't target the same ``on_conflict`` row twice
+        in one call), and both original keys must map to the one returned id.
+        """
+        existing_order = ("Zzzephyr, Test Commander", "Aaardvark, Test Partner")
+        pair_key = tuple(sorted(existing_order))  # alphabetical fallback order
+        key_alpha = " / ".join(pair_key)  # "Aaardvark, Test Partner / Zzzephyr, Test Commander"
+        key_reverse = " / ".join(reversed(pair_key))  # "Zzzephyr, Test Commander / Aaardvark, Test Partner"
+
+        supabase = Mock()
+        supabase.select.return_value = [{"commander_names": list(existing_order), "created_at": "2025-01-01T00:00:00Z"}]
+
+        upsert_calls: list[dict] = []
+
+        def fake_upsert(table, data, on_conflict=None, max_retries=3):
+            upsert_calls.append({"table": table, "data": data, "on_conflict": on_conflict})
+            return [{"name": row["name"], "id": "commander-1"} for row in data]
+
+        supabase.upsert.side_effect = fake_upsert
+
+        ingester = DataIngester(Mock(), supabase)
+        id_map = ingester.batch_upsert_commanders({key_alpha: list(pair_key), key_reverse: list(reversed(pair_key))})
+
+        # Exactly one upsert call, with a single deduped row in the DB's
+        # established order.
+        self.assertEqual(len(upsert_calls), 1)
+        self.assertEqual(len(upsert_calls[0]["data"]), 1)
+        self.assertEqual(upsert_calls[0]["data"][0]["name"], " / ".join(existing_order))
+        self.assertEqual(upsert_calls[0]["data"][0]["commander_names"], list(existing_order))
+
+        # Both original keys resolve to the one existing row's id.
+        self.assertEqual(id_map[key_alpha], "commander-1")
+        self.assertEqual(id_map[key_reverse], "commander-1")
+        self.assertEqual(len(id_map), 2)
+
+    @patch("ingest.load_legal_commander_pair_order_map", return_value={})
+    @patch(
+        "ingest.load_legal_commander_pair_names",
+        return_value={"Aaardvark, Test Partner / Zzzephyr, Test Commander"},
+    )
+    def test_get_or_create_commander_reconciles_to_existing_db_order(
+        self, _mock_legal_names: Mock, _mock_legal_order: Mock
+    ) -> None:
+        """The legacy single-row write path (``get_or_create_commander``) was
+        modified to call ``_reconcile_partner_order`` just like the batch path.
+        Feeding it a pair whose freshly-computed name (alphabetical) disagrees
+        with the DB's established order must reconcile to the DB's order before
+        the lookup/upsert, so it doesn't create a duplicate row under the
+        alphabetical name.
+        """
+        existing_order = ("Zzzephyr, Test Commander", "Aaardvark, Test Partner")
+        pair_key = tuple(sorted(existing_order))  # alphabetical fallback
+        alpha_name = " / ".join(pair_key)
+
+        supabase = Mock()
+        # ``fetch_existing_partner_order_map`` reads via ``select`` with the
+        # ``commander_names,created_at`` projection; the legacy path then does
+        # its own ``select`` lookup by the reconciled name. The first call
+        # builds the order map; the second must return the existing row for the
+        # reconciled name so the legacy path finds it instead of creating a
+        # duplicate.
+        supabase.select.side_effect = [
+            [{"commander_names": list(existing_order), "created_at": "2025-01-01T00:00:00Z"}],  # order map
+            [{"id": "commander-1", "name": " / ".join(existing_order)}],  # legacy lookup hit
+        ]
+
+        ingester = DataIngester(Mock(), supabase)
+        result_id = ingester.get_or_create_commander(alpha_name, list(pair_key))
+
+        self.assertEqual(result_id, "commander-1")
+        # The legacy path must have looked up by the *reconciled* name, not the
+        # alphabetical one -- otherwise it would have missed the row and
+        # inserted a duplicate.
+        legacy_lookup_call = supabase.select.call_args_list[1]
+        self.assertEqual(legacy_lookup_call.args[0], "commanders")
+        self.assertEqual(legacy_lookup_call.args[1], {"name": f"eq.{' / '.join(existing_order)}"})
+        # And no upsert/create should have been needed.
+        supabase.upsert.assert_not_called()
+
+    @patch("ingest.load_legal_commander_pair_order_map", return_value={})
+    @patch(
+        "ingest.load_legal_commander_pair_names",
+        return_value={"Aaardvark, Test Partner / Zzzephyr, Test Commander"},
+    )
+    def test_batch_upsert_commanders_drops_keys_missing_from_upsert_result(
+        self, _mock_legal_names: Mock, _mock_legal_order: Mock
+    ) -> None:
+        """The return-map comprehension guards ``if canonical_name in
+        name_to_id``. If the upsert returns a subset of rows (e.g. a row that
+        was filtered server-side), the corresponding original keys must be
+        silently dropped from the returned map rather than raising KeyError.
+        """
+        existing_order = ("Zzzephyr, Test Commander", "Aaardvark, Test Partner")
+        pair_key = tuple(sorted(existing_order))
+        single_commander_name = "Solo, Test Commander"
+
+        supabase = Mock()
+        supabase.select.return_value = [{"commander_names": list(existing_order), "created_at": "2025-01-01T00:00:00Z"}]
+
+        def fake_upsert(table, data, on_conflict=None, max_retries=3):
+            # Only echo back the single-commander row; drop the partner row.
+            return [{"name": row["name"], "id": "solo-id"} for row in data if row["name"] == single_commander_name]
+
+        supabase.upsert.side_effect = fake_upsert
+
+        ingester = DataIngester(Mock(), supabase)
+        id_map = ingester.batch_upsert_commanders(
+            {
+                " / ".join(pair_key): list(pair_key),
+                single_commander_name: [single_commander_name],
+            }
+        )
+
+        # The partner pair (absent from the upsert result) is dropped; only the
+        # single commander survives in the returned map.
+        self.assertEqual(id_map, {single_commander_name: "solo-id"})
+
+    @patch("ingest.load_legal_commander_pair_order_map", return_value={})
+    @patch(
+        "ingest.load_legal_commander_pair_names",
+        return_value={"Aaardvark, Test Partner / Zzzephyr, Test Commander"},
+    )
+    def test_commander_cache_keyed_by_pre_reconciliation_name(
+        self, _mock_legal_names: Mock, _mock_legal_order: Mock
+    ) -> None:
+        """``ingest_tournament`` does ``self.commander_cache.update(id_map)``
+        with the original-key-keyed map, and the legacy path later looks up by
+        ``name``. After a reconciled upsert, the cache is keyed by the
+        pre-reconciliation (alphabetical) name; a subsequent legacy-path lookup
+        by the *reconciled* name misses the cache and re-queries the DB. This
+        documents that contract: the cache is intentionally keyed by the name
+        ``process_tournament`` computed, not by the reconciled name that was
+        actually persisted.
+        """
+        existing_order = ("Zzzephyr, Test Commander", "Aaardvark, Test Partner")
+        pair_key = tuple(sorted(existing_order))
+        alpha_name = " / ".join(pair_key)
+        reconciled_name = " / ".join(existing_order)
+
+        supabase = Mock()
+        supabase.select.return_value = [{"commander_names": list(existing_order), "created_at": "2025-01-01T00:00:00Z"}]
+        supabase.upsert.side_effect = lambda table, data, on_conflict=None, max_retries=3: [
+            {"name": row["name"], "id": "commander-1"} for row in data
+        ]
+
+        ingester = DataIngester(Mock(), supabase)
+        id_map = ingester.batch_upsert_commanders({alpha_name: list(pair_key)})
+        ingester.commander_cache.update(id_map)
+
+        # The cache is keyed by the pre-reconciliation name (what the caller
+        # computed), NOT by the reconciled name that was persisted.
+        self.assertIn(alpha_name, ingester.commander_cache)
+        self.assertEqual(ingester.commander_cache[alpha_name], "commander-1")
+        # The reconciled name is NOT in the cache -- a legacy-path lookup by it
+        # would miss and re-query the DB. This is intentional: the batch path
+        # and the legacy path compute their own names upstream and look up by
+        # those, so the cache must be keyed to match what they'll ask for.
+        self.assertNotIn(reconciled_name, ingester.commander_cache)
+
+    def test_reconcile_partner_order_cache_hit_through_two_element_branch(self) -> None:
+        """The cache-hit path through the 2-element reconciliation branch: a
+        second 2-element call must reuse the cached order map (no new
+        ``select``) and reconcile against the established DB order.
+        """
+        existing_order = ("Zzzephyr, Test Commander", "Aaardvark, Test Partner")
+        pair_key = tuple(sorted(existing_order))
+
+        supabase = Mock()
+        supabase.select.return_value = [{"commander_names": list(existing_order), "created_at": "2025-01-01T00:00:00Z"}]
+        ingester = DataIngester(Mock(), supabase)
+
+        # First call populates the cache and reconciles to the DB order.
+        name1, names1 = ingester._reconcile_partner_order(
+            " / ".join(pair_key),
+            list(pair_key),
+        )
+        self.assertEqual(name1, " / ".join(existing_order))
+        self.assertEqual(names1, list(existing_order))
+
+        # Second 2-element call: must reuse the cache (no new select) and still
+        # reconcile. Passing the DB's own order so the "no change" sub-branch
+        # is the one exercised.
+        name2, names2 = ingester._reconcile_partner_order(
+            " / ".join(existing_order),
+            list(existing_order),
+        )
+        self.assertEqual(name2, " / ".join(existing_order))
+        self.assertEqual(names2, list(existing_order))
+
+        # Exactly one select call across both reconciliations.
+        supabase.select.assert_called_once()
+
 
 class IngestionJobLifecycleTests(unittest.TestCase):
     def test_claim_ingestion_job_sends_update(self) -> None:
