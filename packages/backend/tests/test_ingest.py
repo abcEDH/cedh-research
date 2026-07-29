@@ -1,10 +1,9 @@
-import unittest
 import os
 import sys
 import types
+import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
-
 
 try:
     import requests as requests_module
@@ -33,19 +32,18 @@ sys.modules.setdefault("dateutil.parser", dateutil_parser_module)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from ingest import (  # noqa: E402
-    _describe_request_failure,
-    clean_commander_card_name,
-    extract_standing_rates,
     INGESTION_JOB_ALREADY_CLAIMED_EXIT_CODE,
+    DataIngester,
+    claim_ingestion_job,
+    clean_commander_card_name,
+    complete_ingestion_job,
+    extract_standing_rates,
+    fail_ingestion_job,
     load_commander_oracle_aliases,
+    main,
     normalize_commander_name,
     resolve_record_fields,
     sanitize_commander_payload,
-    SupabaseClient,
-    claim_ingestion_job,
-    complete_ingestion_job,
-    fail_ingestion_job,
-    main,
 )
 
 
@@ -204,6 +202,52 @@ class CommanderNormalizationTests(unittest.TestCase):
             normalize_commander_name(["Haldan, Avid Arcanist", "Pako, Arcane Retriever"]),
             "Pako, Arcane Retriever / Haldan, Avid Arcanist",
         )
+
+    def test_partner_pair_ingested_in_both_name_orders_merges_to_same_commander(self) -> None:
+        """Regression test for issue #260.
+
+        A partner pair reported by TopDeck as "A, B" in one tournament entry
+        and "B, A" in another (a real, legal pair with no
+        PARTNER_ORDER_OVERRIDES entry, so it exercises the
+        legal_commander_pairings.json order-map fallback) must resolve to a
+        single canonical commander name -- and a single upserted row -- no
+        matter which order either entry's decklist happened to list them in.
+        """
+        order_a = ["Abby, Merciless Soldier", "Ellie, Brick Master"]
+        order_b = ["Ellie, Brick Master", "Abby, Merciless Soldier"]
+
+        name_a = normalize_commander_name(order_a)
+        name_b = normalize_commander_name(order_b)
+        self.assertEqual(name_a, name_b)
+        self.assertEqual(name_a, "Abby, Merciless Soldier / Ellie, Brick Master")
+
+        # Mirrors ingest.py's own commander_data collection loop (see
+        # DataIngester.process_tournament): each standing's raw commander
+        # order is normalized to a canonical name *before* being used as the
+        # dict key, so both orders collapse into one entry pre-upsert.
+        commander_data: dict[str, list[str]] = {}
+        for commanders in (order_a, order_b):
+            commander_name = normalize_commander_name(commanders)
+            if commander_name not in commander_data:
+                commander_data[commander_name] = commanders
+        self.assertEqual(len(commander_data), 1)
+
+        ingester = DataIngester(topdeck=Mock(), supabase=Mock())
+        ingester.supabase.upsert.return_value = [{"name": name_a, "id": "commander-1"}]
+
+        result = ingester.batch_upsert_commanders(commander_data)
+
+        self.assertEqual(result, {name_a: "commander-1"})
+        upsert_call = ingester.supabase.upsert.call_args
+        self.assertEqual(upsert_call.args[0], "commanders")
+        upserted_rows = upsert_call.args[1]
+        self.assertEqual(len(upserted_rows), 1)
+        self.assertEqual(upserted_rows[0]["name"], "Abby, Merciless Soldier / Ellie, Brick Master")
+        self.assertEqual(
+            upserted_rows[0]["commander_names"],
+            ["Abby, Merciless Soldier", "Ellie, Brick Master"],
+        )
+        self.assertEqual(upsert_call.kwargs.get("on_conflict"), "name")
 
 
 class IngestionJobLifecycleTests(unittest.TestCase):

@@ -86,6 +86,44 @@ jobs:
           path: packages/backend/logs/
           retention-days: 30
 
+  sweep-partner-commander-order:
+    name: Sweep partner commander order
+    runs-on: ubuntu-latest
+    needs: elo-recompute
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies (locked)
+        run: uv sync --frozen --project packages/backend
+
+      - name: Normalize partner commander pair order
+        run: |
+          # Recurring safety net for issue #260: partner pairs ingested before
+          # this canonicalization existed (or before a PARTNER_ORDER_OVERRIDES
+          # entry was added for them) can still sit in the database as two
+          # separate commander rows differing only by name order. Ingestion
+          # itself already canonicalizes new pairs on write
+          # (ingest.sanitize_commander_payload), so this only needs to run
+          # periodically to mop up pre-existing drift, not on every ingest.
+          if [ "${{ inputs.refresh_mode }}" = "full" ]; then
+            uv run --project packages/backend python packages/backend/src/sweep_partner_commander_order.py
+          else
+            uv run --project packages/backend python packages/backend/src/sweep_partner_commander_order.py --dry-run
+          fi
+
+      - name: Upload sweep report
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: partner-commander-order-report
+          path: packages/backend/logs/
+          retention-days: 30
+
   validate-views:
     runs-on: ubuntu-latest
     needs: elo-recompute
@@ -173,6 +211,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - elo-recompute
+      - sweep-partner-commander-order
       - validate-views
       - validate-data-integrity
       - validate-regional-elo-consistency
