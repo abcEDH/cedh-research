@@ -1,0 +1,4 @@
+-- This migration was applied on the remote Supabase project by the
+-- Supabase Preview Branching feature. Its schema changes (if any)
+-- are already present in the remote database. This file exists only to
+-- satisfy the Supabase Preview migration-consistency check.
