@@ -235,7 +235,7 @@ async function fetchLeaderboardRows(
 
 async function fetchRegionRows(): Promise<RegionRow[]> {
   const { data, error } = await supabase
-    .from("global_elo_regions")
+    .from("global_elo_active_regions")
     .select("region_type, region_key, country_key, player_count, updated_at")
     .order("region_type", { ascending: true })
     .order("region_key", { ascending: true });
@@ -332,9 +332,8 @@ async function fetchLatestCommanders(
 
 const getCachedRegionRows = unstable_cache(
   () => withTiming("regional-elo:regions", fetchRegionRows),
-  // v4: invalidate preview cache entries written before the regional metadata
-  // view was migrated to track the active leaderboard snapshot.
-  ["regional-elo-regions-v4"],
+  // v5: the metadata now comes from the active leaderboard snapshot view.
+  ["regional-elo-regions-v5"],
   { revalidate: REGIONAL_ELO_CACHE_REVALIDATE_SECONDS }
 );
 

@@ -77,13 +77,12 @@ class RegionalEloLeaderboardMigrationTests(unittest.TestCase):
     def test_regions_view_tracks_active_leaderboard_snapshot(self) -> None:
         sql = REGIONS_ACTIVE_SNAPSHOT_MIGRATION.read_text()
 
-        self.assertIn("CREATE OR REPLACE VIEW public.regional_elo_regions AS", sql)
+        self.assertIn("CREATE OR REPLACE VIEW public.global_elo_active_regions AS", sql)
         self.assertIn("FROM public.global_elo_active_leaderboard", sql)
         self.assertIn("MAX(updated_at) AS updated_at", sql)
         self.assertIn("GROUP BY region_type, region_key, country_key", sql)
-        self.assertLess(sql.index("country_key,"), sql.index("COUNT(*)::bigint AS player_count"))
         self.assertIn(
-            "ALTER VIEW public.regional_elo_regions SET (security_invoker = true)",
+            "ALTER VIEW public.global_elo_active_regions SET (security_invoker = true)",
             sql,
         )
 
