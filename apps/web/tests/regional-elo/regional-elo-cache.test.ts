@@ -128,6 +128,8 @@ describe("regional-elo cache configuration", () => {
     expect(primaryReadSource).not.toContain('.order("rank", { ascending: true })');
     expect(source).toContain("normalizeLeaderboardRows");
     expect(source).toContain('.from("global_elo_active_regions")');
+    expect(source).toContain('["regional-elo-regions-v5"]');
+    expect(source).toContain('["regional-elo-leaderboard-v6"]');
     expect(source).toContain('console.info(`[regional-elo] ${event}`, details);');
     expect(source).toContain('logReadSummary("leaderboard-cache-miss"');
     expect(source).toContain('logReadSummary("latest-commanders-cache-miss"');

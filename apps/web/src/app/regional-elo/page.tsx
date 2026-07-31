@@ -348,10 +348,9 @@ const getCachedLeaderboardRows = unstable_cache(
     withTiming("regional-elo:leaderboard", () =>
       fetchLeaderboardRows(regionType, regionKey, page, pageSize, searchQuery)
     ),
-  // v5: bumped to invalidate any pre-deploy cache entries that still carry the legacy
-  // `hidden_rating` field written by the old `normalizeLeaderboardRows` (see issue #253 /
-  // `toClientLeaderboardRow`'s defensive strip above).
-  ["regional-elo-leaderboard-v5"],
+  // v6: invalidate rows alongside the active-region metadata cache, so the displayed
+  // snapshot timestamp and leaderboard rows always come from the same deployment.
+  ["regional-elo-leaderboard-v6"],
   { revalidate: REGIONAL_ELO_CACHE_REVALIDATE_SECONDS }
 );
 
