@@ -205,6 +205,41 @@ class CommanderNormalizationTests(unittest.TestCase):
             "Pako, Arcane Retriever / Haldan, Avid Arcanist",
         )
 
+    def test_sanitize_commander_payload_dedupes_new_pair_regardless_of_input_order(self) -> None:
+        # Regression test for #260: "Abby, Merciless Soldier / Ellie, Brick
+        # Master" has no PARTNER_ORDER_OVERRIDES entry, so its canonical order
+        # comes solely from the alphabetically-sorted fallback in
+        # normalize_partner_order(). A newly-ingested tournament entry can
+        # report this pair in either order depending on decklist formatting;
+        # both must resolve to the exact same commander row so they merge
+        # instead of splitting into "A, B" and "B, A" duplicates.
+        forward = sanitize_commander_payload(
+            None,
+            ["Abby, Merciless Soldier", "Ellie, Brick Master"],
+        )
+        reverse = sanitize_commander_payload(
+            None,
+            ["Ellie, Brick Master", "Abby, Merciless Soldier"],
+        )
+        self.assertEqual(forward, reverse)
+        self.assertEqual(
+            forward,
+            (
+                "Abby, Merciless Soldier / Ellie, Brick Master",
+                ["Abby, Merciless Soldier", "Ellie, Brick Master"],
+            ),
+        )
+
+    def test_normalize_commander_name_dedupes_new_pair_regardless_of_input_order(self) -> None:
+        # Same regression as above, exercised through the extraction-time
+        # helper (normalize_commander_name -> normalize_partner_order) that
+        # ingest.py's standings loop calls before a commander row is ever
+        # created, so the dedup holds before persistence too.
+        self.assertEqual(
+            normalize_commander_name(["Abby, Merciless Soldier", "Ellie, Brick Master"]),
+            normalize_commander_name(["Ellie, Brick Master", "Abby, Merciless Soldier"]),
+        )
+
 
 class IngestionJobLifecycleTests(unittest.TestCase):
     def test_claim_ingestion_job_sends_update(self) -> None:

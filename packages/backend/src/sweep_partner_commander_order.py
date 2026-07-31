@@ -17,6 +17,8 @@ from ingest import (
     PARTNER_ORDER_OVERRIDES,
     SupabaseClient,
     clean_commander_card_name,
+    load_legal_commander_pair_order_map,
+    normalize_partner_order,
 )
 
 
@@ -103,9 +105,30 @@ def choose_target_order(
     current_order: tuple[str, str],
     observations: collections.Counter[tuple[str, str]],
 ) -> tuple[str, str]:
-    override = PARTNER_ORDER_OVERRIDES.get(canonical_pair_key(list(current_order)))
-    if override:
-        return override
+    """Pick the canonical display order for an existing partner-pair row.
+
+    Bug (#260): this used to consult only ``PARTNER_ORDER_OVERRIDES`` before
+    falling back to per-run TopDeck deck-page observation. ``ingest.py``'s
+    ``normalize_partner_order`` -- the function that decides the order for
+    *every future* partner-pair write -- checks the generated legal-pair
+    order map (``load_legal_commander_pair_order_map()``, ~3,100 pairs)
+    *first* and only falls back to ``PARTNER_ORDER_OVERRIDES`` after that.
+    Because the sweep never consulted the legal-pair order map, it picked an
+    order from network observation for the vast majority of pairs while
+    fresh ingestion picked the (possibly different) legal-pair-map order for
+    the exact same pair -- so a pair "fixed" by the sweep would immediately
+    re-split the next time it was ingested. Always defer to
+    ``normalize_partner_order`` when it has an opinion (legal-pair map or
+    override) so a swept row can never diverge from what ingestion produces
+    for the same pair going forward. Only fall back to the historical
+    observation heuristic for pairs neither source recognizes.
+    """
+    pair_key = canonical_pair_key(list(current_order))
+    has_canonical_source = pair_key in load_legal_commander_pair_order_map() or pair_key in PARTNER_ORDER_OVERRIDES
+    if has_canonical_source:
+        canonical_order = tuple(normalize_partner_order(list(current_order)))
+        if len(canonical_order) == 2:
+            return canonical_order
     if not observations:
         return current_order
 
@@ -219,10 +242,13 @@ def main() -> None:
         current_order = current_pair_order(commander)
         if not current_order:
             continue
-        override = PARTNER_ORDER_OVERRIDES.get(canonical_pair_key(list(current_order)))
+        pair_key = canonical_pair_key(list(current_order))
+        canonical_source_order = PARTNER_ORDER_OVERRIDES.get(pair_key) or load_legal_commander_pair_order_map().get(
+            pair_key
+        )
         observed_orders: collections.Counter[tuple[str, str]] = collections.Counter()
-        if override:
-            target_order = override
+        if canonical_source_order:
+            target_order = canonical_source_order
         else:
             rows = fetch_entries_for_commander(client, commander["id"], args.sample_limit)
             seen_sources: set[str] = set()
@@ -232,12 +258,14 @@ def main() -> None:
                 if not source_key:
                     players = row.get("players") or {}
                     tournaments = row.get("tournaments") or {}
-                    source_key = f"{tournaments.get('topdeck_tid','')}::{players.get('topdeck_id','')}"
+                    source_key = f"{tournaments.get('topdeck_tid', '')}::{players.get('topdeck_id', '')}"
                 if source_key in seen_sources:
                     continue
                 seen_sources.add(source_key)
 
-                observed = observe_pair_order({**row, **{"commander_names": list(current_order)}}, session, args.timeout)
+                observed = observe_pair_order(
+                    {**row, **{"commander_names": list(current_order)}}, session, args.timeout
+                )
                 if not observed:
                     continue
                 observed_orders[observed] += 1
@@ -247,8 +275,12 @@ def main() -> None:
             target_order = choose_target_order(current_order, observed_orders)
         current_name = commander["name"]
         target_name = " / ".join(target_order)
-        observations = "; ".join(
-            f"{left} / {right}:{count}" for (left, right), count in observed_orders.most_common()
+        current_order_display = " / ".join(current_order)
+        target_order_display = " / ".join(target_order)
+        observations = "; ".join(f"{left} / {right}:{count}" for (left, right), count in observed_orders.most_common())
+        report_row = (
+            f'{commander["id"]},"{current_name}","{target_name}","{observations}",'
+            f'"{current_order_display}","{target_order_display}"'
         )
 
         if target_name != current_name:
@@ -258,22 +290,16 @@ def main() -> None:
                     repoint_tournament_entries(client, commander["id"], conflict_id)
                     delete_commander_row(client, commander["id"])
                 merged += 1
-                report_lines.append(
-                    f'{commander["id"]},"{current_name}","{target_name}","{observations}","{" / ".join(current_order)}","{" / ".join(target_order)}",merged'
-                )
+                report_lines.append(f"{report_row},merged")
                 continue
             if not args.dry_run:
                 update_commander_row(client, commander["id"], target_name, target_order)
             name_to_id.pop(current_name, None)
             name_to_id[target_name] = commander["id"]
             updated += 1
-            report_lines.append(
-                f'{commander["id"]},"{current_name}","{target_name}","{observations}","{" / ".join(current_order)}","{" / ".join(target_order)}",yes'
-            )
+            report_lines.append(f"{report_row},yes")
         else:
-            report_lines.append(
-                f'{commander["id"]},"{current_name}","{target_name}","{observations}","{" / ".join(current_order)}","{" / ".join(target_order)}",no'
-            )
+            report_lines.append(f"{report_row},no")
 
     Path(args.report).parent.mkdir(parents=True, exist_ok=True)
     Path(args.report).write_text("\n".join(report_lines) + "\n")

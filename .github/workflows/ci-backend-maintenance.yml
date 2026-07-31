@@ -62,6 +62,16 @@ jobs:
       - name: Install dependencies (locked)
         run: uv sync --frozen --project packages/backend
 
+      - name: Sweep partner-commander display order (merge "A, B" vs "B, A" duplicates)
+        run: |
+          if [ "${{ inputs.refresh_mode }}" = "full" ]; then
+            uv run --project packages/backend python packages/backend/src/sweep_partner_commander_order.py \
+              --report packages/backend/logs/sweep_partner_commander_order.csv
+          else
+            uv run --project packages/backend python packages/backend/src/sweep_partner_commander_order.py \
+              --dry-run --report packages/backend/logs/sweep_partner_commander_order.csv
+          fi
+
       - name: Recompute global Elo, state activity, and game events
         run: |
           if [ "${{ inputs.refresh_mode }}" = "full" ]; then
