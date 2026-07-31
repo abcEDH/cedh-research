@@ -1,3 +1,14 @@
+## [1.24.1](https://github.com/abcEDH/cedh-research/compare/v1.24.0...v1.24.1) (2026-07-31)
+
+
+### Bug Fixes
+
+* add remote migration placeholder for Supabase Preview consistency ([c581498](https://github.com/abcEDH/cedh-research/commit/c581498cf35b4a13806a698293b15085a123e9ad))
+* avoid regional view migration conflict ([2c6b2c5](https://github.com/abcEDH/cedh-research/commit/2c6b2c572b9e14a1487e57847be5cb2b6046a940))
+* preserve regional metadata view columns ([569dd61](https://github.com/abcEDH/cedh-research/commit/569dd61c32e8a91bbbb196679323c2fb0f20e116))
+* refresh regional leaderboard cache together ([2310451](https://github.com/abcEDH/cedh-research/commit/2310451eec96944fed3f3643f601fd470a5a2ee1))
+* refresh regional leaderboard timestamp ([2a25285](https://github.com/abcEDH/cedh-research/commit/2a25285f8be749d55d093e91a5b06438754fe144))
+
 # [1.24.0](https://github.com/abcEDH/cedh-research/compare/v1.23.0...v1.24.0) (2026-07-27)
 
 
