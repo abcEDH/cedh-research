@@ -11,6 +11,9 @@ STATE_ACTIVITY_MIGRATION = MIGRATIONS_DIR / "20260406010000_global_elo_state_act
 LEADERBOARD_TOPDECK_MIGRATION = (
     MIGRATIONS_DIR / "20260501000000_regional_elo_leaderboard_topdeck_fields.sql"
 )
+REGIONS_ACTIVE_SNAPSHOT_MIGRATION = (
+    MIGRATIONS_DIR / "20260730000000_regional_elo_regions_active_snapshot.sql"
+)
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -68,6 +71,18 @@ class RegionalEloLeaderboardMigrationTests(unittest.TestCase):
         )
         self.assertIn(
             "GRANT SELECT ON public.regional_elo_active_leaderboard TO anon, authenticated",
+            sql,
+        )
+
+    def test_regions_view_tracks_active_leaderboard_snapshot(self) -> None:
+        sql = REGIONS_ACTIVE_SNAPSHOT_MIGRATION.read_text()
+
+        self.assertIn("CREATE OR REPLACE VIEW public.global_elo_active_regions AS", sql)
+        self.assertIn("FROM public.global_elo_active_leaderboard", sql)
+        self.assertIn("MAX(updated_at) AS updated_at", sql)
+        self.assertIn("GROUP BY region_type, region_key, country_key", sql)
+        self.assertIn(
+            "ALTER VIEW public.global_elo_active_regions SET (security_invoker = true)",
             sql,
         )
 

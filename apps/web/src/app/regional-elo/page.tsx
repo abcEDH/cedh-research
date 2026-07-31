@@ -235,7 +235,7 @@ async function fetchLeaderboardRows(
 
 async function fetchRegionRows(): Promise<RegionRow[]> {
   const { data, error } = await supabase
-    .from("global_elo_regions")
+    .from("global_elo_active_regions")
     .select("region_type, region_key, country_key, player_count, updated_at")
     .order("region_type", { ascending: true })
     .order("region_key", { ascending: true });
@@ -332,7 +332,8 @@ async function fetchLatestCommanders(
 
 const getCachedRegionRows = unstable_cache(
   () => withTiming("regional-elo:regions", fetchRegionRows),
-  ["regional-elo-regions-v2"],
+  // v5: the metadata now comes from the active leaderboard snapshot view.
+  ["regional-elo-regions-v5"],
   { revalidate: REGIONAL_ELO_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -347,10 +348,9 @@ const getCachedLeaderboardRows = unstable_cache(
     withTiming("regional-elo:leaderboard", () =>
       fetchLeaderboardRows(regionType, regionKey, page, pageSize, searchQuery)
     ),
-  // v5: bumped to invalidate any pre-deploy cache entries that still carry the legacy
-  // `hidden_rating` field written by the old `normalizeLeaderboardRows` (see issue #253 /
-  // `toClientLeaderboardRow`'s defensive strip above).
-  ["regional-elo-leaderboard-v5"],
+  // v6: invalidate rows alongside the active-region metadata cache, so the displayed
+  // snapshot timestamp and leaderboard rows always come from the same deployment.
+  ["regional-elo-leaderboard-v6"],
   { revalidate: REGIONAL_ELO_CACHE_REVALIDATE_SECONDS }
 );
 
