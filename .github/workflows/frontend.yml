@@ -103,7 +103,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Create release bot token
+        id: release-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.TEDH_RELEASE_APP_ID }}
+          private-key: ${{ secrets.TEDH_RELEASE_APP_PRIVATE_KEY }}
+          owner: abcEDH
+          repositories: cedh-research
+
       - name: Run semantic-release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.release-token.outputs.token }}
         run: npm --workspace apps/web run release
