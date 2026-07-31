@@ -81,6 +81,7 @@ class RegionalEloLeaderboardMigrationTests(unittest.TestCase):
         self.assertIn("FROM public.global_elo_active_leaderboard", sql)
         self.assertIn("MAX(updated_at) AS updated_at", sql)
         self.assertIn("GROUP BY region_type, region_key, country_key", sql)
+        self.assertLess(sql.index("country_key,"), sql.index("COUNT(*)::bigint AS player_count"))
         self.assertIn(
             "ALTER VIEW public.regional_elo_regions SET (security_invoker = true)",
             sql,

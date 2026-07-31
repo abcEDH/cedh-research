@@ -6,9 +6,9 @@ CREATE OR REPLACE VIEW public.regional_elo_regions AS
 SELECT
   region_type,
   region_key,
+  country_key,
   COUNT(*)::bigint AS player_count,
-  MAX(updated_at) AS updated_at,
-  country_key
+  MAX(updated_at) AS updated_at
 FROM public.global_elo_active_leaderboard
 GROUP BY region_type, region_key, country_key;
 

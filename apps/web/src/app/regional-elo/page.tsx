@@ -332,9 +332,9 @@ async function fetchLatestCommanders(
 
 const getCachedRegionRows = unstable_cache(
   () => withTiming("regional-elo:regions", fetchRegionRows),
-  // v3: invalidate the former cache entries populated before `global_elo_regions`
-  // began tracking the active leaderboard snapshot instead of retired rating rows.
-  ["regional-elo-regions-v3"],
+  // v4: invalidate preview cache entries written before the regional metadata
+  // view was migrated to track the active leaderboard snapshot.
+  ["regional-elo-regions-v4"],
   { revalidate: REGIONAL_ELO_CACHE_REVALIDATE_SECONDS }
 );
 
