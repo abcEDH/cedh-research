@@ -107,7 +107,7 @@ erDiagram
 
 ### Tournaments
 
-- `tournaments`: TopDeck.gg events (location, dates, player_count, rounds, top_cut).
+- `tournaments`: TopDeck.gg events (location, dates, player_count, rounds, top_cut, `is_league`).
 
 ### Players
 

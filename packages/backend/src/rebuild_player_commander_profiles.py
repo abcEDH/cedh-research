@@ -7,7 +7,7 @@ import argparse
 import logging
 import os
 from collections import defaultdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timezone
 from typing import Any
 
 import requests
@@ -29,6 +29,7 @@ RECENCY_HALF_LIFE_DAYS = 24
 PRIMARY_LOOKBACK_MONTHS = 6
 FALLBACK_LOOKBACK_MONTHS = 12
 MIN_PRIMARY_COMMANDER_ENTRIES = 2
+LATEST_COMMANDER_BLEND_WEIGHT = 0.25
 PAGE_SIZE = 1000
 UPSERT_CHUNK_SIZE = 200
 
@@ -192,6 +193,10 @@ def normalize_usage_rows(raw_rows: list[dict[str, Any]]) -> list[dict[str, Any]]
         commander_name = row.get("commander_name") or (commander.get("name") if commander else None)
         player_name = row.get("player_name") or (player.get("name") if player else None)
         start_date = row.get("start_date") or (tournament.get("start_date") if tournament else None)
+        if isinstance(start_date, datetime):
+            start_date = start_date.isoformat()
+        elif isinstance(start_date, date):
+            start_date = datetime.combine(start_date, time.min).isoformat()
         topdeck_tid = row.get("topdeck_tid") or (tournament.get("topdeck_tid") if tournament else None)
         tournament_id = row.get("tournament_id") or (tournament.get("id") if tournament else None)
         tournament_name = row.get("tournament_name") or (tournament.get("name") if tournament else None)
@@ -322,9 +327,15 @@ def build_profile_rows(usage_rows: list[dict[str, Any]], reference_date: date) -
         total_entries = sum(value["entries"] for value in sorted_commanders)
         total_prediction = sum(value["prediction_score"] for value in sorted_commanders)
         commander_predictions = []
-        for value in sorted_commanders[:3]:
+        latest_commander = latest_row.get("commander_name") if latest_row else None
+        for value in sorted_commanders:
             share = (value["entries"] / total_entries) if total_entries else 0
             prediction_share = value["prediction_score"] / total_prediction if total_prediction else share
+            latest_bonus = 1.0 if value["commander"] == latest_commander else 0.0
+            model_share = (
+                (1 - LATEST_COMMANDER_BLEND_WEIGHT) * prediction_share
+                + LATEST_COMMANDER_BLEND_WEIGHT * latest_bonus
+            )
             commander_predictions.append(
                 {
                     "commander": value["commander"],
@@ -332,11 +343,25 @@ def build_profile_rows(usage_rows: list[dict[str, Any]], reference_date: date) -
                     "share": share,
                     "weighted_share": prediction_share,
                     "prediction_share": prediction_share,
+                    "model_share": model_share,
                     "prediction_score": round(value["prediction_score"], 6),
                     "latest_date": value["latest_date"],
                     "latest_decklist_url": value["latest_decklist_url"],
                 }
             )
+        total_model_share = sum(value.get("model_share", 0) for value in commander_predictions)
+        if total_model_share > 0:
+            for value in commander_predictions:
+                value["model_share"] = value.get("model_share", 0) / total_model_share
+        commander_predictions.sort(
+            key=lambda value: (
+                -value.get("model_share", 0),
+                -value["prediction_share"],
+                -value["entries"],
+                value["commander"],
+            )
+        )
+        commander_predictions = commander_predictions[:3]
 
         active = commander_predictions[0] if commander_predictions else None
         # latest_decklist_url tracks the *active commander's* most recent decklist so
@@ -351,10 +376,10 @@ def build_profile_rows(usage_rows: list[dict[str, Any]], reference_date: date) -
                 "player_name": player_names_by_topdeck_id.get(topdeck_id) or "Unknown",
                 "active_commander": active["commander"] if active else None,
                 "active_commander_entries": active["entries"] if active else 0,
-                "active_commander_prediction_score": active["prediction_score"] if active else 0,
+                "active_commander_prediction_score": active.get("model_share", 0) if active else 0,
                 "total_entries": total_entries,
                 "commander_predictions": commander_predictions,
-                "latest_commander": latest_row.get("commander_name") if latest_row else None,
+                "latest_commander": latest_commander,
                 "latest_commander_date": latest_start_date[:10] or None,
                 "latest_decklist_url": active_commander_latest_decklist_url,
                 "latest_tournament_id": latest_row.get("tournament_id") if latest_row else None,
