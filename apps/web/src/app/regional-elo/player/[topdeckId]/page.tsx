@@ -186,10 +186,17 @@ export type PlayerAchievementRow = {
 
 export type PlayerCommanderProfileRow = {
   active_commander: string | null;
-  latest_decklist_url: string | null;
-  latest_tournament_name: string | null;
-  latest_tournament_date: string | null;
-  latest_tournament_topdeck_tid: string | null;
+  active_commander_prediction_score: number | null;
+  latest_commander: string | null;
+  latest_commander_date: string | null;
+  commander_predictions:
+    | Array<{
+        commander: string;
+        entries: number;
+        prediction_share?: number | null;
+        model_share?: number | null;
+      }>
+    | null;
 };
 
 export type PlayerEventLogRow = {
@@ -665,8 +672,6 @@ export async function PlayerProfileBody({
     fetchEntries(player.id),
   ]);
 
-  const activeCommander = commanderProfile?.active_commander ?? null;
-
   const eventPlayerLogs =
     eventPlayerLogsResult.status === "fulfilled" ? eventPlayerLogsResult.value : [];
   const playerLogs: PlayerGameLog[] =
@@ -757,7 +762,7 @@ export async function PlayerProfileBody({
         if (b.games_played !== a.games_played) return b.games_played - a.games_played;
         return a.region_key.localeCompare(b.region_key);
       })[0]?.region_key ?? null;
-  const homeRegion = profileSummary?.home_region_key ?? globalEloRank?.primary_region_key ?? regionalRanks[0]?.region_key ?? derivedHomeRegion;
+  const homeRegion = globalEloRank?.primary_region_key ?? profileSummary?.home_region_key ?? regionalRanks[0]?.region_key ?? derivedHomeRegion;
   const stateAssignmentRows = Array.from(assignmentRowsByRegion.values()).sort((a: StateAssignmentRow, b: StateAssignmentRow) => {
     const aCountry = a.country_key ?? "UNKNOWN";
     const bCountry = b.country_key ?? "UNKNOWN";
@@ -819,6 +824,24 @@ export async function PlayerProfileBody({
     if (b.games !== a.games) return b.games - a.games;
     return a.commander.localeCompare(b.commander);
   });
+  const activeCommander =
+    isKnownCommanderName(commanderProfile?.active_commander)
+      ? commanderProfile?.active_commander ?? null
+      : null;
+  const activeCommanderScore = commanderProfile?.active_commander_prediction_score ?? null;
+  const latestPredictedCommander =
+    isKnownCommanderName(commanderProfile?.latest_commander)
+      ? commanderProfile?.latest_commander ?? null
+      : null;
+  const commanderPredictionRows = (commanderProfile?.commander_predictions ?? [])
+    .filter((row) => isKnownCommanderName(row.commander))
+    .slice(0, 3)
+    .map((row) => ({
+      commander: row.commander,
+      entries: row.entries,
+      modelShare: row.model_share ?? row.prediction_share ?? 0,
+      predictionShare: row.prediction_share ?? 0,
+    }));
   const latestDecklistByCommander = new Map<string, { date: string; url: string }>();
   const latestTournamentByCommander = new Map<
     string,
@@ -842,28 +865,6 @@ export async function PlayerProfileBody({
       });
     }
   }
-  if (activeCommander) {
-    if (
-      commanderProfile?.latest_decklist_url &&
-      commanderProfile.latest_tournament_date &&
-      !latestDecklistByCommander.has(activeCommander)
-    ) {
-      latestDecklistByCommander.set(activeCommander, {
-        date: commanderProfile.latest_tournament_date,
-        url: commanderProfile.latest_decklist_url,
-      });
-    }
-    if (
-      commanderProfile?.latest_tournament_date &&
-      !latestTournamentByCommander.has(activeCommander)
-    ) {
-      latestTournamentByCommander.set(activeCommander, {
-        date: commanderProfile.latest_tournament_date,
-        name: commanderProfile.latest_tournament_name || "Unknown tournament",
-        url: buildTopdeckTournamentUrl(commanderProfile.latest_tournament_topdeck_tid),
-      });
-    }
-  }
   return (
     <>
       <Link href={backHref} className="-mt-6 block text-sm text-muted-foreground hover:text-foreground">
@@ -880,6 +881,43 @@ export async function PlayerProfileBody({
               </p>
             </CardHeader>
             <CardContent>
+              {activeCommander || latestPredictedCommander || commanderPredictionRows.length > 0 ? (
+                <div className="mb-4 grid gap-3 rounded-md border border-border/60 p-3 text-xs text-muted-foreground md:grid-cols-3">
+                  <div>
+                    <div className="uppercase tracking-[0.16em]">Predicted Active</div>
+                    <div className="mt-1 font-medium text-foreground">
+                      {activeCommander ?? "Unknown"}
+                    </div>
+                    {activeCommanderScore !== null ? (
+                      <div className="mt-1">{formatPct(activeCommanderScore)} model share</div>
+                    ) : null}
+                  </div>
+                  <div>
+                    <div className="uppercase tracking-[0.16em]">Latest Commander</div>
+                    <div className="mt-1 font-medium text-foreground">
+                      {latestPredictedCommander ?? "Unknown"}
+                    </div>
+                    {commanderProfile?.latest_commander_date ? (
+                      <div className="mt-1">{formatShortDate(commanderProfile.latest_commander_date)}</div>
+                    ) : null}
+                  </div>
+                  <div>
+                    <div className="uppercase tracking-[0.16em]">Top Predictions</div>
+                    <div className="mt-1 space-y-1">
+                      {commanderPredictionRows.length > 0 ? (
+                        commanderPredictionRows.map((row) => (
+                          <div key={row.commander} className="flex justify-between gap-3">
+                            <span className="truncate text-foreground">{row.commander}</span>
+                            <span className="font-mono">{formatPct(row.modelShare)}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <div>Unknown</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
               <div className="overflow-auto">
                 <table className="w-full text-sm">
                   <thead className="text-left text-xs uppercase tracking-[0.2em] text-muted-foreground">
@@ -1284,7 +1322,6 @@ export async function PlayerProfileBody({
                           Date
                         </Link>
                       </th>
-                      <th className="px-2 py-3 hidden sm:table-cell">Date</th>
                       <th className="px-2 py-3">Commander</th>
                       <th className="px-2 py-3 text-right">Finish</th>
                       <th className="px-2 py-3 text-right hidden md:table-cell">W-L-D</th>
@@ -1310,7 +1347,7 @@ export async function PlayerProfileBody({
                             <span className="text-foreground line-clamp-2 max-w-[140px] sm:max-w-none">{row.tournamentName}</span>
                           )}
                         </td>
-                        <td className="px-2 py-3 text-muted-foreground hidden sm:table-cell">
+                        <td className="px-2 py-3 text-muted-foreground">
                           {formatShortDate(row.startDate)}
                         </td>
                         <td className="px-2 py-3 text-muted-foreground">
