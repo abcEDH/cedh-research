@@ -632,7 +632,7 @@ export default async function Home() {
                 <p className="text-[10px] sm:text-sm text-muted-foreground truncate">Estimate attendee likelihood and expected meta share for your next event</p>
               </div>
               <Button asChild variant="outline" size="sm" className="border-[hsl(var(--knd-amber))]/40 bg-card/60">
-                <Link href="/tournament-likelihood">Run Simulator</Link>
+                <Link href="/tournament-likelihood">Open Prep</Link>
               </Button>
             </CardHeader>
             <CardContent className="px-3 sm:px-6">

@@ -11,10 +11,21 @@ import {
   selectCommanderForecastRows,
 } from "@/lib/meta-prep";
 import type { MetaShareRow, PlayerCommanderProfile } from "@/lib/meta-prep";
-import { extractTournamentSlug, fetchTournamentBySlug } from "@/lib/topdeck";
+import {
+  extractTournamentSlug,
+  fetchTournamentBySlug,
+} from "@/lib/topdeck";
 import Link from "next/link";
 import { unstable_cache } from "next/cache";
 import { FieldShareList } from "./field-share-list";
+import {
+  buildProfilesFromPrecomputedRows,
+  type PrecomputedCommanderProfileRow,
+} from "./precomputed-profiles";
+import {
+  buildTopdeckEloSummary,
+  type TopdeckEloSummary,
+} from "./topdeck-elo-summary";
 import { TournamentAnalysisTables } from "./tournament-analysis-tables";
 
 export const dynamic = "force-dynamic";
@@ -56,20 +67,9 @@ type RegionalLeaderboardQueryRow = {
   rank: number;
 };
 
-type PrecomputedCommanderPrediction = {
-  commander: string;
-  entries: number;
-  prediction_score: number;
-  prediction_share: number;
-  latest_date: string | null;
-  latest_decklist_url: string | null;
-};
-
-type PrecomputedCommanderProfileRow = {
+type PublishedTopdeckEloRow = {
   topdeck_id: string | null;
-  player_name: string | null;
-  total_entries: number;
-  commander_predictions: PrecomputedCommanderPrediction[] | null;
+  elo: number | string | null;
 };
 
 function chunkArray<T>(values: T[], chunkSize = 250) {
@@ -101,6 +101,10 @@ function readStringParam(
 
 function formatPercent(value: number) {
   return `${Math.round(value * 100)}%`;
+}
+
+function formatElo(value: number | null) {
+  return value === null ? "-" : Math.round(value).toLocaleString("en-US");
 }
 
 function readStartTimestamp(startDate: string | number | null | undefined) {
@@ -163,6 +167,31 @@ async function fetchBestEloRows(topdeckIds: string[]): Promise<EloRow[]> {
     .sort((a, b) => (b.rating ?? -Infinity) - (a.rating ?? -Infinity));
 }
 
+async function fetchPublishedTopdeckEloMap(topdeckIds: string[]): Promise<Map<string, number>> {
+  const eloByTopdeckId = new Map<string, number>();
+  const uniqueTopdeckIds = Array.from(new Set(topdeckIds.filter(Boolean)));
+
+  for (const topdeckIdChunk of chunkArray(uniqueTopdeckIds)) {
+    const { data, error } = await supabase
+      .from("topdeck_player_elos")
+      .select("topdeck_id, elo")
+      .in("topdeck_id", topdeckIdChunk);
+
+    if (error) {
+      throw new Error(`Error fetching TopDeck Elo rows: ${error.message}`);
+    }
+
+    for (const row of (data ?? []) as PublishedTopdeckEloRow[]) {
+      const parsedElo = typeof row.elo === "number" ? row.elo : Number(row.elo);
+      if (row.topdeck_id && Number.isFinite(parsedElo)) {
+        eloByTopdeckId.set(row.topdeck_id, parsedElo);
+      }
+    }
+  }
+
+  return eloByTopdeckId;
+}
+
 async function fetchLatestPlayerNames(topdeckIds: string[]): Promise<Map<string, string>> {
   const names = new Map<string, string>();
   const uniqueTopdeckIds = Array.from(new Set(topdeckIds.filter(Boolean)));
@@ -212,52 +241,7 @@ async function fetchPrecomputedProfiles(
     return null;
   }
 
-  const rowsByTopdeckId = new Map(
-    ((data ?? []) as PrecomputedCommanderProfileRow[])
-      .filter((row) => row.topdeck_id)
-      .map((row) => [row.topdeck_id as string, row])
-  );
-  if (rowsByTopdeckId.size === 0) return null;
-
-  const metaTotals = new Map<string, number>();
-  const players = topdeckIds.map((topdeckId) => {
-    const row = rowsByTopdeckId.get(topdeckId);
-    const commanders = (row?.commander_predictions ?? []).slice(0, 3).map((commander) => {
-      metaTotals.set(
-        commander.commander,
-        (metaTotals.get(commander.commander) ?? 0) + commander.prediction_share
-      );
-      return {
-        commander: commander.commander,
-        entries: commander.entries,
-        share: commander.prediction_share,
-        weightedShare: commander.prediction_share,
-        predictionShare: commander.prediction_share,
-        predictionScore: commander.prediction_score,
-        latestDate: commander.latest_date,
-        latestDecklistUrl: commander.latest_decklist_url,
-        latestTopdeckDecklistUrl: null,
-      };
-    });
-
-    return {
-      topdeckId,
-      playerName: row?.player_name ?? "Unknown",
-      totalEntries: row?.total_entries ?? 0,
-      commanders,
-    };
-  });
-  const totalMeta = Array.from(metaTotals.values()).reduce((sum, value) => sum + value, 0);
-  const metaShare = Array.from(metaTotals.entries())
-    .map(([commander, entries]) => ({
-      commander,
-      entries,
-      share: totalMeta ? entries / totalMeta : 0,
-    }))
-    .sort((a, b) => b.entries - a.entries)
-    .slice(0, 15);
-
-  return { players, metaShare };
+  return buildProfilesFromPrecomputedRows(topdeckIds, (data ?? []) as PrecomputedCommanderProfileRow[]);
 }
 
 type TournamentAnalysis = {
@@ -342,16 +326,14 @@ const getCachedTournamentAnalysis = unstable_cache(
       hasRounds: (response.rounds ?? []).length > 0,
     };
   },
-  ["tournament-likelihood-analysis-v26"],
+  ["tournament-likelihood-analysis-v27"],
   { revalidate: 60 * 15 }
 );
 
 export default async function TournamentLikelihoodPage({
   searchParams,
 }: {
-  searchParams?:
-    | Promise<{ tournament?: string }>
-    | { tournament?: string };
+  searchParams?: Promise<{ tournament?: string }> | { tournament?: string };
 }) {
   const resolvedSearchParams = await Promise.resolve(searchParams);
   const tournamentInput = readStringParam(resolvedSearchParams, "tournament").trim();
@@ -372,6 +354,7 @@ export default async function TournamentLikelihoodPage({
     metaShare: [],
   };
   let eloRows: EloRow[] = [];
+  let topdeckEloSummary: TopdeckEloSummary | null = null;
   let hasRounds = false;
   let errorMessage: string | null = null;
 
@@ -390,7 +373,13 @@ export default async function TournamentLikelihoodPage({
       standings = analysis.standings;
       profiles = analysis.profiles;
       const latestStandingNameById = new Map(standings.map((standing) => [standing.id, standing.name]));
-      eloRows = (await fetchBestEloRows(standings.map((standing) => standing.id).filter(Boolean))).map((row) => ({
+      const tournamentTopdeckIds = standings.map((standing) => standing.id).filter(Boolean);
+      const [bestEloRows, publishedTopdeckEloById] = await Promise.all([
+        fetchBestEloRows(tournamentTopdeckIds),
+        fetchPublishedTopdeckEloMap(tournamentTopdeckIds),
+      ]);
+      topdeckEloSummary = buildTopdeckEloSummary(tournamentTopdeckIds, publishedTopdeckEloById);
+      eloRows = bestEloRows.map((row) => ({
         ...row,
         player_name: row.topdeck_id ? latestStandingNameById.get(row.topdeck_id) ?? row.player_name : row.player_name,
       }));
@@ -563,7 +552,7 @@ export default async function TournamentLikelihoodPage({
                   Tournament Snapshot
                 </CardTitle>
               </CardHeader>
-              <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                 <div className="rounded-md border border-border/60 bg-muted/20 p-4">
                   <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Tournament</p>
                   <p className="mt-2 text-lg font-semibold text-foreground">
@@ -591,6 +580,17 @@ export default async function TournamentLikelihoodPage({
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
                     {standings.length ? formatPercent(playersWithData / standings.length) : "0%"} with recent deck data
+                  </p>
+                </div>
+                <div className="rounded-md border border-border/60 bg-muted/20 p-4">
+                  <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Avg TopDeck Elo</p>
+                  <p className="mt-2 text-lg font-semibold text-foreground">
+                    {formatElo(topdeckEloSummary?.average ?? null)}
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {topdeckEloSummary
+                      ? `${topdeckEloSummary.publishedCount}/${topdeckEloSummary.totalPlayers} published; ${topdeckEloSummary.missingCount} defaulted to ${topdeckEloSummary.defaultElo}`
+                      : "Missing TopDeck Elo counts as 1500"}
                   </p>
                 </div>
                 <div className="rounded-md border border-border/60 bg-muted/20 p-4">

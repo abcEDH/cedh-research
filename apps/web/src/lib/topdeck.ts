@@ -63,6 +63,14 @@ type TopDeckTournamentResponse = {
   rounds: TopDeckRound[];
 };
 
+export type TournamentStructureSource = "event_page" | "fallback";
+
+export type TournamentStructureDefaults = {
+  swissRounds: number;
+  topCut: number;
+  source: TournamentStructureSource;
+};
+
 type TopDeckDeckObject = {
   Commanders?: Record<string, unknown>;
 };
@@ -81,6 +89,8 @@ const CHAMPIONSHIP_LEADERBOARD_URL =
   "https://topdeck.gg/championship-series-2026/leaderboard";
 const TOPDECK_FIRESTORE_PROJECT_ID = "eminence-1b40b";
 const TOPDECK_FIRESTORE_API_KEY = "AIzaSyBISF4HIfUsepAAqqYHte2NE_L8eaT6iwI";
+const FALLBACK_SWISS_ROUNDS = 6;
+const FALLBACK_TOP_CUT = 16;
 
 type FirestoreFieldValue = {
   integerValue?: string;
@@ -139,6 +149,104 @@ function normalizeStandingRates<T extends TopDeckTournamentResponse>(response: T
       opponentWinRate: standing.opponentWinRate ?? standing.opponentSuccessRate ?? 0,
     })),
   };
+}
+
+function decodeHtmlEntities(value: string) {
+  return value
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#39;/gi, "'");
+}
+
+function normalizeEventPageText(html: string) {
+  return decodeHtmlEntities(
+    html
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+  );
+}
+
+function firstPositiveIntegerMatch(text: string, patterns: RegExp[]) {
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    const candidate = Number(match?.[1]);
+    if (Number.isInteger(candidate) && candidate > 0) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+export function inferTournamentStructureFromText(textOrHtml: string): TournamentStructureDefaults | null {
+  const text = normalizeEventPageText(textOrHtml);
+  const swissRounds = firstPositiveIntegerMatch(text, [
+    /\b(\d{1,2})\s+Rounds?\s+of\s+Swiss\b/i,
+    /\b(\d{1,2})\s+Swiss\s+Rounds?\b/i,
+    /\b(\d{1,2})\s+Round(?:s)?\s+Swiss\b/i,
+    /\bSwiss\s*[:\-]\s*(\d{1,2})\s+Rounds?\b/i,
+    /\bSwiss[^0-9]{0,30}(\d{1,2})\s+Rounds?\b/i,
+  ]);
+  const topCut = firstPositiveIntegerMatch(text, [
+    /\bCut\s+to\s+Top\s*(\d{1,3})\b/i,
+    /\bCut\s*[:\-]\s*Top\s*(\d{1,3})\b/i,
+    /\bTop\s*(\d{1,3})\s+Cut\b/i,
+    /\bTop\s*(\d{1,3})\s+Playoff\b/i,
+  ]);
+
+  if (swissRounds === null && topCut === null) return null;
+
+  return {
+    swissRounds: swissRounds ?? FALLBACK_SWISS_ROUNDS,
+    topCut: topCut ?? FALLBACK_TOP_CUT,
+    source: "event_page",
+  };
+}
+
+export function defaultTournamentStructureForPlayerCount(playerCount: number): TournamentStructureDefaults {
+  if (playerCount <= 0) {
+    return {
+      swissRounds: FALLBACK_SWISS_ROUNDS,
+      topCut: FALLBACK_TOP_CUT,
+      source: "fallback",
+    };
+  }
+
+  if (playerCount <= 16) return { swissRounds: 2, topCut: 0, source: "fallback" };
+  if (playerCount <= 34) return { swissRounds: 3, topCut: 4, source: "fallback" };
+  if (playerCount <= 64) return { swissRounds: 4, topCut: 10, source: "fallback" };
+  if (playerCount <= 128) return { swissRounds: 5, topCut: 16, source: "fallback" };
+  if (playerCount <= 208) return { swissRounds: 6, topCut: 16, source: "fallback" };
+  if (playerCount <= 304) return { swissRounds: 7, topCut: 16, source: "fallback" };
+  if (playerCount <= 540) return { swissRounds: 8, topCut: 16, source: "fallback" };
+  if (playerCount <= 960) return { swissRounds: 9, topCut: 16, source: "fallback" };
+  return { swissRounds: 10, topCut: 16, source: "fallback" };
+}
+
+export async function fetchTournamentStructureDefaults(
+  slug: string,
+  playerCount = 0
+): Promise<TournamentStructureDefaults> {
+  for (const url of [
+    `https://topdeck.gg/event/${slug}`.trim(),
+    `https://topdeck.gg/bracket/${slug}`.trim(),
+  ]) {
+    const response = await fetch(url, {
+      next: { revalidate: 60 * 15 },
+    });
+
+    if (response.ok) {
+      const inferred = inferTournamentStructureFromText(await response.text());
+      if (inferred) return inferred;
+    }
+  }
+
+  return defaultTournamentStructureForPlayerCount(playerCount);
 }
 
 export function extractTournamentSlug(input: string): string {
