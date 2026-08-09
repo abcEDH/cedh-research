@@ -34,7 +34,12 @@ sys.modules.setdefault("dateutil.parser", dateutil_parser_module)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import sweep_partner_commander_order  # noqa: E402
-from sweep_partner_commander_order import choose_target_order, main  # noqa: E402
+from sweep_partner_commander_order import (  # noqa: E402
+    canonical_pair_key,
+    choose_target_order,
+    current_pair_order,
+    main,
+)
 
 
 class ChooseTargetOrderTests(unittest.TestCase):
@@ -155,6 +160,44 @@ class ChooseTargetOrderTests(unittest.TestCase):
         # what's returned (``sorted`` over a single-element list is a no-op on
         # the contents; it sorts the list of tuples, not the tuple's elements).
         self.assertEqual(result, (pair_b, pair_a))
+
+    def test_falls_back_to_current_order_when_nothing_else_is_known(self) -> None:
+        """No authoritative source and no observations -- leave the row alone
+        rather than inventing an order for it.
+        """
+        with (
+            patch.object(sweep_partner_commander_order, "load_legal_commander_pair_order_map", return_value={}),
+            patch.object(sweep_partner_commander_order, "PARTNER_ORDER_OVERRIDES", {}),
+        ):
+            result = choose_target_order(("Alpha, Test A", "Beta, Test B"), collections.Counter())
+
+        self.assertEqual(result, ("Alpha, Test A", "Beta, Test B"))
+
+
+class CanonicalPairKeyTests(unittest.TestCase):
+    def test_order_independent(self) -> None:
+        """``canonical_pair_key`` is what makes every lookup in this module
+        order-insensitive -- if it ever stopped sorting, "A, B" and "B, A"
+        would key to different entries and nothing downstream would merge.
+        """
+        self.assertEqual(
+            canonical_pair_key(["Beta, Test B", "Alpha, Test A"]),
+            canonical_pair_key(["Alpha, Test A", "Beta, Test B"]),
+        )
+
+
+class CurrentPairOrderTests(unittest.TestCase):
+    def test_reads_commander_names_array_first(self) -> None:
+        row = {"name": "irrelevant", "commander_names": ["Beta, Test B", "Alpha, Test A"]}
+        self.assertEqual(current_pair_order(row), ("Beta, Test B", "Alpha, Test A"))
+
+    def test_falls_back_to_parsing_the_display_name(self) -> None:
+        row = {"name": "Beta, Test B / Alpha, Test A", "commander_names": []}
+        self.assertEqual(current_pair_order(row), ("Beta, Test B", "Alpha, Test A"))
+
+    def test_returns_none_for_a_single_commander_row(self) -> None:
+        row = {"name": "Alpha, Test A", "commander_names": ["Alpha, Test A"]}
+        self.assertIsNone(current_pair_order(row))
 
 
 class MergeForeignKeySafetyTests(unittest.TestCase):
