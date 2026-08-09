@@ -570,6 +570,46 @@ def sanitize_commander_payload(
     return canonical_name, [part.strip() for part in canonical_name.split(" / ") if part.strip()]
 
 
+def fetch_existing_partner_order_map(client: SupabaseClient) -> dict[tuple[str, str], tuple[str, str]]:
+    """Map each known 2-commander pair (order-insensitive) to its already-established order.
+
+    ``normalize_partner_order()`` picks a canonical order for a partner pair purely
+    from static rules: ``legal_commander_pairings.json``, then
+    ``PARTNER_ORDER_OVERRIDES``, then an alphabetical fallback for pairs neither
+    source knows about. That rule-based order can drift from whatever order a
+    pair's row was actually given in the ``commanders`` table -- e.g. a legacy row
+    created before an override/legal-pairing entry existed, or a row renamed by
+    ``sweep_partner_commander_order.py`` based on observed decklists without a
+    matching ``PARTNER_ORDER_OVERRIDES`` entry ever being added.
+
+    Without reconciling against the row that already exists, re-ingesting the
+    same pair (in either name order) recomputes the rule-based name, which may no
+    longer match the existing row's ``name`` -- so the ``on_conflict="name"``
+    upsert can't find it and inserts a brand-new duplicate row instead (issue
+    #260). Consulting this map before writing makes the *existing* row win, so a
+    pair only ever gets one canonical row after its first ingestion -- no manual
+    sweep required to keep new tournament data from re-splitting it.
+
+    Ties (if a pair somehow already has more than one row) resolve to whichever
+    row was created first, since rows are fetched oldest-first.
+    """
+    rows = client.select(
+        "commanders",
+        {"select": "commander_names,created_at", "limit": 20000, "order": "created_at.asc"},
+    )
+    order_map: dict[tuple[str, str], tuple[str, str]] = {}
+    for row in rows:
+        names = row.get("commander_names") or []
+        if not isinstance(names, list) or len(names) != 2:
+            continue
+        cleaned = [clean_commander_card_name(str(value)) for value in names]
+        if len(cleaned) != 2 or not all(cleaned):
+            continue
+        pair_key = tuple(sorted(cleaned))
+        order_map.setdefault(pair_key, (cleaned[0], cleaned[1]))
+    return order_map
+
+
 class DataIngester:
     """Main ingestion orchestrator."""
 
@@ -582,10 +622,32 @@ class DataIngester:
         self.supabase = supabase
         self.commander_cache: dict[str, str] = {}  # name -> id
         self.player_cache: dict[str, str] = {}  # topdeck_id -> id
+        self._existing_partner_order_map: dict[tuple[str, str], tuple[str, str]] | None = None
+
+    def _get_existing_partner_order_map(self) -> dict[tuple[str, str], tuple[str, str]]:
+        """Lazily fetch and cache the DB's established partner-pair orderings."""
+        if self._existing_partner_order_map is None:
+            self._existing_partner_order_map = fetch_existing_partner_order_map(self.supabase)
+        return self._existing_partner_order_map
+
+    def _reconcile_partner_order(self, canonical_name: str, canonical_names: list[str]) -> tuple[str, list[str]]:
+        """Prefer a pair's already-established DB order over a freshly computed one.
+
+        See ``fetch_existing_partner_order_map`` for why this prevents partner
+        pairs from splitting into "A, B" vs "B, A" rows across ingestion runs.
+        """
+        if len(canonical_names) != 2:
+            return canonical_name, canonical_names
+        pair_key = tuple(sorted(canonical_names))
+        existing_order = self._get_existing_partner_order_map().get(pair_key)
+        if existing_order and list(existing_order) != canonical_names:
+            return " / ".join(existing_order), list(existing_order)
+        return canonical_name, canonical_names
 
     def get_or_create_commander(self, name: str, commander_names: list[str]) -> str | None:
         """Get or create a commander entry, return UUID. (Legacy - use batch method)"""
         canonical_name, canonical_names = sanitize_commander_payload(name, commander_names)
+        canonical_name, canonical_names = self._reconcile_partner_order(canonical_name, canonical_names)
         name = canonical_name
         if name in self.commander_cache:
             return self.commander_cache[name]
@@ -630,21 +692,46 @@ class DataIngester:
         return None
 
     def batch_upsert_commanders(self, commander_data: dict[str, list[str]]) -> dict[str, str]:
-        """Batch upsert commanders and return name -> id mapping."""
+        """Batch upsert commanders and return original-key -> id mapping.
+
+        Each entry's canonical name/order is reconciled against any
+        already-established DB row for that pair (see
+        ``_reconcile_partner_order``) before writing, so the returned mapping is
+        keyed by ``commander_data``'s original keys rather than the possibly
+        reconciled ``name`` -- callers (e.g. ``ingest_tournament``) look up
+        commander ids by the pre-reconciliation name they already computed.
+        """
         if not commander_data:
             return {}
 
-        data = []
+        payload_by_original_key: dict[str, tuple[str, list[str]]] = {}
         for name, names in commander_data.items():
             canonical_name, canonical_names = sanitize_commander_payload(name, names)
-            data.append({"name": canonical_name, "commander_names": canonical_names})
+            canonical_name, canonical_names = self._reconcile_partner_order(canonical_name, canonical_names)
+            payload_by_original_key[name] = (canonical_name, canonical_names)
+
+        # Dedupe by canonical name: reconciliation can make two distinct original
+        # keys resolve to the same existing row, and a single upsert call can't
+        # target the same on_conflict row twice.
+        rows_by_canonical_name: dict[str, list[str]] = {}
+        for canonical_name, canonical_names in payload_by_original_key.values():
+            rows_by_canonical_name[canonical_name] = canonical_names
+        data = [
+            {"name": canonical_name, "commander_names": canonical_names}
+            for canonical_name, canonical_names in rows_by_canonical_name.items()
+        ]
 
         result = self.supabase.upsert("commanders", data, on_conflict="name")
         if not result:
             logger.error("Failed to batch upsert commanders")
             return {}
 
-        return {r["name"]: r["id"] for r in result}
+        name_to_id = {r["name"]: r["id"] for r in result}
+        return {
+            original_key: name_to_id[canonical_name]
+            for original_key, (canonical_name, _canonical_names) in payload_by_original_key.items()
+            if canonical_name in name_to_id
+        }
 
     def batch_upsert_players(self, player_data: dict[str, str]) -> dict[str, str]:
         """Batch upsert players and return topdeck_id -> id mapping."""
