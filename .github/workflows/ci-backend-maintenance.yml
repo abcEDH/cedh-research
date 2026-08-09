@@ -74,6 +74,16 @@ jobs:
             uv run --project packages/backend python packages/backend/src/regional_elo.py --smoke-days "${{ inputs.smoke_days }}" --dry-run
           fi
 
+      - name: Sweep partner commander order (merge A/B vs B/A duplicates)
+        run: |
+          if [ "${{ inputs.refresh_mode }}" = "full" ]; then
+            uv run --project packages/backend python packages/backend/src/sweep_partner_commander_order.py \
+              --report packages/backend/logs/sweep_partner_commander_order.csv
+          else
+            uv run --project packages/backend python packages/backend/src/sweep_partner_commander_order.py --dry-run \
+              --report packages/backend/logs/sweep_partner_commander_order.csv
+          fi
+
       - name: Rebuild player commander profiles
         if: ${{ inputs.refresh_mode == 'full' }}
         run: uv run --project packages/backend python packages/backend/src/rebuild_player_commander_profiles.py

@@ -44,6 +44,7 @@ from ingest import (  # noqa: E402
     SupabaseClient,
     claim_ingestion_job,
     complete_ingestion_job,
+    DataIngester,
     fail_ingestion_job,
     main,
 )
@@ -203,6 +204,66 @@ class CommanderNormalizationTests(unittest.TestCase):
         self.assertEqual(
             normalize_commander_name(["Haldan, Avid Arcanist", "Pako, Arcane Retriever"]),
             "Pako, Arcane Retriever / Haldan, Avid Arcanist",
+        )
+
+    def test_sanitize_commander_payload_merges_new_pair_regardless_of_decklist_order(self) -> None:
+        # Regression test for #260: a partner pair with no PARTNER_ORDER_OVERRIDES
+        # entry -- canonicalized purely from the generated legal-pairings order --
+        # must still resolve to the identical (name, commander_names) payload
+        # whichever order the decklist happened to list the two cards in.
+        listed_as_a_then_b = sanitize_commander_payload(
+            "Abby, Merciless Soldier / Ellie, Brick Master",
+            ["Abby, Merciless Soldier", "Ellie, Brick Master"],
+        )
+        listed_as_b_then_a = sanitize_commander_payload(
+            "Ellie, Brick Master / Abby, Merciless Soldier",
+            ["Ellie, Brick Master", "Abby, Merciless Soldier"],
+        )
+
+        self.assertEqual(listed_as_a_then_b, listed_as_b_then_a)
+        self.assertEqual(
+            listed_as_a_then_b,
+            (
+                "Abby, Merciless Soldier / Ellie, Brick Master",
+                ["Abby, Merciless Soldier", "Ellie, Brick Master"],
+            ),
+        )
+
+
+class BatchUpsertCommandersOrderTests(unittest.TestCase):
+    def test_new_partner_pair_ingested_in_either_order_upserts_the_same_commander_row(self) -> None:
+        # Regression test for #260: simulate two separate ingestion batches
+        # for the same brand-new partner pair -- one tournament's decklist
+        # lists it "Abby, Merciless Soldier / Ellie, Brick Master", another's
+        # lists it reversed. Both must upsert under the identical canonical
+        # `name`/`commander_names`, so Supabase's `UNIQUE(name)` constraint
+        # collapses them onto one commander row instead of splitting them.
+        supabase = Mock()
+        supabase.upsert = Mock(
+            return_value=[{"name": "Abby, Merciless Soldier / Ellie, Brick Master", "id": "commander-1"}]
+        )
+        ingester = DataIngester(topdeck=Mock(), supabase=supabase)
+
+        first_tournament_batch = ingester.batch_upsert_commanders(
+            {"Abby, Merciless Soldier / Ellie, Brick Master": ["Abby, Merciless Soldier", "Ellie, Brick Master"]}
+        )
+        second_tournament_batch = ingester.batch_upsert_commanders(
+            {"Abby, Merciless Soldier / Ellie, Brick Master": ["Ellie, Brick Master", "Abby, Merciless Soldier"]}
+        )
+
+        self.assertEqual(first_tournament_batch, {"Abby, Merciless Soldier / Ellie, Brick Master": "commander-1"})
+        self.assertEqual(second_tournament_batch, {"Abby, Merciless Soldier / Ellie, Brick Master": "commander-1"})
+
+        first_call_payload, second_call_payload = (call.args[1] for call in supabase.upsert.call_args_list)
+        self.assertEqual(first_call_payload, second_call_payload)
+        self.assertEqual(
+            first_call_payload,
+            [
+                {
+                    "name": "Abby, Merciless Soldier / Ellie, Brick Master",
+                    "commander_names": ["Abby, Merciless Soldier", "Ellie, Brick Master"],
+                }
+            ],
         )
 
 
