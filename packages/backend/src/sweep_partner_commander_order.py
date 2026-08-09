@@ -272,6 +272,13 @@ def main() -> None:
             if conflict_id and conflict_id != commander["id"]:
                 if not args.dry_run:
                     repoint_tournament_entries(client, commander["id"], conflict_id)
+                    # commander_matchups carries two FKs to commanders(id)
+                    # (commander_id and opponent_commander_id). Both must be
+                    # repointed before the delete below, or Postgres rejects
+                    # it with a foreign-key violation -- which aborts the
+                    # sweep mid-run and leaves this pair, and every later one
+                    # in the same run, unmerged.
+                    repoint_commander_matchups(client, commander["id"], conflict_id)
                     delete_commander_row(client, commander["id"])
                 merged += 1
                 report_lines.append(

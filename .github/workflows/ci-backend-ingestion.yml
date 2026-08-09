@@ -75,6 +75,28 @@ jobs:
 
           exit "$status"
 
+      - name: Normalize partner commander order
+        # Merges `commanders` rows split by "A, B" vs "B, A" partner order
+        # (#260) and repoints their tournament_entries / commander_matchups.
+        #
+        # Placement matters. This runs after ingestion has finished (so the
+        # ingestion job row is already completed) but before the chain-elo
+        # job below enqueues the Elo refresh, so the sweep can never eat into
+        # that queued job's 30-minute stale window -- see
+        # cleanup_stale_elo_jobs() and claim_job() in regional_elo.py, which
+        # only claims pending/dispatched jobs and exits 0 otherwise. The
+        # subsequent Elo recompute therefore also rebuilds its
+        # commander-derived views from already-merged commander IDs.
+        #
+        # Ingestion canonicalizes new pairs at write time, so this sweep only
+        # mops up pre-existing drift (pairs ingested before a legal-pairing
+        # entry or override existed for them).
+        if: ${{ steps.run-ingestion.outputs.claimed == 'true' }}
+        run: |
+          mkdir -p packages/backend/logs
+          uv run --project packages/backend python packages/backend/src/sweep_partner_commander_order.py \
+            --report "packages/backend/logs/sweep_partner_commander_order_${{ github.run_id }}.csv"
+
       - name: Upload logs
         uses: actions/upload-artifact@v7
         if: always()
