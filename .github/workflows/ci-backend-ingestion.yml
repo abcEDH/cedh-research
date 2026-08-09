@@ -91,7 +91,19 @@ jobs:
         # Ingestion canonicalizes new pairs at write time, so this sweep only
         # mops up pre-existing drift (pairs ingested before a legal-pairing
         # entry or override existed for them).
-        if: ${{ steps.run-ingestion.outputs.claimed == 'true' }}
+        #
+        # The gate deliberately mirrors chain-elo's own condition below. A
+        # live merge deletes duplicate commander IDs and repoints history,
+        # but the materialized commander trend/card views and
+        # player_commander_profiles are only rebuilt by the maintenance
+        # workflow that chain-elo dispatches. Running the sweep on a path
+        # where chain-elo is skipped -- e.g. a manual dispatch with the
+        # default empty job_id, where ingestion still reports claimed=true --
+        # would leave those user-facing surfaces pointing at merged-away IDs
+        # until some unrelated later refresh. Gating on a non-empty job_id
+        # means the sweep runs only when a maintenance refresh is guaranteed
+        # to follow it.
+        if: ${{ inputs.job_id != '' && steps.run-ingestion.outputs.claimed == 'true' }}
         run: |
           mkdir -p packages/backend/logs
           uv run --project packages/backend python packages/backend/src/sweep_partner_commander_order.py \
