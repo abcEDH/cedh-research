@@ -100,10 +100,26 @@ jobs:
         # where chain-elo is skipped -- e.g. a manual dispatch with the
         # default empty job_id, where ingestion still reports claimed=true --
         # would leave those user-facing surfaces pointing at merged-away IDs
-        # until some unrelated later refresh. Gating on a non-empty job_id
-        # means the sweep runs only when a maintenance refresh is guaranteed
-        # to follow it.
+        # until some unrelated later refresh.
+        #
+        # This narrows that window rather than closing it: chain-elo also
+        # bails without dispatching when enqueue_elo_refresh returns null
+        # because an Elo job is already in flight (see the null check below),
+        # and that in-flight job may already be past its commander-view
+        # rebuild. Worst case the derived views lag by one ingestion cycle.
+        # That is acceptable here because ingestion canonicalizes new pairs
+        # at write time, so this sweep only ever mops up pre-existing drift
+        # -- it is not load-bearing for freshly ingested data.
+        #
+        # continue-on-error because ingest.py has already marked the
+        # ingestion_jobs row completed by this point, so a failure here would
+        # fail the workflow while mark-ingestion-failed's
+        # status=in.(pending,dispatched,running) filter can no longer match
+        # it -- stranding the row as falsely completed with no chained Elo
+        # job. A best-effort mop-up must not put the job row in that state;
+        # failures surface in the step annotation and the uploaded report.
         if: ${{ inputs.job_id != '' && steps.run-ingestion.outputs.claimed == 'true' }}
+        continue-on-error: true
         run: |
           mkdir -p packages/backend/logs
           uv run --project packages/backend python packages/backend/src/sweep_partner_commander_order.py \
