@@ -75,6 +75,56 @@ jobs:
 
           exit "$status"
 
+      - name: Normalize partner commander order
+        # Merges `commanders` rows split by "A, B" vs "B, A" partner order
+        # (#260) and repoints their tournament_entries / commander_matchups.
+        #
+        # Placement matters. This runs after ingestion has finished (so the
+        # ingestion job row is already completed) but before the chain-elo
+        # job below enqueues the Elo refresh, so the sweep can never eat into
+        # that queued job's 30-minute stale window -- see
+        # cleanup_stale_elo_jobs() and claim_job() in regional_elo.py, which
+        # only claims pending/dispatched jobs and exits 0 otherwise. The
+        # subsequent Elo recompute therefore also rebuilds its
+        # commander-derived views from already-merged commander IDs.
+        #
+        # Ingestion canonicalizes new pairs at write time, so this sweep only
+        # mops up pre-existing drift (pairs ingested before a legal-pairing
+        # entry or override existed for them).
+        #
+        # The gate deliberately mirrors chain-elo's own condition below. A
+        # live merge deletes duplicate commander IDs and repoints history,
+        # but the materialized commander trend/card views and
+        # player_commander_profiles are only rebuilt by the maintenance
+        # workflow that chain-elo dispatches. Running the sweep on a path
+        # where chain-elo is skipped -- e.g. a manual dispatch with the
+        # default empty job_id, where ingestion still reports claimed=true --
+        # would leave those user-facing surfaces pointing at merged-away IDs
+        # until some unrelated later refresh.
+        #
+        # This narrows that window rather than closing it: chain-elo also
+        # bails without dispatching when enqueue_elo_refresh returns null
+        # because an Elo job is already in flight (see the null check below),
+        # and that in-flight job may already be past its commander-view
+        # rebuild. Worst case the derived views lag by one ingestion cycle.
+        # That is acceptable here because ingestion canonicalizes new pairs
+        # at write time, so this sweep only ever mops up pre-existing drift
+        # -- it is not load-bearing for freshly ingested data.
+        #
+        # continue-on-error because ingest.py has already marked the
+        # ingestion_jobs row completed by this point, so a failure here would
+        # fail the workflow while mark-ingestion-failed's
+        # status=in.(pending,dispatched,running) filter can no longer match
+        # it -- stranding the row as falsely completed with no chained Elo
+        # job. A best-effort mop-up must not put the job row in that state;
+        # failures surface in the step annotation and the uploaded report.
+        if: ${{ inputs.job_id != '' && steps.run-ingestion.outputs.claimed == 'true' }}
+        continue-on-error: true
+        run: |
+          mkdir -p packages/backend/logs
+          uv run --project packages/backend python packages/backend/src/sweep_partner_commander_order.py \
+            --report "packages/backend/logs/sweep_partner_commander_order_${{ github.run_id }}.csv"
+
       - name: Upload logs
         uses: actions/upload-artifact@v7
         if: always()

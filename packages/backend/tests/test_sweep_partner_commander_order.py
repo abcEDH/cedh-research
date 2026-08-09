@@ -1,9 +1,10 @@
 import collections
 import sys
+import tempfile
 import types
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 try:
     import requests as requests_module
@@ -33,7 +34,7 @@ sys.modules.setdefault("dateutil.parser", dateutil_parser_module)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import sweep_partner_commander_order  # noqa: E402
-from sweep_partner_commander_order import choose_target_order  # noqa: E402
+from sweep_partner_commander_order import choose_target_order, main  # noqa: E402
 
 
 class ChooseTargetOrderTests(unittest.TestCase):
@@ -154,6 +155,87 @@ class ChooseTargetOrderTests(unittest.TestCase):
         # what's returned (``sorted`` over a single-element list is a no-op on
         # the contents; it sorts the list of tuples, not the tuple's elements).
         self.assertEqual(result, (pair_b, pair_a))
+
+
+class MergeForeignKeySafetyTests(unittest.TestCase):
+    """``main()``'s merge branch must repoint ``commander_matchups`` before deleting.
+
+    ``repoint_commander_matchups()`` was defined but never called: the merge
+    path went straight from ``repoint_tournament_entries()`` to
+    ``delete_commander_row()``. ``commander_matchups`` holds two foreign keys
+    to ``commanders(id)`` -- ``commander_id`` and ``opponent_commander_id`` --
+    so deleting a duplicate that still had matchup rows raised a Postgres
+    foreign-key violation, aborting the sweep and leaving that pair and every
+    later one in the run unmerged.
+    """
+
+    PAIR_A = "Alpha, Test Commander"
+    PAIR_B = "Beta, Test Partner"
+
+    def _run_main(self) -> None:
+        canonical_name = f"{self.PAIR_A} / {self.PAIR_B}"
+        duplicate_name = f"{self.PAIR_B} / {self.PAIR_A}"
+        commander_rows = [
+            {"id": "canonical-id", "name": canonical_name, "commander_names": [self.PAIR_A, self.PAIR_B]},
+            {"id": "duplicate-id", "name": duplicate_name, "commander_names": [self.PAIR_B, self.PAIR_A]},
+        ]
+        client = Mock()
+        client.url = "https://example.supabase.co"
+        client.headers = {"apikey": "test"}
+        client.select = Mock(return_value=commander_rows)
+
+        pair_key = tuple(sorted((self.PAIR_A, self.PAIR_B)))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            argv = ["sweep_partner_commander_order.py", "--report", str(Path(tmpdir) / "report.csv")]
+            with (
+                patch.object(sweep_partner_commander_order, "load_credentials", return_value=("url", "key")),
+                patch.object(sweep_partner_commander_order, "SupabaseClient", return_value=client),
+                patch.object(
+                    sweep_partner_commander_order,
+                    "load_legal_commander_pair_order_map",
+                    return_value={pair_key: (self.PAIR_A, self.PAIR_B)},
+                ),
+                patch.object(sys, "argv", argv),
+            ):
+                main()
+
+    def test_merge_repoints_both_matchup_columns_before_delete(self) -> None:
+        with patch.object(sweep_partner_commander_order, "requests") as mock_requests:
+            mock_requests.patch.return_value = Mock(raise_for_status=Mock())
+            mock_requests.delete.return_value = Mock(raise_for_status=Mock())
+
+            self._run_main()
+
+            # tournament_entries.commander_id, then commander_matchups.commander_id,
+            # then commander_matchups.opponent_commander_id -- all before the delete.
+            self.assertEqual(mock_requests.patch.call_count, 3)
+            entries_call, commander_id_call, opponent_id_call = mock_requests.patch.call_args_list
+
+            self.assertIn("tournament_entries", entries_call.args[0])
+            self.assertEqual(entries_call.kwargs["params"], {"commander_id": "eq.duplicate-id"})
+            self.assertEqual(entries_call.kwargs["json"], {"commander_id": "canonical-id"})
+
+            self.assertIn("commander_matchups", commander_id_call.args[0])
+            self.assertEqual(commander_id_call.kwargs["params"], {"commander_id": "eq.duplicate-id"})
+            self.assertEqual(commander_id_call.kwargs["json"], {"commander_id": "canonical-id"})
+
+            self.assertIn("commander_matchups", opponent_id_call.args[0])
+            self.assertEqual(opponent_id_call.kwargs["params"], {"opponent_commander_id": "eq.duplicate-id"})
+            self.assertEqual(opponent_id_call.kwargs["json"], {"opponent_commander_id": "canonical-id"})
+
+            self.assertEqual(mock_requests.delete.call_args.kwargs["params"], {"id": "eq.duplicate-id"})
+
+    def test_repoint_failure_prevents_delete(self) -> None:
+        """A failed repoint must abort before the delete -- deleting anyway would
+        orphan the matchup rows the repoint was supposed to move.
+        """
+        with patch.object(sweep_partner_commander_order, "requests") as mock_requests:
+            mock_requests.patch.return_value = Mock(raise_for_status=Mock(side_effect=RuntimeError("boom")))
+
+            with self.assertRaises(RuntimeError):
+                self._run_main()
+
+            mock_requests.delete.assert_not_called()
 
 
 if __name__ == "__main__":
