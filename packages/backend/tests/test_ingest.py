@@ -148,7 +148,7 @@ class CommanderNormalizationTests(unittest.TestCase):
         load_commander_oracle_aliases.cache_clear()
         try:
             with patch(
-                "ingest.load_commander_oracle_aliases",
+                "commander_normalization.load_commander_oracle_aliases",
                 return_value={"Totally Radical Skater": "Nadier, Agent of the Duskenel"},
             ):
                 self.assertEqual(
@@ -162,7 +162,7 @@ class CommanderNormalizationTests(unittest.TestCase):
         load_commander_oracle_aliases.cache_clear()
         try:
             with patch(
-                "ingest.load_commander_oracle_aliases",
+                "commander_normalization.load_commander_oracle_aliases",
                 return_value={"Lucas, the Sharpshooter": "Some Other Card"},
             ):
                 self.assertEqual(
@@ -287,9 +287,9 @@ class PartnerOrderReconciliationTests(unittest.TestCase):
         ingester._reconcile_partner_order("x", ["Aaardvark, Test Partner", "Zzzephyr, Test Commander"])
         supabase.select.assert_called_once()
 
-    @patch("ingest.load_legal_commander_pair_order_map", return_value={})
+    @patch("commander_normalization.load_legal_commander_pair_order_map", return_value={})
     @patch(
-        "ingest.load_legal_commander_pair_names",
+        "commander_normalization.load_legal_commander_pair_names",
         return_value={"Aaardvark, Test Partner / Zzzephyr, Test Commander"},
     )
     def test_batch_upsert_commanders_merges_both_orders_into_existing_row(
@@ -334,9 +334,9 @@ class PartnerOrderReconciliationTests(unittest.TestCase):
             self.assertEqual(data[0]["name"], " / ".join(existing_order))
             self.assertEqual(data[0]["commander_names"], list(existing_order))
 
-    @patch("ingest.load_legal_commander_pair_order_map", return_value={})
+    @patch("commander_normalization.load_legal_commander_pair_order_map", return_value={})
     @patch(
-        "ingest.load_legal_commander_pair_names",
+        "commander_normalization.load_legal_commander_pair_names",
         return_value={"Aaardvark, Test Partner / Zzzephyr, Test Commander"},
     )
     def test_batch_upsert_commanders_dedupes_two_keys_reconciling_to_same_row(
@@ -379,9 +379,9 @@ class PartnerOrderReconciliationTests(unittest.TestCase):
         self.assertEqual(id_map[key_reverse], "commander-1")
         self.assertEqual(len(id_map), 2)
 
-    @patch("ingest.load_legal_commander_pair_order_map", return_value={})
+    @patch("commander_normalization.load_legal_commander_pair_order_map", return_value={})
     @patch(
-        "ingest.load_legal_commander_pair_names",
+        "commander_normalization.load_legal_commander_pair_names",
         return_value={"Aaardvark, Test Partner / Zzzephyr, Test Commander"},
     )
     def test_get_or_create_commander_reconciles_to_existing_db_order(
@@ -423,9 +423,9 @@ class PartnerOrderReconciliationTests(unittest.TestCase):
         # And no upsert/create should have been needed.
         supabase.upsert.assert_not_called()
 
-    @patch("ingest.load_legal_commander_pair_order_map", return_value={})
+    @patch("commander_normalization.load_legal_commander_pair_order_map", return_value={})
     @patch(
-        "ingest.load_legal_commander_pair_names",
+        "commander_normalization.load_legal_commander_pair_names",
         return_value={"Aaardvark, Test Partner / Zzzephyr, Test Commander"},
     )
     def test_batch_upsert_commanders_drops_keys_missing_from_upsert_result(
@@ -461,9 +461,9 @@ class PartnerOrderReconciliationTests(unittest.TestCase):
         # single commander survives in the returned map.
         self.assertEqual(id_map, {single_commander_name: "solo-id"})
 
-    @patch("ingest.load_legal_commander_pair_order_map", return_value={})
+    @patch("commander_normalization.load_legal_commander_pair_order_map", return_value={})
     @patch(
-        "ingest.load_legal_commander_pair_names",
+        "commander_normalization.load_legal_commander_pair_names",
         return_value={"Aaardvark, Test Partner / Zzzephyr, Test Commander"},
     )
     def test_commander_cache_keyed_by_pre_reconciliation_name(
