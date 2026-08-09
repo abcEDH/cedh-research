@@ -147,12 +147,22 @@ def resolve_record_fields(info: dict[str, Any]) -> dict[str, int]:
 def clean_commander_card_name(name: str) -> str:
     """Normalize an individual commander card name.
 
-    This removes escaped quotes, strips DFC/MDFC back faces, and drops any
+    This removes escaped quotes, normalizes Unicode curly quotes to their
+    straight ASCII equivalents, strips DFC/MDFC back faces, and drops any
     trailing set-indicator suffix.
     """
     if not name:
         return ""
     cleaned = name.replace("\\'", "'").replace('\\"', '"')
+    # TopDeck/Moxfield decklist sources are inconsistent about curly vs.
+    # straight quotes for apostrophes in card names (e.g. "Ludevic's Opus"
+    # vs "Ludevic's Opus" with U+2019). Left uncorrected, this makes the same
+    # commander pair hash to two different canonical_pair_key()/pair_key
+    # tuples in normalize_partner_order() and sweep_partner_commander_order.py,
+    # which is how partner pairs keep re-splitting into duplicate rows despite
+    # PARTNER_ORDER_OVERRIDES already covering the pair.
+    cleaned = cleaned.replace("’", "'").replace("‘", "'")
+    cleaned = cleaned.replace("“", '"').replace("”", '"')
     front_face = cleaned.split(" // ", 1)[0]
     normalized = front_face.split("[", 1)[0].strip()
     if normalized in COMMANDER_NAME_ALIASES:

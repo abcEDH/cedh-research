@@ -41,6 +41,7 @@ from ingest import (  # noqa: E402
     INGESTION_JOB_ALREADY_CLAIMED_EXIT_CODE,
     load_commander_oracle_aliases,
     normalize_commander_name,
+    normalize_partner_order,
     resolve_record_fields,
     sanitize_commander_payload,
     SupabaseClient,
@@ -109,6 +110,29 @@ class CommanderNormalizationTests(unittest.TestCase):
 
     def test_clean_commander_card_name_unescapes_quotes(self) -> None:
         self.assertEqual(clean_commander_card_name("K\\'rrik, Son of Yawgmoth"), "K'rrik, Son of Yawgmoth")
+
+    def test_clean_commander_card_name_normalizes_curly_apostrophe(self) -> None:
+        # TopDeck/Moxfield sources are inconsistent about curly (U+2019) vs
+        # straight apostrophes for the same card, which previously produced
+        # two different canonical names for one commander.
+        self.assertEqual(
+            clean_commander_card_name("Kraum, Ludevic’s Opus"),
+            clean_commander_card_name("Kraum, Ludevic's Opus"),
+        )
+
+    def test_clean_commander_card_name_normalizes_curly_double_quote(self) -> None:
+        self.assertEqual(
+            clean_commander_card_name("“Commander” Name"),
+            '"Commander" Name',
+        )
+
+    def test_normalize_partner_order_matches_regardless_of_apostrophe_style(self) -> None:
+        # A partner pair ingested in both name orders, where one order also
+        # uses a curly apostrophe, must still collapse onto the same
+        # canonical order (issue #260).
+        straight_order = normalize_partner_order(["Kraum, Ludevic's Opus", "Tymna the Weaver"])
+        curly_order = normalize_partner_order(["Tymna the Weaver", "Kraum, Ludevic’s Opus"])
+        self.assertEqual(straight_order, curly_order)
 
     def test_clean_commander_card_name_strips_double_faced_backside(self) -> None:
         self.assertEqual(
