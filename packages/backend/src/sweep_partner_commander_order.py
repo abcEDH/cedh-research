@@ -308,6 +308,7 @@ def main() -> None:
             if conflict_id and conflict_id != commander["id"]:
                 if not args.dry_run:
                     repoint_tournament_entries(client, commander["id"], conflict_id)
+                    repoint_commander_matchups(client, commander["id"], conflict_id)
                     delete_commander_row(client, commander["id"])
                 merged += 1
                 report_lines.append(
