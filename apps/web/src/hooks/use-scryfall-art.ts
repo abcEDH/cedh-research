@@ -11,13 +11,19 @@ import { fetchScryfallArt, type ScryfallCardArt } from "@/lib/scryfall/client";
 const RETRY_DELAYS_MS = [500, 1500];
 
 async function fetchWithRetry(
-  name: string | null | undefined
+  name: string | null | undefined,
+  isCancelled: () => boolean
 ): Promise<ScryfallCardArt | null> {
   if (!name) return null;
   let result = await fetchScryfallArt(name);
   for (const delay of RETRY_DELAYS_MS) {
-    if (result) break;
+    if (result || isCancelled()) break;
     await new Promise((resolve) => setTimeout(resolve, delay));
+    // Re-check after the sleep — the consumer may have unmounted while this
+    // retry was waiting. Without this, an obsolete retry still hits
+    // fetchScryfallArt's shared request queue after unmount, consuming rate
+    // limit budget and delaying lookups the destination page actually needs.
+    if (isCancelled()) break;
     result = await fetchScryfallArt(name);
   }
   return result;
@@ -42,7 +48,7 @@ export function useScryfallArts(names: Array<string | null | undefined>) {
       (entries) => {
         if (!entries[0]?.isIntersecting) return;
         observer.disconnect();
-        Promise.all(names.map((name) => fetchWithRetry(name))).then((results) => {
+        Promise.all(names.map((name) => fetchWithRetry(name, () => cancelled))).then((results) => {
           if (!cancelled) setArts(results);
         });
       },

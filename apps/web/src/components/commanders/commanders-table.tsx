@@ -158,7 +158,26 @@ export default function CommandersTable({
       <CardContent>
         {/* Mobile: art-forward card list (tedh.gg mobile card-art design, option
             1a) instead of squeezing the dense table down. sm: and up keeps the
-            existing table per this repo's "wide tables" convention. */}
+            existing table per this repo's "wide tables" convention. The desktop
+            <Table> carries the sort controls (SortButton per column header), so
+            hiding it below sm: would otherwise silently drop sorting — this
+            select is the mobile equivalent. */}
+        <label className="mb-2 flex min-h-11 items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground sm:hidden">
+          Sort by
+          <select
+            value={sortKey}
+            onChange={(event) => handleSort(event.target.value as SortKey)}
+            className="min-h-11 flex-1 rounded-md border border-border/70 bg-background px-3 text-sm normal-case tracking-normal text-foreground outline-none transition-colors focus:border-primary/60"
+          >
+            <option value="entries">Entries</option>
+            <option value="commander">Commander</option>
+            <option value="tournaments">Tournaments</option>
+            <option value="winRate">Win Rate</option>
+            <option value="pointsPerGame">Pts/Game</option>
+            <option value="top16">Top 16/10</option>
+            <option value="topCut">Top Cut</option>
+          </select>
+        </label>
         <div
           data-testid="commanders-mobile-list"
           className="flex flex-col gap-2 sm:hidden"
