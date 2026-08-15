@@ -472,7 +472,7 @@ export default function CommandersTable({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [view, setView] = useState<View>("grid");
+  const [view, setView] = useState<View>("table");
   const [query, setQuery] = useState("");
   const [colors, setColors] = useState<ManaColor[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>("entries");
