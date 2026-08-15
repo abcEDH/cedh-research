@@ -218,10 +218,13 @@ async function getCommanderUsageTrend(commanderIds: string[]): Promise<Commander
 
   const commanders = await getCachedCommanders();
   const commanderById = new Map(commanders.map((commander) => [commander.commander_id, commander]));
+  const trendStart = new Date();
+  trendStart.setDate(trendStart.getDate() - 13 * 7);
   const { data, error } = await supabase
     .from("commander_weekly_trends")
     .select("commander_id, week_key, week_start_date, entries")
     .in("commander_id", commanderIds)
+    .gte("week_start_date", trendStart.toISOString())
     .order("week_start_date", { ascending: true });
 
   if (error) {
@@ -247,7 +250,7 @@ async function getCommanderUsageTrend(commanderIds: string[]): Promise<Commander
       const values = entriesByWeek.get(week);
       return Object.fromEntries([
         ["week", week],
-        ...commanderIds.map((commanderId) => [commanderId, values?.get(commanderId) ?? null]),
+        ...commanderIds.map((commanderId) => [commanderId, values?.get(commanderId) ?? 0]),
       ]) as CommanderTrendSeriesPoint;
     }),
     series: commanderIds.flatMap((commanderId) => {
