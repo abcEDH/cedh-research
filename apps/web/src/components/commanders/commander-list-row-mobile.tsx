@@ -37,11 +37,13 @@ export function CommanderListRowMobile({
   const artCrop = arts[0]?.artCrop;
 
   return (
-    // `contents` keeps this wrapper out of layout entirely — it exists only to
-    // give useScryfallArts' IntersectionObserver an element to watch, the same
-    // trick CommanderHeaderBackdrop/PerformanceCardRow use with a plain div,
-    // adapted here since the visible row itself needs to be the <Link>.
-    <div ref={ref} className="contents">
+    // A plain block div (not `display: contents`) — IntersectionObserver needs
+    // a real layout box to measure, and `contents` collapses this element out
+    // of the box tree entirely, so it never intersects and art never loads.
+    // As a flex item of the parent's `flex flex-col`, it still stretches to
+    // full width via the default `align-items: stretch`, same as the bare
+    // <Link> did before this wrapper existed.
+    <div ref={ref}>
       <Link
         href={`/commanders/${commanderId}`}
         className="relative flex min-h-[78px] items-center gap-3 overflow-hidden rounded-2xl border border-border/60 bg-card/70 px-3.5 py-3"
