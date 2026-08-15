@@ -15,6 +15,7 @@ import Link from "next/link";
 import { HomeSearchBar } from "@/components/home-search-bar";
 import { EloGameFilter } from "@/components/elo-game-filter";
 import { fetchEloDisplayStats } from "@/lib/elo-display-stats";
+import { TIER_MIN } from "@/lib/tournaments";
 
 const HOME_CACHE_REVALIDATE_SECONDS = 60 * 60 * 6; // 6 hours
 
@@ -230,7 +231,8 @@ async function fetchRecentTournaments() {
     .from("tournaments")
     .select("id, topdeck_tid, name, start_date, player_count")
     .not("topdeck_tid", "is", null)
-    .gte("player_count", 16)
+    .gte("player_count", TIER_MIN.Gold)
+    .lte("start_date", new Date().toISOString())
     .order("start_date", { ascending: false })
     .limit(10);
 

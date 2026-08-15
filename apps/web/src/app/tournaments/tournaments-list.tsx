@@ -121,6 +121,7 @@ export function TournamentsList({ initialSort, initialTier, initialPeriod }: Tou
         .select("id, topdeck_tid, name, start_date, player_count, tier")
         .not("topdeck_tid", "is", null)
         .gte("player_count", 16)
+        .lte("start_date", new Date().toISOString())
         .order("start_date", { ascending: false })
         .limit(100);
 
