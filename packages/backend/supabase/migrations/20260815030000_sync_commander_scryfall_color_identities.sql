@@ -14,7 +14,7 @@ BEGIN
     WITH resolved_colors AS (
         SELECT
             c.id,
-            COUNT(DISTINCT face.name) = CARDINALITY(c.commander_names) AS all_faces_found,
+            COUNT(DISTINCT sc.name) = CARDINALITY(c.commander_names) AS all_faces_found,
             COALESCE(
                 ARRAY_AGG(DISTINCT color.symbol)
                     FILTER (WHERE color.symbol IS NOT NULL),

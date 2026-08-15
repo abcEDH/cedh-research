@@ -63,7 +63,7 @@ test.describe("Commanders List Page", () => {
   test("search and color filters are available", async ({ page }) => {
     await expect(page.getByRole("textbox", { name: "Search commanders" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Filter by Blue" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Most played" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "All commanders" })).toBeVisible();
   });
 
   test("stats summary shows aggregated data", async ({ page }) => {

@@ -441,18 +441,18 @@ async function CommanderRankingsTable({ filters }: { filters: CommanderRankingFi
   const artByName = await getScryfallArtByNames(faceNames);
   const commandersWithScryfallColors = commanders.map((commander) => {
     const colors = new Set<string>();
-    let foundScryfallMetadata = false;
+    let resolvedFaceCount = 0;
 
     for (const faceName of splitCardName(commander.commander_name)) {
       const colorIdentity = artByName[faceName]?.colorIdentity;
       if (!colorIdentity) continue;
-      foundScryfallMetadata = true;
+      resolvedFaceCount += 1;
       colorIdentity.forEach((color) => colors.add(color));
     }
 
     return {
       ...commander,
-      color_identity: foundScryfallMetadata
+      color_identity: resolvedFaceCount === splitCardName(commander.commander_name).length
         ? ["W", "U", "B", "R", "G"].filter((color) => colors.has(color))
         : commander.color_identity,
     };

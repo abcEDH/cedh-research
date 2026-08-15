@@ -27,6 +27,7 @@ vi.mock("@/lib/supabase", () => ({
           return chain;
         },
         neq: () => chain,
+        order: () => chain,
         eq: (column: string, value: string) => {
           rankingFilters.push([column, value]);
           return chain;

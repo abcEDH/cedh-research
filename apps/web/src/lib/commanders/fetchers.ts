@@ -47,7 +47,11 @@ function rankingPeriodStart(period: CommanderRankingPeriod, referenceDate = new 
   if (period === "all") return null;
   const months = Number.parseInt(period, 10);
   const start = new Date(referenceDate);
+  const day = start.getDate();
+  start.setDate(1);
   start.setMonth(start.getMonth() - months);
+  const lastDay = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate();
+  start.setDate(Math.min(day, lastDay));
   return start.toISOString();
 }
 
@@ -67,10 +71,11 @@ export async function getCommanderRankings({
   for (let offset = 0; ; offset += 1000) {
     let query = supabase
       .from("tournament_entries")
-      .select("tournament_id, commander_id, wins, losses, draws, made_top_16, made_top_cut, commanders!inner(commander_id:id, commander_name:name, archetype, color_identity), tournaments!inner(start_date, tier, player_count)")
-      .gte("tournaments.player_count", 32)
+      .select("id, tournament_id, commander_id, wins, losses, draws, made_top_16, made_top_cut, commanders!inner(commander_id:id, commander_name:name, archetype, color_identity), tournaments!inner(start_date, tier, player_count)")
+      .gte("tournaments.player_count", 16)
       .lte("tournaments.start_date", now)
-      .neq("commanders.name", "Unknown Commander");
+      .neq("commanders.name", "Unknown Commander")
+      .order("id", { ascending: true });
 
     if (periodStart) query = query.gte("tournaments.start_date", periodStart);
     if (tier !== "all") query = query.eq("tournaments.tier", tier);

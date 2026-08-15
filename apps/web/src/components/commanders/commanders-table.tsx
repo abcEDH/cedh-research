@@ -243,7 +243,7 @@ function ViewToggle({ view, onChange }: { view: View; onChange: (view: View) => 
           type="button"
           onClick={() => onChange(option)}
           aria-pressed={view === option}
-          className={`min-h-9 rounded-lg px-3 text-sm font-medium capitalize transition-colors ${
+          className={`min-h-11 rounded-lg px-3 text-sm font-medium capitalize transition-colors sm:min-h-9 ${
             view === option
               ? "bg-primary text-primary-foreground"
               : "text-muted-foreground hover:text-foreground"
@@ -471,6 +471,9 @@ function CommanderTable({
                             {normalizeDisplayString(commander.archetype)}
                           </span>
                         )}
+                        <span className="mt-1 block text-xs text-muted-foreground sm:hidden">
+                          {commander.tournaments_played} tournaments · {pointsPerGame(commander).toFixed(2)} pts/game · {formatPercent(parseFloat(commander.conversion_rate_top_16))} top 16
+                        </span>
                       </span>
                     </Link>
                   </TableCell>
@@ -685,7 +688,7 @@ export default function CommandersTable({
             type="button"
             onClick={() => applyPreset(key)}
             aria-pressed={preset === key}
-            className={`knd-chip min-h-9 shrink-0 whitespace-nowrap transition-colors ${
+            className={`knd-chip min-h-11 shrink-0 whitespace-nowrap transition-colors sm:min-h-9 ${
               preset === key ? "border-primary/50 text-foreground" : "hover:text-foreground"
             }`}
           >
@@ -714,7 +717,7 @@ export default function CommandersTable({
               onClick={() => toggleColor(color)}
               aria-pressed={colors.includes(color)}
               aria-label={`Filter by ${MANA_LABELS[color]}`}
-              className={`rounded-full p-0.5 transition-opacity focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 ${
+              className={`flex min-h-11 min-w-11 items-center justify-center rounded-full p-0.5 transition-opacity focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:min-h-0 sm:min-w-0 ${
                 colors.length && !colors.includes(color) ? "opacity-35" : "opacity-100"
               }`}
             >
