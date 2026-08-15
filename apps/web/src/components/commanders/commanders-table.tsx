@@ -1,12 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { CommanderArtBanner, CommanderArtThumb } from "@/components/commanders/commander-art-thumb";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatPercent } from "@/lib/commander-stats";
-import type { ScryfallArtByName } from "@/lib/commanders/fetchers";
+import type {
+  CommanderRankingFilters,
+  CommanderRankingPeriod,
+  CommanderTournamentTier,
+  ScryfallArtByName,
+} from "@/lib/commanders/fetchers";
 import { normalizeDisplayString } from "@/lib/utils";
 import {
   Select,
@@ -458,16 +464,20 @@ function CommanderTable({
 export default function CommandersTable({
   commanders,
   artByName,
+  rankingFilters,
 }: {
   commanders: CommanderStat[];
   artByName?: ScryfallArtByName;
+  rankingFilters: CommanderRankingFilters;
 }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
   const [view, setView] = useState<View>("grid");
   const [query, setQuery] = useState("");
   const [colors, setColors] = useState<ManaColor[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>("entries");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
-  const [minimumEntries, setMinimumEntries] = useState(5);
+  const [minimumEntries, setMinimumEntries] = useState(rankingFilters.minimumEntries);
   const [preset, setPreset] = useState<Preset>("all");
   const [page, setPage] = useState(1);
 
@@ -519,7 +529,7 @@ export default function CommandersTable({
 
     switch (nextPreset) {
       case "popular":
-        setMinimumEntries(5);
+        setMinimumEntries(20);
         setSortKey("entries");
         break;
       case "established":
@@ -535,7 +545,7 @@ export default function CommandersTable({
         setSortKey("topCut");
         break;
       default:
-        setMinimumEntries(5);
+        setMinimumEntries(20);
         setSortKey("entries");
     }
     setSortDirection("desc");
@@ -558,6 +568,15 @@ export default function CommandersTable({
     );
     setPage(1);
   };
+
+  function updateServerFilter(
+    key: "period" | "tier" | "minEntries",
+    value: CommanderRankingPeriod | CommanderTournamentTier | string
+  ) {
+    const params = new URLSearchParams(window.location.search);
+    params.set(key, value);
+    startTransition(() => router.replace(`/commanders?${params.toString()}`, { scroll: false }));
+  }
 
   return (
     <section aria-labelledby="all-commanders-heading">
@@ -628,6 +647,38 @@ export default function CommandersTable({
         <div className="hidden h-6 w-px bg-border lg:block" />
         <div className="flex flex-wrap gap-3">
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Time period
+            <Select
+              value={rankingFilters.period}
+              onValueChange={(value) => updateServerFilter("period", value as CommanderRankingPeriod)}
+            >
+              <SelectTrigger className="w-32 rounded-full bg-input/50" disabled={isPending}><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1m">1 month</SelectItem>
+                <SelectItem value="3m">3 months</SelectItem>
+                <SelectItem value="6m">6 months</SelectItem>
+                <SelectItem value="all">All time</SelectItem>
+              </SelectContent>
+            </Select>
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Tournament tier
+            <Select
+              value={rankingFilters.tier}
+              onValueChange={(value) => updateServerFilter("tier", value as CommanderTournamentTier)}
+            >
+              <SelectTrigger className="w-36 rounded-full bg-input/50" disabled={isPending}><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All tiers</SelectItem>
+                <SelectItem value="Bronze">Bronze</SelectItem>
+                <SelectItem value="Silver">Silver</SelectItem>
+                <SelectItem value="Gold">Gold</SelectItem>
+                <SelectItem value="Platinum">Platinum</SelectItem>
+                <SelectItem value="Diamond">Diamond</SelectItem>
+              </SelectContent>
+            </Select>
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
             Sort by
             <Select value={sortKey} onValueChange={(value) => { setSortDirection("desc"); setSortKey(value as SortKey); setPage(1); setPreset("all"); }}>
               <SelectTrigger className="w-36 rounded-full bg-input/50"><SelectValue /></SelectTrigger>
@@ -641,10 +692,9 @@ export default function CommandersTable({
           </label>
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
             Min. entries
-            <Select value={String(minimumEntries)} onValueChange={(value) => { setMinimumEntries(Number(value)); setPage(1); setPreset("all"); }}>
-              <SelectTrigger className="w-32 rounded-full bg-input/50"><SelectValue /></SelectTrigger>
+            <Select value={String(minimumEntries)} onValueChange={(value) => { setMinimumEntries(Number(value)); setPage(1); setPreset("all"); updateServerFilter("minEntries", value); }}>
+              <SelectTrigger className="w-32 rounded-full bg-input/50" disabled={isPending}><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="5">5+ entries</SelectItem>
                 <SelectItem value="20">20+ entries</SelectItem>
                 <SelectItem value="50">50+ entries</SelectItem>
                 <SelectItem value="100">100+ entries</SelectItem>

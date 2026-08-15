@@ -5,7 +5,13 @@ import { supabase } from "@/lib/supabase";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import CommandersTable from "@/components/commanders/commanders-table";
-import { getScryfallArtByNames } from "@/lib/commanders/fetchers";
+import {
+  getCommanderRankings,
+  getScryfallArtByNames,
+  type CommanderRankingFilters,
+  type CommanderRankingPeriod,
+  type CommanderTournamentTier,
+} from "@/lib/commanders/fetchers";
 import { splitCardName } from "@/lib/scryfall/client";
 import CommanderTrendsTable, {
   CommanderPeriodSnapshot,
@@ -278,7 +284,31 @@ const getCachedCommanderUsageTrend = unstable_cache(
   { revalidate: COMMANDERS_CACHE_REVALIDATE_SECONDS }
 );
 
-export default function CommandersPage() {
+const getCachedCommanderRankings = unstable_cache(
+  async (filters: CommanderRankingFilters) =>
+    withTiming("commanders:rankings", () => getCommanderRankings(filters)),
+  ["commanders-rankings-v1"],
+  { revalidate: COMMANDERS_CACHE_REVALIDATE_SECONDS }
+);
+
+function parseRankingFilters(params: Record<string, string | string[] | undefined>): CommanderRankingFilters {
+  const period = ["1m", "3m", "6m", "all"].includes(String(params.period))
+    ? (params.period as CommanderRankingPeriod)
+    : "all";
+  const tier = ["Bronze", "Silver", "Gold", "Platinum", "Diamond", "all"].includes(String(params.tier))
+    ? (params.tier as CommanderTournamentTier)
+    : "all";
+  const requestedMinimum = Number(params.minEntries);
+  const minimumEntries = [20, 50, 100].includes(requestedMinimum) ? requestedMinimum : 20;
+  return { period, tier, minimumEntries };
+}
+
+export default async function CommandersPage({
+  searchParams = Promise.resolve({}),
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+} = {}) {
+  const rankingFilters = parseRankingFilters(await searchParams);
   return (
     <div className="min-h-screen">
       <main className="container mx-auto px-4 py-8">
@@ -322,7 +352,7 @@ export default function CommandersPage() {
 
         <div className="mb-12">
           <Suspense fallback={<SectionSkeleton label="Loading commander rankings…" />}>
-            <CommanderRankingsTable />
+            <CommanderRankingsTable filters={rankingFilters} />
           </Suspense>
         </div>
 
@@ -403,13 +433,20 @@ async function StatsSummarySection() {
   );
 }
 
-async function CommanderRankingsTable() {
-  const commanders = await getCachedCommanders();
+async function CommanderRankingsTable({ filters }: { filters: CommanderRankingFilters }) {
+  const commanders = await getCachedCommanderRankings(filters);
   const faceNames = Array.from(
     new Set(commanders.flatMap((c) => splitCardName(c.commander_name)))
   );
   const artByName = await getScryfallArtByNames(faceNames);
-  return <CommandersTable commanders={commanders} artByName={artByName} />;
+  return (
+    <CommandersTable
+      key={`${filters.period}-${filters.tier}-${filters.minimumEntries}`}
+      commanders={commanders}
+      artByName={artByName}
+      rankingFilters={filters}
+    />
+  );
 }
 
 async function CommanderTrendsSection() {
@@ -445,8 +482,7 @@ async function GlobalTrendsSection() {
       yLabel="Entries"
       title="Most played commanders over time"
       description="Weekly tournament entries for the current top 10 commanders."
-      valueFormatter={(value) => value.toLocaleString()}
-      tickFormatter={(value) => value.toLocaleString()}
+      valueFormat="number"
     />
   );
 }

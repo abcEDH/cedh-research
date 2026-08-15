@@ -9,6 +9,8 @@ let mockSelectResult: { data: unknown; error: unknown } = { data: [], error: nul
 let lastFromTable: string | null = null;
 let lastInColumn: string | null = null;
 let lastInValues: unknown[] | null = null;
+let rankingFilters: Array<[string, string]> = [];
+let mockRankingResult: { data: unknown; error: unknown } = { data: [], error: null };
 
 vi.mock("@/lib/supabase", () => ({
   supabase: {
@@ -16,6 +18,20 @@ vi.mock("@/lib/supabase", () => ({
       lastFromTable = table;
       const chain = {
         select: () => chain,
+        gte: (column: string, value: string) => {
+          rankingFilters.push([column, value]);
+          return chain;
+        },
+        lte: (column: string, value: string) => {
+          rankingFilters.push([column, value]);
+          return chain;
+        },
+        neq: () => chain,
+        eq: (column: string, value: string) => {
+          rankingFilters.push([column, value]);
+          return chain;
+        },
+        range: () => table === "tournament_entries" ? Promise.resolve(mockRankingResult) : chain,
         in: (column: string, values: unknown[]) => {
           lastInColumn = column;
           lastInValues = values;
@@ -27,7 +43,7 @@ vi.mock("@/lib/supabase", () => ({
   },
 }));
 
-import { getCommanderArtByName, getScryfallArtByNames } from "@/lib/commanders/fetchers";
+import { getCommanderArtByName, getCommanderRankings, getScryfallArtByNames } from "@/lib/commanders/fetchers";
 
 describe("getScryfallArtByNames", () => {
   beforeEach(() => {
@@ -35,6 +51,8 @@ describe("getScryfallArtByNames", () => {
     lastFromTable = null;
     lastInColumn = null;
     lastInValues = null;
+    rankingFilters = [];
+    mockRankingResult = { data: [], error: null };
   });
 
   it("returns an empty map without querying when given no names", async () => {
@@ -97,6 +115,34 @@ describe("getScryfallArtByNames", () => {
     const result = await getScryfallArtByNames(["No Art Yet"]);
 
     expect(result).toEqual({ "No Art Yet": { artCrop: null, normal: null } });
+  });
+});
+
+describe("getCommanderRankings", () => {
+  it("filters raw entries by the selected period and exact tournament tier", async () => {
+    mockRankingResult = {
+      data: [
+        {
+          tournament_id: "event-1",
+          commander_id: "cmd-1",
+          wins: 3,
+          losses: 1,
+          draws: 0,
+          made_top_16: true,
+          made_top_cut: true,
+          commanders: { commander_id: "cmd-1", commander_name: "Kinnan", archetype: null, color_identity: ["U", "G"] },
+        },
+      ],
+      error: null,
+    };
+
+    const rankings = await getCommanderRankings({ period: "3m", tier: "Gold", minimumEntries: 1 });
+
+    expect(lastFromTable).toBe("tournament_entries");
+    expect(rankingFilters).toContainEqual(["tournaments.tier", "Gold"]);
+    expect(rankingFilters).toContainEqual(["tournaments.player_count", 32]);
+    expect(rankingFilters.some(([column]) => column === "tournaments.start_date")).toBe(true);
+    expect(rankings).toMatchObject([{ commander_name: "Kinnan", total_entries: 1, tournaments_played: 1 }]);
   });
 });
 

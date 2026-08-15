@@ -40,17 +40,21 @@ export default function CommanderTrendsChart({
   yLabel = "Win Rate (%)",
   title = "Top 10 commanders over time",
   description = "Weekly win rate trends (last 13 weeks).",
-  valueFormatter = (value: number) => `${value.toFixed(1)}%`,
-  tickFormatter = (value: number) => `${value}%`,
+  valueFormat = "percent",
 }: {
   data: CommanderTrendSeriesPoint[];
   series: CommanderTrendSeriesMeta[];
   yLabel?: string;
   title?: string;
   description?: string;
-  valueFormatter?: (value: number) => string;
-  tickFormatter?: (value: number) => string;
+  valueFormat?: "percent" | "number";
 }) {
+  const valueFormatter = valueFormat === "number"
+    ? (value: number) => value.toLocaleString()
+    : (value: number) => `${value.toFixed(1)}%`;
+  const tickFormatter = valueFormat === "number"
+    ? (value: number) => value.toLocaleString()
+    : (value: number) => `${value}%`;
   const colorMap = useMemo(() => {
     const map = new Map<string, string>();
     series.forEach((item, index) => {
