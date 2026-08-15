@@ -8,6 +8,7 @@ import TrendMetricCharts from "@/components/commanders/trend-metric-charts";
 import CommanderMatchupsTable from "@/components/commanders/commander-matchups-table";
 import { StatCard, ColorBadge } from "@/components/commanders/stat-card";
 import { ArtCropStack } from "@/components/commanders/art-crop-stack";
+import { CommanderArtThumb } from "@/components/commanders/commander-art-thumb";
 import { MomentumCard } from "@/components/commanders/momentum-card";
 import { PerformanceCardRow } from "@/components/commanders/card-performance-row";
 import { RecentFinishRow } from "@/components/commanders/recent-finish-row";
@@ -102,7 +103,7 @@ export default async function CommanderDetailPage({
               ← Back to Commanders
             </Link>
             <div className="mt-5 grid gap-6 lg:grid-cols-[auto_1fr] lg:items-center">
-              {commanderMeta?.scryfall_ids && commanderMeta.scryfall_ids.length > 0 && (
+              {commanderMeta?.scryfall_ids && commanderMeta.scryfall_ids.length > 0 ? (
                 <ArtCropStack
                   urls={commanderMeta.scryfall_ids
                     .slice(0, 2)
@@ -110,6 +111,10 @@ export default async function CommanderDetailPage({
                   size={112}
                   alt={normalizeDisplayString(commander.commander_name)}
                 />
+              ) : (
+                // Falls back to a live Scryfall lookup by name when this commander's
+                // scryfall_ids haven't been backfilled yet, instead of showing nothing.
+                <CommanderArtThumb name={commander.commander_name} size={112} />
               )}
               <div>
                 <div className="flex items-center gap-3">
