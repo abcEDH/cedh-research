@@ -5,13 +5,20 @@ import { splitCardName } from "@/lib/scryfall/client";
 import type { ScryfallArtByName } from "@/lib/commanders/fetchers";
 import { ArtCropStack } from "./art-crop-stack";
 
-function useCommanderArt(name: string, artByName?: ScryfallArtByName) {
-  const cardName = splitCardName(name)[0] ?? name;
-  const needsFallback = !artByName || !artByName[cardName]?.artCrop;
-  const { ref, arts } = useScryfallArts(needsFallback ? [cardName] : []);
-  const artCrop = artByName?.[cardName]?.artCrop ?? arts[0]?.artCrop ?? null;
+function useCommanderArts(name: string, artByName?: ScryfallArtByName) {
+  const names = splitCardName(name).slice(0, 2);
+  const missingNames = artByName
+    ? names.filter((cardName) => !artByName[cardName]?.artCrop)
+    : names;
+  const { ref, arts } = useScryfallArts(missingNames);
+  const artCrops = names.map((cardName) => {
+    const cachedArt = artByName?.[cardName]?.artCrop;
+    if (cachedArt) return cachedArt;
+    const missingIndex = missingNames.indexOf(cardName);
+    return missingIndex === -1 ? null : (arts[missingIndex]?.artCrop ?? null);
+  });
 
-  return { artCrop, ref };
+  return { artCrops, ref };
 }
 
 /**
@@ -30,23 +37,13 @@ export function CommanderArtThumb({
   size: number;
   artByName?: ScryfallArtByName;
 }) {
-  const names = splitCardName(name).slice(0, 2);
-  const missingNames = artByName
-    ? names.filter((n) => !artByName[n]?.artCrop)
-    : names;
-  const { ref, arts } = useScryfallArts(missingNames);
-
-  const urls = names.map((n) => {
-    if (artByName && artByName[n]?.artCrop) return artByName[n].artCrop;
-    const missingIndex = missingNames.indexOf(n);
-    return missingIndex === -1 ? null : (arts[missingIndex]?.artCrop ?? null);
-  });
+  const { artCrops, ref } = useCommanderArts(name, artByName);
 
   return (
     <div ref={ref} className="inline-flex shrink-0">
       {/* Decorative: every caller renders this beside the same visible name text,
           so a real alt would duplicate it in the enclosing link/button's accessible name. */}
-      <ArtCropStack urls={urls} size={size} alt="" />
+      <ArtCropStack urls={artCrops} size={size} alt="" />
     </div>
   );
 }
@@ -59,14 +56,21 @@ export function CommanderArtBanner({
   name: string;
   artByName?: ScryfallArtByName;
 }) {
-  const { artCrop, ref } = useCommanderArt(name, artByName);
+  const { artCrops, ref } = useCommanderArts(name, artByName);
 
   return (
     <div
       ref={ref}
       aria-hidden
-      className="absolute inset-0 bg-[linear-gradient(135deg,oklch(0.28_0.06_258),oklch(0.22_0.05_300))] bg-cover bg-center"
-      style={artCrop ? { backgroundImage: `url("${artCrop}")` } : undefined}
-    />
+      className={`absolute inset-0 grid ${artCrops.length > 1 ? "grid-cols-2" : "grid-cols-1"}`}
+    >
+      {artCrops.map((artCrop, index) => (
+        <div
+          key={index}
+          className="bg-[linear-gradient(135deg,oklch(0.28_0.06_258),oklch(0.22_0.05_300))] bg-cover bg-center"
+          style={artCrop ? { backgroundImage: `url("${artCrop}")` } : undefined}
+        />
+      ))}
+    </div>
   );
 }

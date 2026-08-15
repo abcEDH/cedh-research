@@ -10,16 +10,15 @@ import { splitCardName } from "@/lib/scryfall/client";
 import CommanderTrendsTable, {
   CommanderPeriodSnapshot,
 } from "@/components/commanders/commander-trends-table";
-import TrendMetricCharts, {
-  TrendMetricPoint,
-  TrendMetricSeries,
-} from "@/components/commanders/trend-metric-charts";
-import { aggregateTrendPoint, formatPercent, mean } from "@/lib/commander-stats";
+import CommanderTrendsChart, {
+  CommanderTrendSeriesMeta,
+  CommanderTrendSeriesPoint,
+} from "@/components/commanders/commander-trends-chart";
+import { formatPercent, mean } from "@/lib/commander-stats";
 import { withTiming } from "@/lib/performance";
 
 export const dynamic = "force-dynamic";
 const COMMANDERS_CACHE_REVALIDATE_SECONDS = 60 * 60 * 24; // 24 hours
-const SUPABASE_TREND_PAGE_SIZE = 1000;
 
 interface CommanderStat {
   commander_id: string;
@@ -59,21 +58,9 @@ type MonthlyTrendRow = {
   total_players?: number | null;
 };
 
-type GlobalWeeklyTrendRow = {
-  week_key?: string | null;
-  week_start_date?: string | null;
-  entries: number;
-  wins: number;
-  losses: number;
-  draws: number;
-};
-
-type GlobalMonthlyTrendRow = {
-  month_key: string;
-  entries: number;
-  wins: number;
-  losses: number;
-  draws: number;
+type CommanderUsageTrend = {
+  data: CommanderTrendSeriesPoint[];
+  series: CommanderTrendSeriesMeta[];
 };
 
 function normalizeDateKey(value: string | null | undefined) {
@@ -220,85 +207,48 @@ async function getWeeklyEntries(commanderIds: string[], weeks = 104) {
   return result;
 }
 
-async function fetchGlobalWeeklyTrendRows() {
-  const rows: GlobalWeeklyTrendRow[] = [];
-  for (let offset = 0; ; offset += SUPABASE_TREND_PAGE_SIZE) {
-    const { data, error } = await supabase
-      .from("commander_weekly_trends")
-      .select("week_key, week_start_date, entries, wins, losses, draws")
-      .order("week_start_date", { ascending: true })
-      .range(offset, offset + SUPABASE_TREND_PAGE_SIZE - 1);
+async function getCommanderUsageTrend(commanderIds: string[]): Promise<CommanderUsageTrend> {
+  if (commanderIds.length === 0) return { data: [], series: [] };
 
-    if (error) {
-      console.error("Error fetching global weekly trends:", error);
-      throw error;
-    }
+  const commanders = await getCachedCommanders();
+  const commanderById = new Map(commanders.map((commander) => [commander.commander_id, commander]));
+  const { data, error } = await supabase
+    .from("commander_weekly_trends")
+    .select("commander_id, week_key, week_start_date, entries")
+    .in("commander_id", commanderIds)
+    .order("week_start_date", { ascending: true });
 
-    rows.push(...(((data as GlobalWeeklyTrendRow[]) ?? [])));
-    if (!data || data.length < SUPABASE_TREND_PAGE_SIZE) break;
+  if (error) {
+    console.error("Error fetching commander usage trends:", error);
+    throw error;
   }
-  return rows;
-}
 
-async function fetchGlobalMonthlyTrendRows() {
-  const rows: GlobalMonthlyTrendRow[] = [];
-  for (let offset = 0; ; offset += SUPABASE_TREND_PAGE_SIZE) {
-    const { data, error } = await supabase
-      .from("commander_monthly_trends")
-      .select("month_key, entries, wins, losses, draws")
-      .order("month_key", { ascending: true })
-      .range(offset, offset + SUPABASE_TREND_PAGE_SIZE - 1);
-
-    if (error) {
-      console.error("Error fetching global monthly trends:", error);
-      throw error;
-    }
-
-    rows.push(...(((data as GlobalMonthlyTrendRow[]) ?? [])));
-    if (!data || data.length < SUPABASE_TREND_PAGE_SIZE) break;
-  }
-  return rows;
-}
-
-async function getGlobalTrendSeries() {
-  const [weeklyRows, monthlyRows] = await Promise.all([
-    fetchGlobalWeeklyTrendRows(),
-    fetchGlobalMonthlyTrendRows(),
-  ]);
-
-  const weeklyByKey = new Map<string, { entries: number; wins: number; losses: number; draws: number }>();
-  weeklyRows.forEach((row) => {
-    const key = normalizeDateKey(row.week_start_date) || row.week_key;
-    if (!key) return;
-    const current = weeklyByKey.get(key) ?? { entries: 0, wins: 0, losses: 0, draws: 0 };
-    current.entries += row.entries ?? 0;
-    current.wins += row.wins ?? 0;
-    current.losses += row.losses ?? 0;
-    current.draws += row.draws ?? 0;
-    weeklyByKey.set(key, current);
+  const rows = (data ?? []) as WeeklyTrendRow[];
+  const weekKeys = Array.from(
+    new Set(rows.map((row) => normalizeDateKey(row.week_start_date) || row.week_key || "").filter(Boolean))
+  ).sort().slice(-13);
+  const entriesByWeek = new Map<string, Map<string, number>>();
+  rows.forEach((row) => {
+    const weekKey = normalizeDateKey(row.week_start_date) || row.week_key || "";
+    if (!weekKey || !weekKeys.includes(weekKey)) return;
+    const values = entriesByWeek.get(weekKey) ?? new Map<string, number>();
+    values.set(row.commander_id, row.entries);
+    entriesByWeek.set(weekKey, values);
   });
 
-  const monthlyByKey = new Map<string, { entries: number; wins: number; losses: number; draws: number }>();
-  monthlyRows.forEach((row) => {
-    const current = monthlyByKey.get(row.month_key) ?? { entries: 0, wins: 0, losses: 0, draws: 0 };
-    current.entries += row.entries ?? 0;
-    current.wins += row.wins ?? 0;
-    current.losses += row.losses ?? 0;
-    current.draws += row.draws ?? 0;
-    monthlyByKey.set(row.month_key, current);
-  });
-
-  const weekly: TrendMetricPoint[] = Array.from(weeklyByKey.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .slice(-104)
-    .map(([period, values]) => ({ period, ...aggregateTrendPoint(values) }));
-
-  const monthly: TrendMetricPoint[] = Array.from(monthlyByKey.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .slice(-52)
-    .map(([period, values]) => ({ period, ...aggregateTrendPoint(values) }));
-
-  return { weekly, monthly } satisfies TrendMetricSeries;
+  return {
+    data: weekKeys.map((week) => {
+      const values = entriesByWeek.get(week);
+      return Object.fromEntries([
+        ["week", week],
+        ...commanderIds.map((commanderId) => [commanderId, values?.get(commanderId) ?? null]),
+      ]) as CommanderTrendSeriesPoint;
+    }),
+    series: commanderIds.flatMap((commanderId) => {
+      const commander = commanderById.get(commanderId);
+      return commander ? [{ id: commanderId, name: commander.commander_name }] : [];
+    }),
+  };
 }
 
 const getCachedCommanders = unstable_cache(
@@ -321,9 +271,10 @@ const getCachedWeeklyEntries = unstable_cache(
   { revalidate: COMMANDERS_CACHE_REVALIDATE_SECONDS }
 );
 
-const getCachedGlobalTrendSeries = unstable_cache(
-  () => withTiming("commanders:global-trends", getGlobalTrendSeries),
-  ["commander-global-trends-v3"],
+const getCachedCommanderUsageTrend = unstable_cache(
+  async (commanderIds: string[]) =>
+    withTiming("commanders:usage-trend", () => getCommanderUsageTrend(commanderIds)),
+  ["commander-usage-trend-v1"],
   { revalidate: COMMANDERS_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -482,12 +433,18 @@ async function CommanderTrendsSection() {
 }
 
 async function GlobalTrendsSection() {
-  const globalSeries = await getCachedGlobalTrendSeries();
+  const commanders = await getCachedCommanders();
+  const commanderIds = commanders.slice(0, 10).map((commander) => commander.commander_id);
+  const usageTrend = await getCachedCommanderUsageTrend(commanderIds);
   return (
-    <TrendMetricCharts
-      series={globalSeries}
-      title="All commanders"
-      description="Aggregate trends across all commanders (entries, win rate, points per game)."
+    <CommanderTrendsChart
+      data={usageTrend.data}
+      series={usageTrend.series}
+      yLabel="Entries"
+      title="Most played commanders over time"
+      description="Weekly tournament entries for the current top 10 commanders."
+      valueFormatter={(value) => value.toLocaleString()}
+      tickFormatter={(value) => value.toLocaleString()}
     />
   );
 }

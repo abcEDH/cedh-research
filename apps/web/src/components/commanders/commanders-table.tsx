@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { CommanderArtBanner, CommanderArtThumb } from "@/components/commanders/commander-art-thumb";
@@ -8,6 +8,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatPercent } from "@/lib/commander-stats";
 import type { ScryfallArtByName } from "@/lib/commanders/fetchers";
 import { normalizeDisplayString } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -45,8 +52,9 @@ type SortKey =
 
 type SortDirection = "asc" | "desc";
 type View = "grid" | "table";
+type Preset = "all" | "popular" | "established" | "winRate" | "topCut";
 
-const MANA_COLORS = ["W", "U", "B", "R", "G"] as const;
+const MANA_COLORS = ["W", "U", "B", "R", "G", "C"] as const;
 type ManaColor = (typeof MANA_COLORS)[number];
 
 const MANA_LABELS: Record<ManaColor, string> = {
@@ -55,6 +63,16 @@ const MANA_LABELS: Record<ManaColor, string> = {
   B: "Black",
   R: "Red",
   G: "Green",
+  C: "Colorless",
+};
+
+const MANA_SYMBOL_PATHS: Record<ManaColor, string> = {
+  W: "/assets/mana/white.svg",
+  U: "/assets/mana/blue.svg",
+  B: "/assets/mana/black.svg",
+  R: "/assets/mana/red.svg",
+  G: "/assets/mana/green.svg",
+  C: "/assets/mana/colorless.svg",
 };
 
 function getArchetypeIcon(archetype: string | null) {
@@ -101,70 +119,15 @@ function compareValues(a: CommanderStat, b: CommanderStat, key: SortKey) {
 }
 
 function ManaSymbol({ color, size = "sm" }: { color: ManaColor; size?: "sm" | "md" }) {
-  const dimension = size === "md" ? "h-7 w-7" : "h-4 w-4";
-  const label = `${MANA_LABELS[color]} mana`;
-  const paths: Record<ManaColor, ReactNode> = {
-    W: (
-      <>
-        <circle cx="12" cy="12" r="11" fill="#fffbd5" />
-        <path
-          d="M12 4.5v15M4.5 12h15M6.7 6.7l10.6 10.6M17.3 6.7 6.7 17.3"
-          stroke="#5b512a"
-          strokeWidth="1.5"
-        />
-      </>
-    ),
-    U: (
-      <>
-        <circle cx="12" cy="12" r="11" fill="#aae0fa" />
-        <path
-          d="M12 4.5c-3.4 4-5.5 6.7-5.5 10a5.5 5.5 0 0 0 11 0c0-3.3-2.1-6-5.5-10Z"
-          fill="#145579"
-        />
-      </>
-    ),
-    B: (
-      <>
-        <circle cx="12" cy="12" r="11" fill="#8b6aa9" />
-        <path
-          d="M7 8.2c1.3-2 3.1-3 5-3s3.7 1 5 3v5.2c0 2.6-2.2 4.6-5 4.6s-5-2-5-4.6V8.2Z"
-          fill="#251936"
-        />
-        <circle cx="10" cy="11" r="1" fill="#cdb9dd" />
-        <circle cx="14" cy="11" r="1" fill="#cdb9dd" />
-        <path d="M9 15h6" stroke="#cdb9dd" strokeWidth="1.2" />
-      </>
-    ),
-    R: (
-      <>
-        <circle cx="12" cy="12" r="11" fill="#ed6b62" />
-        <path
-          d="M12.5 3.8c.8 3.7-1.8 4.8-.3 7.2.8 1.3 2.9 1.4 3.4 4.1.5 2.6-1.3 4.7-3.8 4.7-2.9 0-4.8-2.3-4.3-5.1.5-2.5 2.5-3.5 3.1-5.6.4-1.5.1-2.8 1.9-5.3Z"
-          fill="#6f1f1e"
-        />
-      </>
-    ),
-    G: (
-      <>
-        <circle cx="12" cy="12" r="11" fill="#57b982" />
-        <path
-          d="M12 4.2c-4.1 2.1-6.6 5.2-6.6 8.6 0 3.9 2.8 6.5 6.6 6.5s6.6-2.6 6.6-6.5c0-3.4-2.5-6.5-6.6-8.6Z"
-          fill="#145438"
-        />
-        <path
-          d="M12 8v7.5M8.8 12.2 12 14.6l3.2-2.4"
-          stroke="#9ee0b6"
-          strokeWidth="1.1"
-          fill="none"
-        />
-      </>
-    ),
-  };
-
+  const dimension = size === "md" ? 28 : 16;
   return (
-    <svg role="img" aria-label={label} viewBox="0 0 24 24" className={dimension}>
-      {paths[color]}
-    </svg>
+    <Image
+      src={MANA_SYMBOL_PATHS[color]}
+      alt={`${MANA_LABELS[color]} mana symbol`}
+      width={dimension}
+      height={dimension}
+      className="shrink-0"
+    />
   );
 }
 
@@ -179,7 +142,7 @@ function ManaSymbols({
     MANA_COLORS.includes(color as ManaColor)
   );
   if (!identity.length) {
-    return <span className="font-mono text-xs text-muted-foreground">—</span>;
+    return <ManaSymbol color="C" size={size} />;
   }
   return (
     <span className="flex items-center -space-x-0.5">
@@ -474,6 +437,8 @@ export default function CommandersTable({
   const [colors, setColors] = useState<ManaColor[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>("entries");
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const [minimumEntries, setMinimumEntries] = useState(5);
+  const [preset, setPreset] = useState<Preset>("all");
 
   const ranks = useMemo(() => {
     const map = new Map<string, number>();
@@ -490,11 +455,13 @@ export default function CommandersTable({
         .toLowerCase()
         .includes(normalizedQuery);
       const colorMatch = colors.every((color) =>
-        commander.color_identity?.includes(color)
+        color === "C"
+          ? !commander.color_identity?.length
+          : commander.color_identity?.includes(color)
       );
-      return nameMatch && colorMatch;
+      return nameMatch && colorMatch && commander.total_entries >= minimumEntries;
     });
-  }, [commanders, colors, query]);
+  }, [commanders, colors, minimumEntries, query]);
 
   const sortedCommanders = useMemo(() => {
     const sorted = [...filteredCommanders].sort((a, b) =>
@@ -513,6 +480,35 @@ export default function CommandersTable({
       key === sortKey ? (current === "desc" ? "asc" : "desc") : "desc"
     );
     setSortKey(key);
+  }
+
+  function applyPreset(nextPreset: Preset) {
+    setPreset(nextPreset);
+    setQuery("");
+    setColors([]);
+
+    switch (nextPreset) {
+      case "popular":
+        setMinimumEntries(5);
+        setSortKey("entries");
+        break;
+      case "established":
+        setMinimumEntries(50);
+        setSortKey("entries");
+        break;
+      case "winRate":
+        setMinimumEntries(50);
+        setSortKey("winRate");
+        break;
+      case "topCut":
+        setMinimumEntries(50);
+        setSortKey("topCut");
+        break;
+      default:
+        setMinimumEntries(5);
+        setSortKey("entries");
+    }
+    setSortDirection("desc");
   }
 
   function handleSort(key: SortKey) {
@@ -544,6 +540,30 @@ export default function CommandersTable({
         <ViewToggle view={view} onChange={setView} />
       </div>
 
+      <div className="mb-3 flex max-w-full gap-2 overflow-x-auto pb-1" aria-label="Commander presets">
+        {(
+          [
+            ["all", "All commanders"],
+            ["popular", "Most played"],
+            ["established", "Established"],
+            ["winRate", "Win rate leaders"],
+            ["topCut", "Top cut leaders"],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => applyPreset(key)}
+            aria-pressed={preset === key}
+            className={`knd-chip min-h-9 shrink-0 whitespace-nowrap transition-colors ${
+              preset === key ? "border-primary/50 text-foreground" : "hover:text-foreground"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       <div className="mb-6 flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-card/55 p-3.5 backdrop-blur-sm sm:px-4">
         <input
           value={query}
@@ -573,27 +593,31 @@ export default function CommandersTable({
           ))}
         </div>
         <div className="hidden h-6 w-px bg-border lg:block" />
-        <div className="flex max-w-full gap-1.5 overflow-x-auto pb-1 lg:pb-0">
-          {(
-            [
-              ["Most played", "entries"],
-              ["Win rate", "winRate"],
-              ["Top cut", "topCut"],
-            ] as const
-          ).map(([label, key]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setMetric(key)}
-              className={`knd-chip min-h-9 shrink-0 whitespace-nowrap transition-colors ${
-                sortKey === key
-                  ? "border-primary/50 text-foreground"
-                  : "hover:text-foreground"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
+        <div className="flex flex-wrap gap-3">
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Sort by
+            <Select value={sortKey} onValueChange={(value) => { setMetric(value as SortKey); setPreset("all"); }}>
+              <SelectTrigger className="w-36 rounded-full bg-input/50"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="entries">Popularity</SelectItem>
+                <SelectItem value="winRate">Win rate</SelectItem>
+                <SelectItem value="topCut">Top cut</SelectItem>
+                <SelectItem value="pointsPerGame">Points / game</SelectItem>
+              </SelectContent>
+            </Select>
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Min. entries
+            <Select value={String(minimumEntries)} onValueChange={(value) => { setMinimumEntries(Number(value)); setPreset("all"); }}>
+              <SelectTrigger className="w-32 rounded-full bg-input/50"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="5">5+ entries</SelectItem>
+                <SelectItem value="20">20+ entries</SelectItem>
+                <SelectItem value="50">50+ entries</SelectItem>
+                <SelectItem value="100">100+ entries</SelectItem>
+              </SelectContent>
+            </Select>
+          </label>
         </div>
         <span className="ml-auto font-mono text-xs text-muted-foreground">
           {filteredEntries.toLocaleString()} entries

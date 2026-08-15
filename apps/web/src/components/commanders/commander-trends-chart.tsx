@@ -40,12 +40,16 @@ export default function CommanderTrendsChart({
   yLabel = "Win Rate (%)",
   title = "Top 10 commanders over time",
   description = "Weekly win rate trends (last 13 weeks).",
+  valueFormatter = (value: number) => `${value.toFixed(1)}%`,
+  tickFormatter = (value: number) => `${value}%`,
 }: {
   data: CommanderTrendSeriesPoint[];
   series: CommanderTrendSeriesMeta[];
   yLabel?: string;
   title?: string;
   description?: string;
+  valueFormatter?: (value: number) => string;
+  tickFormatter?: (value: number) => string;
 }) {
   const colorMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -80,7 +84,7 @@ export default function CommanderTrendsChart({
             />
             <YAxis
               tick={{ fill: "#9FB3D9", fontSize: 12 }}
-              tickFormatter={(value) => `${value}%`}
+              tickFormatter={tickFormatter}
               width={44}
               label={{ value: yLabel, angle: -90, position: "insideLeft", fill: "#9FB3D9" }}
             />
@@ -88,7 +92,7 @@ export default function CommanderTrendsChart({
               formatter={(value) => {
                 if (value === null || value === undefined) return "—";
                 const numeric = Number(value);
-                return Number.isFinite(numeric) ? `${numeric.toFixed(1)}%` : "—";
+                return Number.isFinite(numeric) ? valueFormatter(numeric) : "—";
               }}
               contentStyle={{
                 background: "#0B0F1A",
