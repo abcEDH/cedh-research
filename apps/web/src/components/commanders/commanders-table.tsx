@@ -547,7 +547,7 @@ export default function CommandersTable({
         .includes(normalizedQuery);
       const colorMatch = colors.every((color) =>
         color === "C"
-          ? !commander.color_identity?.length
+          ? Array.isArray(commander.color_identity) && commander.color_identity.length === 0
           : commander.color_identity?.includes(color)
       );
       return nameMatch && colorMatch && commander.total_entries >= minimumEntries;
