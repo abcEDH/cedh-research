@@ -9,16 +9,12 @@ test.describe("Commanders List Page", () => {
     await expect(page.getByRole("heading", { name: /Commander Rankings/i })).toBeVisible();
   });
 
-  test("displays commanders table with data", async ({ page, isMobile }) => {
-    // Below sm:, the table is replaced by an art-forward mobile list
-    // (CommanderListRowMobile) per this repo's "wide tables" convention.
-    if (isMobile) {
-      const mobileList = page.getByTestId("commanders-mobile-list");
-      await expect(mobileList).toBeVisible();
-      await expect(mobileList.locator("a").first()).toBeVisible();
-      return;
-    }
+  test("displays the art-forward grid and can switch to the table", async ({ page }) => {
+    const grid = page.getByTestId("commanders-grid");
+    await expect(grid).toBeVisible();
+    await expect(grid.locator("a").first()).toBeVisible();
 
+    await page.getByRole("button", { name: "Table" }).click();
     const rankingsTable = page.getByTestId("all-commanders-table");
     await expect(rankingsTable).toBeVisible();
 
@@ -32,6 +28,7 @@ test.describe("Commanders List Page", () => {
   });
 
   test("commanders have non-zero entry counts", async ({ page }) => {
+    await page.getByRole("button", { name: "Table" }).click();
     const rankingsTable = page.getByTestId("all-commanders-table");
     const rows = rankingsTable.locator("tbody tr");
     const rowCount = await rows.count();
@@ -46,7 +43,7 @@ test.describe("Commanders List Page", () => {
   });
 
   test("commander links navigate to detail page", async ({ page }) => {
-    const commanderLinks = page.locator('tbody a[href^="/commanders/"]');
+    const commanderLinks = page.locator('a[href^="/commanders/"]');
     const total = await commanderLinks.count();
     let targetHref: string | null = null;
     for (let i = 0; i < total; i++) {
@@ -61,6 +58,12 @@ test.describe("Commanders List Page", () => {
 
     await page.goto(targetHref!);
     await expect(page).toHaveURL(/\/commanders\/[a-f0-9-]+/);
+  });
+
+  test("search and color filters are available", async ({ page }) => {
+    await expect(page.getByRole("textbox", { name: "Search commanders" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Filter by Blue" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Most played" })).toBeVisible();
   });
 
   test("stats summary shows aggregated data", async ({ page }) => {

@@ -5,6 +5,8 @@ import { supabase } from "@/lib/supabase";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import CommandersTable from "@/components/commanders/commanders-table";
+import { getScryfallArtByNames } from "@/lib/commanders/fetchers";
+import { splitCardName } from "@/lib/scryfall/client";
 import CommanderTrendsTable, {
   CommanderPeriodSnapshot,
 } from "@/components/commanders/commander-trends-table";
@@ -329,16 +331,18 @@ export default function CommandersPage() {
   return (
     <div className="min-h-screen">
       <main className="container mx-auto px-4 py-8">
-        <div className="relative mb-8 overflow-hidden rounded-2xl border border-border/70 bg-card/60 px-6 py-6">
-          <div className="knd-watermark absolute inset-0" />
-          <div className="relative">
+        <div className="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div>
             <Link
               href="/"
               className="text-sm text-muted-foreground hover:text-foreground"
             >
               ← Back to Home
             </Link>
-            <h1 className="mt-4 text-3xl font-semibold text-foreground md:text-4xl">
+            <p className="mt-5 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+              Competitive Metagame
+            </p>
+            <h1 className="mt-1 text-3xl font-semibold text-foreground md:text-4xl">
               Commander Rankings
             </h1>
             <Suspense
@@ -350,14 +354,14 @@ export default function CommandersPage() {
             >
               <CommanderHeaderSummary />
             </Suspense>
-            <div className="mt-3 flex flex-wrap gap-3 text-sm">
-              <Link
-                href="/commanders/trends"
-                className="rounded-full border border-border/60 px-3 py-1 text-muted-foreground hover:border-primary/40 hover:text-foreground"
-              >
-                View commander trends
-              </Link>
-            </div>
+          </div>
+          <div className="flex flex-wrap gap-3 text-sm">
+            <Link
+              href="/commanders/trends"
+              className="min-h-11 rounded-full border border-border/60 px-3 py-2 text-muted-foreground hover:border-primary/40 hover:text-foreground"
+            >
+              View commander trends
+            </Link>
           </div>
         </div>
 
@@ -448,7 +452,11 @@ async function StatsSummarySection() {
 
 async function CommanderRankingsTable() {
   const commanders = await getCachedCommanders();
-  return <CommandersTable commanders={commanders} />;
+  const faceNames = Array.from(
+    new Set(commanders.flatMap((c) => splitCardName(c.commander_name)))
+  );
+  const artByName = await getScryfallArtByNames(faceNames);
+  return <CommandersTable commanders={commanders} artByName={artByName} />;
 }
 
 async function CommanderTrendsSection() {
