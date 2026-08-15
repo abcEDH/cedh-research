@@ -11,20 +11,30 @@ AS $$
 DECLARE
     updated_count integer;
 BEGIN
-    WITH resolved AS (
+    WITH resolved_colors AS (
         SELECT
             c.id,
             COUNT(DISTINCT face.name) = CARDINALITY(c.commander_names) AS all_faces_found,
             COALESCE(
-                ARRAY_AGG(DISTINCT color.symbol ORDER BY ARRAY_POSITION(ARRAY['W', 'U', 'B', 'R', 'G'], color.symbol))
+                ARRAY_AGG(DISTINCT color.symbol)
                     FILTER (WHERE color.symbol IS NOT NULL),
                 ARRAY[]::text[]
-            ) AS color_identity
+            ) AS colors
         FROM public.commanders AS c
         CROSS JOIN LATERAL UNNEST(c.commander_names) AS face(name)
         LEFT JOIN public.scryfall_cards AS sc ON sc.name = face.name
         LEFT JOIN LATERAL UNNEST(sc.color_identity) AS color(symbol) ON TRUE
         GROUP BY c.id, c.commander_names
+    ), resolved AS (
+        SELECT
+            id,
+            all_faces_found,
+            ARRAY(
+                SELECT ordered.symbol
+                FROM UNNEST(ARRAY['W', 'U', 'B', 'R', 'G']) AS ordered(symbol)
+                WHERE ordered.symbol = ANY(colors)
+            ) AS color_identity
+        FROM resolved_colors
     )
     UPDATE public.commanders AS c
     SET
