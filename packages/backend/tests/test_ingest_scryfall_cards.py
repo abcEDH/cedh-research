@@ -38,6 +38,7 @@ from ingest_scryfall_cards import (  # noqa: E402
     main,
     select_best_printing_per_name,
     split_commander_names,
+    sync_commander_color_identities,
     upsert_scryfall_cards,
 )
 from scryfall_bulk_client import (  # noqa: E402
@@ -243,6 +244,17 @@ class UpsertScryfallCardsTests(unittest.TestCase):
         client.upsert.assert_not_called()
 
 
+class SyncCommanderColorIdentitiesTests(unittest.TestCase):
+    def test_calls_the_database_sync_function_and_returns_count(self) -> None:
+        client = Mock()
+        client.rpc.return_value = 3
+
+        updated = sync_commander_color_identities(client)
+
+        self.assertEqual(updated, 3)
+        client.rpc.assert_called_once_with("sync_commander_scryfall_color_identities")
+
+
 class MainOrchestrationTests(unittest.TestCase):
     """End-to-end wiring: main() collects referenced names, fetches the bulk
     dump, filters/maps matches, and upserts -- or reports without writing
@@ -252,6 +264,7 @@ class MainOrchestrationTests(unittest.TestCase):
     def _patched(self, argv: list[str]):
         client = Mock()
         client.select = Mock(return_value=[{"commander_names": ["Sol Ring Commander"]}])
+        client.rpc = Mock(return_value=1)
 
         return (
             client,
@@ -299,6 +312,7 @@ class MainOrchestrationTests(unittest.TestCase):
         upserted_rows = client.upsert.call_args.args[1]
         self.assertEqual(len(upserted_rows), 1)
         self.assertEqual(upserted_rows[0]["scryfall_id"], "match-1")
+        client.rpc.assert_called_once_with("sync_commander_scryfall_color_identities")
 
 
 if __name__ == "__main__":

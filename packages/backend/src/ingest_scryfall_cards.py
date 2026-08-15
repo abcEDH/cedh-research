@@ -132,6 +132,12 @@ def upsert_scryfall_cards(client: SupabaseClient, rows: list[dict]) -> int:
     return total
 
 
+def sync_commander_color_identities(client: SupabaseClient) -> int:
+    """Persist Scryfall color identities on solo commanders and partner pairs."""
+    result = client.rpc("sync_commander_scryfall_color_identities")
+    return int(result or 0)
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Cache Scryfall card art server-side from the default_cards bulk dump."
@@ -170,6 +176,8 @@ def main() -> None:
 
     upserted = upsert_scryfall_cards(client, rows)
     print(f"upserted={upserted}")
+    updated_commanders = sync_commander_color_identities(client)
+    print(f"updated_commander_color_identities={updated_commanders}")
 
 
 if __name__ == "__main__":
