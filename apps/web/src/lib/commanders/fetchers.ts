@@ -35,6 +35,7 @@ type CommanderRankingEntry = {
   wins: number;
   losses: number;
   draws: number;
+  win_rate: string | null;
   made_top_16: boolean | null;
   made_top_cut: boolean | null;
   commanders:
@@ -71,7 +72,7 @@ export async function getCommanderRankings({
   for (let offset = 0; ; offset += 1000) {
     let query = supabase
       .from("tournament_entries")
-      .select("id, tournament_id, commander_id, wins, losses, draws, made_top_16, made_top_cut, commanders!inner(commander_id:id, commander_name:name, archetype, color_identity), tournaments!inner(start_date, tier, player_count)")
+      .select("id, tournament_id, commander_id, wins, losses, draws, win_rate, made_top_16, made_top_cut, commanders!inner(commander_id:id, commander_name:name, archetype, color_identity), tournaments!inner(start_date, tier, player_count)")
       .gte("tournaments.player_count", 16)
       .lte("tournaments.start_date", now)
       .neq("commanders.name", "Unknown Commander")
@@ -89,6 +90,7 @@ export async function getCommanderRankings({
 
   const rankings = new Map<string, CommanderStat>();
   const tournamentIdsByCommander = new Map<string, Set<string>>();
+  const winRatesByCommander = new Map<string, { total: number; count: number }>();
   for (const entry of entries) {
     const commander = Array.isArray(entry.commanders) ? entry.commanders[0] : entry.commanders;
     if (!commander) continue;
@@ -115,15 +117,22 @@ export async function getCommanderRankings({
     const tournamentIds = tournamentIdsByCommander.get(entry.commander_id) ?? new Set<string>();
     tournamentIds.add(entry.tournament_id);
     tournamentIdsByCommander.set(entry.commander_id, tournamentIds);
+    const winRate = Number(entry.win_rate);
+    if (Number.isFinite(winRate)) {
+      const currentRate = winRatesByCommander.get(entry.commander_id) ?? { total: 0, count: 0 };
+      currentRate.total += winRate;
+      currentRate.count += 1;
+      winRatesByCommander.set(entry.commander_id, currentRate);
+    }
   }
 
   return Array.from(rankings.values())
     .map((commander) => {
-      const games = commander.total_wins + commander.total_losses + commander.total_draws;
+      const winRates = winRatesByCommander.get(commander.commander_id);
       return {
         ...commander,
         tournaments_played: tournamentIdsByCommander.get(commander.commander_id)?.size ?? 0,
-        avg_win_rate: games ? (commander.total_wins / games).toFixed(4) : "0",
+        avg_win_rate: winRates?.count ? (winRates.total / winRates.count).toFixed(4) : "0",
         conversion_rate_top_16: (commander.top_16_count / commander.total_entries).toFixed(4),
         conversion_rate_top_cut: (commander.top_cut_count / commander.total_entries).toFixed(4),
       };
