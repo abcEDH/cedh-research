@@ -1,3 +1,10 @@
+## [1.25.1](https://github.com/abcEDH/cedh-research/compare/v1.25.0...v1.25.1) (2026-08-15)
+
+
+### Bug Fixes
+
+* **backend:** reject future-dated tournaments and quarantine test event ([#320](https://github.com/abcEDH/cedh-research/issues/320)) ([f9a0c12](https://github.com/abcEDH/cedh-research/commit/f9a0c12742f6facf4c8ae099162782d492ec758e))
+
 # [1.25.0](https://github.com/abcEDH/cedh-research/compare/v1.24.1...v1.25.0) (2026-08-15)
 
 
