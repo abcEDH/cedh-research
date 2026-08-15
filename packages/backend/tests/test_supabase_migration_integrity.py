@@ -27,9 +27,7 @@ class SupabaseMigrationIntegrityTests(unittest.TestCase):
         for path in MIGRATIONS_DIR.glob("*.sql"):
             versions.append(path.name.split("_", 1)[0])
 
-        duplicates = sorted(
-            {version for version in versions if versions.count(version) > 1}
-        )
+        duplicates = sorted({version for version in versions if versions.count(version) > 1})
 
         self.assertEqual(duplicates, [], f"duplicate migration versions found: {duplicates}")
 
@@ -66,6 +64,43 @@ class SupabaseMigrationIntegrityTests(unittest.TestCase):
         )
         self.assertIn(expected_columns, sql)
         self.assertNotIn("s.country_key AS primary_country_key,\n    s.region_key AS primary_region_key,", sql)
+
+    def test_sweep_pending_migration_uses_token_based_compare_and_clear(self) -> None:
+        """#314 follow-up hardening: the ack must be a compare-and-clear
+        keyed on a token, not an unconditional read-and-clear, so a failed
+        rebuild or a stale ack can't drop or clobber a pending request. See
+        ``test_consume_partner_commander_sweep_pending.py`` for the Python
+        side of this contract.
+        """
+        sql = (MIGRATIONS_DIR / "20260815020000_partner_commander_sweep_pending.sql").read_text()
+
+        self.assertIn("token         uuid", sql)
+        self.assertIn("RETURNS uuid", sql)
+        self.assertIn("gen_random_uuid()", sql)
+        self.assertIn("consume_partner_commander_sweep_pending(\n  p_token uuid\n)", sql)
+        self.assertIn("AND token = p_token", sql)
+        self.assertIn("AND pending = true", sql)
+
+    def test_sweep_pending_migration_restricts_rpcs_to_service_role(self) -> None:
+        """These are internal maintenance RPCs (mark/consume the sweep-pending
+        flag) that must not be callable by anon/authenticated PostgREST
+        clients -- Postgres grants EXECUTE to PUBLIC by default, so an
+        explicit revoke is required. Matches the house pattern used by e.g.
+        20260511235955_global_elo_incremental_snapshot_rpcs.sql and
+        20260618183116_active_global_elo_player_ids_rpc.sql.
+        """
+        sql = (MIGRATIONS_DIR / "20260815020000_partner_commander_sweep_pending.sql").read_text()
+
+        self.assertIn(
+            "REVOKE ALL ON FUNCTION mark_partner_commander_sweep_pending(integer) FROM PUBLIC, anon, authenticated;",
+            sql,
+        )
+        self.assertIn(
+            "REVOKE ALL ON FUNCTION consume_partner_commander_sweep_pending(uuid) FROM PUBLIC, anon, authenticated;",
+            sql,
+        )
+        self.assertIn("GRANT EXECUTE ON FUNCTION mark_partner_commander_sweep_pending(integer) TO service_role;", sql)
+        self.assertIn("GRANT EXECUTE ON FUNCTION consume_partner_commander_sweep_pending(uuid) TO service_role;", sql)
 
     def test_canonical_leaderboard_counts_preserves_existing_column_order(self) -> None:
         sql = (MIGRATIONS_DIR / "20260409140000_fix_global_leaderboard_canonical_counts.sql").read_text()

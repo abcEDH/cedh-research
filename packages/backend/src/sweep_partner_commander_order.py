@@ -21,6 +21,21 @@ from ingest import (
 )
 
 
+def format_report_line(
+    commander_id: str,
+    current_name: str,
+    target_name: str,
+    observations: str,
+    current_order: tuple[str, str],
+    target_order: tuple[str, str],
+    status: str,
+) -> str:
+    return (
+        f'{commander_id},"{current_name}","{target_name}","{observations}",'
+        f'"{" / ".join(current_order)}","{" / ".join(target_order)}",{status}'
+    )
+
+
 def canonical_pair_key(names: list[str]) -> tuple[str, ...]:
     cleaned = [clean_commander_card_name(name) for name in names if name and name.strip()]
     return tuple(sorted(cleaned))
@@ -131,6 +146,52 @@ def choose_target_order(
     return sorted(top_orders)[0]
 
 
+RECONCILABLE_METADATA_COLUMNS = (
+    "scryfall_ids",
+    "color_identity",
+    "archetype",
+    "win_condition",
+    "notes",
+)
+
+
+def merge_commander_metadata(retained: dict, duplicate: dict) -> dict:
+    """Compute the metadata patch to apply to the retained commander row.
+
+    ``commanders`` carries five non-key columns (``scryfall_ids``,
+    ``color_identity``, ``archetype``, ``win_condition``, ``notes``) that the
+    old merge path discarded outright by deleting the duplicate row without
+    ever reading them (#316). This fills any column that is null on the
+    retained row with the duplicate's value where the duplicate has a
+    non-null one -- the duplicate only fills gaps. A column already non-null
+    on the retained row is never overwritten, so last-write-wins can't clobber
+    curated data with whatever happened to be on the row being deleted.
+    """
+    patch: dict = {}
+    for column in RECONCILABLE_METADATA_COLUMNS:
+        if retained.get(column) is not None:
+            continue
+        duplicate_value = duplicate.get(column)
+        if duplicate_value is None:
+            continue
+        patch[column] = duplicate_value
+    return patch
+
+
+def update_commander_metadata(client: SupabaseClient, commander_id: str, patch: dict) -> None:
+    if not patch:
+        return
+    endpoint = f"{client.url}/rest/v1/commanders"
+    response = requests.patch(
+        endpoint,
+        headers=client.headers,
+        params={"id": f"eq.{commander_id}"},
+        json=patch,
+        timeout=60,
+    )
+    response.raise_for_status()
+
+
 def repoint_tournament_entries(
     client: SupabaseClient,
     source_commander_id: str,
@@ -205,6 +266,40 @@ def delete_commander_row(client: SupabaseClient, commander_id: str) -> None:
     response.raise_for_status()
 
 
+def mark_sweep_pending(client: SupabaseClient, merged_count: int) -> None:
+    """Flag a live merge for the next maintenance run to pick up (#314).
+
+    ``chain-elo`` in ``ci-backend-ingestion.yml`` skips dispatching a
+    maintenance refresh when an Elo job is already in flight. If that job has
+    already passed its own commander-view rebuild, this sweep's merges land
+    after it and the derived views (``commander_weekly_trends``,
+    ``commander_monthly_trends``, ``player_commander_profiles``) reference
+    merged-away commander IDs until some later, unrelated refresh notices.
+
+    Marking this flag unconditionally on every live merge -- rather than only
+    when chain-elo is about to skip, which this script has no way to know in
+    advance -- is deliberate: ``ci-backend-maintenance.yml`` consumes and
+    clears it on every run regardless of outcome, so the redundant case (a
+    normal dispatch that already refreshes everything) just clears the flag
+    a beat early rather than doing any harm.
+
+    Best-effort: a failure here must not fail the sweep itself (which has
+    already committed real merges by this point) -- it's surfaced as a
+    warning instead, matching the sweep's overall best-effort posture.
+    """
+    endpoint = f"{client.url}/rest/v1/rpc/mark_partner_commander_sweep_pending"
+    try:
+        response = requests.post(
+            endpoint,
+            headers=client.headers,
+            json={"p_merged_count": merged_count},
+            timeout=30,
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        print(f"warning: failed to mark partner-commander sweep pending: {exc}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="One-time sweep to normalize partner commander order.")
     parser.add_argument("--sample-limit", type=int, default=40, help="Recent entries to inspect per commander pair")
@@ -222,9 +317,11 @@ def main() -> None:
     client = SupabaseClient(supabase_url, supabase_key)
     session = requests.Session()
 
-    commanders = client.select("commanders", {"select": "id,name,commander_names", "limit": 5000, "order": "name.asc"})
+    commander_select_columns = "id,name,commander_names," + ",".join(RECONCILABLE_METADATA_COLUMNS)
+    commanders = client.select("commanders", {"select": commander_select_columns, "limit": 5000, "order": "name.asc"})
     partner_rows = [row for row in commanders if current_pair_order(row)]
     name_to_id = {row["name"]: row["id"] for row in commanders if row.get("name")}
+    id_to_row = {row["id"]: row for row in commanders if row.get("id")}
 
     report_lines = ["commander_id,current_name,target_name,observations,current_order,target_order,updated"]
     updated = 0
@@ -248,12 +345,13 @@ def main() -> None:
                 if not source_key:
                     players = row.get("players") or {}
                     tournaments = row.get("tournaments") or {}
-                    source_key = f"{tournaments.get('topdeck_tid','')}::{players.get('topdeck_id','')}"
+                    source_key = f"{tournaments.get('topdeck_tid', '')}::{players.get('topdeck_id', '')}"
                 if source_key in seen_sources:
                     continue
                 seen_sources.add(source_key)
 
-                observed = observe_pair_order({**row, **{"commander_names": list(current_order)}}, session, args.timeout)
+                observed_row = {**row, "commander_names": list(current_order)}
+                observed = observe_pair_order(observed_row, session, args.timeout)
                 if not observed:
                     continue
                 observed_orders[observed] += 1
@@ -263,14 +361,26 @@ def main() -> None:
             target_order = choose_target_order(current_order, observed_orders)
         current_name = commander["name"]
         target_name = " / ".join(target_order)
-        observations = "; ".join(
-            f"{left} / {right}:{count}" for (left, right), count in observed_orders.most_common()
-        )
+        observations = "; ".join(f"{left} / {right}:{count}" for (left, right), count in observed_orders.most_common())
 
         if target_name != current_name:
             conflict_id = name_to_id.get(target_name)
             if conflict_id and conflict_id != commander["id"]:
                 if not args.dry_run:
+                    # Reconcile the duplicate's metadata onto the retained row
+                    # before it's deleted below -- otherwise scryfall_ids,
+                    # color_identity, archetype, win_condition, and notes are
+                    # silently discarded with the row (#316). Read the
+                    # retained row's *current* in-memory state (not the
+                    # initial fetch) so a retained row that already picked up
+                    # metadata from an earlier merge in this same run doesn't
+                    # get gaps re-filled from a now-stale snapshot.
+                    retained_row = id_to_row.get(conflict_id, {})
+                    metadata_patch = merge_commander_metadata(retained_row, commander)
+                    if metadata_patch:
+                        update_commander_metadata(client, conflict_id, metadata_patch)
+                        retained_row.update(metadata_patch)
+
                     repoint_tournament_entries(client, commander["id"], conflict_id)
                     # commander_matchups carries two FKs to commanders(id)
                     # (commander_id and opponent_commander_id). Both must be
@@ -282,7 +392,9 @@ def main() -> None:
                     delete_commander_row(client, commander["id"])
                 merged += 1
                 report_lines.append(
-                    f'{commander["id"]},"{current_name}","{target_name}","{observations}","{" / ".join(current_order)}","{" / ".join(target_order)}",merged'
+                    format_report_line(
+                        commander["id"], current_name, target_name, observations, current_order, target_order, "merged"
+                    )
                 )
                 continue
             if not args.dry_run:
@@ -291,11 +403,15 @@ def main() -> None:
             name_to_id[target_name] = commander["id"]
             updated += 1
             report_lines.append(
-                f'{commander["id"]},"{current_name}","{target_name}","{observations}","{" / ".join(current_order)}","{" / ".join(target_order)}",yes'
+                format_report_line(
+                    commander["id"], current_name, target_name, observations, current_order, target_order, "yes"
+                )
             )
         else:
             report_lines.append(
-                f'{commander["id"]},"{current_name}","{target_name}","{observations}","{" / ".join(current_order)}","{" / ".join(target_order)}",no'
+                format_report_line(
+                    commander["id"], current_name, target_name, observations, current_order, target_order, "no"
+                )
             )
 
     Path(args.report).parent.mkdir(parents=True, exist_ok=True)
@@ -304,6 +420,9 @@ def main() -> None:
     print(f"updated={updated}")
     print(f"merged={merged}")
     print(f"report={args.report}")
+
+    if merged > 0 and not args.dry_run:
+        mark_sweep_pending(client, merged)
 
 
 if __name__ == "__main__":
