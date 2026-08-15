@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import TrendMetricCharts from "@/components/commanders/trend-metric-charts";
 import CommanderMatchupsTable from "@/components/commanders/commander-matchups-table";
 import { StatCard, ColorBadge } from "@/components/commanders/stat-card";
+import { ArtCropStack } from "@/components/commanders/art-crop-stack";
 import { MomentumCard } from "@/components/commanders/momentum-card";
 import { PerformanceCardRow } from "@/components/commanders/card-performance-row";
 import { RecentFinishRow } from "@/components/commanders/recent-finish-row";
@@ -84,30 +85,31 @@ export default async function CommanderDetailPage({
       <main className="container mx-auto px-4 py-8">
         {/* Header */}
         <div className="relative mb-8 overflow-hidden rounded-2xl border border-border/70 bg-card/60 px-6 py-6">
+          {commanderMeta?.scryfall_ids?.[0] && (
+            <Image
+              src={`https://cards.scryfall.io/art_crop/${commanderMeta.scryfall_ids[0]}.jpg`}
+              alt=""
+              fill
+              className="object-cover opacity-50 [mask-image:linear-gradient(to_bottom,black_10%,transparent)] [-webkit-mask-image:linear-gradient(to_bottom,black_10%,transparent)]"
+              loading="lazy"
+              unoptimized
+            />
+          )}
           <div className="knd-watermark absolute inset-0" />
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_80%_at_80%_0%,hsl(var(--knd-magenta)/0.18),transparent_60%)]" />
           <div className="relative">
             <Link href="/commanders" className="text-sm text-muted-foreground hover:text-foreground">
               ← Back to Commanders
             </Link>
             <div className="mt-5 grid gap-6 lg:grid-cols-[auto_1fr] lg:items-center">
               {commanderMeta?.scryfall_ids && commanderMeta.scryfall_ids.length > 0 && (
-                <div className="flex items-center gap-3">
-                  {commanderMeta.scryfall_ids.slice(0, 2).map((scryfallId) => (
-                    <div
-                      key={scryfallId}
-                      className="h-28 w-28 relative rounded-xl border border-border/60 overflow-hidden shadow-lg"
-                    >
-                      <Image
-                        src={`https://cards.scryfall.io/art_crop/${scryfallId}.jpg`}
-                        alt={normalizeDisplayString(commander.commander_name)}
-                        fill
-                        className="object-cover"
-                        loading="lazy"
-                        unoptimized
-                      />
-                    </div>
-                  ))}
-                </div>
+                <ArtCropStack
+                  urls={commanderMeta.scryfall_ids
+                    .slice(0, 2)
+                    .map((scryfallId) => `https://cards.scryfall.io/art_crop/${scryfallId}.jpg`)}
+                  size={112}
+                  alt={normalizeDisplayString(commander.commander_name)}
+                />
               )}
               <div>
                 <div className="flex items-center gap-3">

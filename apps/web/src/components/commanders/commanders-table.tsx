@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { normalizeDisplayString } from "@/lib/utils";
 import { formatPercent } from "@/lib/commander-stats";
+import { CommanderArtThumb } from "@/components/commanders/commander-art-thumb";
 import {
   Table,
   TableBody,
@@ -231,19 +232,22 @@ export default function CommandersTable({
                   <TableCell>
                     <Link
                       href={`/commanders/${commander.commander_id}`}
-                      className="text-foreground hover:text-primary"
+                      className="flex items-center gap-3 text-foreground hover:text-primary"
                     >
-                      <span className="font-medium line-clamp-1 max-w-[120px] sm:max-w-none sm:line-clamp-none">
-                        {normalizeDisplayString(commander.commander_name)}
-                      </span>
-                      {commander.archetype && (
-                        <span className="ml-2 hidden sm:inline-flex items-center gap-2 text-sm text-muted-foreground">
-                          {archetypeIcon && (
-                            <Image src={archetypeIcon} alt="" width={16} height={16} />
-                          )}
-                          {normalizeDisplayString(commander.archetype)}
+                      <CommanderArtThumb name={commander.commander_name} size={36} />
+                      <span className="min-w-0">
+                        <span className="font-medium line-clamp-1 max-w-[120px] sm:max-w-none sm:line-clamp-none">
+                          {normalizeDisplayString(commander.commander_name)}
                         </span>
-                      )}
+                        {commander.archetype && (
+                          <span className="ml-2 hidden sm:inline-flex items-center gap-2 text-sm text-muted-foreground">
+                            {archetypeIcon && (
+                              <Image src={archetypeIcon} alt="" width={16} height={16} />
+                            )}
+                            {normalizeDisplayString(commander.archetype)}
+                          </span>
+                        )}
+                      </span>
                     </Link>
                   </TableCell>
                   <TableCell className="text-right font-mono text-foreground">
