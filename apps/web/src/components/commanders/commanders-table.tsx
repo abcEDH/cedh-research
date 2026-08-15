@@ -7,6 +7,8 @@ import { useRouter } from "next/navigation";
 import { CommanderArtBanner, CommanderArtThumb } from "@/components/commanders/commander-art-thumb";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatPercent } from "@/lib/commander-stats";
+import { useScryfallArts } from "@/hooks/use-scryfall-art";
+import { splitCardName } from "@/lib/scryfall/client";
 import type {
   CommanderRankingFilters,
   CommanderRankingPeriod,
@@ -160,6 +162,46 @@ function ManaSymbols({
   );
 }
 
+/**
+ * Shows cached Scryfall color identity immediately, then fills cache gaps
+ * from Scryfall's named-card endpoint. The canonical database field remains
+ * the fallback while the card metadata is loading.
+ */
+function CommanderManaSymbols({
+  name,
+  fallbackColors,
+  artByName,
+  size,
+}: {
+  name: string;
+  fallbackColors: string[] | null;
+  artByName?: ScryfallArtByName;
+  size?: "sm" | "md";
+}) {
+  const names = splitCardName(name).slice(0, 2);
+  const missingNames = names.filter((cardName) => !artByName?.[cardName]?.colorIdentity);
+  const { ref, arts } = useScryfallArts(missingNames);
+  const colors = new Set<string>();
+  let resolvedFromScryfall = false;
+
+  for (const cardName of names) {
+    const cachedColors = artByName?.[cardName]?.colorIdentity;
+    const liveIndex = missingNames.indexOf(cardName);
+    const liveColors = liveIndex === -1 ? null : arts[liveIndex]?.colorIdentity;
+    const colorIdentity = cachedColors ?? liveColors;
+    if (!colorIdentity) continue;
+    resolvedFromScryfall = true;
+    colorIdentity.forEach((color) => colors.add(color));
+  }
+
+  const orderedColors = ["W", "U", "B", "R", "G"].filter((color) => colors.has(color));
+  return (
+    <div ref={ref} className="inline-flex shrink-0">
+      <ManaSymbols colors={resolvedFromScryfall ? orderedColors : fallbackColors} size={size} />
+    </div>
+  );
+}
+
 function SortButton({
   label,
   active,
@@ -270,7 +312,11 @@ function CommanderGrid({
               #{ranks.get(commander.commander_id)}
             </span>
             <div className="absolute bottom-2 left-2">
-              <ManaSymbols colors={commander.color_identity} />
+              <CommanderManaSymbols
+                name={commander.commander_name}
+                fallbackColors={commander.color_identity}
+                artByName={artByName}
+              />
             </div>
           </div>
           <div className="p-2.5 sm:p-3">
@@ -429,7 +475,11 @@ function CommanderTable({
                     </Link>
                   </TableCell>
                   <TableCell className="hidden sm:table-cell">
-                    <ManaSymbols colors={commander.color_identity} />
+                    <CommanderManaSymbols
+                      name={commander.commander_name}
+                      fallbackColors={commander.color_identity}
+                      artByName={artByName}
+                    />
                   </TableCell>
                   <TableCell className="text-right font-mono text-foreground">
                     {commander.total_entries.toLocaleString()}
