@@ -1,3 +1,19 @@
+# [1.25.0](https://github.com/abcEDH/cedh-research/compare/v1.24.1...v1.25.0) (2026-08-15)
+
+
+### Bug Fixes
+
+* **backend:** normalize curly apostrophes in commander names ([#312](https://github.com/abcEDH/cedh-research/issues/312)) ([5ff4044](https://github.com/abcEDH/cedh-research/commit/5ff40441e6c11ac17816a5e5583870c9912be5f0))
+* canonicalize partner commander order on write to stop A/B vs B/A splits ([#260](https://github.com/abcEDH/cedh-research/issues/260)) ([c99fa15](https://github.com/abcEDH/cedh-research/commit/c99fa1523d0b227e18c25d5d8a9c0e85a518d121))
+* gate partner sweep on a non-empty job_id so a refresh always follows ([a87fa86](https://github.com/abcEDH/cedh-research/commit/a87fa86290299aa6306f7084200863591c917d67))
+* make partner sweep best-effort so it cannot strand the ingestion job ([a47982e](https://github.com/abcEDH/cedh-research/commit/a47982e1d9e9b73190d4884781b3757658341d7b))
+* repoint commander_matchups before delete and schedule partner sweep ([#260](https://github.com/abcEDH/cedh-research/issues/260)) ([e8ccbe1](https://github.com/abcEDH/cedh-research/commit/e8ccbe146a6546f494ee6532ada4c643cf70bbb1)), closes [#302](https://github.com/abcEDH/cedh-research/issues/302)
+
+
+### Features
+
+* **web:** add momentum indicator to commander detail page ([#319](https://github.com/abcEDH/cedh-research/issues/319)) ([7c614a5](https://github.com/abcEDH/cedh-research/commit/7c614a566955b987d6c637fde436045c14387aaf))
+
 ## [1.24.1](https://github.com/abcEDH/cedh-research/compare/v1.24.0...v1.24.1) (2026-07-31)
 
 
