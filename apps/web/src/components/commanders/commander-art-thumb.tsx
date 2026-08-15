@@ -67,8 +67,12 @@ export function CommanderArtBanner({
       {artCrops.map((artCrop, index) => (
         <div
           key={index}
-          className="bg-[linear-gradient(135deg,oklch(0.28_0.06_258),oklch(0.22_0.05_300))] bg-cover bg-center"
-          style={artCrop ? { backgroundImage: `url("${artCrop}")` } : undefined}
+          className="bg-[linear-gradient(135deg,oklch(0.28_0.06_258),oklch(0.22_0.05_300))] bg-cover"
+          style={
+            artCrop
+              ? { backgroundImage: `url("${artCrop}")`, backgroundPosition: "50% 32%" }
+              : undefined
+          }
         />
       ))}
     </div>

@@ -46,7 +46,7 @@ export function ArtCropStack({
               alt={alt}
               width={size}
               height={size}
-              className="h-full w-full object-cover"
+              className="h-full w-full object-cover object-[50%_32%]"
               unoptimized
               loading="lazy"
             />
