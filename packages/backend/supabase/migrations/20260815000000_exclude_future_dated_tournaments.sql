@@ -25,11 +25,19 @@
 -- tournament_entries with no join to tournaments at all (only
 -- tournaments_played depended on the existing player_count >= 32 join), so a
 -- future-dated tournament's results were counted in every one of those
--- columns regardless of size. Adding a second LEFT JOIN scoped only to date
--- validity, and gating the whole row on it via WHERE, excludes invalid-date
--- entries from every aggregate while leaving the pre-existing
--- player_count >= 32 gating on tournaments_played/conversion columns
--- unchanged.
+-- columns regardless of size.
+--
+-- Date validity is applied inside the tournament_entries join condition
+-- itself (an EXISTS check against tournaments), not as a later WHERE clause.
+-- This matters because a plain WHERE would drop every row for a commander
+-- whose entries are *all* future-dated -- since GROUP BY only produces a
+-- group from surviving rows, that commander would vanish from the view
+-- entirely, unlike a genuinely zero-entry commander (who still gets one
+-- NULL-extended row from the LEFT JOIN and so still appears with zeroed
+-- stats). Filtering inside the join instead makes an invalid-dated entry
+-- act as if it was never joined at all -- so a commander with only
+-- future-dated entries is treated the same as a zero-entry commander,
+-- exactly matching the existing outer-join guarantee.
 CREATE OR REPLACE VIEW commander_stats AS
 SELECT
     c.id AS commander_id,
@@ -55,10 +63,14 @@ SELECT
         4
     ) AS conversion_rate_top_cut
 FROM commanders c
-LEFT JOIN tournament_entries te ON c.id = te.commander_id
-LEFT JOIN tournaments t_valid ON te.tournament_id = t_valid.id
+LEFT JOIN tournament_entries te
+    ON c.id = te.commander_id
+   AND EXISTS (
+       SELECT 1 FROM tournaments tv
+       WHERE tv.id = te.tournament_id
+         AND tv.start_date::date <= CURRENT_DATE
+   )
 LEFT JOIN tournaments t ON te.tournament_id = t.id AND t.player_count >= 32
-WHERE te.id IS NULL OR t_valid.start_date::date <= CURRENT_DATE
 GROUP BY c.id, c.name, c.archetype, c.color_identity;
 
 -- Materialized views: commander_weekly_trends / commander_monthly_trends

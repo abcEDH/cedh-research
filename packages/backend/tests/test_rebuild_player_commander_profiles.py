@@ -42,9 +42,27 @@ class RebuildPlayerCommanderProfilesTests(TestCase):
             }
         ]
 
-        rows = profiles.normalize_usage_rows(raw_rows)
+        rows = profiles.normalize_usage_rows(raw_rows, date(2026, 8, 15))
 
         self.assertEqual(rows[0]["start_date"], "2026-06-14T18:30:00+00:00")
+
+    def test_normalize_usage_rows_excludes_future_dated_entries(self) -> None:
+        raw_rows = [
+            {
+                "player_id": "player-1",
+                "topdeck_id": "topdeck-1",
+                "player_name": "Player One",
+                "commander_name": "Tivit, Seller of Secrets",
+                "start_date": datetime(2030, 10, 26, tzinfo=timezone.utc),
+                "topdeck_tid": "test-event-for-dan-and-noam",
+                "tournament_id": "tournament-1",
+                "tournament_name": "Test Event for Dan and Noam",
+            }
+        ]
+
+        rows = profiles.normalize_usage_rows(raw_rows, date(2026, 8, 15))
+
+        self.assertEqual(rows, [])
 
     def test_select_commander_forecast_rows_handles_mixed_start_date_types(self) -> None:
         rows_by_topdeck_id = {
