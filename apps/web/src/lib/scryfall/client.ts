@@ -57,7 +57,11 @@ export async function fetchScryfallArt(rawName: string): Promise<ScryfallCardArt
         `https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(name)}`
       );
       if (!res.ok) {
-        cache.set(name, null);
+        // Only cache a permanent miss (404 — Scryfall found no such card).
+        // Transient failures (429 rate-limit, 5xx) must not be cached as "no
+        // art", or a temporary hiccup blacklists that card for the rest of
+        // the session; leave the cache empty so a later call retries.
+        if (res.status === 404) cache.set(name, null);
         return null;
       }
       const data = await res.json();
@@ -72,7 +76,7 @@ export async function fetchScryfallArt(rawName: string): Promise<ScryfallCardArt
       cache.set(name, result);
       return result;
     } catch {
-      cache.set(name, null);
+      // Network failure — also transient, don't cache.
       return null;
     } finally {
       inflight.delete(name);

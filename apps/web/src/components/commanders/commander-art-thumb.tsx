@@ -18,7 +18,9 @@ export function CommanderArtThumb({
 
   return (
     <div ref={ref} className="inline-flex shrink-0">
-      <ArtCropStack urls={urls} size={size} alt={name} />
+      {/* Decorative: every caller renders this beside the same visible name text,
+          so a real alt would duplicate it in the enclosing link/button's accessible name. */}
+      <ArtCropStack urls={urls} size={size} alt="" />
     </div>
   );
 }
