@@ -251,6 +251,7 @@ export async function getCommanderMeta(id: string): Promise<CommanderMeta | null
 export interface ScryfallArt {
   artCrop: string | null;
   normal: string | null;
+  colorIdentity?: string[] | null;
 }
 
 export type ScryfallArtByName = Record<string, ScryfallArt | undefined>;
@@ -258,6 +259,7 @@ export type ScryfallArtByName = Record<string, ScryfallArt | undefined>;
 interface ScryfallCardArtRow {
   name: string;
   image_uris: { art_crop?: string; normal?: string } | null;
+  color_identity: string[] | null;
 }
 
 /**
@@ -277,7 +279,9 @@ export async function getScryfallArtByNames(names: string[]): Promise<ScryfallAr
     uniqueNames.slice(index * 50, (index + 1) * 50)
   );
   const responses = await Promise.all(
-    batches.map((batch) => supabase.from("scryfall_cards").select("name, image_uris").in("name", batch))
+    batches.map((batch) =>
+      supabase.from("scryfall_cards").select("name, image_uris, color_identity").in("name", batch)
+    )
   );
   const failed = responses.find((response) => response.error);
   if (failed?.error) {
@@ -291,6 +295,7 @@ export async function getScryfallArtByNames(names: string[]): Promise<ScryfallAr
     result[row.name] = {
       artCrop: row.image_uris?.art_crop ?? null,
       normal: row.image_uris?.normal ?? null,
+      colorIdentity: row.color_identity ?? null,
     };
   }
   return result;

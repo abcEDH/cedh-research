@@ -439,10 +439,28 @@ async function CommanderRankingsTable({ filters }: { filters: CommanderRankingFi
     new Set(commanders.flatMap((c) => splitCardName(c.commander_name)))
   );
   const artByName = await getScryfallArtByNames(faceNames);
+  const commandersWithScryfallColors = commanders.map((commander) => {
+    const colors = new Set<string>();
+    let foundScryfallMetadata = false;
+
+    for (const faceName of splitCardName(commander.commander_name)) {
+      const colorIdentity = artByName[faceName]?.colorIdentity;
+      if (!colorIdentity) continue;
+      foundScryfallMetadata = true;
+      colorIdentity.forEach((color) => colors.add(color));
+    }
+
+    return {
+      ...commander,
+      color_identity: foundScryfallMetadata
+        ? ["W", "U", "B", "R", "G"].filter((color) => colors.has(color))
+        : commander.color_identity,
+    };
+  });
   return (
     <CommandersTable
       key={`${filters.period}-${filters.tier}-${filters.minimumEntries}`}
-      commanders={commanders}
+      commanders={commandersWithScryfallColors}
       artByName={artByName}
       rankingFilters={filters}
     />

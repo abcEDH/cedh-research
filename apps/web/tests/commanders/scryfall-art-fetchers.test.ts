@@ -72,10 +72,10 @@ describe("getScryfallArtByNames", () => {
     expect(lastInValues).toEqual(["Sol Ring", "Rhystic Study"]);
   });
 
-  it("maps image_uris.art_crop and .normal onto each returned name", async () => {
+  it("maps art URLs and Scryfall color identity onto each returned name", async () => {
     mockSelectResult = {
       data: [
-        { name: "Sol Ring", image_uris: { art_crop: "https://x/sol-crop", normal: "https://x/sol-normal" } },
+        { name: "Sol Ring", image_uris: { art_crop: "https://x/sol-crop", normal: "https://x/sol-normal" }, color_identity: ["W"] },
       ],
       error: null,
     };
@@ -83,7 +83,7 @@ describe("getScryfallArtByNames", () => {
     const result = await getScryfallArtByNames(["Sol Ring"]);
 
     expect(result).toEqual({
-      "Sol Ring": { artCrop: "https://x/sol-crop", normal: "https://x/sol-normal" },
+      "Sol Ring": { artCrop: "https://x/sol-crop", normal: "https://x/sol-normal", colorIdentity: ["W"] },
     });
   });
 
@@ -108,13 +108,13 @@ describe("getScryfallArtByNames", () => {
 
   it("handles a row with a null image_uris by returning null art fields", async () => {
     mockSelectResult = {
-      data: [{ name: "No Art Yet", image_uris: null }],
+      data: [{ name: "No Art Yet", image_uris: null, color_identity: null }],
       error: null,
     };
 
     const result = await getScryfallArtByNames(["No Art Yet"]);
 
-    expect(result).toEqual({ "No Art Yet": { artCrop: null, normal: null } });
+    expect(result).toEqual({ "No Art Yet": { artCrop: null, normal: null, colorIdentity: null } });
   });
 });
 
@@ -155,8 +155,8 @@ describe("getCommanderArtByName", () => {
   it("splits a partner pair display name and queries both individual faces", async () => {
     mockSelectResult = {
       data: [
-        { name: "Tymna the Weaver", image_uris: { art_crop: "https://x/tymna", normal: null } },
-        { name: "Kraum, Ludevic's Opus", image_uris: { art_crop: "https://x/kraum", normal: null } },
+        { name: "Tymna the Weaver", image_uris: { art_crop: "https://x/tymna", normal: null }, color_identity: ["W", "B"] },
+        { name: "Kraum, Ludevic's Opus", image_uris: { art_crop: "https://x/kraum", normal: null }, color_identity: ["U", "R"] },
       ],
       error: null,
     };
@@ -165,8 +165,8 @@ describe("getCommanderArtByName", () => {
 
     expect(lastInValues).toEqual(["Tymna the Weaver", "Kraum, Ludevic's Opus"]);
     expect(result).toEqual({
-      "Tymna the Weaver": { artCrop: "https://x/tymna", normal: null },
-      "Kraum, Ludevic's Opus": { artCrop: "https://x/kraum", normal: null },
+      "Tymna the Weaver": { artCrop: "https://x/tymna", normal: null, colorIdentity: ["W", "B"] },
+      "Kraum, Ludevic's Opus": { artCrop: "https://x/kraum", normal: null, colorIdentity: ["U", "R"] },
     });
   });
 
