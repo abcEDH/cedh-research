@@ -29,6 +29,11 @@ Describe the decision this PR implements and why this scope is the right boundar
 - [ ] `...`
 - [ ] Screenshot or screen recording for any UI-facing change
 
+## What needs human verification
+- [ ] [specific UI, interaction, or external-service check]
+
+If nothing remains, write `nothing — agent-verified end to end`.
+
 ## Risks
 - User-facing risk:
 - Data or migration risk:
