@@ -1,5 +1,4 @@
 import Link from "next/link";
-import Image from "next/image";
 import { notFound } from "next/navigation";
 import { normalizeDisplayString } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,8 +6,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import TrendMetricCharts from "@/components/commanders/trend-metric-charts";
 import CommanderMatchupsTable from "@/components/commanders/commander-matchups-table";
 import { StatCard, ColorBadge } from "@/components/commanders/stat-card";
-import { ArtCropStack } from "@/components/commanders/art-crop-stack";
 import { CommanderArtThumb } from "@/components/commanders/commander-art-thumb";
+import { CommanderHeaderBackdrop } from "@/components/commanders/commander-header-backdrop";
 import { MomentumCard } from "@/components/commanders/momentum-card";
 import { PerformanceCardRow } from "@/components/commanders/card-performance-row";
 import { RecentFinishRow } from "@/components/commanders/recent-finish-row";
@@ -17,7 +16,6 @@ import { TrendSnapshotTables } from "@/components/commanders/trend-snapshot-tabl
 import { CardFrequenciesTable } from "@/components/commanders/card-frequencies-table";
 import {
   getCommanderDetails,
-  getCommanderMeta,
   getCardReport,
   getCardPerformance,
   getNotablePlayers,
@@ -36,10 +34,7 @@ export default async function CommanderDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [commander, commanderMeta] = await Promise.all([
-    getCommanderDetails(id),
-    getCommanderMeta(id),
-  ]);
+  const commander = await getCommanderDetails(id);
 
   if (!commander) {
     notFound();
@@ -86,16 +81,7 @@ export default async function CommanderDetailPage({
       <main className="container mx-auto px-4 py-8">
         {/* Header */}
         <div className="relative mb-8 overflow-hidden rounded-2xl border border-border/70 bg-card/60 px-6 py-6">
-          {commanderMeta?.scryfall_ids?.[0] && (
-            <Image
-              src={`https://cards.scryfall.io/art_crop/${commanderMeta.scryfall_ids[0]}.jpg`}
-              alt=""
-              fill
-              className="object-cover opacity-50 [mask-image:linear-gradient(to_bottom,black_10%,transparent)] [-webkit-mask-image:linear-gradient(to_bottom,black_10%,transparent)]"
-              loading="lazy"
-              unoptimized
-            />
-          )}
+          <CommanderHeaderBackdrop name={commander.commander_name} />
           <div className="knd-watermark absolute inset-0" />
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_80%_at_80%_0%,hsl(var(--knd-magenta)/0.18),transparent_60%)]" />
           <div className="relative">
@@ -103,19 +89,7 @@ export default async function CommanderDetailPage({
               ← Back to Commanders
             </Link>
             <div className="mt-5 grid gap-6 lg:grid-cols-[auto_1fr] lg:items-center">
-              {commanderMeta?.scryfall_ids && commanderMeta.scryfall_ids.length > 0 ? (
-                <ArtCropStack
-                  urls={commanderMeta.scryfall_ids
-                    .slice(0, 2)
-                    .map((scryfallId) => `https://cards.scryfall.io/art_crop/${scryfallId}.jpg`)}
-                  size={112}
-                  alt={normalizeDisplayString(commander.commander_name)}
-                />
-              ) : (
-                // Falls back to a live Scryfall lookup by name when this commander's
-                // scryfall_ids haven't been backfilled yet, instead of showing nothing.
-                <CommanderArtThumb name={commander.commander_name} size={112} />
-              )}
+              <CommanderArtThumb name={commander.commander_name} size={112} />
               <div>
                 <div className="flex items-center gap-3">
                   {commander.color_identity?.filter(Boolean).map((color) => (

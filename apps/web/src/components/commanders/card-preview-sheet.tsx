@@ -92,7 +92,14 @@ export function CardPreviewSheet({
             </div>
           </div>
         </div>
-        <SheetFooter className="flex-row gap-2 border-t border-border/60 p-4">
+        <SheetFooter
+          className="flex-row gap-2 border-t border-border/60 pt-4"
+          style={{
+            paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
+            paddingLeft: "max(1rem, env(safe-area-inset-left))",
+            paddingRight: "max(1rem, env(safe-area-inset-right))",
+          }}
+        >
           <a
             href={`https://scryfall.com/search?q=${encodeURIComponent(displayName)}`}
             target="_blank"
