@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import TrendMetricCharts from "@/components/commanders/trend-metric-charts";
 import CommanderMatchupsTable from "@/components/commanders/commander-matchups-table";
 import { StatCard, ColorBadge } from "@/components/commanders/stat-card";
-import { CommanderArtThumb } from "@/components/commanders/commander-art-thumb";
+import { CommanderArt } from "@/components/commanders/commander-art";
 import { CommanderHeaderBackdrop } from "@/components/commanders/commander-header-backdrop";
 import { MomentumCard } from "@/components/commanders/momentum-card";
 import { PerformanceCardRow } from "@/components/commanders/card-performance-row";
@@ -24,6 +24,7 @@ import {
   getFirstPlaceFinishes,
   getCommanderTrendSeries,
   getCommanderMomentum,
+  getCommanderArtByName,
 } from "@/lib/commanders/fetchers";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +50,7 @@ export default async function CommanderDetailPage({
     firstPlaceFinishes,
     trendSeries,
     momentum,
+    commanderArt,
   ] = await Promise.all([
     getCardReport(id),
     getCardPerformance(id),
@@ -58,6 +60,7 @@ export default async function CommanderDetailPage({
     getFirstPlaceFinishes(id),
     getCommanderTrendSeries(id),
     getCommanderMomentum(id),
+    getCommanderArtByName(commander.commander_name),
   ]);
 
   const topPerformingCards = cardPerformance
@@ -89,7 +92,7 @@ export default async function CommanderDetailPage({
               ← Back to Commanders
             </Link>
             <div className="mt-5 grid gap-6 lg:grid-cols-[auto_1fr] lg:items-center">
-              <CommanderArtThumb name={commander.commander_name} size={112} />
+              <CommanderArt name={commander.commander_name} size={112} artByName={commanderArt} />
               <div>
                 <div className="flex items-center gap-3">
                   {commander.color_identity?.filter(Boolean).map((color) => (

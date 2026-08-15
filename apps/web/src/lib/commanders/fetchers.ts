@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { splitCardName } from "@/lib/scryfall/client";
 import type { CommanderMatchup } from "@/components/commanders/commander-matchups-table";
 import type { TrendMetricPoint, TrendMetricSeries } from "@/components/commanders/trend-metric-charts";
 
@@ -130,6 +131,67 @@ export async function getCommanderMeta(id: string): Promise<CommanderMeta | null
 
   if (error || !data) return null;
   return data as CommanderMeta;
+}
+
+/**
+ * Server-rendered Scryfall art for a card/commander name (#321). Populated by
+ * `packages/backend/src/ingest_scryfall_cards.py` from Scryfall's bulk-data
+ * dump; a name absent from `scryfall_cards` (not yet in the dump) is simply
+ * missing from the returned map, and callers fall back to the live
+ * client-side lookup (`@/lib/scryfall/client`) for that name -- see
+ * `CommanderArt` in `@/components/commanders/commander-art`.
+ */
+export interface ScryfallArt {
+  artCrop: string | null;
+  normal: string | null;
+}
+
+export type ScryfallArtByName = Record<string, ScryfallArt | undefined>;
+
+interface ScryfallCardArtRow {
+  name: string;
+  image_uris: { art_crop?: string; normal?: string } | null;
+}
+
+/**
+ * Batch-fetch server-cached Scryfall art for a set of individual card names.
+ * Returns a map keyed by name (only names actually found in `scryfall_cards`
+ * are present) so callers can cheaply check for cache misses per name.
+ */
+export async function getScryfallArtByNames(names: string[]): Promise<ScryfallArtByName> {
+  const uniqueNames = Array.from(new Set(names.filter(Boolean)));
+  if (uniqueNames.length === 0) return {};
+
+  const { data, error } = await supabase
+    .from("scryfall_cards")
+    .select("name, image_uris")
+    .in("name", uniqueNames);
+
+  if (error) {
+    console.error("Error fetching scryfall_cards art:", error);
+    return {};
+  }
+
+  const rows = (data || []) as ScryfallCardArtRow[];
+  const result: ScryfallArtByName = {};
+  for (const row of rows) {
+    result[row.name] = {
+      artCrop: row.image_uris?.art_crop ?? null,
+      normal: row.image_uris?.normal ?? null,
+    };
+  }
+  return result;
+}
+
+/**
+ * Server-rendered art for a commander/partner-pair display name, keyed by
+ * the individual face names `CommanderArt` resolves against -- splits the
+ * same way `splitCardName()` does so a `"A / B"` partner pair looks up both
+ * `"A"` and `"B"` in `scryfall_cards`.
+ */
+export async function getCommanderArtByName(commanderName: string): Promise<ScryfallArtByName> {
+  const names = splitCardName(commanderName);
+  return getScryfallArtByNames(names);
 }
 
 export async function getRecentFinishes(commanderId: string, daysBack = 30): Promise<RecentFinish[]> {
