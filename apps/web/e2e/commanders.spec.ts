@@ -9,7 +9,16 @@ test.describe("Commanders List Page", () => {
     await expect(page.getByRole("heading", { name: /Commander Rankings/i })).toBeVisible();
   });
 
-  test("displays commanders table with data", async ({ page }) => {
+  test("displays commanders table with data", async ({ page, isMobile }) => {
+    // Below sm:, the table is replaced by an art-forward mobile list
+    // (CommanderListRowMobile) per this repo's "wide tables" convention.
+    if (isMobile) {
+      const mobileList = page.getByTestId("commanders-mobile-list");
+      await expect(mobileList).toBeVisible();
+      await expect(mobileList.locator("a").first()).toBeVisible();
+      return;
+    }
+
     const rankingsTable = page.getByTestId("all-commanders-table");
     await expect(rankingsTable).toBeVisible();
 

@@ -159,7 +159,11 @@ export default function CommandersTable({
         {/* Mobile: art-forward card list (tedh.gg mobile card-art design, option
             1a) instead of squeezing the dense table down. sm: and up keeps the
             existing table per this repo's "wide tables" convention. */}
-        <div className="flex flex-col gap-2 sm:hidden">
+        <div
+          data-testid="commanders-mobile-list"
+          className="flex flex-col gap-2 sm:hidden"
+        >
+
           {sortedCommanders.map((commander, index) => (
             <CommanderListRowMobile
               key={commander.commander_id}
