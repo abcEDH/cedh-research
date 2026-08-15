@@ -88,6 +88,23 @@ export interface CommanderTrendTableRow {
   pointsPerGame: number;
 }
 
+export interface MomentumPeriod {
+  /** Human-readable label for the actual observed period, e.g. "Week of Aug 3, 2026" or "July 2026". */
+  label: string;
+  entries: number;
+  /** Win rate (0-1) for this period. Always a real value: periods with zero recorded games are excluded upstream. */
+  winRate: number;
+  /** Percent change in entries vs. the prior comparable period, or null if there is no prior period to compare. */
+  entriesChangePct: number | null;
+  /** Percentage-point change in win rate vs. the prior comparable period, or null if there is no prior period. */
+  winRateChangePp: number | null;
+}
+
+export interface CommanderMomentum {
+  week: MomentumPeriod | null;
+  month: MomentumPeriod | null;
+}
+
 function normalizeDateKey(value: string | null | undefined) {
   if (!value) return "";
   return value.length >= 10 ? value.slice(0, 10) : value;
@@ -230,6 +247,121 @@ export async function getFirstPlaceFinishes(commanderId: string): Promise<number
     return 0;
   }
   return count ?? 0;
+}
+
+interface MomentumSourceRow {
+  entries: number;
+  wins: number;
+  losses: number;
+  draws: number;
+}
+
+interface WeeklyMomentumRow extends MomentumSourceRow {
+  week_start_date: string;
+}
+
+interface MonthlyMomentumRow extends MomentumSourceRow {
+  month_key: string;
+}
+
+function formatWeekLabel(weekStartDate: string): string {
+  const start = new Date(`${normalizeDateKey(weekStartDate)}T00:00:00Z`);
+  return `Week of ${start.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}`;
+}
+
+function formatMonthLabel(monthKey: string): string {
+  const [year, month] = monthKey.split("-").map(Number);
+  const start = new Date(Date.UTC(year, month - 1, 1));
+  return start.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
+}
+
+function isWeekComplete(weekStartDate: string, now: Date): boolean {
+  const start = new Date(`${normalizeDateKey(weekStartDate)}T00:00:00Z`);
+  const end = new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000);
+  return end.getTime() <= now.getTime();
+}
+
+function isMonthComplete(monthKey: string, now: Date): boolean {
+  const [year, month] = monthKey.split("-").map(Number);
+  const nextMonthStart = new Date(Date.UTC(month === 12 ? year + 1 : year, month === 12 ? 0 : month, 1));
+  return nextMonthStart.getTime() <= now.getTime();
+}
+
+/**
+ * Picks the most recent *fully elapsed* observed period and the one before it.
+ * Skips a still-in-progress period so an incomplete bucket is never compared
+ * against a full prior bucket (which would look like a decline even when nothing declined).
+ */
+function pickCurrentAndPrevious<T extends MomentumSourceRow>(
+  rowsDesc: T[],
+  isComplete: (row: T) => boolean
+): { current: T | null; previous: T | null } {
+  const observed = rowsDesc.filter((row) => row.wins + row.losses + row.draws > 0);
+  const startIndex = observed.length > 0 && !isComplete(observed[0]) ? 1 : 0;
+  return { current: observed[startIndex] ?? null, previous: observed[startIndex + 1] ?? null };
+}
+
+function toMomentumPeriod<T extends MomentumSourceRow>(
+  current: T,
+  previous: T | null,
+  label: string
+): MomentumPeriod {
+  const currentGames = current.wins + current.losses + current.draws;
+  const winRate = current.wins / currentGames;
+
+  let entriesChangePct: number | null = null;
+  let winRateChangePp: number | null = null;
+
+  if (previous) {
+    const previousGames = previous.wins + previous.losses + previous.draws;
+    if (previous.entries > 0) {
+      entriesChangePct = ((current.entries - previous.entries) / previous.entries) * 100;
+    }
+    if (previousGames > 0) {
+      winRateChangePp = (winRate - previous.wins / previousGames) * 100;
+    }
+  }
+
+  return { label, entries: current.entries, winRate, entriesChangePct, winRateChangePp };
+}
+
+export async function getCommanderMomentum(commanderId: string): Promise<CommanderMomentum | null> {
+  const now = new Date();
+
+  const [weeklyResult, monthlyResult] = await Promise.all([
+    supabase
+      .from("commander_weekly_trends")
+      .select("week_start_date, entries, wins, losses, draws")
+      .eq("commander_id", commanderId)
+      .not("week_start_date", "is", null)
+      .order("week_start_date", { ascending: false })
+      .limit(8),
+    supabase
+      .from("commander_monthly_trends")
+      .select("month_key, entries, wins, losses, draws")
+      .eq("commander_id", commanderId)
+      .order("month_key", { ascending: false })
+      .limit(8),
+  ]);
+
+  if (weeklyResult.error) console.error("Error fetching weekly momentum:", weeklyResult.error);
+  if (monthlyResult.error) console.error("Error fetching monthly momentum:", monthlyResult.error);
+
+  const weeklyRows = (weeklyResult.data || []) as WeeklyMomentumRow[];
+  const monthlyRows = (monthlyResult.data || []) as MonthlyMomentumRow[];
+
+  const { current: weekCurrent, previous: weekPrevious } = pickCurrentAndPrevious(weeklyRows, (row) =>
+    isWeekComplete(row.week_start_date, now)
+  );
+  const { current: monthCurrent, previous: monthPrevious } = pickCurrentAndPrevious(monthlyRows, (row) =>
+    isMonthComplete(row.month_key, now)
+  );
+
+  const week = weekCurrent ? toMomentumPeriod(weekCurrent, weekPrevious, formatWeekLabel(weekCurrent.week_start_date)) : null;
+  const month = monthCurrent ? toMomentumPeriod(monthCurrent, monthPrevious, formatMonthLabel(monthCurrent.month_key)) : null;
+
+  if (!week && !month) return null;
+  return { week, month };
 }
 
 export type CommanderTrendSeries = TrendMetricSeries & {

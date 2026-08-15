@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import TrendMetricCharts from "@/components/commanders/trend-metric-charts";
 import CommanderMatchupsTable from "@/components/commanders/commander-matchups-table";
 import { StatCard, ColorBadge } from "@/components/commanders/stat-card";
+import { MomentumCard } from "@/components/commanders/momentum-card";
 import { PerformanceCardRow } from "@/components/commanders/card-performance-row";
 import { RecentFinishRow } from "@/components/commanders/recent-finish-row";
 import { NotablePlayersTable } from "@/components/commanders/notable-players-table";
@@ -22,6 +23,7 @@ import {
   getRecentFinishes,
   getFirstPlaceFinishes,
   getCommanderTrendSeries,
+  getCommanderMomentum,
 } from "@/lib/commanders/fetchers";
 
 export const dynamic = "force-dynamic";
@@ -41,16 +43,25 @@ export default async function CommanderDetailPage({
     notFound();
   }
 
-  const [cardReport, cardPerformance, notablePlayers, matchups, recentFinishes, firstPlaceFinishes, trendSeries] =
-    await Promise.all([
-      getCardReport(id),
-      getCardPerformance(id),
-      getNotablePlayers(id),
-      getCommanderMatchups(id),
-      getRecentFinishes(id),
-      getFirstPlaceFinishes(id),
-      getCommanderTrendSeries(id),
-    ]);
+  const [
+    cardReport,
+    cardPerformance,
+    notablePlayers,
+    matchups,
+    recentFinishes,
+    firstPlaceFinishes,
+    trendSeries,
+    momentum,
+  ] = await Promise.all([
+    getCardReport(id),
+    getCardPerformance(id),
+    getNotablePlayers(id),
+    getCommanderMatchups(id),
+    getRecentFinishes(id),
+    getFirstPlaceFinishes(id),
+    getCommanderTrendSeries(id),
+    getCommanderMomentum(id),
+  ]);
 
   const topPerformingCards = cardPerformance
     .filter((c) => parseFloat(c.win_rate_delta) > 0)
@@ -156,7 +167,7 @@ export default async function CommanderDetailPage({
 
           {/* Overview tab */}
           <TabsContent value="overview" className="mt-6">
-            <div className="grid grid-cols-1 gap-6">
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
               <Card>
                 <CardHeader className="knd-panel-header">
                   <CardTitle className="text-lg">Performance Summary</CardTitle>
@@ -195,6 +206,8 @@ export default async function CommanderDetailPage({
                   </div>
                 </CardContent>
               </Card>
+
+              {momentum && <MomentumCard momentum={momentum} />}
             </div>
 
             <div className="mt-6">
