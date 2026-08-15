@@ -1,0 +1,29 @@
+-- Remove the "Test Event for Dan and Noam" TopDeck.gg practice event
+-- (topdeck_tid = 'test-event-for-dan-and-noam') that was ingested into
+-- production with a start_date of 2030-10-26 -- roughly four years in the
+-- future relative to when it was ingested (2026-07-27). Its 32 entries and
+-- 8 completed games were counted by `commander_stats` (which only filters on
+-- `player_count >= 32`, with no date bound) and created a 2030-W43 /
+-- 2030-10 bucket in `commander_weekly_trends` / `commander_monthly_trends`
+-- (same lack of a date bound), polluting "current" trend calculations that
+-- assume the latest bucket reflects real, already-played games.
+--
+-- Investigation confirmed this is the only tournament in the database with a
+-- start_date in the future; other "test"/"playtest"-named tournaments found
+-- during the audit (e.g. "Test Tournament", "Playtest Friendly CEDH @ MTG
+-- MATE ...", "Private test") all have past start_dates and real recorded
+-- games, so they are left untouched here.
+--
+-- tournament_entries, games, game_participants, and commander_matchups all
+-- cascade from tournaments via ON DELETE CASCADE (see
+-- 20260110000001_initial_schema.sql), so deleting the tournament row removes
+-- everything tied to it in one statement. This is idempotent -- re-running it
+-- after the row is gone is a no-op.
+--
+-- After this migration runs, call the `refresh_commander_trends()` RPC (or
+-- let the next scheduled ingestion run trigger it) to rebuild
+-- commander_weekly_trends / commander_monthly_trends (and their `_large`
+-- counterparts) without this event's rows. `commander_stats` is a plain view
+-- and reflects the deletion immediately -- no refresh needed.
+DELETE FROM public.tournaments
+WHERE topdeck_tid = 'test-event-for-dan-and-noam';

@@ -2,6 +2,7 @@ import unittest
 import os
 import sys
 import types
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -646,6 +647,60 @@ class IngestionJobLifecycleTests(unittest.TestCase):
         call_args = client.update.call_args
         self.assertEqual(call_args.args[1]["status"], "completed")
         self.assertEqual(call_args.args[1]["duration_seconds"], 42.5)
+
+
+class ProcessTournamentFutureStartDateTests(unittest.TestCase):
+    """``process_tournament`` must refuse to ingest events whose start_date is
+    implausibly far in the future (e.g. TopDeck test/practice events created
+    with a placeholder date years out) -- see the "test-event-for-dan-and-noam"
+    incident where such an event polluted production stats.
+
+    Note: the module-level ``dateutil.parser.parse`` stub used across this test
+    file is an identity function, so these tests use numeric (epoch) startDate
+    values -- the only path that produces a real ``datetime`` via
+    ``datetime.fromtimestamp`` under that stub.
+    """
+
+    def test_skips_tournament_with_far_future_start_date(self) -> None:
+        supabase = Mock()
+        topdeck = Mock()
+        ingester = DataIngester(topdeck, supabase)
+
+        far_future_epoch = (datetime.now() + timedelta(days=400)).timestamp()
+        tournament = {
+            "id": "test-event-for-dan-and-noam",
+            "name": "Test Event for Dan and Noam",
+            "startDate": far_future_epoch,
+            "standings": [{"id": f"p{i}"} for i in range(32)],
+            "rounds": [],
+        }
+
+        result = ingester.process_tournament(tournament)
+
+        self.assertIsNone(result)
+        supabase.upsert.assert_not_called()
+        topdeck.get_tournament_tier.assert_not_called()
+
+    def test_ingests_tournament_with_recent_start_date(self) -> None:
+        supabase = Mock()
+        supabase.upsert.return_value = [{"id": "tournament-1"}]
+        topdeck = Mock()
+        topdeck.get_tournament_tier.return_value = None
+        ingester = DataIngester(topdeck, supabase)
+
+        recent_epoch = (datetime.now() - timedelta(days=1)).timestamp()
+        tournament = {
+            "id": "a-real-event",
+            "name": "A Real Event",
+            "startDate": recent_epoch,
+            "standings": [],
+            "rounds": [],
+        }
+
+        result = ingester.process_tournament(tournament)
+
+        self.assertIsNotNone(result)
+        self.assertTrue(supabase.upsert.called)
 
 
 if __name__ == "__main__":

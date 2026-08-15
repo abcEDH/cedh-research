@@ -14,7 +14,7 @@ import os
 import sys
 import time
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -54,6 +54,14 @@ TOPDECK_STANDING_RATE_FIELDS = [
     ("winRate", "opponentWinRate"),
     ("successRate", "opponentSuccessRate"),
 ]
+
+# Reject tournaments whose start_date is further in the future than this grace
+# period. A tournament with completed games/standings should already have
+# happened (or be underway) by ingestion time — a start_date far in the future
+# indicates test/placeholder data (e.g. TopDeck practice events) rather than a
+# real, played event. The grace period tolerates timezone skew and same-day
+# multi-region event scheduling without needing to be precise.
+FUTURE_START_DATE_GRACE = timedelta(days=2)
 
 
 # Ensure logs directory exists
@@ -827,6 +835,22 @@ class DataIngester:
         effective_top_cut = reported_top_cut
         if player_count <= 34:
             effective_top_cut = 4
+
+        parsed_start = parse_tournament_start_date(tournament)
+        if isinstance(parsed_start, datetime):
+            naive_start = (
+                parsed_start.astimezone(timezone.utc).replace(tzinfo=None)
+                if parsed_start.tzinfo is not None
+                else parsed_start
+            )
+            now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+            if naive_start > now_utc + FUTURE_START_DATE_GRACE:
+                logger.warning(
+                    f"Skipping tournament '{name}' ({tid}): start_date {naive_start.isoformat()} "
+                    f"is more than {FUTURE_START_DATE_GRACE} in the future. Refusing to ingest "
+                    "test/placeholder events with implausible future dates."
+                )
+                return None
 
         logger.info(f"Processing: {name} ({player_count} players, {len(rounds)} rounds)")
 
