@@ -53,6 +53,7 @@ type SortKey =
 type SortDirection = "asc" | "desc";
 type View = "grid" | "table";
 type Preset = "all" | "popular" | "established" | "winRate" | "topCut";
+const COMMANDERS_PER_PAGE = 20;
 
 const MANA_COLORS = ["W", "U", "B", "R", "G", "C"] as const;
 type ManaColor = (typeof MANA_COLORS)[number];
@@ -204,6 +205,35 @@ function ViewToggle({ view, onChange }: { view: View; onChange: (view: View) => 
         </button>
       ))}
     </div>
+  );
+}
+
+function CommanderPagination({
+  currentPage,
+  totalPages,
+  totalItems,
+  onPageChange,
+}: {
+  currentPage: number;
+  totalPages: number;
+  totalItems: number;
+  onPageChange: (page: number) => void;
+}) {
+  if (totalPages <= 1) return null;
+
+  const firstItem = (currentPage - 1) * COMMANDERS_PER_PAGE + 1;
+  const lastItem = Math.min(currentPage * COMMANDERS_PER_PAGE, totalItems);
+  return (
+    <nav className="mt-6 flex flex-col items-center justify-between gap-3 border-t border-border/60 pt-4 sm:flex-row" aria-label="Commander pagination">
+      <p className="font-mono text-xs text-muted-foreground">
+        Showing {firstItem}–{lastItem} of {totalItems}
+      </p>
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={() => onPageChange(currentPage - 1)} disabled={currentPage === 1} className="min-h-11 rounded-full border border-border px-4 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-40">Previous</button>
+        <span className="font-mono text-xs text-muted-foreground">Page {currentPage} of {totalPages}</span>
+        <button type="button" onClick={() => onPageChange(currentPage + 1)} disabled={currentPage === totalPages} className="min-h-11 rounded-full border border-border px-4 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-40">Next</button>
+      </div>
+    </nav>
   );
 }
 
@@ -439,6 +469,7 @@ export default function CommandersTable({
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
   const [minimumEntries, setMinimumEntries] = useState(5);
   const [preset, setPreset] = useState<Preset>("all");
+  const [page, setPage] = useState(1);
 
   const ranks = useMemo(() => {
     const map = new Map<string, number>();
@@ -474,13 +505,12 @@ export default function CommandersTable({
     () => filteredCommanders.reduce((total, commander) => total + commander.total_entries, 0),
     [filteredCommanders]
   );
-
-  function setMetric(key: SortKey) {
-    setSortDirection((current) =>
-      key === sortKey ? (current === "desc" ? "asc" : "desc") : "desc"
-    );
-    setSortKey(key);
-  }
+  const totalPages = Math.max(1, Math.ceil(sortedCommanders.length / COMMANDERS_PER_PAGE));
+  const currentPage = Math.min(page, totalPages);
+  const paginatedCommanders = useMemo(
+    () => sortedCommanders.slice((currentPage - 1) * COMMANDERS_PER_PAGE, currentPage * COMMANDERS_PER_PAGE),
+    [currentPage, sortedCommanders]
+  );
 
   function applyPreset(nextPreset: Preset) {
     setPreset(nextPreset);
@@ -509,6 +539,7 @@ export default function CommandersTable({
         setSortKey("entries");
     }
     setSortDirection("desc");
+    setPage(1);
   }
 
   function handleSort(key: SortKey) {
@@ -516,6 +547,7 @@ export default function CommandersTable({
       key === sortKey ? (current === "desc" ? "asc" : "desc") : "desc"
     );
     setSortKey(key);
+    setPage(1);
   }
 
   const toggleColor = (color: ManaColor) => {
@@ -524,6 +556,7 @@ export default function CommandersTable({
         ? selected.filter((item) => item !== color)
         : [...selected, color]
     );
+    setPage(1);
   };
 
   return (
@@ -567,7 +600,7 @@ export default function CommandersTable({
       <div className="mb-6 flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-card/55 p-3.5 backdrop-blur-sm sm:px-4">
         <input
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => { setQuery(event.target.value); setPage(1); }}
           className="knd-input min-h-11 w-full sm:w-56"
           placeholder="Search a commander"
           aria-label="Search commanders"
@@ -596,7 +629,7 @@ export default function CommandersTable({
         <div className="flex flex-wrap gap-3">
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
             Sort by
-            <Select value={sortKey} onValueChange={(value) => { setMetric(value as SortKey); setPreset("all"); }}>
+            <Select value={sortKey} onValueChange={(value) => { setSortDirection("desc"); setSortKey(value as SortKey); setPage(1); setPreset("all"); }}>
               <SelectTrigger className="w-36 rounded-full bg-input/50"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="entries">Popularity</SelectItem>
@@ -608,7 +641,7 @@ export default function CommandersTable({
           </label>
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
             Min. entries
-            <Select value={String(minimumEntries)} onValueChange={(value) => { setMinimumEntries(Number(value)); setPreset("all"); }}>
+            <Select value={String(minimumEntries)} onValueChange={(value) => { setMinimumEntries(Number(value)); setPage(1); setPreset("all"); }}>
               <SelectTrigger className="w-32 rounded-full bg-input/50"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="5">5+ entries</SelectItem>
@@ -627,13 +660,13 @@ export default function CommandersTable({
       {sortedCommanders.length ? (
         view === "grid" ? (
           <CommanderGrid
-            commanders={sortedCommanders}
+            commanders={paginatedCommanders}
             ranks={ranks}
             artByName={artByName}
           />
         ) : (
           <CommanderTable
-            commanders={sortedCommanders}
+            commanders={paginatedCommanders}
             ranks={ranks}
             artByName={artByName}
             sortKey={sortKey}
@@ -645,6 +678,14 @@ export default function CommandersTable({
         <div className="rounded-2xl border border-border/60 bg-card/50 px-6 py-10 text-center text-sm text-muted-foreground">
           No commanders match your filters.
         </div>
+      )}
+      {sortedCommanders.length > 0 && (
+        <CommanderPagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={sortedCommanders.length}
+          onPageChange={setPage}
+        />
       )}
     </section>
   );

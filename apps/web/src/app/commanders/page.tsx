@@ -320,8 +320,14 @@ export default function CommandersPage() {
           <StatsSummarySection />
         </Suspense>
 
+        <div className="mb-12">
+          <Suspense fallback={<SectionSkeleton label="Loading commander rankings…" />}>
+            <CommanderRankingsTable />
+          </Suspense>
+        </div>
+
         <div className="mb-8">
-          <Suspense fallback={<SectionSkeleton label="Loading aggregate trends…" />}>
+          <Suspense fallback={<SectionSkeleton label="Loading commander performance trends…" />}>
             <GlobalTrendsSection />
           </Suspense>
         </div>
@@ -342,10 +348,6 @@ export default function CommandersPage() {
             <CommanderTrendsSection />
           </Suspense>
         </div>
-
-        <Suspense fallback={<SectionSkeleton label="Loading commander rankings…" />}>
-          <CommanderRankingsTable />
-        </Suspense>
       </main>
     </div>
   );
