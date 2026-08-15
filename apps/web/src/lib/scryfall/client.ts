@@ -28,12 +28,20 @@ function throttledFetch(url: string): Promise<Response> {
   return run;
 }
 
-/** Commander/card names use MTG's " // " partner and split-card separator; Scryfall lookups need the front face. */
+/**
+ * Split a commander/card name into individual Scryfall-lookup names.
+ *
+ * This project's `commander_name` values use `" / "` (single slash) for
+ * partner pairs — see `normalize_commander_name()` in
+ * `packages/backend/src/ingest.py` — while actual Magic split/MDFC cards use
+ * Scryfall's own `" // "` (double slash) convention (e.g. "Fire // Ice").
+ * `" // "` never contains `" / "` as a substring, so checking it first is
+ * unambiguous.
+ */
 export function splitCardName(name: string): string[] {
-  return name
-    .split(" // ")
-    .map((part) => part.trim())
-    .filter(Boolean);
+  const separator = name.includes(" // ") ? " // " : name.includes(" / ") ? " / " : null;
+  const parts = separator ? name.split(separator) : [name];
+  return parts.map((part) => part.trim()).filter(Boolean);
 }
 
 export async function fetchScryfallArt(rawName: string): Promise<ScryfallCardArt | null> {

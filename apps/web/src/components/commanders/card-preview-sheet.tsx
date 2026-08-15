@@ -97,11 +97,11 @@ export function CardPreviewSheet({
             href={`https://scryfall.com/search?q=${encodeURIComponent(displayName)}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex flex-1 items-center justify-center rounded-lg border border-border/70 px-3 py-2.5 text-sm font-medium text-foreground hover:bg-accent/40"
+            className="flex min-h-11 flex-1 items-center justify-center rounded-lg border border-border/70 px-3 text-sm font-medium text-foreground hover:bg-accent/40"
           >
             View on Scryfall
           </a>
-          <SheetClose className="flex flex-1 items-center justify-center rounded-lg bg-primary px-3 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+          <SheetClose className="flex min-h-11 flex-1 items-center justify-center rounded-lg bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90">
             Close
           </SheetClose>
         </SheetFooter>

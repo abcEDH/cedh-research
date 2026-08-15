@@ -53,16 +53,16 @@ export function CardFrequenciesTable({
               const perf = cardPerformanceMap.get(card.card_name);
               const winRateDelta = perf ? parseFloat(perf.win_rate_delta) * 100 : null;
               return (
-                <TableRow
-                  key={card.card_name}
-                  onClick={() => setOpenCardName(card.card_name)}
-                  className="cursor-pointer border-border/60 hover:bg-accent/20"
-                >
-                  <TableCell className="font-medium">
-                    <span className="flex items-center gap-2.5 text-foreground">
+                <TableRow key={card.card_name} className="border-border/60 hover:bg-accent/20">
+                  <TableCell className="p-0 font-medium">
+                    <button
+                      type="button"
+                      onClick={() => setOpenCardName(card.card_name)}
+                      className="flex min-h-11 w-full items-center gap-2.5 px-2 py-2 text-left text-foreground"
+                    >
                       <CommanderArtThumb name={card.card_name} size={26} />
                       <span className="min-w-0 truncate">{normalizeDisplayString(card.card_name)}</span>
-                    </span>
+                    </button>
                   </TableCell>
                   <TableCell>
                     <TierBadge tier={card.tier} />
