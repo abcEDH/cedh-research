@@ -34,7 +34,11 @@ sys.modules.setdefault("dateutil.parser", dateutil_parser_module)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import sweep_partner_commander_order  # noqa: E402
-from sweep_partner_commander_order import choose_target_order, main  # noqa: E402
+from sweep_partner_commander_order import (  # noqa: E402
+    choose_target_order,
+    main,
+    merge_commander_metadata,
+)
 
 
 class ChooseTargetOrderTests(unittest.TestCase):
@@ -236,6 +240,328 @@ class MergeForeignKeySafetyTests(unittest.TestCase):
                 self._run_main()
 
             mock_requests.delete.assert_not_called()
+
+
+class MergeCommanderMetadataTests(unittest.TestCase):
+    """Issue #316: the merge branch discarded ``commanders``' five non-key
+    columns (``scryfall_ids``, ``color_identity``, ``archetype``,
+    ``win_condition``, ``notes``) outright when it deleted the duplicate row.
+    ``merge_commander_metadata`` computes the patch that must land on the
+    retained row first -- filling gaps from the duplicate, never overwriting
+    a value the retained row already has.
+    """
+
+    def test_fills_every_gap_from_duplicate(self) -> None:
+        retained = {
+            "scryfall_ids": None,
+            "color_identity": None,
+            "archetype": None,
+            "win_condition": None,
+            "notes": None,
+        }
+        duplicate = {
+            "scryfall_ids": ["abc123"],
+            "color_identity": ["U", "B"],
+            "archetype": "stax",
+            "win_condition": "Thassa's Oracle combo",
+            "notes": "Merged from duplicate row",
+        }
+
+        patch = merge_commander_metadata(retained, duplicate)
+
+        self.assertEqual(
+            patch,
+            {
+                "scryfall_ids": ["abc123"],
+                "color_identity": ["U", "B"],
+                "archetype": "stax",
+                "win_condition": "Thassa's Oracle combo",
+                "notes": "Merged from duplicate row",
+            },
+        )
+
+    def test_never_overwrites_existing_non_null_value(self) -> None:
+        retained = {
+            "scryfall_ids": ["existing"],
+            "color_identity": ["W"],
+            "archetype": "midrange",
+            "win_condition": "existing win con",
+            "notes": "existing notes",
+        }
+        duplicate = {
+            "scryfall_ids": ["dup"],
+            "color_identity": ["U", "B"],
+            "archetype": "stax",
+            "win_condition": "dup win con",
+            "notes": "dup notes",
+        }
+
+        patch = merge_commander_metadata(retained, duplicate)
+
+        self.assertEqual(patch, {})
+
+    def test_only_null_columns_are_patched_when_gaps_are_partial(self) -> None:
+        retained = {
+            "scryfall_ids": ["existing"],
+            "color_identity": None,
+            "archetype": "midrange",
+            "win_condition": None,
+            "notes": "existing notes",
+        }
+        duplicate = {
+            "scryfall_ids": ["dup"],
+            "color_identity": ["U", "B"],
+            "archetype": "stax",
+            "win_condition": "dup win con",
+            "notes": "dup notes",
+        }
+
+        patch = merge_commander_metadata(retained, duplicate)
+
+        self.assertEqual(patch, {"color_identity": ["U", "B"], "win_condition": "dup win con"})
+
+    def test_duplicate_null_leaves_gap_unfilled(self) -> None:
+        """Both sides null for a column is not itself a bug -- there's simply
+        nothing to reconcile, and the patch must omit that column rather than
+        writing null-over-null.
+        """
+        all_null = {
+            "scryfall_ids": None,
+            "color_identity": None,
+            "archetype": None,
+            "win_condition": None,
+            "notes": None,
+        }
+        retained = dict(all_null)
+        duplicate = dict(all_null)
+
+        patch = merge_commander_metadata(retained, duplicate)
+
+        self.assertEqual(patch, {})
+
+
+class MergeReconcilesMetadataInMainTests(unittest.TestCase):
+    """Issue #316, end-to-end: ``main()``'s merge branch must patch the
+    retained row's metadata gaps before repointing FKs and deleting the
+    duplicate -- otherwise the duplicate's metadata is gone the moment the
+    delete commits.
+    """
+
+    PAIR_A = "Alpha, Test Commander"
+    PAIR_B = "Beta, Test Partner"
+
+    def _run_main(self, canonical_row: dict, duplicate_row: dict) -> None:
+        commander_rows = [canonical_row, duplicate_row]
+        client = Mock()
+        client.url = "https://example.supabase.co"
+        client.headers = {"apikey": "test"}
+        client.select = Mock(return_value=commander_rows)
+
+        pair_key = tuple(sorted((self.PAIR_A, self.PAIR_B)))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            argv = ["sweep_partner_commander_order.py", "--report", str(Path(tmpdir) / "report.csv")]
+            with (
+                patch.object(sweep_partner_commander_order, "load_credentials", return_value=("url", "key")),
+                patch.object(sweep_partner_commander_order, "SupabaseClient", return_value=client),
+                patch.object(
+                    sweep_partner_commander_order,
+                    "load_legal_commander_pair_order_map",
+                    return_value={pair_key: (self.PAIR_A, self.PAIR_B)},
+                ),
+                patch.object(sys, "argv", argv),
+            ):
+                main()
+
+    def test_metadata_gaps_filled_before_delete_without_overwriting_existing(self) -> None:
+        canonical_name = f"{self.PAIR_A} / {self.PAIR_B}"
+        duplicate_name = f"{self.PAIR_B} / {self.PAIR_A}"
+        canonical_row = {
+            "id": "canonical-id",
+            "name": canonical_name,
+            "commander_names": [self.PAIR_A, self.PAIR_B],
+            "scryfall_ids": None,
+            "color_identity": ["W", "U"],  # already set -- must survive untouched
+            "archetype": None,
+            "win_condition": None,
+            "notes": None,
+        }
+        duplicate_row = {
+            "id": "duplicate-id",
+            "name": duplicate_name,
+            "commander_names": [self.PAIR_B, self.PAIR_A],
+            "scryfall_ids": ["abc123"],
+            "color_identity": ["U", "B"],  # conflicts with canonical -- must NOT overwrite
+            "archetype": "stax",
+            "win_condition": "combo",
+            "notes": "from duplicate",
+        }
+
+        with patch.object(sweep_partner_commander_order, "requests") as mock_requests:
+            mock_requests.patch.return_value = Mock(raise_for_status=Mock())
+            mock_requests.delete.return_value = Mock(raise_for_status=Mock())
+
+            self._run_main(canonical_row, duplicate_row)
+
+            # metadata patch, then tournament_entries, then the two matchup columns.
+            self.assertEqual(mock_requests.patch.call_count, 4)
+            metadata_call = mock_requests.patch.call_args_list[0]
+
+            self.assertIn("commanders", metadata_call.args[0])
+            self.assertEqual(metadata_call.kwargs["params"], {"id": "eq.canonical-id"})
+            self.assertEqual(
+                metadata_call.kwargs["json"],
+                {
+                    "scryfall_ids": ["abc123"],
+                    "archetype": "stax",
+                    "win_condition": "combo",
+                    "notes": "from duplicate",
+                },
+            )
+            # color_identity was already set on the canonical row -- never overwritten.
+            self.assertNotIn("color_identity", metadata_call.kwargs["json"])
+
+            entries_call, commander_id_call, opponent_id_call = mock_requests.patch.call_args_list[1:]
+            self.assertIn("tournament_entries", entries_call.args[0])
+            self.assertIn("commander_matchups", commander_id_call.args[0])
+            self.assertIn("commander_matchups", opponent_id_call.args[0])
+
+            self.assertEqual(mock_requests.delete.call_args.kwargs["params"], {"id": "eq.duplicate-id"})
+
+    def test_no_metadata_patch_call_when_duplicate_has_nothing_to_offer(self) -> None:
+        """Preserves the pre-#316 request count when there's no metadata gap to
+        fill, so this change doesn't add a network round-trip to the common case.
+        """
+        canonical_name = f"{self.PAIR_A} / {self.PAIR_B}"
+        duplicate_name = f"{self.PAIR_B} / {self.PAIR_A}"
+        canonical_row = {
+            "id": "canonical-id",
+            "name": canonical_name,
+            "commander_names": [self.PAIR_A, self.PAIR_B],
+        }
+        duplicate_row = {
+            "id": "duplicate-id",
+            "name": duplicate_name,
+            "commander_names": [self.PAIR_B, self.PAIR_A],
+        }
+
+        with patch.object(sweep_partner_commander_order, "requests") as mock_requests:
+            mock_requests.patch.return_value = Mock(raise_for_status=Mock())
+            mock_requests.delete.return_value = Mock(raise_for_status=Mock())
+
+            self._run_main(canonical_row, duplicate_row)
+
+            self.assertEqual(mock_requests.patch.call_count, 3)
+
+
+class MarkSweepPendingTests(unittest.TestCase):
+    """Issue #314: a live merge must flag the pending-sweep marker so a
+    maintenance run that would otherwise miss the follow-up refresh (chain-elo
+    skipping because an Elo job is already in flight) still guarantees one on
+    its next run. See ``consume_partner_commander_sweep_pending.py`` for the
+    consuming side.
+    """
+
+    def test_posts_merged_count_to_rpc(self) -> None:
+        client = Mock()
+        client.url = "https://example.supabase.co"
+        client.headers = {"apikey": "test"}
+
+        with patch.object(sweep_partner_commander_order, "requests") as mock_requests:
+            mock_requests.post.return_value = Mock(raise_for_status=Mock())
+            mock_requests.RequestException = Exception
+
+            sweep_partner_commander_order.mark_sweep_pending(client, 3)
+
+            mock_requests.post.assert_called_once()
+            call = mock_requests.post.call_args
+            self.assertIn("mark_partner_commander_sweep_pending", call.args[0])
+            self.assertEqual(call.kwargs["json"], {"p_merged_count": 3})
+
+    def test_rpc_failure_does_not_raise(self) -> None:
+        """Best-effort: a failed mark-pending call must not fail the sweep,
+        which has already committed real merges by this point.
+        """
+        client = Mock()
+        client.url = "https://example.supabase.co"
+        client.headers = {"apikey": "test"}
+
+        with patch.object(sweep_partner_commander_order, "requests") as mock_requests:
+            mock_requests.RequestException = RuntimeError
+            mock_requests.post.side_effect = RuntimeError("network down")
+
+            sweep_partner_commander_order.mark_sweep_pending(client, 1)  # must not raise
+
+    def test_main_marks_pending_after_a_live_merge(self) -> None:
+        pair_a, pair_b = MergeForeignKeySafetyTests.PAIR_A, MergeForeignKeySafetyTests.PAIR_B
+        canonical_name = f"{pair_a} / {pair_b}"
+        duplicate_name = f"{pair_b} / {pair_a}"
+        commander_rows = [
+            {"id": "canonical-id", "name": canonical_name, "commander_names": [pair_a, pair_b]},
+            {"id": "duplicate-id", "name": duplicate_name, "commander_names": [pair_b, pair_a]},
+        ]
+        client = Mock()
+        client.url = "https://example.supabase.co"
+        client.headers = {"apikey": "test"}
+        client.select = Mock(return_value=commander_rows)
+
+        pair_key = tuple(sorted((pair_a, pair_b)))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            argv = ["sweep_partner_commander_order.py", "--report", str(Path(tmpdir) / "report.csv")]
+            with (
+                patch.object(sweep_partner_commander_order, "load_credentials", return_value=("url", "key")),
+                patch.object(sweep_partner_commander_order, "SupabaseClient", return_value=client),
+                patch.object(
+                    sweep_partner_commander_order,
+                    "load_legal_commander_pair_order_map",
+                    return_value={pair_key: (pair_a, pair_b)},
+                ),
+                patch.object(sys, "argv", argv),
+                patch.object(sweep_partner_commander_order, "requests") as mock_requests,
+            ):
+                mock_requests.patch.return_value = Mock(raise_for_status=Mock())
+                mock_requests.post.return_value = Mock(raise_for_status=Mock())
+                mock_requests.delete.return_value = Mock(raise_for_status=Mock())
+
+                main()
+
+                mock_requests.post.assert_called_once()
+                call = mock_requests.post.call_args
+                self.assertIn("mark_partner_commander_sweep_pending", call.args[0])
+                self.assertEqual(call.kwargs["json"], {"p_merged_count": 1})
+
+    def test_main_does_not_mark_pending_on_dry_run(self) -> None:
+        """A dry run reports what *would* merge but changes nothing -- there's
+        nothing for a maintenance run to pick up, so the flag must stay clear.
+        """
+        pair_a, pair_b = MergeForeignKeySafetyTests.PAIR_A, MergeForeignKeySafetyTests.PAIR_B
+        canonical_name = f"{pair_a} / {pair_b}"
+        duplicate_name = f"{pair_b} / {pair_a}"
+        commander_rows = [
+            {"id": "canonical-id", "name": canonical_name, "commander_names": [pair_a, pair_b]},
+            {"id": "duplicate-id", "name": duplicate_name, "commander_names": [pair_b, pair_a]},
+        ]
+        client = Mock()
+        client.url = "https://example.supabase.co"
+        client.headers = {"apikey": "test"}
+        client.select = Mock(return_value=commander_rows)
+
+        pair_key = tuple(sorted((pair_a, pair_b)))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            argv = ["sweep_partner_commander_order.py", "--dry-run", "--report", str(Path(tmpdir) / "report.csv")]
+            with (
+                patch.object(sweep_partner_commander_order, "load_credentials", return_value=("url", "key")),
+                patch.object(sweep_partner_commander_order, "SupabaseClient", return_value=client),
+                patch.object(
+                    sweep_partner_commander_order,
+                    "load_legal_commander_pair_order_map",
+                    return_value={pair_key: (pair_a, pair_b)},
+                ),
+                patch.object(sys, "argv", argv),
+                patch.object(sweep_partner_commander_order, "requests") as mock_requests,
+            ):
+                main()
+
+                mock_requests.post.assert_not_called()
 
 
 if __name__ == "__main__":
