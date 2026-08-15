@@ -88,6 +88,19 @@ export interface CommanderTrendTableRow {
   pointsPerGame: number;
 }
 
+export interface CommanderMomentum {
+  latest_week_key: string | null;
+  week_entries: number;
+  week_win_rate: string;
+  week_entries_change_pct: string | null;
+  week_win_rate_change_pp: string | null;
+  latest_month_key: string | null;
+  month_entries: number;
+  month_win_rate: string;
+  month_entries_change_pct: string | null;
+  month_win_rate_change_pp: string | null;
+}
+
 function normalizeDateKey(value: string | null | undefined) {
   if (!value) return "";
   return value.length >= 10 ? value.slice(0, 10) : value;
@@ -230,6 +243,19 @@ export async function getFirstPlaceFinishes(commanderId: string): Promise<number
     return 0;
   }
   return count ?? 0;
+}
+
+export async function getCommanderMomentum(commanderId: string): Promise<CommanderMomentum | null> {
+  const { data, error } = await supabase
+    .from("commander_wow_mom")
+    .select(
+      "latest_week_key, week_entries, week_win_rate, week_entries_change_pct, week_win_rate_change_pp, latest_month_key, month_entries, month_win_rate, month_entries_change_pct, month_win_rate_change_pp"
+    )
+    .eq("commander_id", commanderId)
+    .single();
+
+  if (error || !data) return null;
+  return data as CommanderMomentum;
 }
 
 export type CommanderTrendSeries = TrendMetricSeries & {
