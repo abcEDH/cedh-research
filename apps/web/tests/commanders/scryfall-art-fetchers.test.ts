@@ -141,7 +141,7 @@ describe("getCommanderRankings", () => {
 
     expect(lastFromTable).toBe("tournament_entries");
     expect(rankingFilters).toContainEqual(["tournaments.tier", "Gold"]);
-    expect(rankingFilters).toContainEqual(["tournaments.player_count", 32]);
+    expect(rankingFilters).toContainEqual(["tournaments.player_count", 16]);
     expect(rankingFilters.some(([column]) => column === "tournaments.start_date")).toBe(true);
     expect(rankings).toMatchObject([{ commander_name: "Kinnan", total_entries: 1, tournaments_played: 1 }]);
   });
