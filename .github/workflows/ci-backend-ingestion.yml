@@ -102,14 +102,17 @@ jobs:
         # would leave those user-facing surfaces pointing at merged-away IDs
         # until some unrelated later refresh.
         #
-        # This narrows that window rather than closing it: chain-elo also
-        # bails without dispatching when enqueue_elo_refresh returns null
-        # because an Elo job is already in flight (see the null check below),
-        # and that in-flight job may already be past its commander-view
-        # rebuild. Worst case the derived views lag by one ingestion cycle.
-        # That is acceptable here because ingestion canonicalizes new pairs
-        # at write time, so this sweep only ever mops up pre-existing drift
-        # -- it is not load-bearing for freshly ingested data.
+        # chain-elo also bails without dispatching when enqueue_elo_refresh
+        # returns null because an Elo job is already in flight (see the null
+        # check below), and that in-flight job may already be past its
+        # commander-view rebuild. sweep_partner_commander_order.py's main()
+        # marks a durable "pending" flag whenever it performs a live merge
+        # (see mark_sweep_pending() and the
+        # 20260815020000_partner_commander_sweep_pending.sql migration), and
+        # ci-backend-maintenance.yml's very first step consumes-and-clears
+        # that flag on every run, forcing a commander-view /
+        # player_commander_profiles rebuild if one was pending -- closing
+        # this window instead of merely narrowing it (#314).
         #
         # continue-on-error because ingest.py has already marked the
         # ingestion_jobs row completed by this point, so a failure here would
