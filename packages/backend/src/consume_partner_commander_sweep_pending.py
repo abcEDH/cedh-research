@@ -16,10 +16,16 @@ Every ``ci-backend-maintenance.yml`` run calls this script first, before its
 own Elo recompute step. If a sweep was pending, this script forces a
 commander materialized-view refresh and a ``player_commander_profiles``
 rebuild right here -- even when this maintenance run would otherwise be a
-lightweight smoke check -- and clears the flag via
-``consume_partner_commander_sweep_pending()``, an atomic read-and-clear RPC.
-That guarantees the merge's follow-up refresh eventually happens rather than
-being silently dropped. If nothing was pending, this is a fast no-op.
+lightweight smoke check -- and only *then* acknowledges the flag via
+``consume_partner_commander_sweep_pending(p_token)``, a token-based
+compare-and-clear RPC (see the ``20260815020000_partner_commander_sweep_pending.sql``
+migration). That guarantees the merge's follow-up refresh eventually
+happens rather than being silently dropped -- including when this run's own
+rebuild fails (the flag is never acked, so the next run retries) and when a
+newer merge marks the flag again mid-rebuild (the stale token fails to
+match, so this run's ack is a no-op and leaves the newer request pending
+for whoever picks it up next). If nothing was pending, this is a fast
+no-op.
 """
 
 from __future__ import annotations
@@ -33,20 +39,50 @@ from backfill_moxfield_commanders import load_credentials
 from supabase_client import SupabaseClient
 
 CONSUME_RPC_NAME = "consume_partner_commander_sweep_pending"
+STATE_TABLE_NAME = "partner_commander_sweep_state"
 RPC_TIMEOUT_SECONDS = 30
 
 
-def consume_sweep_pending_flag(client: SupabaseClient) -> bool:
-    """Atomically read-and-clear the pending flag. Returns whether it was set.
+def read_sweep_pending_state(client: SupabaseClient) -> tuple[bool, str | None]:
+    """Read the current ``pending``/``token`` pair without clearing anything.
 
-    Uses the DB-side RPC (backed by a ``FOR UPDATE`` row lock -- see the
-    ``20260815020000_partner_commander_sweep_pending.sql`` migration) rather
-    than a plain SELECT-then-UPDATE from here, so two concurrent maintenance
-    runs can never both observe ``pending=true`` and both force a rebuild
-    while leaving the flag cleared only once.
+    A plain SELECT against the singleton row -- the ack itself (see
+    ``acknowledge_sweep_pending``) is what actually clears the flag, and only
+    after this run's rebuild has succeeded. Reading is intentionally *not*
+    combined with clearing here: that's exactly the race the token exists to
+    close (see the migration's header comment).
+    """
+    endpoint = f"{client.url}/rest/v1/{STATE_TABLE_NAME}"
+    response = requests.get(
+        endpoint,
+        headers=client.headers,
+        params={"select": "pending,token", "id": "eq.true"},
+        timeout=RPC_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    rows = response.json()
+    if not rows:
+        return False, None
+
+    row = rows[0]
+    return bool(row.get("pending")), row.get("token")
+
+
+def acknowledge_sweep_pending(client: SupabaseClient, token: str) -> bool:
+    """Compare-and-clear ack: only clears the flag if ``token`` still matches.
+
+    Must only be called after this run's forced rebuild has succeeded --
+    call sites that skip acking on failure are what makes a failed rebuild
+    leave the flag pending for the next run to retry, rather than losing the
+    refresh request.
+
+    Returns whether this call actually cleared the row. ``False`` means a
+    newer ``mark_partner_commander_sweep_pending()`` call happened since this
+    run read the token -- that pending state belongs to the newer request,
+    not this run's to consume, so it's left alone.
     """
     endpoint = f"{client.url}/rest/v1/rpc/{CONSUME_RPC_NAME}"
-    response = requests.post(endpoint, headers=client.headers, json={}, timeout=RPC_TIMEOUT_SECONDS)
+    response = requests.post(endpoint, headers=client.headers, json={"p_token": token}, timeout=RPC_TIMEOUT_SECONDS)
     response.raise_for_status()
     return bool(response.json())
 
@@ -83,7 +119,7 @@ def main() -> None:
     supabase_url, supabase_key = load_credentials()
     client = SupabaseClient(supabase_url, supabase_key)
 
-    pending = consume_sweep_pending_flag(client)
+    pending, token = read_sweep_pending_state(client)
     print(f"sweep_pending_consumed={pending}")
 
     if not pending:
@@ -95,11 +131,21 @@ def main() -> None:
     from rebuild_player_commander_profiles import main as rebuild_profiles_main
     from regional_elo import refresh_materialized_views as refresh_mvs
 
+    # Ack only after the rebuild succeeds. If either call above raises, this
+    # line never runs and the flag stays pending for the next maintenance run
+    # to retry -- a failed rebuild must never look like a delivered one.
     force_commander_view_rebuild(
         client,
         refresh_materialized_views=refresh_mvs,
         rebuild_player_commander_profiles=rebuild_profiles_main,
     )
+
+    acknowledged = acknowledge_sweep_pending(client, token)
+    if not acknowledged:
+        print(
+            "warning: sweep-pending token was stale (a newer merge marked it "
+            "again mid-rebuild); leaving the flag pending for that request"
+        )
 
 
 if __name__ == "__main__":
