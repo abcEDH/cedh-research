@@ -36,7 +36,7 @@ test.describe("Commanders List Page", () => {
     expect(rowCount).toBeGreaterThan(0);
 
     // First commander should have entries > 0
-    const firstRowEntries = rows.first().locator("td").nth(2);
+    const firstRowEntries = rows.first().locator("td").nth(3);
     const entriesText = await firstRowEntries.textContent();
     const entries = parseInt(entriesText?.replace(/,/g, "") || "0");
     expect(entries).toBeGreaterThan(0);

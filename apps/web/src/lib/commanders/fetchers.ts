@@ -162,17 +162,23 @@ export async function getScryfallArtByNames(names: string[]): Promise<ScryfallAr
   const uniqueNames = Array.from(new Set(names.filter(Boolean)));
   if (uniqueNames.length === 0) return {};
 
-  const { data, error } = await supabase
-    .from("scryfall_cards")
-    .select("name, image_uris")
-    .in("name", uniqueNames);
-
-  if (error) {
-    console.error("Error fetching scryfall_cards art:", error);
+  // PostgREST encodes `.in()` values in the URL. Commander rankings can
+  // contain hundreds of long names, exceeding common 16 KB header limits if
+  // requested in one batch. Keep requests below that threshold while still
+  // avoiding per-card lookups.
+  const batches = Array.from({ length: Math.ceil(uniqueNames.length / 50) }, (_, index) =>
+    uniqueNames.slice(index * 50, (index + 1) * 50)
+  );
+  const responses = await Promise.all(
+    batches.map((batch) => supabase.from("scryfall_cards").select("name, image_uris").in("name", batch))
+  );
+  const failed = responses.find((response) => response.error);
+  if (failed?.error) {
+    console.error("Error fetching scryfall_cards art:", failed.error);
     return {};
   }
 
-  const rows = (data || []) as ScryfallCardArtRow[];
+  const rows = responses.flatMap((response) => (response.data || []) as ScryfallCardArtRow[]);
   const result: ScryfallArtByName = {};
   for (const row of rows) {
     result[row.name] = {
