@@ -1,3 +1,10 @@
+# [1.26.0](https://github.com/abcEDH/cedh-research/compare/v1.25.1...v1.26.0) (2026-08-15)
+
+
+### Features
+
+* **web:** add Scryfall card art to mobile commander/tournament views ([#322](https://github.com/abcEDH/cedh-research/issues/322)) ([db4294e](https://github.com/abcEDH/cedh-research/commit/db4294e7f4a1e8b962066e32382e90b6542ee942))
+
 ## [1.25.1](https://github.com/abcEDH/cedh-research/compare/v1.25.0...v1.25.1) (2026-08-15)
 
 
