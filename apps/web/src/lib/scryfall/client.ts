@@ -65,7 +65,14 @@ export async function fetchScryfallArt(rawName: string): Promise<ScryfallCardArt
         return null;
       }
       const data = await res.json();
-      const face = data.image_uris ? data : (data.card_faces ?? [])[0] ?? {};
+      // Scryfall's fuzzy search returns the same multi-face card object no matter
+      // which face name matched, so pick the face that actually matches the
+      // requested name rather than always defaulting to card_faces[0] — otherwise
+      // e.g. "Bala Ged Sanctuary" (the back face) would render the front face's art.
+      const faces: Array<{ name?: string; image_uris?: Record<string, string>; type_line?: string }> =
+        data.card_faces ?? [];
+      const matchedFace = faces.find((f) => f.name?.toLowerCase() === name.toLowerCase());
+      const face = data.image_uris ? data : (matchedFace ?? faces[0] ?? {});
       const images = face.image_uris ?? data.image_uris ?? {};
       const result: ScryfallCardArt = {
         artCrop: images.art_crop ?? null,
