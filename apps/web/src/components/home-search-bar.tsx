@@ -85,6 +85,7 @@ export function HomeSearchBar() {
           .ilike("name", pattern)
           .not("topdeck_tid", "is", null)
           .not("tournament_entries.final_standing", "is", null)
+          .lte("start_date", new Date().toISOString())
           .order("start_date", { ascending: false })
           .limit(5)
           .limit(1, { referencedTable: "tournament_entries" }),

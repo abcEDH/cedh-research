@@ -14,7 +14,7 @@ import os
 import sys
 import time
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -54,6 +54,21 @@ TOPDECK_STANDING_RATE_FIELDS = [
     ("winRate", "opponentWinRate"),
     ("successRate", "opponentSuccessRate"),
 ]
+
+# Reject tournaments whose start_date is further in the future than this grace
+# period. A tournament with completed games/standings should already have
+# happened (or be underway) by ingestion time — a start_date far in the future
+# indicates test/placeholder data (e.g. TopDeck practice events) rather than a
+# real, played event. The grace period tolerates timezone skew and same-day
+# multi-region event scheduling without needing to be precise.
+FUTURE_START_DATE_GRACE = timedelta(days=2)
+
+
+def is_future_start_date(ts: datetime) -> bool:
+    """True if ts is more than FUTURE_START_DATE_GRACE ahead of now (UTC)."""
+    naive_ts = ts.astimezone(timezone.utc).replace(tzinfo=None) if ts.tzinfo is not None else ts
+    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    return naive_ts > now_utc + FUTURE_START_DATE_GRACE
 
 
 # Ensure logs directory exists
@@ -827,6 +842,16 @@ class DataIngester:
         effective_top_cut = reported_top_cut
         if player_count <= 34:
             effective_top_cut = 4
+
+        parsed_start = parse_tournament_start_date(tournament)
+        if isinstance(parsed_start, datetime):
+            if is_future_start_date(parsed_start):
+                logger.warning(
+                    f"Skipping tournament '{name}' ({tid}): start_date {parsed_start.isoformat()} "
+                    f"is more than {FUTURE_START_DATE_GRACE} in the future. Refusing to ingest "
+                    "test/placeholder events with implausible future dates."
+                )
+                return None
 
         logger.info(f"Processing: {name} ({player_count} players, {len(rounds)} rounds)")
 
@@ -1911,6 +1936,33 @@ def _run_ingestion(args, topdeck, supabase, ingester, job_id):
                             tid=tid,
                             event_type="tournament_skipped",
                             payload={"reason": "missing start date"},
+                        )
+                        update_backfill_run_progress(
+                            ingester.supabase,
+                            run_row=run_row,
+                            processed_count=processed_count,
+                            succeeded_count=succeeded_count,
+                            failed_count=failed_count,
+                            status="running",
+                            current_batch_index=batch_index,
+                            current_tid=tid,
+                            last_completed_tid=tid,
+                            current_batch_processed_count=batch_processed_count,
+                            current_batch_succeeded_count=batch_succeeded_count,
+                            current_batch_failed_count=batch_failed_count,
+                        )
+                    continue
+
+                if is_future_start_date(ts):
+                    logger.warning(f"Skipping {tid}: start_date {ts.isoformat()} is more than {FUTURE_START_DATE_GRACE} in the future")
+                    if args.record_backfill and run_row:
+                        append_backfill_event(
+                            ingester.supabase,
+                            run_id=run_row["id"],
+                            batch_index=batch_index,
+                            tid=tid,
+                            event_type="tournament_skipped",
+                            payload={"reason": "future start date"},
                         )
                         update_backfill_run_progress(
                             ingester.supabase,

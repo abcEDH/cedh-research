@@ -191,7 +191,8 @@ def fetch_usage_rows_via_db(db_url: str) -> list[dict[str, Any]]:
             return [dict(row) for row in cursor.fetchall()]
 
 
-def normalize_usage_rows(raw_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def normalize_usage_rows(raw_rows: list[dict[str, Any]], reference_date: date) -> list[dict[str, Any]]:
+    reference_date_iso = reference_date.isoformat()
     normalized: list[dict[str, Any]] = []
     for row in raw_rows:
         player = first_relation(row.get("players"))
@@ -207,6 +208,12 @@ def normalize_usage_rows(raw_rows: list[dict[str, Any]]) -> list[dict[str, Any]]
         tournament_id = row.get("tournament_id") or (tournament.get("id") if tournament else None)
         tournament_name = row.get("tournament_name") or (tournament.get("name") if tournament else None)
         if not topdeck_id or not is_known_commander(commander_name):
+            continue
+        # Exclude entries from tournaments dated after the reference date --
+        # e.g. a test/placeholder event ingested with a far-future start_date
+        # would otherwise be treated as both "recent" (passing the lookback
+        # window) and "latest" (winning every max()-by-date comparison below).
+        if start_date and start_date[:10] > reference_date_iso:
             continue
         normalized.append(
             {
@@ -413,7 +420,7 @@ def main() -> None:
             raw_rows = fetch_usage_rows_via_rest(client)
     else:
         raw_rows = fetch_usage_rows_via_rest(client)
-    usage_rows = normalize_usage_rows(raw_rows)
+    usage_rows = normalize_usage_rows(raw_rows, reference_date)
     logger.info("Fetched %s qualifying usage rows", len(usage_rows))
 
     logger.info("Building player commander profiles using reference date %s", reference_date.isoformat())

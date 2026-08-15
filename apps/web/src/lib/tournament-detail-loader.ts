@@ -78,6 +78,15 @@ async function loadSupabaseTournamentDetail(
   if (!tournament) return null;
 
   const row = tournament as TournamentRow;
+
+  // A tournament dated after "now" hasn't happened yet -- render it as not
+  // found rather than a live event. Guards against bad/test data (e.g. a
+  // practice event ingested with a far-future start_date) as well as any
+  // future-dated tournament in general.
+  if (row.start_date && new Date(row.start_date).getTime() > Date.now()) {
+    return null;
+  }
+
   const { data: entryRows, error: entriesError } = await supabase
     .from("tournament_entries")
     .select(
