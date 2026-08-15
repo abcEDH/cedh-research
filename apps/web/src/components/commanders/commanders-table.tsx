@@ -530,6 +530,42 @@ export default function CommandersTable({
   const [minimumEntries, setMinimumEntries] = useState(rankingFilters.minimumEntries);
   const [preset, setPreset] = useState<Preset>("all");
   const [page, setPage] = useState(1);
+  const commanderFaceNames = useMemo(
+    () => Array.from(new Set(commanders.flatMap((commander) => splitCardName(commander.commander_name)))),
+    [commanders]
+  );
+  const missingColorMetadataNames = useMemo(
+    () =>
+      commanderFaceNames.filter(
+        (name) => artByName?.[name]?.colorIdentity === null || artByName?.[name]?.colorIdentity === undefined
+      ),
+    [artByName, commanderFaceNames]
+  );
+  const { ref: colorMetadataRef, arts: liveColorMetadata } = useScryfallArts(missingColorMetadataNames);
+  const colorIdentityByCommanderId = useMemo(() => {
+    const liveColorsByName = new Map(
+      missingColorMetadataNames.map((name, index) => [name, liveColorMetadata[index]?.colorIdentity])
+    );
+
+    return new Map(
+      commanders.map((commander) => {
+        const colors = new Set<string>();
+        let resolvedFromScryfall = false;
+        for (const name of splitCardName(commander.commander_name)) {
+          const cachedColors = artByName?.[name]?.colorIdentity;
+          const colorIdentity = cachedColors ?? liveColorsByName.get(name);
+          if (!colorIdentity) continue;
+          resolvedFromScryfall = true;
+          colorIdentity.forEach((color) => colors.add(color));
+        }
+        const resolved = ["W", "U", "B", "R", "G"].filter((color) => colors.has(color));
+        return [
+          commander.commander_id,
+          resolvedFromScryfall ? resolved : commander.color_identity,
+        ] as const;
+      })
+    );
+  }, [artByName, commanders, liveColorMetadata, missingColorMetadataNames]);
 
   const ranks = useMemo(() => {
     const map = new Map<string, number>();
@@ -545,14 +581,15 @@ export default function CommandersTable({
       const nameMatch = normalizeDisplayString(commander.commander_name)
         .toLowerCase()
         .includes(normalizedQuery);
+      const colorIdentity = colorIdentityByCommanderId.get(commander.commander_id);
       const colorMatch = colors.every((color) =>
         color === "C"
-          ? Array.isArray(commander.color_identity) && commander.color_identity.length === 0
-          : commander.color_identity?.includes(color)
+          ? Array.isArray(colorIdentity) && colorIdentity.length === 0
+          : colorIdentity?.includes(color)
       );
       return nameMatch && colorMatch && commander.total_entries >= minimumEntries;
     });
-  }, [commanders, colors, minimumEntries, query]);
+  }, [colorIdentityByCommanderId, commanders, colors, minimumEntries, query]);
 
   const sortedCommanders = useMemo(() => {
     const sorted = [...filteredCommanders].sort((a, b) =>
@@ -630,6 +667,7 @@ export default function CommandersTable({
 
   return (
     <section aria-labelledby="all-commanders-heading">
+      <div ref={colorMetadataRef} className="h-px" aria-hidden />
       <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center">
         <div className="min-w-0 flex-1">
           <h2 id="all-commanders-heading" className="text-lg font-semibold">
