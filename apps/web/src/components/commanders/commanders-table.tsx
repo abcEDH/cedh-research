@@ -620,14 +620,17 @@ export default function CommandersTable({
     switch (nextPreset) {
       case "winRate":
         setMinimumEntries(50);
+        updateServerFilter("minEntries", "50");
         setSortKey("winRate");
         break;
       case "topCut":
         setMinimumEntries(50);
+        updateServerFilter("minEntries", "50");
         setSortKey("topCut");
         break;
       default:
         setMinimumEntries(20);
+        updateServerFilter("minEntries", "20");
         setSortKey("entries");
     }
     setSortDirection("desc");
