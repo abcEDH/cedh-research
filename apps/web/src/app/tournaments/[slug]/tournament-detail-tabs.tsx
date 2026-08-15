@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { colorLetters, type CommanderDistEntry, type PodData, type TournamentDetail } from "@/lib/tournaments";
+import { CommanderArtThumb } from "@/components/commanders/commander-art-thumb";
 
 import Link from "next/link";
 
@@ -121,9 +122,10 @@ function Standings({ tournament }: { tournament: TournamentDetail }) {
                 {row.team ? <div className="font-mono text-[11px] text-muted-foreground">{row.team}</div> : null}
               </td>
               <td className="px-3 py-3">
-                <div className="flex items-center gap-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <CommanderArtThumb name={row.commander} size={28} />
                   <Pips colors={row.colors} small />
-                  <span className="text-muted-foreground">{row.commander}</span>
+                  <span className="min-w-0 text-muted-foreground">{row.commander}</span>
                 </div>
               </td>
               <td className="px-3 py-3 font-mono text-[13px] whitespace-nowrap">

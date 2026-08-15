@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import {
   Table,
   TableBody,
@@ -10,6 +13,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { normalizeDisplayString } from "@/lib/utils";
 import { computePValue, formatPValue } from "@/lib/commanders/stats";
 import { TierBadge } from "@/components/commanders/tier-badge";
+import { CommanderArtThumb } from "@/components/commanders/commander-art-thumb";
+import { CardPreviewSheet } from "@/components/commanders/card-preview-sheet";
 import type { CardReport, CardPerformance } from "@/lib/commanders/fetchers";
 
 export function CardFrequenciesTable({
@@ -21,6 +26,9 @@ export function CardFrequenciesTable({
   cardReport: CardReport[];
   cardPerformanceMap: Map<string, CardPerformance>;
 }) {
+  const [openCardName, setOpenCardName] = useState<string | null>(null);
+  const openReport = cardReport.find((card) => card.card_name === openCardName) ?? null;
+
   return (
     <Card>
       <CardHeader className="knd-panel-header">
@@ -45,18 +53,16 @@ export function CardFrequenciesTable({
               const perf = cardPerformanceMap.get(card.card_name);
               const winRateDelta = perf ? parseFloat(perf.win_rate_delta) * 100 : null;
               return (
-                <TableRow key={card.card_name} className="border-border/60">
-                  <TableCell className="font-medium">
-                    <a
-                      href={`https://scryfall.com/search?q=${encodeURIComponent(
-                        normalizeDisplayString(card.card_name)
-                      )}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-foreground hover:text-primary"
+                <TableRow key={card.card_name} className="border-border/60 hover:bg-accent/20">
+                  <TableCell className="p-0 font-medium">
+                    <button
+                      type="button"
+                      onClick={() => setOpenCardName(card.card_name)}
+                      className="flex min-h-11 w-full items-center gap-2.5 px-2 py-2 text-left text-foreground"
                     >
-                      {normalizeDisplayString(card.card_name)}
-                    </a>
+                      <CommanderArtThumb name={card.card_name} size={26} />
+                      <span className="min-w-0 truncate">{normalizeDisplayString(card.card_name)}</span>
+                    </button>
                   </TableCell>
                   <TableCell>
                     <TierBadge tier={card.tier} />
@@ -88,6 +94,16 @@ export function CardFrequenciesTable({
         <p className="text-muted-foreground text-sm mt-4 text-center">
           Showing all {cardReport.length} cards · {cardPerformanceMap.size} have win rate data (min 3 decks)
         </p>
+        {openReport && (
+          <CardPreviewSheet
+            key={openReport.card_name}
+            report={openReport}
+            perf={cardPerformanceMap.get(openReport.card_name)}
+            onOpenChange={(open) => {
+              if (!open) setOpenCardName(null);
+            }}
+          />
+        )}
       </CardContent>
     </Card>
   );

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, ExternalLink, Trophy, Users } from "lucide-react";
 import { loadTournamentDetail } from "@/lib/tournament-detail-loader";
+import { CommanderArtThumb } from "@/components/commanders/commander-art-thumb";
 import { TournamentDetailTabs } from "./tournament-detail-tabs";
 
 type PageProps = {
@@ -79,7 +80,7 @@ export default async function TournamentDetailPage({ params }: PageProps) {
         <StatCard label="Players" value={tournament.players.toLocaleString()} />
         <StatCard label="Top Cut" value={String(tournament.cutSize)} sub={`${Math.round((tournament.cutSize / tournament.players) * 100)}%`} />
         <StatCard label="Winner" value={tournament.winner} compact accent />
-        <StatCard label="Win Cmd." value={tournament.winnerCmd} compact />
+        <StatCard label="Win Cmd." value={tournament.winnerCmd} compact art={tournament.winnerCmd} />
       </section>
 
       <TournamentDetailTabs tournament={tournament} />
@@ -93,19 +94,26 @@ function StatCard({
   sub,
   compact = false,
   accent = false,
+  art,
 }: {
   label: string;
   value: string;
   sub?: string;
   compact?: boolean;
   accent?: boolean;
+  art?: string;
 }) {
   return (
     <div className="knd-panel rounded-[14px] px-4 py-4">
       <div className="font-mono text-[11px] uppercase tracking-[0.2em] text-muted-foreground">{label}</div>
-      <div className={`mt-2 font-semibold ${compact ? "text-sm leading-snug" : "font-mono text-3xl"} ${accent ? "text-[hsl(var(--knd-amber))]" : "text-foreground"}`}>
-        {value}
-        {sub ? <span className="ml-2 text-sm text-muted-foreground">{sub}</span> : null}
+      <div
+        className={`mt-2 flex items-center gap-2 font-semibold ${compact ? "text-sm leading-snug" : "font-mono text-3xl"} ${accent ? "text-[hsl(var(--knd-amber))]" : "text-foreground"}`}
+      >
+        {art && <CommanderArtThumb name={art} size={28} />}
+        <span className="min-w-0">
+          {value}
+          {sub ? <span className="ml-2 text-sm text-muted-foreground">{sub}</span> : null}
+        </span>
       </div>
     </div>
   );

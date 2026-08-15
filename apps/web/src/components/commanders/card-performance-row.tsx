@@ -1,5 +1,9 @@
+"use client";
+
+import Image from "next/image";
 import { normalizeDisplayString } from "@/lib/utils";
 import { computePValue, formatPValue } from "@/lib/commanders/stats";
+import { useScryfallArts } from "@/hooks/use-scryfall-art";
 import type { CardPerformance } from "@/lib/commanders/fetchers";
 
 export function PerformanceCardRow({
@@ -14,6 +18,8 @@ export function PerformanceCardRow({
   const winRate = parseFloat(card.avg_win_rate) * 100;
   const inclusionRate = parseFloat(card.inclusion_rate) * 100;
   const pValue = computePValue(delta, stdDev, card.deck_count);
+  const { ref, arts } = useScryfallArts([card.card_name]);
+  const artCrop = arts[0]?.artCrop;
 
   const deltaClass = isNegative ? "text-[hsl(var(--knd-amber))]" : "text-primary";
   const pClass =
@@ -22,8 +28,16 @@ export function PerformanceCardRow({
       : "border-border/60 text-muted-foreground";
 
   return (
-    <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/30 p-2">
-      <div className="flex-1 min-w-0">
+    <div
+      ref={ref}
+      className="relative flex items-center justify-between overflow-hidden rounded-lg border border-border/60 bg-muted/30 p-2"
+    >
+      {artCrop && (
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-1/2 overflow-hidden opacity-20 [mask-image:linear-gradient(to_right,transparent,black_78%)] [-webkit-mask-image:linear-gradient(to_right,transparent,black_78%)]">
+          <Image src={artCrop} alt="" fill unoptimized loading="lazy" className="object-cover" />
+        </div>
+      )}
+      <div className="relative flex-1 min-w-0">
         <a
           href={`https://scryfall.com/search?q=${encodeURIComponent(normalizeDisplayString(card.card_name))}`}
           target="_blank"
@@ -36,7 +50,7 @@ export function PerformanceCardRow({
           {card.deck_count} decks · {inclusionRate.toFixed(0)}% inclusion
         </p>
       </div>
-      <div className="text-right ml-4">
+      <div className="relative text-right ml-4">
         <div className="flex items-center gap-2 justify-end">
           <span className={`font-mono font-semibold ${deltaClass}`}>
             {delta > 0 ? "+" : ""}
