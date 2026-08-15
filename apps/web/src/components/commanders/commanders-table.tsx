@@ -60,7 +60,7 @@ type SortKey =
 
 type SortDirection = "asc" | "desc";
 type View = "grid" | "table";
-type Preset = "all" | "popular" | "established" | "winRate" | "topCut";
+type Preset = "all" | "winRate" | "topCut";
 const COMMANDERS_PER_PAGE = 20;
 
 const MANA_COLORS = ["W", "U", "B", "R", "G", "C"] as const;
@@ -615,14 +615,6 @@ export default function CommandersTable({
     setColors([]);
 
     switch (nextPreset) {
-      case "popular":
-        setMinimumEntries(20);
-        setSortKey("entries");
-        break;
-      case "established":
-        setMinimumEntries(50);
-        setSortKey("entries");
-        break;
       case "winRate":
         setMinimumEntries(50);
         setSortKey("winRate");
@@ -684,8 +676,6 @@ export default function CommandersTable({
         {(
           [
             ["all", "All commanders"],
-            ["popular", "Most played"],
-            ["established", "Established"],
             ["winRate", "Win rate leaders"],
             ["topCut", "Top cut leaders"],
           ] as const
