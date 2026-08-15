@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { normalizeDisplayString } from "@/lib/utils";
 import { formatPercent } from "@/lib/commander-stats";
 import { CommanderArtThumb } from "@/components/commanders/commander-art-thumb";
+import { CommanderListRowMobile } from "@/components/commanders/commander-list-row-mobile";
 import {
   Table,
   TableBody,
@@ -155,7 +156,46 @@ export default function CommandersTable({
         <CardTitle className="text-lg">All Commanders</CardTitle>
       </CardHeader>
       <CardContent>
-        <Table data-testid="all-commanders-table">
+        {/* Mobile: art-forward card list (tedh.gg mobile card-art design, option
+            1a) instead of squeezing the dense table down. sm: and up keeps the
+            existing table per this repo's "wide tables" convention. The desktop
+            <Table> carries the sort controls (SortButton per column header), so
+            hiding it below sm: would otherwise silently drop sorting — this
+            select is the mobile equivalent. */}
+        <label className="mb-2 flex min-h-11 items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground sm:hidden">
+          Sort by
+          <select
+            value={sortKey}
+            onChange={(event) => handleSort(event.target.value as SortKey)}
+            className="min-h-11 flex-1 rounded-md border border-border/70 bg-background px-3 text-sm normal-case tracking-normal text-foreground outline-none transition-colors focus:border-primary/60"
+          >
+            <option value="entries">Entries</option>
+            <option value="commander">Commander</option>
+            <option value="tournaments">Tournaments</option>
+            <option value="winRate">Win Rate</option>
+            <option value="pointsPerGame">Pts/Game</option>
+            <option value="top16">Top 16/10</option>
+            <option value="topCut">Top Cut</option>
+          </select>
+        </label>
+        <div
+          data-testid="commanders-mobile-list"
+          className="flex flex-col gap-2 sm:hidden"
+        >
+
+          {sortedCommanders.map((commander, index) => (
+            <CommanderListRowMobile
+              key={commander.commander_id}
+              commanderId={commander.commander_id}
+              commanderName={commander.commander_name}
+              colorIdentity={commander.color_identity}
+              rank={baseRank.get(commander.commander_id) ?? index + 1}
+              entries={commander.total_entries}
+              winRate={parseFloat(commander.avg_win_rate)}
+            />
+          ))}
+        </div>
+        <Table data-testid="all-commanders-table" className="hidden sm:table">
           <TableHeader>
             <TableRow className="border-border/60 text-muted-foreground">
               <TableHead className="py-3">Rank</TableHead>

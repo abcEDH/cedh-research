@@ -57,12 +57,22 @@ export function CardPreviewSheet({
 
   return (
     <Sheet open onOpenChange={onOpenChange}>
-      <SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto rounded-t-2xl border-border/70 p-0">
+      <SheetContent
+        side="bottom"
+        showCloseButton={false}
+        className="max-h-[85vh] overflow-y-auto rounded-t-2xl border-border/70 p-0"
+      >
         <SheetHeader className="sr-only">
           <SheetTitle>{displayName}</SheetTitle>
           <SheetDescription>Card preview and stats for {displayName}</SheetDescription>
         </SheetHeader>
-        <div className="flex gap-4 p-4">
+        <div
+          className="flex gap-4 p-4"
+          style={{
+            paddingLeft: "max(1rem, env(safe-area-inset-left))",
+            paddingRight: "max(1rem, env(safe-area-inset-right))",
+          }}
+        >
           <div className="h-[209px] w-[150px] shrink-0 overflow-hidden rounded-xl border border-border/60 bg-muted shadow-[0_24px_48px_rgba(2,10,26,0.85),0_0_34px_hsl(var(--knd-cyan)/0.2)]">
             {art?.normal && (
               <Image

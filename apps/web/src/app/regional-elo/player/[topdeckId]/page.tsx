@@ -3,6 +3,7 @@ import Link from "next/link";
 import { unstable_cache } from "next/cache";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CommanderRowBackdrop } from "@/components/commanders/commander-row-backdrop";
 import type { CommanderUsageRow } from "@/lib/meta-prep";
 import { withTiming } from "@/lib/performance";
 import { supabase } from "@/lib/supabase";
@@ -984,8 +985,11 @@ export async function PlayerProfileBody({
                           : latestTournamentByCommander.get(row.commander) ?? null;
                       const commanderLabel = row.commander === "Unknown Commander" ? "Unknown" : row.commander;
                       return (
-                        <tr key={row.commander} className="border-t border-border/60">
+                        <tr key={row.commander} className="relative border-t border-border/60">
                           <td className="px-2 py-3">
+                            {row.commander !== "Unknown Commander" ? (
+                              <CommanderRowBackdrop name={row.commander} />
+                            ) : null}
                             {decklistUrl ? (
                               <a
                                 href={decklistUrl}

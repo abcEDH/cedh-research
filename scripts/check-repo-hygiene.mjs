@@ -22,6 +22,11 @@ if (!existsSync("docs/supported-surfaces.md")) {
 
 if (!existsSync(".github/pull_request_template.md")) {
   failures.push("Missing .github/pull_request_template.md");
+} else {
+  const prTemplate = readFileSync(".github/pull_request_template.md", "utf8");
+  if (!prTemplate.includes("## What needs human verification")) {
+    failures.push("Missing 'What needs human verification' section in PR template");
+  }
 }
 
 if (!existsSync("CONTRIBUTING.md")) {

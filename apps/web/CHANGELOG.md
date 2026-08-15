@@ -1,3 +1,10 @@
+# [1.27.0](https://github.com/abcEDH/cedh-research/compare/v1.26.0...v1.27.0) (2026-08-15)
+
+
+### Features
+
+* **web:** mobile art-forward commanders list + fix unresolved [#322](https://github.com/abcEDH/cedh-research/issues/322) findings ([#323](https://github.com/abcEDH/cedh-research/issues/323)) ([9f06819](https://github.com/abcEDH/cedh-research/commit/9f068197b3f81a541669a24f28380e24075d9d11))
+
 # [1.26.0](https://github.com/abcEDH/cedh-research/compare/v1.25.1...v1.26.0) (2026-08-15)
 
 

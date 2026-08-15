@@ -14,6 +14,7 @@ import { ChevronRight, Trophy } from "lucide-react";
 import Link from "next/link";
 import { HomeSearchBar } from "@/components/home-search-bar";
 import { EloGameFilter } from "@/components/elo-game-filter";
+import { CommanderRowBackdrop } from "@/components/commanders/commander-row-backdrop";
 import { fetchEloDisplayStats } from "@/lib/elo-display-stats";
 import { TIER_MIN } from "@/lib/tournaments";
 
@@ -404,8 +405,11 @@ export default async function Home({
                     {leaderboardPlayers.length > 0 ? (
                       leaderboardPlayers.map((player) => {
                         return (
-                          <TableRow key={player.player_id} className="border-border/60">
+                          <TableRow key={player.player_id} className="relative border-border/60">
                             <TableCell className="py-3 px-1 font-mono text-[10px] text-muted-foreground">
+                              {isKnownCommanderName(player.active_commander) ? (
+                                <CommanderRowBackdrop name={player.active_commander} />
+                              ) : null}
                               {player.rank}
                             </TableCell>
                             <TableCell className="py-3 px-2">
