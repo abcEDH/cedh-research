@@ -219,7 +219,7 @@ function SortButton({
     <button
       type="button"
       onClick={onClick}
-      className={`flex w-full items-center gap-1.5 text-xs uppercase tracking-[0.2em] ${
+      className={`flex min-h-11 w-full items-center gap-1.5 text-xs uppercase tracking-[0.2em] sm:min-h-0 ${
         align === "right" ? "justify-end" : "justify-start"
       }`}
     >
