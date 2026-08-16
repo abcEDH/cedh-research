@@ -20,6 +20,146 @@ export interface CommanderStat {
   conversion_rate_top_cut: string;
 }
 
+export type CommanderRankingPeriod = "1m" | "3m" | "6m" | "all";
+export type CommanderTournamentTier = "Bronze" | "Silver" | "Gold" | "Platinum" | "Diamond" | "all";
+
+export interface CommanderRankingFilters {
+  period: CommanderRankingPeriod;
+  tier: CommanderTournamentTier;
+  minimumEntries: number;
+}
+
+const TOURNAMENT_TIER_RANGES: Record<Exclude<CommanderTournamentTier, "all">, [number, number | null]> = {
+  Bronze: [16, 30], Silver: [30, 50], Gold: [50, 100], Platinum: [100, 250], Diamond: [250, null],
+};
+
+type CommanderRankingEntry = {
+  tournament_id: string;
+  commander_id: string;
+  wins: number;
+  losses: number;
+  draws: number;
+  win_rate: string | null;
+  made_top_16: boolean | null;
+  made_top_cut: boolean | null;
+  commanders:
+    | Pick<CommanderStat, "commander_id" | "commander_name" | "archetype" | "color_identity">
+    | Array<Pick<CommanderStat, "commander_id" | "commander_name" | "archetype" | "color_identity">>
+    | null;
+};
+
+function rankingPeriodStart(period: CommanderRankingPeriod, referenceDate = new Date()) {
+  if (period === "all") return null;
+  const months = Number.parseInt(period, 10);
+  const start = new Date(referenceDate);
+  const day = start.getDate();
+  start.setDate(1);
+  start.setMonth(start.getMonth() - months);
+  const lastDay = new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate();
+  start.setDate(Math.min(day, lastDay));
+  return start.toISOString();
+}
+
+/**
+ * Calculates ranking metrics from the underlying tournament entries so period
+ * and exact event-tier filters reflect the selected tournament population.
+ */
+export async function getCommanderRankings({
+  period,
+  tier,
+  minimumEntries,
+}: CommanderRankingFilters): Promise<CommanderStat[]> {
+  if (period === "all" && tier === "all") {
+    const { data, error } = await supabase
+      .from("commander_stats")
+      .select("*")
+      .gte("total_entries", minimumEntries)
+      .not("commander_name", "ilike", "unknown commander")
+      .order("total_entries", { ascending: false });
+    if (error) throw error;
+    return (data ?? []) as CommanderStat[];
+  }
+
+  const entries: CommanderRankingEntry[] = [];
+  const periodStart = rankingPeriodStart(period);
+  const now = new Date().toISOString();
+
+  for (let offset = 0; ; offset += 1000) {
+    let query = supabase
+      .from("tournament_entries")
+      .select("id, tournament_id, commander_id, wins, losses, draws, win_rate, made_top_16, made_top_cut, commanders!inner(commander_id:id, commander_name:name, archetype, color_identity), tournaments!inner(start_date, tier, player_count)")
+      .gte("tournaments.player_count", 16)
+      .lte("tournaments.start_date", now)
+      .neq("commanders.name", "Unknown Commander")
+      .order("id", { ascending: true });
+
+    if (periodStart) query = query.gte("tournaments.start_date", periodStart);
+    if (tier !== "all") {
+      const [minimumPlayers, maximumPlayers] = TOURNAMENT_TIER_RANGES[tier];
+      query = query.gte("tournaments.player_count", minimumPlayers);
+      if (maximumPlayers !== null) query = query.lt("tournaments.player_count", maximumPlayers);
+    }
+
+    const { data, error } = await query.range(offset, offset + 999);
+    if (error) throw error;
+    const page = (data ?? []) as unknown as CommanderRankingEntry[];
+    entries.push(...page);
+    if (page.length < 1000) break;
+  }
+
+  const rankings = new Map<string, CommanderStat>();
+  const tournamentIdsByCommander = new Map<string, Set<string>>();
+  const winRatesByCommander = new Map<string, { total: number; count: number }>();
+  for (const entry of entries) {
+    const commander = Array.isArray(entry.commanders) ? entry.commanders[0] : entry.commanders;
+    if (!commander) continue;
+    const current = rankings.get(entry.commander_id) ?? {
+      ...commander,
+      total_entries: 0,
+      tournaments_played: 0,
+      total_wins: 0,
+      total_losses: 0,
+      total_draws: 0,
+      avg_win_rate: "0",
+      top_16_count: 0,
+      conversion_rate_top_16: "0",
+      top_cut_count: 0,
+      conversion_rate_top_cut: "0",
+    };
+    current.total_entries += 1;
+    current.total_wins += entry.wins;
+    current.total_losses += entry.losses;
+    current.total_draws += entry.draws;
+    current.top_16_count += entry.made_top_16 ? 1 : 0;
+    current.top_cut_count += entry.made_top_cut ? 1 : 0;
+    rankings.set(entry.commander_id, current);
+    const tournamentIds = tournamentIdsByCommander.get(entry.commander_id) ?? new Set<string>();
+    tournamentIds.add(entry.tournament_id);
+    tournamentIdsByCommander.set(entry.commander_id, tournamentIds);
+    const winRate = Number(entry.win_rate);
+    if (Number.isFinite(winRate)) {
+      const currentRate = winRatesByCommander.get(entry.commander_id) ?? { total: 0, count: 0 };
+      currentRate.total += winRate;
+      currentRate.count += 1;
+      winRatesByCommander.set(entry.commander_id, currentRate);
+    }
+  }
+
+  return Array.from(rankings.values())
+    .map((commander) => {
+      const winRates = winRatesByCommander.get(commander.commander_id);
+      return {
+        ...commander,
+        tournaments_played: tournamentIdsByCommander.get(commander.commander_id)?.size ?? 0,
+        avg_win_rate: winRates?.count ? (winRates.total / winRates.count).toFixed(4) : "0",
+        conversion_rate_top_16: (commander.top_16_count / commander.total_entries).toFixed(4),
+        conversion_rate_top_cut: (commander.top_cut_count / commander.total_entries).toFixed(4),
+      };
+    })
+    .filter((commander) => commander.total_entries >= minimumEntries)
+    .sort((a, b) => b.total_entries - a.total_entries);
+}
+
 export interface CommanderMeta {
   scryfall_ids: string[] | null;
   commander_names: string[] | null;
@@ -144,6 +284,7 @@ export async function getCommanderMeta(id: string): Promise<CommanderMeta | null
 export interface ScryfallArt {
   artCrop: string | null;
   normal: string | null;
+  colorIdentity?: string[] | null;
 }
 
 export type ScryfallArtByName = Record<string, ScryfallArt | undefined>;
@@ -151,6 +292,7 @@ export type ScryfallArtByName = Record<string, ScryfallArt | undefined>;
 interface ScryfallCardArtRow {
   name: string;
   image_uris: { art_crop?: string; normal?: string } | null;
+  color_identity: string[] | null;
 }
 
 /**
@@ -162,22 +304,31 @@ export async function getScryfallArtByNames(names: string[]): Promise<ScryfallAr
   const uniqueNames = Array.from(new Set(names.filter(Boolean)));
   if (uniqueNames.length === 0) return {};
 
-  const { data, error } = await supabase
-    .from("scryfall_cards")
-    .select("name, image_uris")
-    .in("name", uniqueNames);
-
-  if (error) {
-    console.error("Error fetching scryfall_cards art:", error);
+  // PostgREST encodes `.in()` values in the URL. Commander rankings can
+  // contain hundreds of long names, exceeding common 16 KB header limits if
+  // requested in one batch. Keep requests below that threshold while still
+  // avoiding per-card lookups.
+  const batches = Array.from({ length: Math.ceil(uniqueNames.length / 50) }, (_, index) =>
+    uniqueNames.slice(index * 50, (index + 1) * 50)
+  );
+  const responses = await Promise.all(
+    batches.map((batch) =>
+      supabase.from("scryfall_cards").select("name, image_uris, color_identity").in("name", batch)
+    )
+  );
+  const failed = responses.find((response) => response.error);
+  if (failed?.error) {
+    console.error("Error fetching scryfall_cards art:", failed.error);
     return {};
   }
 
-  const rows = (data || []) as ScryfallCardArtRow[];
+  const rows = responses.flatMap((response) => (response.data || []) as ScryfallCardArtRow[]);
   const result: ScryfallArtByName = {};
   for (const row of rows) {
     result[row.name] = {
       artCrop: row.image_uris?.art_crop ?? null,
       normal: row.image_uris?.normal ?? null,
+      colorIdentity: row.color_identity ?? null,
     };
   }
   return result;

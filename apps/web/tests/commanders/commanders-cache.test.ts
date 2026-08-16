@@ -164,7 +164,7 @@ describe("Commanders page caching", () => {
     expect(html).toContain("View commander trends");
   });
 
-  it("source contains all four cached wrapper definitions with expected cache keys", async () => {
+  it("source contains cached wrapper definitions with expected cache keys", async () => {
     const fs = await import("fs");
     const path = await import("path");
     const source = fs.readFileSync(
@@ -181,8 +181,8 @@ describe("Commanders page caching", () => {
     expect(source).toContain('getCachedWeeklyEntries = unstable_cache(');
     expect(source).toContain('["commander-weekly-entries-v1"]');
 
-    expect(source).toContain('getCachedGlobalTrendSeries = unstable_cache(');
-    expect(source).toContain('["commander-global-trends-v3"]');
+    expect(source).toContain('getCachedCommanderUsageTrend = unstable_cache(');
+    expect(source).toContain('["commander-usage-trend-v1"]');
   });
 
   it("page module calls cached wrappers instead of raw functions", async () => {
@@ -204,13 +204,13 @@ describe("Commanders page caching", () => {
     expect(sourceWithoutCachedDefs).toMatch(/getCachedCommanders\(\)/);
     expect(sourceWithoutCachedDefs).toMatch(/getCachedCommanderPeriodSnapshots\(/);
     expect(sourceWithoutCachedDefs).toMatch(/getCachedWeeklyEntries\(/);
-    expect(sourceWithoutCachedDefs).toMatch(/getCachedGlobalTrendSeries\(\)/);
+    expect(sourceWithoutCachedDefs).toMatch(/getCachedCommanderUsageTrend\(/);
 
     // Raw functions must never be awaited outside their cached wrappers.
     expect(sourceWithoutCachedDefs).not.toMatch(/\bawait getCommanders\(\)/);
     expect(sourceWithoutCachedDefs).not.toMatch(/\bawait getCommanderPeriodSnapshots\(/);
     expect(sourceWithoutCachedDefs).not.toMatch(/\bawait getWeeklyEntries\(/);
-    expect(sourceWithoutCachedDefs).not.toMatch(/\bawait getGlobalTrendSeries\(\)/);
+    expect(sourceWithoutCachedDefs).not.toMatch(/\bawait getCommanderUsageTrend\(/);
   });
 
   it("source throws on fetch errors instead of caching fallback empties", async () => {

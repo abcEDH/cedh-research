@@ -3,6 +3,7 @@ export type ScryfallCardArt = {
   normal: string | null;
   typeLine: string | null;
   setName: string | null;
+  colorIdentity?: string[] | null;
 };
 
 const SCRYFALL_THROTTLE_MS = 100;
@@ -79,6 +80,7 @@ export async function fetchScryfallArt(rawName: string): Promise<ScryfallCardArt
         normal: images.normal ?? null,
         typeLine: data.type_line ?? face.type_line ?? null,
         setName: data.set_name ?? null,
+        colorIdentity: data.color_identity ?? null,
       };
       cache.set(name, result);
       return result;

@@ -1,13 +1,28 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { CommanderArtBanner, CommanderArtThumb } from "@/components/commanders/commander-art-thumb";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { normalizeDisplayString } from "@/lib/utils";
 import { formatPercent } from "@/lib/commander-stats";
-import { CommanderArtThumb } from "@/components/commanders/commander-art-thumb";
-import { CommanderListRowMobile } from "@/components/commanders/commander-list-row-mobile";
+import { useScryfallArts } from "@/hooks/use-scryfall-art";
+import { splitCardName } from "@/lib/scryfall/client";
+import type {
+  CommanderRankingFilters,
+  CommanderRankingPeriod,
+  CommanderTournamentTier,
+  ScryfallArtByName,
+} from "@/lib/commanders/fetchers";
+import { normalizeDisplayString } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -44,11 +59,34 @@ type SortKey =
   | "topCut";
 
 type SortDirection = "asc" | "desc";
+type View = "grid" | "table";
+type Preset = "all" | "winRate" | "topCut";
+const COMMANDERS_PER_PAGE = 20;
+
+const MANA_COLORS = ["W", "U", "B", "R", "G", "C"] as const;
+type ManaColor = (typeof MANA_COLORS)[number];
+
+const MANA_LABELS: Record<ManaColor, string> = {
+  W: "White",
+  U: "Blue",
+  B: "Black",
+  R: "Red",
+  G: "Green",
+  C: "Colorless",
+};
+
+const MANA_SYMBOL_PATHS: Record<ManaColor, string> = {
+  W: "/assets/mana/white.svg",
+  U: "/assets/mana/blue.svg",
+  B: "/assets/mana/black.svg",
+  R: "/assets/mana/red.svg",
+  G: "/assets/mana/green.svg",
+  C: "/assets/mana/colorless.svg",
+};
 
 function getArchetypeIcon(archetype: string | null) {
   if (!archetype) return null;
   const normalized = archetype.toLowerCase();
-
   if (normalized.includes("turbo")) return "/assets/icons/archetype-turbo.svg";
   if (normalized.includes("mid")) return "/assets/icons/archetype-midrange.svg";
   if (normalized.includes("stax")) return "/assets/icons/archetype-stax.svg";
@@ -59,8 +97,13 @@ function getArchetypeIcon(archetype: string | null) {
 function safeNumber(value: string): number {
   // parseFloat(null) is NaN, which sorts unpredictably. Treat missing values
   // as -Infinity so they consistently land at the bottom of asc/top of desc.
-  const n = parseFloat(value);
-  return Number.isFinite(n) ? n : -Infinity;
+  const number = parseFloat(value);
+  return Number.isFinite(number) ? number : -Infinity;
+}
+
+function pointsPerGame(commander: CommanderStat) {
+  const games = commander.total_wins + commander.total_losses + commander.total_draws;
+  return games ? (commander.total_wins * 5 + commander.total_draws) / games : 0;
 }
 
 function compareValues(a: CommanderStat, b: CommanderStat, key: SortKey) {
@@ -73,36 +116,102 @@ function compareValues(a: CommanderStat, b: CommanderStat, key: SortKey) {
       return a.tournaments_played - b.tournaments_played;
     case "winRate":
       return safeNumber(a.avg_win_rate) - safeNumber(b.avg_win_rate);
-    case "pointsPerGame": {
-      const aGames = a.total_wins + a.total_losses + a.total_draws;
-      const bGames = b.total_wins + b.total_losses + b.total_draws;
-      const aPpg = aGames ? (a.total_wins * 5 + a.total_draws) / aGames : 0;
-      const bPpg = bGames ? (b.total_wins * 5 + b.total_draws) / bGames : 0;
-      return aPpg - bPpg;
-    }
+    case "pointsPerGame":
+      return pointsPerGame(a) - pointsPerGame(b);
     case "top16":
-      return (
-        safeNumber(a.conversion_rate_top_16) -
-        safeNumber(b.conversion_rate_top_16)
-      );
+      return safeNumber(a.conversion_rate_top_16) - safeNumber(b.conversion_rate_top_16);
     case "topCut":
-      return (
-        safeNumber(a.conversion_rate_top_cut) -
-        safeNumber(b.conversion_rate_top_cut)
-      );
+      return safeNumber(a.conversion_rate_top_cut) - safeNumber(b.conversion_rate_top_cut);
     default:
       return 0;
   }
 }
 
+function ManaSymbol({ color, size = "sm" }: { color: ManaColor; size?: "sm" | "md" }) {
+  const dimension = size === "md" ? 28 : 16;
+  return (
+    <Image
+      src={MANA_SYMBOL_PATHS[color]}
+      alt={`${MANA_LABELS[color]} mana symbol`}
+      width={dimension}
+      height={dimension}
+      className="shrink-0"
+    />
+  );
+}
+
+function ManaSymbols({
+  colors,
+  size,
+}: {
+  colors: string[] | null;
+  size?: "sm" | "md";
+}) {
+  const identity = (colors ?? []).filter((color): color is ManaColor =>
+    MANA_COLORS.includes(color as ManaColor)
+  );
+  if (!identity.length) {
+    return <ManaSymbol color="C" size={size} />;
+  }
+  return (
+    <span className="flex items-center -space-x-0.5">
+      {identity.map((color) => (
+        <ManaSymbol key={color} color={color} size={size} />
+      ))}
+    </span>
+  );
+}
+
+/**
+ * Shows cached Scryfall color identity immediately, then fills cache gaps
+ * from Scryfall's named-card endpoint. The canonical database field remains
+ * the fallback while the card metadata is loading.
+ */
+function CommanderManaSymbols({
+  name,
+  fallbackColors,
+  artByName,
+  size,
+}: {
+  name: string;
+  fallbackColors: string[] | null;
+  artByName?: ScryfallArtByName;
+  size?: "sm" | "md";
+}) {
+  const names = splitCardName(name).slice(0, 2);
+  const missingNames = names.filter((cardName) => !artByName?.[cardName]?.colorIdentity);
+  const { ref, arts } = useScryfallArts(missingNames);
+  const colors = new Set<string>();
+  let resolvedFromScryfall = false;
+
+  for (const cardName of names) {
+    const cachedColors = artByName?.[cardName]?.colorIdentity;
+    const liveIndex = missingNames.indexOf(cardName);
+    const liveColors = liveIndex === -1 ? null : arts[liveIndex]?.colorIdentity;
+    const colorIdentity = cachedColors ?? liveColors;
+    if (!colorIdentity) continue;
+    resolvedFromScryfall = true;
+    colorIdentity.forEach((color) => colors.add(color));
+  }
+
+  const orderedColors = ["W", "U", "B", "R", "G"].filter((color) => colors.has(color));
+  return (
+    <div ref={ref} className="inline-flex shrink-0">
+      <ManaSymbols colors={resolvedFromScryfall ? orderedColors : fallbackColors} size={size} />
+    </div>
+  );
+}
+
 function SortButton({
   label,
   active,
+  direction,
   onClick,
   align = "left",
 }: {
   label: string;
   active: boolean;
+  direction: SortDirection;
   onClick: () => void;
   align?: "left" | "right";
 }) {
@@ -110,92 +219,160 @@ function SortButton({
     <button
       type="button"
       onClick={onClick}
-      className={`flex w-full items-center gap-2 text-xs uppercase tracking-[0.2em] ${
+      className={`flex min-h-11 w-full items-center gap-1.5 text-xs uppercase tracking-[0.2em] sm:min-h-0 ${
         align === "right" ? "justify-end" : "justify-start"
       }`}
     >
       <span>{label}</span>
-      <span className={`text-[10px] ${active ? "text-foreground" : "text-muted-foreground"}`}>
-        ▾
+      <span className={active ? "text-foreground" : "text-muted-foreground"} aria-hidden>
+        {active && direction === "asc" ? "▴" : "▾"}
       </span>
     </button>
   );
 }
 
-export default function CommandersTable({
+function ViewToggle({ view, onChange }: { view: View; onChange: (view: View) => void }) {
+  return (
+    <div
+      className="inline-flex rounded-[10px] border border-border bg-muted/30 p-1"
+      aria-label="Commander display mode"
+    >
+      {(["grid", "table"] as const).map((option) => (
+        <button
+          key={option}
+          type="button"
+          onClick={() => onChange(option)}
+          aria-pressed={view === option}
+          className={`min-h-11 rounded-lg px-3 text-sm font-medium capitalize transition-colors sm:min-h-9 ${
+            view === option
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          {option}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function CommanderPagination({
+  currentPage,
+  totalPages,
+  totalItems,
+  onPageChange,
+}: {
+  currentPage: number;
+  totalPages: number;
+  totalItems: number;
+  onPageChange: (page: number) => void;
+}) {
+  if (totalPages <= 1) return null;
+
+  const firstItem = (currentPage - 1) * COMMANDERS_PER_PAGE + 1;
+  const lastItem = Math.min(currentPage * COMMANDERS_PER_PAGE, totalItems);
+  return (
+    <nav className="mt-6 flex flex-col items-center justify-between gap-3 border-t border-border/60 pt-4 sm:flex-row" aria-label="Commander pagination">
+      <p className="font-mono text-xs text-muted-foreground">
+        Showing {firstItem}–{lastItem} of {totalItems}
+      </p>
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={() => onPageChange(currentPage - 1)} disabled={currentPage === 1} className="min-h-11 rounded-full border border-border px-4 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-40">Previous</button>
+        <span className="font-mono text-xs text-muted-foreground">Page {currentPage} of {totalPages}</span>
+        <button type="button" onClick={() => onPageChange(currentPage + 1)} disabled={currentPage === totalPages} className="min-h-11 rounded-full border border-border px-4 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-40">Next</button>
+      </div>
+    </nav>
+  );
+}
+
+function CommanderGrid({
   commanders,
+  ranks,
+  artByName,
 }: {
   commanders: CommanderStat[];
+  ranks: Map<string, number>;
+  artByName?: ScryfallArtByName;
 }) {
-  const [sortKey, setSortKey] = useState<SortKey>("entries");
-  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  return (
+    <div
+      data-testid="commanders-grid"
+      className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 md:gap-4"
+    >
+      {commanders.map((commander) => (
+        <Link
+          key={commander.commander_id}
+          href={`/commanders/${commander.commander_id}`}
+          className="group overflow-hidden rounded-xl border border-border bg-card/70 shadow-[0_20px_50px_rgba(2,10,26,0.35)] transition-colors hover:border-primary/45 hover:bg-card/90 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          <div className="relative h-[88px] overflow-hidden sm:h-[104px]">
+            <CommanderArtBanner name={commander.commander_name} artByName={artByName} />
+            <div className="absolute inset-0 bg-gradient-to-b from-background/10 to-background/95" />
+            <span className="absolute left-2 top-2 rounded-md bg-background/75 px-1.5 py-0.5 font-mono text-[10px] font-semibold">
+              #{ranks.get(commander.commander_id)}
+            </span>
+            <div className="absolute bottom-2 left-2">
+              <CommanderManaSymbols
+                name={commander.commander_name}
+                fallbackColors={commander.color_identity}
+                artByName={artByName}
+              />
+            </div>
+          </div>
+          <div className="p-2.5 sm:p-3">
+            <p className="min-h-8 line-clamp-2 text-[12.5px] font-semibold leading-4 sm:min-h-9 sm:text-sm sm:leading-[1.15rem]">
+              {normalizeDisplayString(commander.commander_name)}
+            </p>
+            <div className="mt-2 flex items-end justify-between">
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                  Win Rate
+                </p>
+                <p className="font-mono text-base font-semibold leading-tight text-primary sm:text-xl">
+                  {formatPercent(parseFloat(commander.avg_win_rate))}
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                  Top Cut
+                </p>
+                <p className="font-mono text-xs text-muted-foreground sm:text-sm">
+                  {formatPercent(parseFloat(commander.conversion_rate_top_cut))}
+                </p>
+              </div>
+            </div>
+            <p className="mt-1.5 font-mono text-[10px] text-muted-foreground sm:mt-2">
+              {commander.total_entries.toLocaleString()} entries
+            </p>
+          </div>
+        </Link>
+      ))}
+    </div>
+  );
+}
 
-  const baseRank = useMemo(() => {
-    const map = new Map<string, number>();
-    commanders.forEach((commander, index) => {
-      map.set(commander.commander_id, index + 1);
-    });
-    return map;
-  }, [commanders]);
-
-  const sortedCommanders = useMemo(() => {
-    const sorted = [...commanders].sort((a, b) =>
-      compareValues(a, b, sortKey)
-    );
-    return sortDirection === "asc" ? sorted : sorted.reverse();
-  }, [commanders, sortDirection, sortKey]);
-
-  function handleSort(nextKey: SortKey) {
-    setSortDirection("desc");
-    setSortKey(nextKey);
-  }
-
+function CommanderTable({
+  commanders,
+  ranks,
+  artByName,
+  sortKey,
+  sortDirection,
+  onSort,
+}: {
+  commanders: CommanderStat[];
+  ranks: Map<string, number>;
+  artByName?: ScryfallArtByName;
+  sortKey: SortKey;
+  sortDirection: SortDirection;
+  onSort: (key: SortKey) => void;
+}) {
   return (
     <Card data-testid="all-commanders-card">
       <CardHeader className="knd-panel-header">
         <CardTitle className="text-lg">All Commanders</CardTitle>
       </CardHeader>
-      <CardContent>
-        {/* Mobile: art-forward card list (tedh.gg mobile card-art design, option
-            1a) instead of squeezing the dense table down. sm: and up keeps the
-            existing table per this repo's "wide tables" convention. The desktop
-            <Table> carries the sort controls (SortButton per column header), so
-            hiding it below sm: would otherwise silently drop sorting — this
-            select is the mobile equivalent. */}
-        <label className="mb-2 flex min-h-11 items-center gap-2 text-xs uppercase tracking-[0.2em] text-muted-foreground sm:hidden">
-          Sort by
-          <select
-            value={sortKey}
-            onChange={(event) => handleSort(event.target.value as SortKey)}
-            className="min-h-11 flex-1 rounded-md border border-border/70 bg-background px-3 text-sm normal-case tracking-normal text-foreground outline-none transition-colors focus:border-primary/60"
-          >
-            <option value="entries">Entries</option>
-            <option value="commander">Commander</option>
-            <option value="tournaments">Tournaments</option>
-            <option value="winRate">Win Rate</option>
-            <option value="pointsPerGame">Pts/Game</option>
-            <option value="top16">Top 16/10</option>
-            <option value="topCut">Top Cut</option>
-          </select>
-        </label>
-        <div
-          data-testid="commanders-mobile-list"
-          className="flex flex-col gap-2 sm:hidden"
-        >
-
-          {sortedCommanders.map((commander, index) => (
-            <CommanderListRowMobile
-              key={commander.commander_id}
-              commanderId={commander.commander_id}
-              commanderName={commander.commander_name}
-              colorIdentity={commander.color_identity}
-              rank={baseRank.get(commander.commander_id) ?? index + 1}
-              entries={commander.total_entries}
-              winRate={parseFloat(commander.avg_win_rate)}
-            />
-          ))}
-        </div>
-        <Table data-testid="all-commanders-table" className="hidden sm:table">
+      <CardContent className="px-3 pb-3 sm:px-6 sm:pb-6">
+        <Table data-testid="all-commanders-table">
           <TableHeader>
             <TableRow className="border-border/60 text-muted-foreground">
               <TableHead className="py-3">Rank</TableHead>
@@ -203,22 +380,26 @@ export default function CommandersTable({
                 <SortButton
                   label="Commander"
                   active={sortKey === "commander"}
-                  onClick={() => handleSort("commander")}
+                  direction={sortDirection}
+                  onClick={() => onSort("commander")}
                 />
               </TableHead>
+              <TableHead className="hidden py-3 sm:table-cell">Colors</TableHead>
               <TableHead className="py-3 text-right">
                 <SortButton
                   label="Entries"
                   active={sortKey === "entries"}
-                  onClick={() => handleSort("entries")}
+                  direction={sortDirection}
+                  onClick={() => onSort("entries")}
                   align="right"
                 />
               </TableHead>
-              <TableHead className="py-3 text-right hidden sm:table-cell">
+              <TableHead className="hidden py-3 text-right sm:table-cell">
                 <SortButton
                   label="Tournaments"
                   active={sortKey === "tournaments"}
-                  onClick={() => handleSort("tournaments")}
+                  direction={sortDirection}
+                  onClick={() => onSort("tournaments")}
                   align="right"
                 />
               </TableHead>
@@ -226,23 +407,26 @@ export default function CommandersTable({
                 <SortButton
                   label="Win Rate"
                   active={sortKey === "winRate"}
-                  onClick={() => handleSort("winRate")}
+                  direction={sortDirection}
+                  onClick={() => onSort("winRate")}
                   align="right"
                 />
               </TableHead>
-              <TableHead className="py-3 text-right hidden md:table-cell">
+              <TableHead className="hidden py-3 text-right md:table-cell">
                 <SortButton
                   label="Pts/Game"
                   active={sortKey === "pointsPerGame"}
-                  onClick={() => handleSort("pointsPerGame")}
+                  direction={sortDirection}
+                  onClick={() => onSort("pointsPerGame")}
                   align="right"
                 />
               </TableHead>
-              <TableHead className="py-3 text-right hidden lg:table-cell">
+              <TableHead className="hidden py-3 text-right lg:table-cell">
                 <SortButton
                   label="Top 16/10"
                   active={sortKey === "top16"}
-                  onClick={() => handleSort("top16")}
+                  direction={sortDirection}
+                  onClick={() => onSort("top16")}
                   align="right"
                 />
               </TableHead>
@@ -250,31 +434,31 @@ export default function CommandersTable({
                 <SortButton
                   label="Top Cut"
                   active={sortKey === "topCut"}
-                  onClick={() => handleSort("topCut")}
+                  direction={sortDirection}
+                  onClick={() => onSort("topCut")}
                   align="right"
                 />
               </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {sortedCommanders.map((commander, index) => {
+            {commanders.map((commander) => {
               const archetypeIcon = getArchetypeIcon(commander.archetype);
-              const winRate = parseFloat(commander.avg_win_rate);
-              const totalGames = commander.total_wins + commander.total_losses + commander.total_draws;
-              const pointsPerGame = totalGames ? (commander.total_wins * 5 + commander.total_draws) / totalGames : 0;
-              const rank = baseRank.get(commander.commander_id) ?? index + 1;
-
               return (
                 <TableRow key={commander.commander_id} className="border-border/60">
                   <TableCell className="font-mono text-xs text-muted-foreground">
-                    #{rank}
+                    #{ranks.get(commander.commander_id)}
                   </TableCell>
                   <TableCell>
                     <Link
                       href={`/commanders/${commander.commander_id}`}
                       className="flex items-center gap-3 text-foreground hover:text-primary"
                     >
-                      <CommanderArtThumb name={commander.commander_name} size={36} />
+                      <CommanderArtThumb
+                        name={commander.commander_name}
+                        size={36}
+                        artByName={artByName}
+                      />
                       <span className="min-w-0">
                         <span className="font-medium line-clamp-1 max-w-[120px] sm:max-w-none sm:line-clamp-none">
                           {normalizeDisplayString(commander.commander_name)}
@@ -287,24 +471,34 @@ export default function CommandersTable({
                             {normalizeDisplayString(commander.archetype)}
                           </span>
                         )}
+                        <span className="mt-1 block text-xs text-muted-foreground sm:hidden">
+                          {commander.tournaments_played} tournaments · {pointsPerGame(commander).toFixed(2)} pts/game · {formatPercent(parseFloat(commander.conversion_rate_top_16))} top 16
+                        </span>
                       </span>
                     </Link>
+                  </TableCell>
+                  <TableCell className="hidden sm:table-cell">
+                    <CommanderManaSymbols
+                      name={commander.commander_name}
+                      fallbackColors={commander.color_identity}
+                      artByName={artByName}
+                    />
                   </TableCell>
                   <TableCell className="text-right font-mono text-foreground">
                     {commander.total_entries.toLocaleString()}
                   </TableCell>
-                  <TableCell className="text-right font-mono text-muted-foreground hidden sm:table-cell">
+                  <TableCell className="hidden text-right font-mono text-muted-foreground sm:table-cell">
                     {commander.tournaments_played}
                   </TableCell>
                   <TableCell className="text-right font-mono">
-                    <span className="text-muted-foreground">
-                      {formatPercent(winRate)}
+                    <span className="text-primary">
+                      {formatPercent(parseFloat(commander.avg_win_rate))}
                     </span>
                   </TableCell>
-                  <TableCell className="text-right font-mono text-muted-foreground hidden md:table-cell">
-                    {pointsPerGame.toFixed(2)}
+                  <TableCell className="hidden text-right font-mono text-muted-foreground md:table-cell">
+                    {pointsPerGame(commander).toFixed(2)}
                   </TableCell>
-                  <TableCell className="text-right font-mono text-muted-foreground hidden lg:table-cell">
+                  <TableCell className="hidden text-right font-mono text-muted-foreground lg:table-cell">
                     {formatPercent(parseFloat(commander.conversion_rate_top_16))}
                   </TableCell>
                   <TableCell className="text-right font-mono text-muted-foreground">
@@ -317,5 +511,316 @@ export default function CommandersTable({
         </Table>
       </CardContent>
     </Card>
+  );
+}
+
+export default function CommandersTable({
+  commanders,
+  artByName,
+  rankingFilters,
+}: {
+  commanders: CommanderStat[];
+  artByName?: ScryfallArtByName;
+  rankingFilters: CommanderRankingFilters;
+}) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  const [view, setView] = useState<View>("grid");
+  const [query, setQuery] = useState("");
+  const [colors, setColors] = useState<ManaColor[]>([]);
+  const [sortKey, setSortKey] = useState<SortKey>("entries");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const [minimumEntries, setMinimumEntries] = useState(rankingFilters.minimumEntries);
+  const [preset, setPreset] = useState<Preset>("all");
+  const [page, setPage] = useState(1);
+  const commanderFaceNames = useMemo(
+    () => Array.from(new Set(commanders.flatMap((commander) => splitCardName(commander.commander_name)))),
+    [commanders]
+  );
+  const missingColorMetadataNames = useMemo(
+    () =>
+      commanderFaceNames.filter(
+        (name) => artByName?.[name]?.colorIdentity === null || artByName?.[name]?.colorIdentity === undefined
+      ),
+    [artByName, commanderFaceNames]
+  );
+  const { ref: colorMetadataRef, arts: liveColorMetadata } = useScryfallArts(missingColorMetadataNames);
+  const colorIdentityByCommanderId = useMemo(() => {
+    const liveColorsByName = new Map(
+      missingColorMetadataNames.map((name, index) => [name, liveColorMetadata[index]?.colorIdentity])
+    );
+
+    return new Map(
+      commanders.map((commander) => {
+        const colors = new Set<string>();
+        let resolvedFromScryfall = false;
+        for (const name of splitCardName(commander.commander_name)) {
+          const cachedColors = artByName?.[name]?.colorIdentity;
+          const colorIdentity = cachedColors ?? liveColorsByName.get(name);
+          if (!colorIdentity) continue;
+          resolvedFromScryfall = true;
+          colorIdentity.forEach((color) => colors.add(color));
+        }
+        const resolved = ["W", "U", "B", "R", "G"].filter((color) => colors.has(color));
+        return [
+          commander.commander_id,
+          resolvedFromScryfall ? resolved : commander.color_identity,
+        ] as const;
+      })
+    );
+  }, [artByName, commanders, liveColorMetadata, missingColorMetadataNames]);
+
+  const ranks = useMemo(() => {
+    const map = new Map<string, number>();
+    commanders.forEach((commander, index) => {
+      map.set(commander.commander_id, index + 1);
+    });
+    return map;
+  }, [commanders]);
+
+  const filteredCommanders = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return commanders.filter((commander) => {
+      const nameMatch = normalizeDisplayString(commander.commander_name)
+        .toLowerCase()
+        .includes(normalizedQuery);
+      const colorIdentity = colorIdentityByCommanderId.get(commander.commander_id);
+      const colorMatch = colors.every((color) =>
+        color === "C"
+          ? Array.isArray(colorIdentity) && colorIdentity.length === 0
+          : colorIdentity?.includes(color)
+      );
+      return nameMatch && colorMatch && commander.total_entries >= minimumEntries;
+    });
+  }, [colorIdentityByCommanderId, commanders, colors, minimumEntries, query]);
+
+  const sortedCommanders = useMemo(() => {
+    const sorted = [...filteredCommanders].sort((a, b) =>
+      compareValues(a, b, sortKey)
+    );
+    return sortDirection === "asc" ? sorted : sorted.reverse();
+  }, [filteredCommanders, sortDirection, sortKey]);
+
+  const filteredEntries = useMemo(
+    () => filteredCommanders.reduce((total, commander) => total + commander.total_entries, 0),
+    [filteredCommanders]
+  );
+  const totalPages = Math.max(1, Math.ceil(sortedCommanders.length / COMMANDERS_PER_PAGE));
+  const currentPage = Math.min(page, totalPages);
+  const paginatedCommanders = useMemo(
+    () => sortedCommanders.slice((currentPage - 1) * COMMANDERS_PER_PAGE, currentPage * COMMANDERS_PER_PAGE),
+    [currentPage, sortedCommanders]
+  );
+
+  function applyPreset(nextPreset: Preset) {
+    setPreset(nextPreset);
+    setQuery("");
+    setColors([]);
+
+    switch (nextPreset) {
+      case "winRate":
+        setMinimumEntries(50);
+        updateServerFilter("minEntries", "50");
+        setSortKey("winRate");
+        break;
+      case "topCut":
+        setMinimumEntries(50);
+        updateServerFilter("minEntries", "50");
+        setSortKey("topCut");
+        break;
+      default:
+        setMinimumEntries(20);
+        updateServerFilter("minEntries", "20");
+        setSortKey("entries");
+    }
+    setSortDirection("desc");
+    setPage(1);
+  }
+
+  function handleSort(key: SortKey) {
+    setSortDirection((current) =>
+      key === sortKey ? (current === "desc" ? "asc" : "desc") : "desc"
+    );
+    setSortKey(key);
+    setPage(1);
+  }
+
+  const toggleColor = (color: ManaColor) => {
+    setColors((selected) =>
+      selected.includes(color)
+        ? selected.filter((item) => item !== color)
+        : [...selected, color]
+    );
+    setPage(1);
+  };
+
+  function updateServerFilter(
+    key: "period" | "tier" | "minEntries",
+    value: CommanderRankingPeriod | CommanderTournamentTier | string
+  ) {
+    const params = new URLSearchParams(window.location.search);
+    params.set(key, value);
+    startTransition(() => router.replace(`/commanders?${params.toString()}`, { scroll: false }));
+  }
+
+  return (
+    <section aria-labelledby="all-commanders-heading">
+      <div ref={colorMetadataRef} className="h-px" aria-hidden />
+      <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center">
+        <div className="min-w-0 flex-1">
+          <h2 id="all-commanders-heading" className="text-lg font-semibold">
+            All Commanders
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Browse the competitive field by usage and performance.
+          </p>
+        </div>
+        <ViewToggle view={view} onChange={setView} />
+      </div>
+
+      <div className="mb-3 flex max-w-full gap-2 overflow-x-auto pb-1" aria-label="Commander presets">
+        {(
+          [
+            ["all", "All commanders"],
+            ["winRate", "Win rate leaders"],
+            ["topCut", "Top cut leaders"],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => applyPreset(key)}
+            aria-pressed={preset === key}
+            className={`knd-chip min-h-11 shrink-0 whitespace-nowrap transition-colors sm:min-h-9 ${
+              preset === key ? "border-primary/50 text-foreground" : "hover:text-foreground"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="mb-6 flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-card/55 p-3.5 backdrop-blur-sm sm:px-4">
+        <input
+          value={query}
+          onChange={(event) => { setQuery(event.target.value); setPage(1); }}
+          className="knd-input min-h-11 w-full sm:w-56"
+          placeholder="Search a commander"
+          aria-label="Search commanders"
+        />
+        <div className="hidden h-6 w-px bg-border sm:block" />
+        <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+          Colors
+        </span>
+        <div className="flex flex-wrap gap-1.5">
+          {MANA_COLORS.map((color) => (
+            <button
+              key={color}
+              type="button"
+              onClick={() => toggleColor(color)}
+              aria-pressed={colors.includes(color)}
+              aria-label={`Filter by ${MANA_LABELS[color]}`}
+              className={`flex min-h-11 min-w-11 items-center justify-center rounded-full p-0.5 transition-opacity focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 sm:min-h-0 sm:min-w-0 ${
+                colors.length && !colors.includes(color) ? "opacity-35" : "opacity-100"
+              }`}
+            >
+              <ManaSymbol color={color} size="md" />
+            </button>
+          ))}
+        </div>
+        <div className="hidden h-6 w-px bg-border lg:block" />
+        <div className="flex flex-wrap gap-3">
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Time period
+            <Select
+              value={rankingFilters.period}
+              onValueChange={(value) => updateServerFilter("period", value as CommanderRankingPeriod)}
+            >
+              <SelectTrigger className="min-h-11 w-32 rounded-full bg-input/50 sm:min-h-9" disabled={isPending}><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1m">1 month</SelectItem>
+                <SelectItem value="3m">3 months</SelectItem>
+                <SelectItem value="6m">6 months</SelectItem>
+                <SelectItem value="all">All time</SelectItem>
+              </SelectContent>
+            </Select>
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Tournament tier
+            <Select
+              value={rankingFilters.tier}
+              onValueChange={(value) => updateServerFilter("tier", value as CommanderTournamentTier)}
+            >
+              <SelectTrigger className="min-h-11 w-36 rounded-full bg-input/50 sm:min-h-9" disabled={isPending}><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All tiers</SelectItem>
+                <SelectItem value="Bronze">Bronze</SelectItem>
+                <SelectItem value="Silver">Silver</SelectItem>
+                <SelectItem value="Gold">Gold</SelectItem>
+                <SelectItem value="Platinum">Platinum</SelectItem>
+                <SelectItem value="Diamond">Diamond</SelectItem>
+              </SelectContent>
+            </Select>
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Sort by
+            <Select value={sortKey} onValueChange={(value) => { setSortDirection("desc"); setSortKey(value as SortKey); setPage(1); setPreset("all"); }}>
+              <SelectTrigger className="min-h-11 w-36 rounded-full bg-input/50 sm:min-h-9"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="entries">Popularity</SelectItem>
+                <SelectItem value="winRate">Win rate</SelectItem>
+                <SelectItem value="topCut">Top cut</SelectItem>
+                <SelectItem value="pointsPerGame">Points / game</SelectItem>
+              </SelectContent>
+            </Select>
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            Min. entries
+            <Select value={String(minimumEntries)} onValueChange={(value) => { setMinimumEntries(Number(value)); setPage(1); setPreset("all"); updateServerFilter("minEntries", value); }}>
+              <SelectTrigger className="min-h-11 w-32 rounded-full bg-input/50 sm:min-h-9" disabled={isPending}><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="20">20+ entries</SelectItem>
+                <SelectItem value="50">50+ entries</SelectItem>
+                <SelectItem value="100">100+ entries</SelectItem>
+              </SelectContent>
+            </Select>
+          </label>
+        </div>
+        <span className="ml-auto font-mono text-xs text-muted-foreground">
+          {filteredEntries.toLocaleString()} entries
+        </span>
+      </div>
+
+      {sortedCommanders.length ? (
+        view === "grid" ? (
+          <CommanderGrid
+            commanders={paginatedCommanders}
+            ranks={ranks}
+            artByName={artByName}
+          />
+        ) : (
+          <CommanderTable
+            commanders={paginatedCommanders}
+            ranks={ranks}
+            artByName={artByName}
+            sortKey={sortKey}
+            sortDirection={sortDirection}
+            onSort={handleSort}
+          />
+        )
+      ) : (
+        <div className="rounded-2xl border border-border/60 bg-card/50 px-6 py-10 text-center text-sm text-muted-foreground">
+          No commanders match your filters.
+        </div>
+      )}
+      {sortedCommanders.length > 0 && (
+        <CommanderPagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={sortedCommanders.length}
+          onPageChange={setPage}
+        />
+      )}
+    </section>
   );
 }

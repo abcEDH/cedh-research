@@ -9,6 +9,8 @@ let mockSelectResult: { data: unknown; error: unknown } = { data: [], error: nul
 let lastFromTable: string | null = null;
 let lastInColumn: string | null = null;
 let lastInValues: unknown[] | null = null;
+let rankingFilters: Array<[string, string]> = [];
+let mockRankingResult: { data: unknown; error: unknown } = { data: [], error: null };
 
 vi.mock("@/lib/supabase", () => ({
   supabase: {
@@ -16,6 +18,25 @@ vi.mock("@/lib/supabase", () => ({
       lastFromTable = table;
       const chain = {
         select: () => chain,
+        gte: (column: string, value: string) => {
+          rankingFilters.push([column, value]);
+          return chain;
+        },
+        lte: (column: string, value: string) => {
+          rankingFilters.push([column, value]);
+          return chain;
+        },
+        lt: (column: string, value: string) => {
+          rankingFilters.push([column, value]);
+          return chain;
+        },
+        neq: () => chain,
+        order: () => chain,
+        eq: (column: string, value: string) => {
+          rankingFilters.push([column, value]);
+          return chain;
+        },
+        range: () => table === "tournament_entries" ? Promise.resolve(mockRankingResult) : chain,
         in: (column: string, values: unknown[]) => {
           lastInColumn = column;
           lastInValues = values;
@@ -27,7 +48,7 @@ vi.mock("@/lib/supabase", () => ({
   },
 }));
 
-import { getCommanderArtByName, getScryfallArtByNames } from "@/lib/commanders/fetchers";
+import { getCommanderArtByName, getCommanderRankings, getScryfallArtByNames } from "@/lib/commanders/fetchers";
 
 describe("getScryfallArtByNames", () => {
   beforeEach(() => {
@@ -35,6 +56,8 @@ describe("getScryfallArtByNames", () => {
     lastFromTable = null;
     lastInColumn = null;
     lastInValues = null;
+    rankingFilters = [];
+    mockRankingResult = { data: [], error: null };
   });
 
   it("returns an empty map without querying when given no names", async () => {
@@ -54,10 +77,10 @@ describe("getScryfallArtByNames", () => {
     expect(lastInValues).toEqual(["Sol Ring", "Rhystic Study"]);
   });
 
-  it("maps image_uris.art_crop and .normal onto each returned name", async () => {
+  it("maps art URLs and Scryfall color identity onto each returned name", async () => {
     mockSelectResult = {
       data: [
-        { name: "Sol Ring", image_uris: { art_crop: "https://x/sol-crop", normal: "https://x/sol-normal" } },
+        { name: "Sol Ring", image_uris: { art_crop: "https://x/sol-crop", normal: "https://x/sol-normal" }, color_identity: ["W"] },
       ],
       error: null,
     };
@@ -65,7 +88,7 @@ describe("getScryfallArtByNames", () => {
     const result = await getScryfallArtByNames(["Sol Ring"]);
 
     expect(result).toEqual({
-      "Sol Ring": { artCrop: "https://x/sol-crop", normal: "https://x/sol-normal" },
+      "Sol Ring": { artCrop: "https://x/sol-crop", normal: "https://x/sol-normal", colorIdentity: ["W"] },
     });
   });
 
@@ -90,13 +113,41 @@ describe("getScryfallArtByNames", () => {
 
   it("handles a row with a null image_uris by returning null art fields", async () => {
     mockSelectResult = {
-      data: [{ name: "No Art Yet", image_uris: null }],
+      data: [{ name: "No Art Yet", image_uris: null, color_identity: null }],
       error: null,
     };
 
     const result = await getScryfallArtByNames(["No Art Yet"]);
 
-    expect(result).toEqual({ "No Art Yet": { artCrop: null, normal: null } });
+    expect(result).toEqual({ "No Art Yet": { artCrop: null, normal: null, colorIdentity: null } });
+  });
+});
+
+describe("getCommanderRankings", () => {
+  it("filters raw entries by the selected period and exact tournament tier", async () => {
+    mockRankingResult = {
+      data: [
+        {
+          tournament_id: "event-1",
+          commander_id: "cmd-1",
+          wins: 3,
+          losses: 1,
+          draws: 0,
+          made_top_16: true,
+          made_top_cut: true,
+          commanders: { commander_id: "cmd-1", commander_name: "Kinnan", archetype: null, color_identity: ["U", "G"] },
+        },
+      ],
+      error: null,
+    };
+
+    const rankings = await getCommanderRankings({ period: "3m", tier: "Gold", minimumEntries: 1 });
+
+    expect(lastFromTable).toBe("tournament_entries");
+    expect(rankingFilters).toContainEqual(["tournaments.player_count", 50]);
+    expect(rankingFilters).toContainEqual(["tournaments.player_count", 16]);
+    expect(rankingFilters.some(([column]) => column === "tournaments.start_date")).toBe(true);
+    expect(rankings).toMatchObject([{ commander_name: "Kinnan", total_entries: 1, tournaments_played: 1 }]);
   });
 });
 
@@ -109,8 +160,8 @@ describe("getCommanderArtByName", () => {
   it("splits a partner pair display name and queries both individual faces", async () => {
     mockSelectResult = {
       data: [
-        { name: "Tymna the Weaver", image_uris: { art_crop: "https://x/tymna", normal: null } },
-        { name: "Kraum, Ludevic's Opus", image_uris: { art_crop: "https://x/kraum", normal: null } },
+        { name: "Tymna the Weaver", image_uris: { art_crop: "https://x/tymna", normal: null }, color_identity: ["W", "B"] },
+        { name: "Kraum, Ludevic's Opus", image_uris: { art_crop: "https://x/kraum", normal: null }, color_identity: ["U", "R"] },
       ],
       error: null,
     };
@@ -119,8 +170,8 @@ describe("getCommanderArtByName", () => {
 
     expect(lastInValues).toEqual(["Tymna the Weaver", "Kraum, Ludevic's Opus"]);
     expect(result).toEqual({
-      "Tymna the Weaver": { artCrop: "https://x/tymna", normal: null },
-      "Kraum, Ludevic's Opus": { artCrop: "https://x/kraum", normal: null },
+      "Tymna the Weaver": { artCrop: "https://x/tymna", normal: null, colorIdentity: ["W", "B"] },
+      "Kraum, Ludevic's Opus": { artCrop: "https://x/kraum", normal: null, colorIdentity: ["U", "R"] },
     });
   });
 
