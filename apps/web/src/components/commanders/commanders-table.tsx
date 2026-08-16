@@ -712,7 +712,7 @@ export default function CommandersTable({
         <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
           Colors
         </span>
-        <div className="flex gap-1.5">
+        <div className="flex flex-wrap gap-1.5">
           {MANA_COLORS.map((color) => (
             <button
               key={color}
@@ -736,7 +736,7 @@ export default function CommandersTable({
               value={rankingFilters.period}
               onValueChange={(value) => updateServerFilter("period", value as CommanderRankingPeriod)}
             >
-              <SelectTrigger className="w-32 rounded-full bg-input/50" disabled={isPending}><SelectValue /></SelectTrigger>
+              <SelectTrigger className="min-h-11 w-32 rounded-full bg-input/50 sm:min-h-9" disabled={isPending}><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="1m">1 month</SelectItem>
                 <SelectItem value="3m">3 months</SelectItem>
@@ -751,7 +751,7 @@ export default function CommandersTable({
               value={rankingFilters.tier}
               onValueChange={(value) => updateServerFilter("tier", value as CommanderTournamentTier)}
             >
-              <SelectTrigger className="w-36 rounded-full bg-input/50" disabled={isPending}><SelectValue /></SelectTrigger>
+              <SelectTrigger className="min-h-11 w-36 rounded-full bg-input/50 sm:min-h-9" disabled={isPending}><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All tiers</SelectItem>
                 <SelectItem value="Bronze">Bronze</SelectItem>
@@ -765,7 +765,7 @@ export default function CommandersTable({
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
             Sort by
             <Select value={sortKey} onValueChange={(value) => { setSortDirection("desc"); setSortKey(value as SortKey); setPage(1); setPreset("all"); }}>
-              <SelectTrigger className="w-36 rounded-full bg-input/50"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="min-h-11 w-36 rounded-full bg-input/50 sm:min-h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="entries">Popularity</SelectItem>
                 <SelectItem value="winRate">Win rate</SelectItem>
@@ -777,7 +777,7 @@ export default function CommandersTable({
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
             Min. entries
             <Select value={String(minimumEntries)} onValueChange={(value) => { setMinimumEntries(Number(value)); setPage(1); setPreset("all"); updateServerFilter("minEntries", value); }}>
-              <SelectTrigger className="w-32 rounded-full bg-input/50" disabled={isPending}><SelectValue /></SelectTrigger>
+              <SelectTrigger className="min-h-11 w-32 rounded-full bg-input/50 sm:min-h-9" disabled={isPending}><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="20">20+ entries</SelectItem>
                 <SelectItem value="50">50+ entries</SelectItem>

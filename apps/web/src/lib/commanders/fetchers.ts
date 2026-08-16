@@ -29,6 +29,10 @@ export interface CommanderRankingFilters {
   minimumEntries: number;
 }
 
+const TOURNAMENT_TIER_RANGES: Record<Exclude<CommanderTournamentTier, "all">, [number, number | null]> = {
+  Bronze: [16, 30], Silver: [30, 50], Gold: [50, 100], Platinum: [100, 250], Diamond: [250, null],
+};
+
 type CommanderRankingEntry = {
   tournament_id: string;
   commander_id: string;
@@ -90,7 +94,11 @@ export async function getCommanderRankings({
       .order("id", { ascending: true });
 
     if (periodStart) query = query.gte("tournaments.start_date", periodStart);
-    if (tier !== "all") query = query.eq("tournaments.tier", tier);
+    if (tier !== "all") {
+      const [minimumPlayers, maximumPlayers] = TOURNAMENT_TIER_RANGES[tier];
+      query = query.gte("tournaments.player_count", minimumPlayers);
+      if (maximumPlayers !== null) query = query.lt("tournaments.player_count", maximumPlayers);
+    }
 
     const { data, error } = await query.range(offset, offset + 999);
     if (error) throw error;
