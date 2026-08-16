@@ -1,3 +1,10 @@
+# [1.28.0](https://github.com/abcEDH/cedh-research/compare/v1.27.0...v1.28.0) (2026-08-16)
+
+
+### Features
+
+* **web:** art-forward Commanders grid with grid/table toggle ([#327](https://github.com/abcEDH/cedh-research/issues/327)) ([5b85ed0](https://github.com/abcEDH/cedh-research/commit/5b85ed0ce3cefff863df1fc336219bd4ee019848)), closes [#325](https://github.com/abcEDH/cedh-research/issues/325)
+
 # [1.27.0](https://github.com/abcEDH/cedh-research/compare/v1.26.0...v1.27.0) (2026-08-15)
 
 
