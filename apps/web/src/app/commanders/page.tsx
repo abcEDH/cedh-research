@@ -462,7 +462,6 @@ async function CommanderRankingsTable({ filters }: { filters: CommanderRankingFi
   });
   return (
     <CommandersTable
-      key={`${filters.period}-${filters.tier}-${filters.minimumEntries}`}
       commanders={commandersWithScryfallColors}
       artByName={artByName}
       rankingFilters={filters}
