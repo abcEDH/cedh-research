@@ -65,6 +65,17 @@ export async function getCommanderRankings({
   tier,
   minimumEntries,
 }: CommanderRankingFilters): Promise<CommanderStat[]> {
+  if (period === "all" && tier === "all") {
+    const { data, error } = await supabase
+      .from("commander_stats")
+      .select("*")
+      .gte("total_entries", minimumEntries)
+      .not("commander_name", "ilike", "unknown commander")
+      .order("total_entries", { ascending: false });
+    if (error) throw error;
+    return (data ?? []) as CommanderStat[];
+  }
+
   const entries: CommanderRankingEntry[] = [];
   const periodStart = rankingPeriodStart(period);
   const now = new Date().toISOString();
