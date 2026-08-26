@@ -60,16 +60,23 @@ export default function TrapSpicePage() {
       setLoading(true);
       setTrapPage(1);
       setSpicePage(1);
-      const response = await fetch("/api/trap-spice");
-      const payload = (await response.json()) as {
-        commanders?: Commander[];
-        trapCards?: TrapCard[];
-        spiceCards?: SpiceCard[];
-      };
-      setCommanders(response.ok ? payload.commanders ?? [] : []);
-      setTrapCards(response.ok ? payload.trapCards ?? [] : []);
-      setSpiceCards(response.ok ? payload.spiceCards ?? [] : []);
-      setLoading(false);
+      try {
+        const response = await fetch("/api/trap-spice");
+        const payload = (await response.json()) as {
+          commanders?: Commander[];
+          trapCards?: TrapCard[];
+          spiceCards?: SpiceCard[];
+        };
+        setCommanders(response.ok ? payload.commanders ?? [] : []);
+        setTrapCards(response.ok ? payload.trapCards ?? [] : []);
+        setSpiceCards(response.ok ? payload.spiceCards ?? [] : []);
+      } catch {
+        setCommanders([]);
+        setTrapCards([]);
+        setSpiceCards([]);
+      } finally {
+        setLoading(false);
+      }
     }
 
     fetchCards();

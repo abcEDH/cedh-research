@@ -61,6 +61,10 @@ async function searchPublicData(query: string): Promise<PublicSearchResult[]> {
       .limit(1, { referencedTable: "tournament_entries" }),
   ]);
 
+  if (commanderRes.error) throw commanderRes.error;
+  if (playerRes.error) throw playerRes.error;
+  if (tournamentRes.error) throw tournamentRes.error;
+
   return [
     ...(commanderRes.data ?? []).map((row) => ({
       kind: "commander" as const,
@@ -98,7 +102,8 @@ async function fetchTournamentSummaries(): Promise<TournamentSummary[]> {
     .lte("start_date", new Date().toISOString())
     .order("start_date", { ascending: false })
     .limit(100);
-  if (error || !data?.length) return [];
+  if (error) throw error;
+  if (!data?.length) return [];
 
   const rows = data as TournamentRow[];
   const { data: topRows } = await supabase

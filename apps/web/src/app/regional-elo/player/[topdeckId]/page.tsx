@@ -638,12 +638,11 @@ async function PlayerProfileBodyWrapper({
     fetchCachedRawPlayerLogs(player.id),
     fetchCachedPlayerProfileSummary(player.id),
   ]);
-  const recentSummary = summarizePlayerLogs(
-    filterPlayerLogs(allPlayerLogs, eloOnly),
-    topdeckId,
-    eloOnly
-  );
-  const displaySummary = lifetimeSummary
+  const filteredLogs = filterPlayerLogs(allPlayerLogs, eloOnly);
+  const recentSummary = summarizePlayerLogs(filteredLogs, topdeckId, eloOnly);
+  const allScoredLogs = eloOnly ? filterPlayerLogs(allPlayerLogs, false) : filteredLogs;
+  const allGameSummary = summarizePlayerLogs(allScoredLogs, topdeckId, false);
+  const displaySummary = eloOnly && lifetimeSummary
     ? {
         ...recentSummary,
         totalGames: lifetimeSummary.games_played,
@@ -651,7 +650,13 @@ async function PlayerProfileBodyWrapper({
         totalDraws: lifetimeSummary.draws,
         totalLosses: lifetimeSummary.losses,
       }
-    : recentSummary;
+    : {
+        ...recentSummary,
+        totalGames: allGameSummary.totalGames,
+        totalWins: allGameSummary.totalWins,
+        totalDraws: allGameSummary.totalDraws,
+        totalLosses: allGameSummary.totalLosses,
+      };
 
   return (
     <>
