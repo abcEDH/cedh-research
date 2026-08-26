@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
 import { normalizeDisplayString } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -47,38 +46,6 @@ interface Commander {
 
 const ITEMS_PER_PAGE = 20;
 
-async function getCommanderUsageForCards(
-  cardNames: string[]
-): Promise<Map<string, CommanderUsage[]>> {
-  if (cardNames.length === 0) return new Map();
-
-  const { data, error } = await supabase
-    .from("card_frequencies_by_commander")
-    .select("card_name, commander_id, commander, deck_count, inclusion_rate")
-    .in("card_name", cardNames)
-    .order("deck_count", { ascending: false });
-
-  if (error) {
-    console.error("Error fetching commander usage:", error);
-    return new Map();
-  }
-
-  const usageMap = new Map<string, CommanderUsage[]>();
-  for (const row of data || []) {
-    const existing = usageMap.get(row.card_name) || [];
-    if (existing.length < 10) {
-      existing.push({
-        commander_id: row.commander_id,
-        commander: row.commander,
-        deck_count: row.deck_count,
-        inclusion_rate: row.inclusion_rate,
-      });
-      usageMap.set(row.card_name, existing);
-    }
-  }
-  return usageMap;
-}
-
 export default function TrapSpicePage() {
   const [commanders, setCommanders] = useState<Commander[]>([]);
   const [selectedCommander, setSelectedCommander] = useState<string>("");
@@ -88,64 +55,20 @@ export default function TrapSpicePage() {
   const [spicePage, setSpicePage] = useState(1);
   const [loading, setLoading] = useState(true);
 
-  // Fetch commanders for dropdown
-  useEffect(() => {
-    async function fetchCommanders() {
-      const { data, error } = await supabase
-        .from("commander_stats")
-        .select("commander_id, commander_name, total_entries")
-        .gt("total_entries", 10)
-        .not("commander_name", "ilike", "unknown commander")
-        .order("total_entries", { ascending: false });
-
-      if (!error && data) {
-        setCommanders(data);
-      }
-    }
-    fetchCommanders();
-  }, []);
-
-  // Fetch trap and spice cards
   useEffect(() => {
     async function fetchCards() {
       setLoading(true);
       setTrapPage(1);
       setSpicePage(1);
-
-      // Fetch trap cards
-      const { data: trapData } = await supabase
-        .from("trap_cards_report")
-        .select("*")
-        .order("trap_score", { ascending: false })
-        .limit(100);
-
-      // Fetch spice cards
-      const { data: spiceData } = await supabase
-        .from("spice_cards_report")
-        .select("*")
-        .order("win_rate_delta", { ascending: false })
-        .limit(100);
-
-      const allCardNames = [
-        ...(trapData || []).map((c) => c.card_name),
-        ...(spiceData || []).map((c) => c.card_name),
-      ];
-
-      // Fetch commander usage for all cards
-      const commanderUsage = await getCommanderUsageForCards(allCardNames);
-
-      const trapsWithCommanders = (trapData || []).map((card) => ({
-        ...card,
-        top_commanders: commanderUsage.get(card.card_name) || [],
-      }));
-
-      const spicesWithCommanders = (spiceData || []).map((card) => ({
-        ...card,
-        top_commanders: commanderUsage.get(card.card_name) || [],
-      }));
-
-      setTrapCards(trapsWithCommanders);
-      setSpiceCards(spicesWithCommanders);
+      const response = await fetch("/api/trap-spice");
+      const payload = (await response.json()) as {
+        commanders?: Commander[];
+        trapCards?: TrapCard[];
+        spiceCards?: SpiceCard[];
+      };
+      setCommanders(response.ok ? payload.commanders ?? [] : []);
+      setTrapCards(response.ok ? payload.trapCards ?? [] : []);
+      setSpiceCards(response.ok ? payload.spiceCards ?? [] : []);
       setLoading(false);
     }
 

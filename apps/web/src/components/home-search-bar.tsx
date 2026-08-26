@@ -2,13 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
 import { normalizeDisplayString } from "@/lib/utils";
-
-type SearchResult =
-  | { kind: "commander"; id: string; name: string; color_identity: string[] | null }
-  | { kind: "player"; topdeck_id: string; name: string }
-  | { kind: "tournament"; slug: string; name: string; date: string | null; players: number | null };
+import type { PublicSearchResult as SearchResult } from "@/lib/public-data";
 
 const COLOR_CLASSES: Record<string, string> = {
   W: "bg-amber-200/80 text-amber-950",
@@ -59,37 +54,8 @@ export function HomeSearchBar() {
     debounceRef.current = setTimeout(async () => {
       const id = ++requestIdRef.current;
       setLoading(true);
-      const pattern = `%${query.trim()}%`;
-
-      const [commanderRes, playerRes, tournamentRes] = await Promise.all([
-        supabase
-          .from("commander_stats")
-          .select("commander_id, commander_name, color_identity")
-          .ilike("commander_name", pattern)
-          .not("commander_name", "ilike", "unknown commander")
-          .order("total_entries", { ascending: false })
-          .limit(5),
-        supabase
-          .from("players")
-          .select("topdeck_id, name")
-          .ilike("name", pattern)
-          .not("topdeck_id", "is", null)
-          .limit(5),
-        // The inner join on tournament_entries mirrors the renderability
-        // check in tournament-detail-loader.ts: the detail route 404s for
-        // tournaments with no non-null final_standing (upcoming or
-        // partially ingested events), so exclude those from search hits.
-        supabase
-          .from("tournaments")
-          .select("topdeck_tid, name, start_date, player_count, tournament_entries!inner(final_standing)")
-          .ilike("name", pattern)
-          .not("topdeck_tid", "is", null)
-          .not("tournament_entries.final_standing", "is", null)
-          .lte("start_date", new Date().toISOString())
-          .order("start_date", { ascending: false })
-          .limit(5)
-          .limit(1, { referencedTable: "tournament_entries" }),
-      ]);
+      const response = await fetch(`/api/search?q=${encodeURIComponent(query.trim())}`);
+      const payload = (await response.json()) as { results?: SearchResult[] };
 
       // Discard if a newer request has since been issued
       if (id !== requestIdRef.current) {
@@ -97,28 +63,7 @@ export function HomeSearchBar() {
         return;
       }
 
-      const commanders: SearchResult[] = (commanderRes.data ?? []).map((r) => ({
-        kind: "commander",
-        id: r.commander_id as string,
-        name: r.commander_name as string,
-        color_identity: (r.color_identity as string[] | null) ?? null,
-      }));
-
-      const players: SearchResult[] = (playerRes.data ?? []).map((r) => ({
-        kind: "player",
-        topdeck_id: r.topdeck_id as string,
-        name: r.name as string,
-      }));
-
-      const tournaments: SearchResult[] = (tournamentRes.data ?? []).map((r) => ({
-        kind: "tournament",
-        slug: r.topdeck_tid as string,
-        name: (r.name as string | null) ?? "",
-        date: (r.start_date as string | null) ?? null,
-        players: (r.player_count as number | null) ?? null,
-      }));
-
-      setResults([...commanders, ...players, ...tournaments]);
+      setResults(response.ok ? payload.results ?? [] : []);
       setOpen(true);
       setActiveIndex(-1);
       setLoading(false);
