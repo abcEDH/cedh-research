@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import { supabase } from "@/lib/supabase";
 
 export type EloDisplayStats = {
@@ -22,7 +23,7 @@ function emptyStats(): EloDisplayStats {
  * only changes the counters shown beside those values and deliberately pages
  * through the game-level view so long player histories are complete.
  */
-export async function fetchEloDisplayStats(
+async function fetchEloDisplayStatsInner(
   topdeckIds: string[],
   tier: EloDisplayTier = "ranking"
 ): Promise<Map<string, EloDisplayStats>> {
@@ -73,4 +74,25 @@ export async function fetchEloDisplayStats(
   }
 
   return statsByTopdeckId;
+}
+
+const getCachedEloDisplayStatsInner = unstable_cache(
+  fetchEloDisplayStatsInner,
+  ["elo-display-stats-v1"],
+  { revalidate: 60 * 60 * 24 }
+);
+
+/**
+ * Cached wrapper over the inner query. Sorts + deduplicates player IDs so the
+ * cache key is stable regardless of caller order, and round-trips through a
+ * plain object because `unstable_cache` serialises to JSON (killing the Map).
+ */
+export async function fetchEloDisplayStats(
+  topdeckIds: string[],
+  tier: EloDisplayTier = "ranking"
+): Promise<Map<string, EloDisplayStats>> {
+  const stableIds = Array.from(new Set(topdeckIds.filter(Boolean))).sort();
+  const cached = await getCachedEloDisplayStatsInner(stableIds, tier);
+  if (cached instanceof Map) return cached;
+  return new Map(Object.entries(cached));
 }

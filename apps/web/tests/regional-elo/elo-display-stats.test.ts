@@ -7,6 +7,10 @@ const state = vi.hoisted(() => ({
   error: null as Error | null,
 }));
 
+vi.mock("next/cache", () => ({
+  unstable_cache: <T extends (...args: unknown[]) => Promise<unknown>>(fn: T) => fn,
+}));
+
 vi.mock("@/lib/supabase", () => ({
   supabase: {
     from: vi.fn(() => {
