@@ -1,9 +1,12 @@
 -- Bound the player-profile payload and collapse its many PostgREST reads into
 -- one database call. The function is intentionally SECURITY INVOKER so the
 -- caller retains the same RLS privileges as direct table reads.
+DROP FUNCTION IF EXISTS public.get_player_game_logs(uuid, integer);
+
 CREATE OR REPLACE FUNCTION public.get_player_game_logs(
   p_player_id uuid,
-  p_limit integer DEFAULT 500
+  p_limit integer DEFAULT 500,
+  p_offset integer DEFAULT 0
 )
 RETURNS TABLE (
   game_id uuid,
@@ -24,7 +27,6 @@ LANGUAGE sql
 STABLE
 SECURITY INVOKER
 SET search_path = ''
-SET statement_timeout = '10s'
 AS $$
   WITH player_games AS (
     SELECT
@@ -57,6 +59,7 @@ AS $$
     WHERE te.player_id = p_player_id
     ORDER BY t.start_date DESC NULLS LAST, g.id
     LIMIT LEAST(GREATEST(COALESCE(p_limit, 500), 1), 500)
+    OFFSET GREATEST(COALESCE(p_offset, 0), 0)
   )
   SELECT
     pg.game_id,
@@ -102,8 +105,8 @@ AS $$
   ORDER BY pg.game_date DESC NULLS LAST, pg.game_id;
 $$;
 
-REVOKE ALL ON FUNCTION public.get_player_game_logs(uuid, integer) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.get_player_game_logs(uuid, integer) TO anon, authenticated;
+REVOKE ALL ON FUNCTION public.get_player_game_logs(uuid, integer, integer) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_player_game_logs(uuid, integer, integer) TO anon, authenticated;
 
-COMMENT ON FUNCTION public.get_player_game_logs(uuid, integer) IS
-  'Returns at most 500 recent player games with opponents in one bounded response.';
+COMMENT ON FUNCTION public.get_player_game_logs(uuid, integer, integer) IS
+  'Returns one page of at most 500 player games with opponents for bounded, complete pagination.';

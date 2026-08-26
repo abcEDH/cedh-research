@@ -504,8 +504,17 @@ vi.mock("@/lib/topdeck", () => ({
 vi.mock("@/lib/supabase", () => ({
   supabase: {
     from: (table: string) => new MockQuery(table),
-    rpc: (_name: string, args: { p_player_id: string }) =>
-      Promise.resolve({ data: buildPlayerGameLogRpcRows(args.p_player_id), error: null }),
+    rpc: (
+      _name: string,
+      args: { p_player_id: string; p_limit: number; p_offset: number }
+    ) =>
+      Promise.resolve({
+        data: buildPlayerGameLogRpcRows(args.p_player_id).slice(
+          args.p_offset,
+          args.p_offset + args.p_limit
+        ),
+        error: null,
+      }),
   },
 }));
 
