@@ -42,6 +42,7 @@ const SUPABASE_PAGE_SIZE = 1000;
 const SUPABASE_IN_CHUNK_SIZE = 100;
 const ACHIEVEMENTS_PAGE_SIZE = 10;
 const PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS = 60 * 60 * 24;
+const PLAYER_HISTORY_DETAIL_LIMIT = 500;
 
 export async function generateStaticParams() {
   try {
@@ -633,8 +634,24 @@ async function PlayerProfileBodyWrapper({
   const requestedRegion = decodeURIComponent(readRegionParam(resolvedSearchParams)).trim().toUpperCase();
   const regionFilter = requestedRegion === "ALL" ? "" : requestedRegion;
   const eloOnly = readStringParam(resolvedSearchParams, "eloOnly") === "true";
-  const allPlayerLogs = await fetchCachedRawPlayerLogs(player.id);
-  const displaySummary = summarizePlayerLogs(filterPlayerLogs(allPlayerLogs, eloOnly), topdeckId, eloOnly);
+  const [allPlayerLogs, lifetimeSummary] = await Promise.all([
+    fetchCachedRawPlayerLogs(player.id),
+    fetchCachedPlayerProfileSummary(player.id),
+  ]);
+  const recentSummary = summarizePlayerLogs(
+    filterPlayerLogs(allPlayerLogs, eloOnly),
+    topdeckId,
+    eloOnly
+  );
+  const displaySummary = lifetimeSummary
+    ? {
+        ...recentSummary,
+        totalGames: lifetimeSummary.games_played,
+        totalWins: lifetimeSummary.wins,
+        totalDraws: lifetimeSummary.draws,
+        totalLosses: lifetimeSummary.losses,
+      }
+    : recentSummary;
 
   return (
     <>
@@ -713,6 +730,7 @@ export async function PlayerProfileBody({
   const allPlayerLogs: PlayerGameLog[] =
     rawPlayerLogs ?? (await fetchCachedRawPlayerLogs(player.id));
   const playerLogs = filterPlayerLogs(allPlayerLogs, eloOnly);
+  const historyMayBeTruncated = allPlayerLogs.length >= PLAYER_HISTORY_DETAIL_LIMIT;
   const {
     totalGames,
     totalWins,
@@ -920,6 +938,13 @@ export async function PlayerProfileBody({
       <Link href={backHref} className="-mt-6 block text-sm text-muted-foreground hover:text-foreground">
         ← Back to region leaderboard
       </Link>
+
+      {historyMayBeTruncated ? (
+        <p className="rounded-lg border border-border/60 bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
+          Matchup, seat, commander, and achievement breakdowns below use the most recent 500
+          games. Lifetime summary cards use the precomputed player profile totals.
+        </p>
+      ) : null}
 
       <Card className="knd-panel">
         <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">

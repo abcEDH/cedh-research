@@ -47,26 +47,18 @@ export async function fetchPlayer(topdeckId: string): Promise<PlayerRow | null> 
 }
 
 export async function fetchRawPlayerLogs(playerId: string): Promise<PlayerGameLog[]> {
-  return withTiming("player-log-data:paginated-rpc", async () => {
-    const rows: PlayerGameLogRpcRow[] = [];
+  return withTiming("player-log-data:bounded-rpc", async () => {
+    const { data, error } = await supabase.rpc("get_player_game_logs", {
+      p_player_id: playerId,
+      p_limit: PLAYER_GAME_LOG_LIMIT,
+      p_offset: 0,
+    });
 
-    for (let offset = 0; ; offset += PLAYER_GAME_LOG_LIMIT) {
-      const { data, error } = await supabase.rpc("get_player_game_logs", {
-        p_player_id: playerId,
-        p_limit: PLAYER_GAME_LOG_LIMIT,
-        p_offset: offset,
-      });
-
-      if (error) {
-        throw new Error(`Error fetching player game log page: ${error.message}`);
-      }
-
-      const page = (data as PlayerGameLogRpcRow[] | null) ?? [];
-      rows.push(...page);
-      if (page.length < PLAYER_GAME_LOG_LIMIT) break;
+    if (error) {
+      throw new Error(`Error fetching bounded player game logs: ${error.message}`);
     }
 
-    return rows.map((row) => ({
+    return ((data as PlayerGameLogRpcRow[] | null) ?? []).map((row) => ({
       gameId: row.game_id,
       startDate: row.game_date ?? "",
       tournamentName: row.tournament_name ?? "Unknown tournament",
