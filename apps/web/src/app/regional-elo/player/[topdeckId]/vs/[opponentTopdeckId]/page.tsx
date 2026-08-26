@@ -273,7 +273,7 @@ export default async function RegionalPlayerVsPage({
                 </h1>
                 <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
                   Shared game history, mirrored head-to-head record, and full pod context from
-                  the subject player's most recent 500 games.
+                  the subject player&apos;s most recent 500 games.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2 text-sm">
