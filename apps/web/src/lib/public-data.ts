@@ -157,14 +157,20 @@ export const getCachedTrapSpiceData = unstable_cache(
       supabase.from("spice_cards_report").select("*").order("win_rate_delta", { ascending: false }).limit(100),
     ]);
 
+    for (const result of [commanderRes, trapRes, spiceRes]) {
+      if (result.error) throw result.error;
+    }
+
     const cardNames = [...(trapRes.data ?? []), ...(spiceRes.data ?? [])].map((row) => row.card_name);
-    const { data: usageRows } = cardNames.length
+    const usageRes = cardNames.length
       ? await supabase
           .from("card_frequencies_by_commander")
           .select("card_name, commander_id, commander, deck_count, inclusion_rate")
           .in("card_name", cardNames)
           .order("deck_count", { ascending: false })
-      : { data: [] };
+      : { data: [], error: null };
+    if (usageRes.error) throw usageRes.error;
+    const usageRows = usageRes.data;
 
     const usage = new Map<string, unknown[]>();
     for (const row of usageRows ?? []) {

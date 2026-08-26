@@ -31,37 +31,23 @@ function rpcRow(index: number) {
 describe("fetchRawPlayerLogs", () => {
   beforeEach(() => rpc.mockReset());
 
-  it("paginates bounded RPC responses without truncating lifetime history", async () => {
-    rpc
-      .mockResolvedValueOnce({
-        data: Array.from({ length: 500 }, (_, index) => rpcRow(index)),
-        error: null,
-      })
-      .mockResolvedValueOnce({
-        data: Array.from({ length: 500 }, (_, index) => rpcRow(index + 500)),
-        error: null,
-      })
-      .mockResolvedValueOnce({
-        data: Array.from({ length: 114 }, (_, index) => rpcRow(index + 1000)),
-        error: null,
-      });
+  it("hard-caps detailed game history at one 500-row RPC", async () => {
+    rpc.mockResolvedValueOnce({
+      data: Array.from({ length: 500 }, (_, index) => rpcRow(index)),
+      error: null,
+    });
 
     const { fetchRawPlayerLogs } = await import(
       "@/app/regional-elo/player/[topdeckId]/player-log-data"
     );
     const rows = await fetchRawPlayerLogs("player-id");
 
-    expect(rows).toHaveLength(1114);
-    expect(new Set(rows.map((row) => row.gameId)).size).toBe(1114);
+    expect(rows).toHaveLength(500);
+    expect(rpc).toHaveBeenCalledTimes(1);
     expect(rpc).toHaveBeenNthCalledWith(1, "get_player_game_logs", {
       p_player_id: "player-id",
       p_limit: 500,
       p_offset: 0,
-    });
-    expect(rpc).toHaveBeenNthCalledWith(3, "get_player_game_logs", {
-      p_player_id: "player-id",
-      p_limit: 500,
-      p_offset: 1000,
     });
   });
 });
