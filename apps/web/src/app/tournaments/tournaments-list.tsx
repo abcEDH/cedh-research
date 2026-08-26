@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { supabase } from "@/lib/supabase";
-import { assignEventTier, TIER_MIN, type EventTier, type TournamentSummary, type TopCutPlayer } from "@/lib/tournaments";
+import { TIER_MIN, type EventTier, type TournamentSummary } from "@/lib/tournaments";
 import {
   Select,
   SelectContent,
@@ -44,22 +43,6 @@ type TournamentsListProps = {
   initialPeriod: PeriodOption;
 };
 
-type TournamentRow = {
-  id: string;
-  topdeck_tid: string | null;
-  name: string | null;
-  start_date: string | null;
-  player_count: number | null;
-  tier: EventTier | null;
-};
-
-type TopCutRow = {
-  tournament_id: string;
-  final_standing: number;
-  players: { name: string | null } | Array<{ name: string | null }> | null;
-  commanders: { name: string | null; color_identity: string[] | null } | Array<{ name: string | null; color_identity: string[] | null }> | null;
-};
-
 function relTime(days: number): string {
   if (days <= 0) return "today";
   if (days === 1) return "yesterday";
@@ -68,11 +51,6 @@ function relTime(days: number): string {
   if (days < 31) return `${Math.round(days / 7)} weeks ago`;
   if (days < 365) return `${Math.round(days / 30)} months ago`;
   return "over a year ago";
-}
-
-function firstRelation<T>(value: T | T[] | null | undefined): T | null {
-  if (!value) return null;
-  return Array.isArray(value) ? value[0] ?? null : value;
 }
 
 // ---- FilterSelect ----
@@ -116,56 +94,9 @@ export function TournamentsList({ initialSort, initialTier, initialPeriod }: Tou
     let cancelled = false;
 
     async function loadEvents() {
-      const { data: tournamentRows, error } = await supabase
-        .from("tournaments")
-        .select("id, topdeck_tid, name, start_date, player_count, tier")
-        .not("topdeck_tid", "is", null)
-        .gte("player_count", 16)
-        .lte("start_date", new Date().toISOString())
-        .order("start_date", { ascending: false })
-        .limit(100);
-
-      if (error || !tournamentRows?.length || cancelled) return;
-
-      const rows = tournamentRows as TournamentRow[];
-      const ids = rows.map((row) => row.id);
-      const { data: topRows } = await supabase
-        .from("tournament_entries")
-        .select("tournament_id, final_standing, players(name), commanders(name, color_identity)")
-        .in("tournament_id", ids)
-        .lte("final_standing", 4)
-        .order("final_standing", { ascending: true });
-
-      const topCutByTournamentId = new Map<string, TopCutPlayer[]>();
-      for (const row of ((topRows ?? []) as unknown as TopCutRow[])) {
-        const tId = row.tournament_id;
-        const entries = topCutByTournamentId.get(tId) ?? [];
-        entries.push({
-          standing: row.final_standing,
-          name: firstRelation(row.players)?.name ?? "Unknown",
-          commander: firstRelation(row.commanders)?.name ?? "Unknown Commander",
-          colors: firstRelation(row.commanders)?.color_identity ?? [],
-        });
-        topCutByTournamentId.set(tId, entries);
-      }
-
-      const loadedEvents = rows
-        .filter((row) => row.topdeck_tid && row.name && row.start_date && row.player_count)
-        .map((row) => {
-          const topCut = topCutByTournamentId.get(row.id) ?? [];
-          const winner = topCut.find((c) => c.standing === 1)?.name ?? "—";
-          return {
-            name: (row.name ?? "").trim(),
-            date: (row.start_date ?? "").slice(0, 10),
-            players: row.player_count ?? 0,
-            winner,
-            topCut,
-            slug: row.topdeck_tid as string,
-            topdeckTid: row.topdeck_tid as string,
-            tier: row.tier ?? assignEventTier(row.player_count ?? 0),
-            hasDetail: true,
-          };
-        });
+      const response = await fetch("/api/tournaments");
+      const payload = (await response.json()) as { tournaments?: TournamentSummary[] };
+      const loadedEvents = response.ok ? payload.tournaments ?? [] : [];
 
       if (!cancelled && loadedEvents.length > 0) {
         setEvents(loadedEvents);

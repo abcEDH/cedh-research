@@ -321,6 +321,48 @@ function applyFilters(rows: Array<Record<string, unknown>>, filters: Array<(row:
   return rows.filter((row) => filters.every((filter) => filter(row)));
 }
 
+function buildPlayerGameLogRpcRows(playerId: string) {
+  const entries = tableData.tournament_entries.filter((row) => row.player_id === playerId);
+  return entries.flatMap((entry) => {
+    const participantRows = tableData.game_participants.filter((row) => row.entry_id === entry.id);
+    return participantRows.map((participant) => {
+      const game = tableData.games.find((row) => row.id === participant.game_id)!;
+      const tournament = tableData.tournaments.find((row) => row.id === game.tournament_id)!;
+      const commander = tableData.commanders.find((row) => row.id === entry.commander_id);
+      const opponents = tableData.game_participants
+        .filter((row) => row.game_id === game.id && row.entry_id !== entry.id)
+        .map((row) => {
+          const opponentEntry = tableData.tournament_entries.find((value) => value.id === row.entry_id)!;
+          const opponent = tableData.players.find((value) => value.id === opponentEntry.player_id)!;
+          const opponentCommander = tableData.commanders.find((value) => value.id === opponentEntry.commander_id);
+          return {
+            topdeckId: opponent.topdeck_id,
+            playerName: opponent.name,
+            commanderName: opponentCommander?.name ?? null,
+            seat: Number(row.seat_position) + 1,
+            result: row.result,
+          };
+        });
+
+      return {
+        game_id: game.id,
+        game_date: tournament.start_date,
+        tournament_name: tournament.name,
+        state: tournament.state,
+        round_number: game.round_number,
+        round_name: game.round_name,
+        table_number: game.table_number,
+        seat_position: participant.seat_position,
+        commander_name: commander?.name ?? null,
+        game_result: participant.result,
+        tournament_player_count: tournament.player_count,
+        ranking_eligible: Number(tournament.player_count) >= 30,
+        opponents,
+      };
+    });
+  });
+}
+
 class MockQuery {
   private filters: Array<(row: Record<string, unknown>) => boolean> = [];
   private orderColumn: string | null = null;
@@ -462,6 +504,17 @@ vi.mock("@/lib/topdeck", () => ({
 vi.mock("@/lib/supabase", () => ({
   supabase: {
     from: (table: string) => new MockQuery(table),
+    rpc: (
+      _name: string,
+      args: { p_player_id: string; p_limit: number; p_offset: number }
+    ) =>
+      Promise.resolve({
+        data: buildPlayerGameLogRpcRows(args.p_player_id).slice(
+          args.p_offset,
+          args.p_offset + args.p_limit
+        ),
+        error: null,
+      }),
   },
 }));
 

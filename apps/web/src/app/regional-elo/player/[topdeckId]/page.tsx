@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { unstable_cache } from "next/cache";
+import type { Metadata } from "next";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CommanderRowBackdrop } from "@/components/commanders/commander-row-backdrop";
@@ -33,11 +34,15 @@ import { fetchRawPlayerLogs } from "./player-log-data";
 
 export const revalidate = 86400; // 24 hours
 export const dynamicParams = true;
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
 const SUPABASE_PAGE_SIZE = 1000;
 const SUPABASE_IN_CHUNK_SIZE = 100;
 const ACHIEVEMENTS_PAGE_SIZE = 10;
 const PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS = 60 * 60 * 24;
+const PLAYER_HISTORY_DETAIL_LIMIT = 500;
 
 export async function generateStaticParams() {
   try {
@@ -629,8 +634,29 @@ async function PlayerProfileBodyWrapper({
   const requestedRegion = decodeURIComponent(readRegionParam(resolvedSearchParams)).trim().toUpperCase();
   const regionFilter = requestedRegion === "ALL" ? "" : requestedRegion;
   const eloOnly = readStringParam(resolvedSearchParams, "eloOnly") === "true";
-  const allPlayerLogs = await fetchCachedRawPlayerLogs(player.id);
-  const displaySummary = summarizePlayerLogs(filterPlayerLogs(allPlayerLogs, eloOnly), topdeckId, eloOnly);
+  const [allPlayerLogs, lifetimeSummary] = await Promise.all([
+    fetchCachedRawPlayerLogs(player.id),
+    fetchCachedPlayerProfileSummary(player.id),
+  ]);
+  const filteredLogs = filterPlayerLogs(allPlayerLogs, eloOnly);
+  const recentSummary = summarizePlayerLogs(filteredLogs, topdeckId, eloOnly);
+  const allScoredLogs = eloOnly ? filterPlayerLogs(allPlayerLogs, false) : filteredLogs;
+  const allGameSummary = summarizePlayerLogs(allScoredLogs, topdeckId, false);
+  const displaySummary = eloOnly && lifetimeSummary
+    ? {
+        ...recentSummary,
+        totalGames: lifetimeSummary.games_played,
+        totalWins: lifetimeSummary.wins,
+        totalDraws: lifetimeSummary.draws,
+        totalLosses: lifetimeSummary.losses,
+      }
+    : {
+        ...recentSummary,
+        totalGames: allGameSummary.totalGames,
+        totalWins: allGameSummary.totalWins,
+        totalDraws: allGameSummary.totalDraws,
+        totalLosses: allGameSummary.totalLosses,
+      };
 
   return (
     <>
@@ -709,6 +735,7 @@ export async function PlayerProfileBody({
   const allPlayerLogs: PlayerGameLog[] =
     rawPlayerLogs ?? (await fetchCachedRawPlayerLogs(player.id));
   const playerLogs = filterPlayerLogs(allPlayerLogs, eloOnly);
+  const historyMayBeTruncated = allPlayerLogs.length >= PLAYER_HISTORY_DETAIL_LIMIT;
   const {
     totalGames,
     totalWins,
@@ -916,6 +943,13 @@ export async function PlayerProfileBody({
       <Link href={backHref} className="-mt-6 block text-sm text-muted-foreground hover:text-foreground">
         ← Back to region leaderboard
       </Link>
+
+      {historyMayBeTruncated ? (
+        <p className="rounded-lg border border-border/60 bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
+          Matchup, seat, commander, and achievement breakdowns below use the most recent 500
+          games. Lifetime summary cards use the precomputed player profile totals.
+        </p>
+      ) : null}
 
       <Card className="knd-panel">
         <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
