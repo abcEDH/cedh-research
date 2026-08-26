@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { unstable_cache } from "next/cache";
+import type { Metadata } from "next";
 import { withTiming } from "@/lib/performance";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +13,10 @@ import { buildPlayerVersusHref } from "../../player-routes";
 import { filterPlayerLogs } from "../../player-stats";
 
 const PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS = 60 * 60 * 24; // 24 hours
+
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
 const fetchCachedRawPlayerLogs = unstable_cache(
   async (playerId: string) => withTiming("regional-player:raw-logs", () => fetchRawPlayerLogs(playerId)),

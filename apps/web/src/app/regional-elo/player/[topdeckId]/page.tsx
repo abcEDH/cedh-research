@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { unstable_cache } from "next/cache";
+import type { Metadata } from "next";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CommanderRowBackdrop } from "@/components/commanders/commander-row-backdrop";
@@ -33,6 +34,9 @@ import { fetchRawPlayerLogs } from "./player-log-data";
 
 export const revalidate = 86400; // 24 hours
 export const dynamicParams = true;
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
 const SUPABASE_PAGE_SIZE = 1000;
 const SUPABASE_IN_CHUNK_SIZE = 100;
