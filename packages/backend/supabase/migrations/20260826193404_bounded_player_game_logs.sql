@@ -30,34 +30,24 @@ SET search_path = ''
 AS $$
   WITH player_games AS (
     SELECT
-      g.id AS game_id,
+      r.game_id,
       t.start_date AS game_date,
       t.name AS tournament_name,
       t.state,
-      g.round_number,
-      g.round_name,
-      g.table_number,
-      gp.seat_position,
+      r.round_number,
+      r.round_name,
+      r.table_number,
+      r.seat_position,
       c.name AS commander_name,
-      gp.result AS game_result,
+      r.result AS game_result,
       t.player_count AS tournament_player_count,
-      (
-        t.player_count >= 30
-        AND t.start_date::date <= CURRENT_DATE
-        AND LOWER(COALESCE(g.status, 'completed')) IN ('completed', 'complete', 'done')
-        AND COALESCE(t.topdeck_tid, '') NOT ILIKE '%league%'
-        AND t.name NOT ILIKE '%league%'
-        AND t.name NOT ILIKE '%casual%'
-        AND t.name NOT ILIKE '%exhibition%'
-        AND t.name !~* '(^|[^[:alnum:]_])fun([^[:alnum:]_]|$)'
-      ) AS ranking_eligible
-    FROM public.tournament_entries te
-    JOIN public.game_participants gp ON gp.entry_id = te.id
-    JOIN public.games g ON g.id = gp.game_id
-    JOIN public.tournaments t ON t.id = g.tournament_id
+      r.ranking_eligible
+    FROM public.regional_elo_game_results r
+    JOIN public.tournaments t ON t.id = r.tournament_id
+    JOIN public.tournament_entries te ON te.id = r.entry_id
     LEFT JOIN public.commanders c ON c.id = te.commander_id
-    WHERE te.player_id = p_player_id
-    ORDER BY t.start_date DESC NULLS LAST, g.id
+    WHERE r.player_id = p_player_id
+    ORDER BY t.start_date DESC NULLS LAST, r.game_id
     LIMIT LEAST(GREATEST(COALESCE(p_limit, 500), 1), 501)
     OFFSET GREATEST(COALESCE(p_offset, 0), 0)
   )
