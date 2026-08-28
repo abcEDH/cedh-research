@@ -138,9 +138,12 @@ export function toClientLeaderboardRow(row: LeaderboardRow): ClientLeaderboardRo
   // sitting in the Next.js data cache with a `hidden_rating` field even though it's no longer
   // part of the `LeaderboardRow` type. Strip it explicitly alongside `rating` so a stale cache
   // hit can never leak the internal Elo to the client — see issue #253.
-  const { rating: _rating, hidden_rating: _hiddenRating, ...clientRow } = row as LeaderboardRow & {
+  const clientRow = { ...row } as Omit<LeaderboardRow, "rating"> & {
+    rating?: number;
     hidden_rating?: number;
   };
+  delete clientRow.rating;
+  delete clientRow.hidden_rating;
   return clientRow;
 }
 

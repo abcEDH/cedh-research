@@ -58,7 +58,7 @@ AS $$
     LEFT JOIN public.commanders c ON c.id = te.commander_id
     WHERE te.player_id = p_player_id
     ORDER BY t.start_date DESC NULLS LAST, g.id
-    LIMIT LEAST(GREATEST(COALESCE(p_limit, 500), 1), 500)
+    LIMIT LEAST(GREATEST(COALESCE(p_limit, 500), 1), 501)
     OFFSET GREATEST(COALESCE(p_offset, 0), 0)
   )
   SELECT
@@ -109,4 +109,4 @@ REVOKE ALL ON FUNCTION public.get_player_game_logs(uuid, integer, integer) FROM 
 GRANT EXECUTE ON FUNCTION public.get_player_game_logs(uuid, integer, integer) TO anon, authenticated;
 
 COMMENT ON FUNCTION public.get_player_game_logs(uuid, integer, integer) IS
-  'Returns one page of at most 500 player games with opponents for bounded, complete pagination.';
+  'Returns one page of at most 501 player games with opponents so callers can detect another page.';

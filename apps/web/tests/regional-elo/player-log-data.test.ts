@@ -31,22 +31,23 @@ function rpcRow(index: number) {
 describe("fetchRawPlayerLogs", () => {
   beforeEach(() => rpc.mockReset());
 
-  it("hard-caps detailed game history at one 500-row RPC", async () => {
+  it("fetches one extra row to detect truncated detailed history", async () => {
     rpc.mockResolvedValueOnce({
-      data: Array.from({ length: 500 }, (_, index) => rpcRow(index)),
+      data: Array.from({ length: 501 }, (_, index) => rpcRow(index)),
       error: null,
     });
 
-    const { fetchRawPlayerLogs } = await import(
+    const { fetchRawPlayerLogPage } = await import(
       "@/app/regional-elo/player/[topdeckId]/player-log-data"
     );
-    const rows = await fetchRawPlayerLogs("player-id");
+    const page = await fetchRawPlayerLogPage("player-id");
 
-    expect(rows).toHaveLength(500);
+    expect(page.logs).toHaveLength(500);
+    expect(page.hasMore).toBe(true);
     expect(rpc).toHaveBeenCalledTimes(1);
     expect(rpc).toHaveBeenNthCalledWith(1, "get_player_game_logs", {
       p_player_id: "player-id",
-      p_limit: 500,
+      p_limit: 501,
       p_offset: 0,
     });
   });

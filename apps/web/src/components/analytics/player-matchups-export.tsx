@@ -2,10 +2,7 @@
 
 import { useState } from "react";
 import { ELO_TIER_INFO, ELO_TIERS, type EloTier } from "@/lib/elo-tiers";
-import {
-  fetchPlayerMatchupExport,
-  parseContentDispositionFilename,
-} from "@/lib/analytics/fetchers";
+import { fetchPlayerMatchupExport } from "@/lib/analytics/fetchers";
 import { PlayerPicker, type PlayerPickerOption } from "./player-picker";
 
 export { parseContentDispositionFilename } from "@/lib/analytics/fetchers";

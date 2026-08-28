@@ -18,7 +18,6 @@ import {
   PlayerTournamentEntryRow,
   PlayerEventLogRow,
   PlayerEventOpponentRow,
-  EntryRow,
 } from "./page";
 import { summarizePlayerLogs, type PlayerGameLog, type PlayerLogSummary } from "./player-stats";
 
@@ -76,22 +75,6 @@ function describeSupabaseError(error: unknown) {
 }
 
 // --- DATA FETCHERS ---
-
-export async function fetchEntries(playerId: string): Promise<EntryRow[]> {
-  const SUPABASE_PAGE_SIZE = 1000;
-  const rows: EntryRow[] = [];
-  for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
-    const { data, error } = await supabase
-      .from("tournament_entries")
-      .select("id, tournament_id, player_id, commander_id")
-      .eq("player_id", playerId)
-      .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
-    if (error) throw new Error(`Error fetching player entries: ${error.message}`);
-    rows.push(...((data as EntryRow[]) ?? []));
-    if (!data || data.length < SUPABASE_PAGE_SIZE) break;
-  }
-  return rows;
-}
 
 export async function fetchPlayer(topdeckId: string) {
   const { data } = await supabase
