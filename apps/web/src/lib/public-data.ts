@@ -18,6 +18,41 @@ type TournamentRow = {
   tier: EventTier | null;
 };
 
+type CommanderSearchRow = {
+  commander_id: string;
+  commander_name: string;
+  color_identity: string[] | null;
+};
+
+type PlayerSearchRow = {
+  topdeck_id: string;
+  name: string;
+};
+
+type TournamentSearchRow = {
+  topdeck_tid: string;
+  name: string | null;
+  start_date: string | null;
+  player_count: number | null;
+};
+
+type CardUsageRow = {
+  card_name: string;
+  commander_id: string;
+  commander: string | null;
+  deck_count: number;
+  inclusion_rate: number;
+};
+
+type CardReportRow = {
+  card_name: string;
+  [key: string]: unknown;
+};
+
+type CardReportWithUsage = CardReportRow & {
+  top_commanders: CardUsageRow[];
+};
+
 type TopCutRow = {
   tournament_id: string;
   final_standing: number;
@@ -65,24 +100,28 @@ async function searchPublicData(query: string): Promise<PublicSearchResult[]> {
   if (playerRes.error) throw playerRes.error;
   if (tournamentRes.error) throw tournamentRes.error;
 
+  const commanders = (commanderRes.data ?? []) as CommanderSearchRow[];
+  const players = (playerRes.data ?? []) as PlayerSearchRow[];
+  const tournaments = (tournamentRes.data ?? []) as TournamentSearchRow[];
+
   return [
-    ...(commanderRes.data ?? []).map((row) => ({
+    ...commanders.map((row) => ({
       kind: "commander" as const,
-      id: row.commander_id as string,
-      name: row.commander_name as string,
-      color_identity: (row.color_identity as string[] | null) ?? null,
+      id: row.commander_id,
+      name: row.commander_name,
+      color_identity: row.color_identity,
     })),
-    ...(playerRes.data ?? []).map((row) => ({
+    ...players.map((row) => ({
       kind: "player" as const,
-      topdeck_id: row.topdeck_id as string,
-      name: row.name as string,
+      topdeck_id: row.topdeck_id,
+      name: row.name,
     })),
-    ...(tournamentRes.data ?? []).map((row) => ({
+    ...tournaments.map((row) => ({
       kind: "tournament" as const,
-      slug: row.topdeck_tid as string,
-      name: (row.name as string | null) ?? "",
-      date: (row.start_date as string | null) ?? null,
-      players: (row.player_count as number | null) ?? null,
+      slug: row.topdeck_tid,
+      name: row.name ?? "",
+      date: row.start_date,
+      players: row.player_count,
     })),
   ];
 }
@@ -114,7 +153,7 @@ async function fetchTournamentSummaries(): Promise<TournamentSummary[]> {
     .order("final_standing", { ascending: true });
 
   const topCutByTournamentId = new Map<string, NonNullable<TournamentSummary["topCut"]>>();
-  for (const row of ((topRows ?? []) as unknown as TopCutRow[])) {
+  for (const row of (topRows ?? []) as TopCutRow[]) {
     const entries = topCutByTournamentId.get(row.tournament_id) ?? [];
     entries.push({
       standing: row.final_standing,
@@ -126,18 +165,25 @@ async function fetchTournamentSummaries(): Promise<TournamentSummary[]> {
   }
 
   return rows
-    .filter((row) => row.topdeck_tid && row.name && row.start_date && row.player_count)
+    .filter(
+      (row): row is TournamentRow & {
+        topdeck_tid: string;
+        name: string;
+        start_date: string;
+        player_count: number;
+      } => Boolean(row.topdeck_tid && row.name?.trim() && row.start_date && row.player_count)
+    )
     .map((row) => {
       const topCut = topCutByTournamentId.get(row.id) ?? [];
       return {
-        name: row.name!.trim(),
-        date: row.start_date!.slice(0, 10),
-        players: row.player_count!,
+        name: row.name.trim(),
+        date: row.start_date.slice(0, 10),
+        players: row.player_count,
         winner: topCut.find((entry) => entry.standing === 1)?.name ?? "—",
         topCut,
-        slug: row.topdeck_tid!,
-        topdeckTid: row.topdeck_tid!,
-        tier: row.tier ?? assignEventTier(row.player_count!),
+        slug: row.topdeck_tid,
+        topdeckTid: row.topdeck_tid,
+        tier: row.tier ?? assignEventTier(row.player_count),
         hasDetail: true,
       };
     });
@@ -177,19 +223,19 @@ export const getCachedTrapSpiceData = unstable_cache(
     if (usageRes.error) throw usageRes.error;
     const usageRows = usageRes.data;
 
-    const usage = new Map<string, unknown[]>();
-    for (const row of usageRows ?? []) {
+    const usage = new Map<string, CardUsageRow[]>();
+    for (const row of (usageRows ?? []) as CardUsageRow[]) {
       const values = usage.get(row.card_name) ?? [];
       if (values.length < 10) values.push(row);
       usage.set(row.card_name, values);
     }
-    const attachUsage = (rows: Record<string, unknown>[]) =>
+    const attachUsage = (rows: CardReportRow[]): CardReportWithUsage[] =>
       rows.map((row) => ({ ...row, top_commanders: usage.get(String(row.card_name)) ?? [] }));
 
     return {
       commanders: commanderRes.data ?? [],
-      trapCards: attachUsage((trapRes.data ?? []) as Record<string, unknown>[]),
-      spiceCards: attachUsage((spiceRes.data ?? []) as Record<string, unknown>[]),
+      trapCards: attachUsage((trapRes.data ?? []) as CardReportRow[]),
+      spiceCards: attachUsage((spiceRes.data ?? []) as CardReportRow[]),
     };
   },
   ["public-trap-spice-v1"],

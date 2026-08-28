@@ -5,6 +5,12 @@ import { withTiming } from "@/lib/performance";
 import type { PlayerGameLog } from "./player-stats";
 
 const PLAYER_GAME_LOG_LIMIT = 500;
+const PLAYER_GAME_LOG_FETCH_LIMIT = PLAYER_GAME_LOG_LIMIT + 1;
+
+export type PlayerGameLogPage = {
+  logs: PlayerGameLog[];
+  hasMore: boolean;
+};
 
 export type PlayerRow = {
   id: string;
@@ -46,11 +52,11 @@ export async function fetchPlayer(topdeckId: string): Promise<PlayerRow | null> 
   });
 }
 
-export async function fetchRawPlayerLogs(playerId: string): Promise<PlayerGameLog[]> {
+export async function fetchRawPlayerLogPage(playerId: string): Promise<PlayerGameLogPage> {
   return withTiming("player-log-data:bounded-rpc", async () => {
     const { data, error } = await supabase.rpc("get_player_game_logs", {
       p_player_id: playerId,
-      p_limit: PLAYER_GAME_LOG_LIMIT,
+      p_limit: PLAYER_GAME_LOG_FETCH_LIMIT,
       p_offset: 0,
     });
 
@@ -58,7 +64,7 @@ export async function fetchRawPlayerLogs(playerId: string): Promise<PlayerGameLo
       throw new Error(`Error fetching bounded player game logs: ${error.message}`);
     }
 
-    return ((data as PlayerGameLogRpcRow[] | null) ?? []).map((row) => ({
+    const rows = ((data as PlayerGameLogRpcRow[] | null) ?? []).map((row) => ({
       gameId: row.game_id,
       startDate: row.game_date ?? "",
       tournamentName: row.tournament_name ?? "Unknown tournament",
@@ -72,7 +78,16 @@ export async function fetchRawPlayerLogs(playerId: string): Promise<PlayerGameLo
       commanderName: row.commander_name,
       opponents: row.opponents ?? [],
     }));
+
+    return {
+      logs: rows.slice(0, PLAYER_GAME_LOG_LIMIT),
+      hasMore: rows.length > PLAYER_GAME_LOG_LIMIT,
+    };
   });
+}
+
+export async function fetchRawPlayerLogs(playerId: string): Promise<PlayerGameLog[]> {
+  return (await fetchRawPlayerLogPage(playerId)).logs;
 }
 
 export async function fetchCanonicalPlayerLogs(
