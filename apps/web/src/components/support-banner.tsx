@@ -8,7 +8,7 @@ export function SupportBanner() {
       aria-labelledby="support-banner-title"
       className="border-t border-border/60 px-4 py-6"
     >
-      <div className="container mx-auto flex max-w-5xl flex-col items-center gap-4 text-center sm:flex-row sm:justify-between sm:text-left">
+      <div className="container mx-auto flex max-w-5xl flex-col items-center gap-4 text-center lg:flex-row lg:justify-between lg:text-left">
         <div className="max-w-xl">
           <h2 id="support-banner-title" className="text-base font-semibold text-foreground">
             Help keep tedh.gg running
@@ -17,20 +17,20 @@ export function SupportBanner() {
             Community support helps cover the costs of keeping this resource free for cEDH players.
           </p>
         </div>
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-          <Button asChild variant="ghost" className="h-11 w-full text-muted-foreground hover:text-foreground sm:w-auto">
+        <div className="grid w-full grid-cols-2 gap-1.5 sm:gap-2 lg:flex lg:w-auto">
+          <Button asChild variant="ghost" className="h-11 w-full text-muted-foreground hover:text-foreground lg:w-auto">
             <a href="mailto:contact@tedh.gg">
               <Mail />
               Contact Us
             </a>
           </Button>
-          <Button asChild variant="ghost" className="h-11 w-full text-muted-foreground hover:text-foreground sm:w-auto">
+          <Button asChild variant="ghost" className="h-11 w-full text-muted-foreground hover:text-foreground lg:w-auto">
             <a href="https://discord.gg/MZCkEakB3d" target="_blank" rel="noreferrer">
               <MessageCircle />
               Discord
             </a>
           </Button>
-          <Button asChild variant="ghost" className="h-11 w-full text-muted-foreground hover:text-foreground sm:w-auto">
+          <Button asChild variant="ghost" className="h-11 w-full text-muted-foreground hover:text-foreground lg:w-auto">
             <a
               href="https://www.patreon.com/cw/tedh_gg"
               target="_blank"
@@ -40,7 +40,7 @@ export function SupportBanner() {
               Support on Patreon
             </a>
           </Button>
-          <Button asChild variant="ghost" className="h-11 w-full text-muted-foreground hover:text-foreground sm:w-auto">
+          <Button asChild variant="ghost" className="h-11 w-full text-muted-foreground hover:text-foreground lg:w-auto">
             <a
               href="https://buymeacoffee.com/tedh_gg"
               target="_blank"
