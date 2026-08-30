@@ -99,7 +99,7 @@ export async function GET(request: NextRequest) {
 /**
  * List available players for export
  */
-export async function HEAD(request: NextRequest) {
+export async function HEAD() {
   return NextResponse.json({ status: "ok" });
 }
 

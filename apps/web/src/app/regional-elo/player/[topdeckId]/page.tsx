@@ -26,11 +26,10 @@ import {
   fetchCachedPlayerCommanderProfile,
   fetchCachedPlayerAchievements,
   fetchCachedPlayerCommanderUsageRows,
-  fetchEntries,
   sortAchievementsByFinish,
   isKnownCommanderName,
 } from "./player-profile-components";
-import { fetchRawPlayerLogs } from "./player-log-data";
+import { fetchRawPlayerLogPage } from "./player-log-data";
 
 export const revalidate = 86400; // 24 hours
 export const dynamicParams = true;
@@ -38,11 +37,8 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-const SUPABASE_PAGE_SIZE = 1000;
-const SUPABASE_IN_CHUNK_SIZE = 100;
 const ACHIEVEMENTS_PAGE_SIZE = 10;
 const PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS = 60 * 60 * 24;
-const PLAYER_HISTORY_DETAIL_LIMIT = 500;
 
 export async function generateStaticParams() {
   try {
@@ -77,43 +73,6 @@ export type PlayerRow = {
 export type PlayerCommanderUsageRow = CommanderUsageRow & {
   tournament_name: string | null;
   tournament_topdeck_tid: string | null;
-};
-
-export type EntryRow = {
-  id: string;
-  tournament_id: string;
-  player_id: string;
-  commander_id: string | null;
-};
-
-export type CommanderRow = {
-  id: string;
-  name: string;
-};
-
-export type ParticipantRow = {
-  game_id: string;
-  entry_id: string;
-  seat_position: number;
-  result: string;
-};
-
-export type GameRow = {
-  id: string;
-  tournament_id: string;
-  round_number: number | null;
-  round_name: string | null;
-  table_number: number | null;
-  is_draw: boolean;
-  winner_id: string | null;
-};
-
-export type TournamentRow = {
-  id: string;
-  name: string;
-  start_date: string;
-  state: string | null;
-  player_count: number | null;
 };
 
 export type LeaderboardRankRow = {
@@ -240,20 +199,6 @@ export type PlayerEventOpponentRow = {
   game_result: string;
 };
 
-function toRoundLabel(game: GameRow) {
-  if (game.round_name) return game.round_name;
-  if (game.round_number !== null) return `Round ${game.round_number}`;
-  return "Bracket";
-}
-
-function chunkValues<T>(values: T[], size = SUPABASE_IN_CHUNK_SIZE) {
-  const chunks: T[][] = [];
-  for (let index = 0; index < values.length; index += size) {
-    chunks.push(values.slice(index, index + size));
-  }
-  return chunks;
-}
-
 function readRegionParam(
   params:
     | Record<string, string | string[] | undefined>
@@ -360,223 +305,10 @@ function achievementTournamentKey(tournamentName: string | null | undefined, sta
   return `${tournamentName ?? "Unknown tournament"}:${(startDate ?? "").slice(0, 10)}`;
 }
 
-async function fetchGamesAndParticipants(entryIds: string[]) {
-  const participants: ParticipantRow[] = [];
-  for (const entryIdChunk of chunkValues(entryIds)) {
-    for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
-      const { data, error } = await supabase
-        .from("game_participants")
-        .select("game_id, entry_id, seat_position, result")
-        .in("entry_id", entryIdChunk)
-        .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
-
-      if (error) throw new Error(`Error fetching player game participants: ${error.message}`);
-      participants.push(...((data as ParticipantRow[]) ?? []));
-      if (!data || data.length < SUPABASE_PAGE_SIZE) break;
-    }
-  }
-
-  const gameIds = Array.from(new Set(participants.map((row) => row.game_id)));
-  if (gameIds.length === 0) {
-    return {
-      participants: [],
-      games: [] as GameRow[],
-      allParticipants: [] as ParticipantRow[],
-    };
-  }
-
-  const games: GameRow[] = [];
-  const allParticipants: ParticipantRow[] = [];
-
-  for (const gameIdChunk of chunkValues(gameIds)) {
-    for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
-      const { data, error } = await supabase
-        .from("games")
-        .select("id, tournament_id, round_number, round_name, table_number, is_draw, winner_id")
-        .in("id", gameIdChunk)
-        .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
-
-      if (error) throw new Error(`Error fetching player games: ${error.message}`);
-      games.push(...((data as GameRow[]) ?? []));
-      if (!data || data.length < SUPABASE_PAGE_SIZE) break;
-    }
-  }
-
-  for (const gameIdChunk of chunkValues(gameIds)) {
-    for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
-      const { data, error } = await supabase
-        .from("game_participants")
-        .select("game_id, entry_id, seat_position, result")
-        .in("game_id", gameIdChunk)
-        .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
-
-      if (error) throw new Error(`Error fetching pod participants: ${error.message}`);
-      allParticipants.push(...((data as ParticipantRow[]) ?? []));
-      if (!data || data.length < SUPABASE_PAGE_SIZE) break;
-    }
-  }
-
-  return {
-    participants,
-    games,
-    allParticipants,
-  };
-}
-
-async function buildPlayerLogsFromRawHistory(entries: EntryRow[]): Promise<PlayerGameLog[]> {
-  const entryIds = entries.map((row) => row.id);
-  const { participants, games, allParticipants } = await fetchGamesAndParticipants(entryIds);
-
-  const gamesById = new Map(games.map((row) => [row.id, row]));
-  const entryById = new Map(entries.map((row) => [row.id, row]));
-  const tournamentIds = Array.from(new Set(games.map((row) => row.tournament_id)));
-  const tournamentsById = await fetchTournaments(tournamentIds);
-
-  const playerParticipants = participants.filter((participant) => {
-    if (!gamesById.has(participant.game_id)) return false;
-    return true;
-  });
-  const playerGameIds = Array.from(new Set(playerParticipants.map((row) => row.game_id)));
-  const relatedParticipants = allParticipants.filter((row) => playerGameIds.includes(row.game_id));
-  const relatedEntryIds = Array.from(new Set(relatedParticipants.map((row) => row.entry_id)));
-  const relatedEntriesById = await fetchEntriesById(relatedEntryIds);
-  const relatedPlayerIds = Array.from(
-    new Set(Array.from(relatedEntriesById.values()).map((row) => row.player_id))
-  );
-  const relatedCommanderIds = Array.from(
-    new Set(
-      Array.from(relatedEntriesById.values())
-        .map((row) => row.commander_id)
-        .filter((value): value is string => Boolean(value))
-    )
-  );
-  const playersById = await fetchPlayersById(relatedPlayerIds);
-  const commandersById = await fetchCommandersById(relatedCommanderIds);
-
-  return playerParticipants
-    .map((participant) => {
-      const game = gamesById.get(participant.game_id);
-      const playerEntry = entryById.get(participant.entry_id);
-      if (!game || !playerEntry) return null;
-
-      const tournament = tournamentsById.get(game.tournament_id);
-      const commanderName = playerEntry.commander_id
-        ? commandersById.get(playerEntry.commander_id)?.name ?? null
-        : null;
-      const pod = relatedParticipants
-        .filter((row) => row.game_id === participant.game_id && row.entry_id !== participant.entry_id)
-        .map((row) => {
-          const opponentEntry = relatedEntriesById.get(row.entry_id);
-          const opponentPlayer = opponentEntry ? playersById.get(opponentEntry.player_id) : null;
-          const opponentCommander = opponentEntry?.commander_id
-            ? commandersById.get(opponentEntry.commander_id)?.name ?? null
-            : null;
-
-          return {
-            topdeckId: opponentPlayer?.topdeck_id ?? null,
-            playerName: opponentPlayer?.name ?? "Unknown",
-            commanderName: opponentCommander,
-            seat: row.seat_position + 1,
-            result: row.result,
-          };
-        })
-        .sort((a, b) => a.seat - b.seat);
-
-      return {
-        gameId: participant.game_id,
-        startDate: tournament?.start_date ?? "",
-        tournamentName: tournament?.name ?? "Unknown tournament",
-        state: tournament?.state ?? null,
-        roundLabel: toRoundLabel(game),
-        tableLabel: game.table_number !== null ? `Table ${game.table_number}` : "Bracket",
-        seat: participant.seat_position + 1,
-        result: participant.result,
-        tournamentPlayerCount: tournament?.player_count ?? null,
-        commanderName,
-        opponents: pod,
-      } satisfies PlayerGameLog;
-    })
-    .filter((value) => value !== null)
-    .map((value) => value as PlayerGameLog)
-    .sort((a, b) => b.startDate.localeCompare(a.startDate));
-}
-
-async function fetchTournaments(tournamentIds: string[]): Promise<Map<string, TournamentRow>> {
-  if (tournamentIds.length === 0) return new Map();
-
-  const rows: TournamentRow[] = [];
-  for (const tournamentIdChunk of chunkValues(tournamentIds)) {
-    const { data, error } = await supabase
-      .from("tournaments")
-      .select("id, name, start_date, state, player_count")
-      .in("id", tournamentIdChunk);
-
-    if (error) throw new Error(`Error fetching tournaments: ${error.message}`);
-    rows.push(...((data as TournamentRow[]) ?? []));
-  }
-
-  return new Map(rows.map((row) => [row.id, row]));
-}
-
-async function fetchEntriesById(entryIds: string[]): Promise<Map<string, EntryRow>> {
-  if (entryIds.length === 0) return new Map();
-
-  const rows: EntryRow[] = [];
-  for (const entryIdChunk of chunkValues(entryIds)) {
-    for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
-      const { data, error } = await supabase
-        .from("tournament_entries")
-        .select("id, tournament_id, player_id, commander_id")
-        .in("id", entryIdChunk)
-        .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
-
-      if (error) throw new Error(`Error fetching related tournament entries: ${error.message}`);
-      rows.push(...((data as EntryRow[]) ?? []));
-      if (!data || data.length < SUPABASE_PAGE_SIZE) break;
-    }
-  }
-
-  return new Map(rows.map((row) => [row.id, row]));
-}
-
-async function fetchPlayersById(playerIds: string[]): Promise<Map<string, PlayerRow>> {
-  if (playerIds.length === 0) return new Map();
-
-  const rows: PlayerRow[] = [];
-  for (const playerIdChunk of chunkValues(playerIds)) {
-    const { data, error } = await supabase
-      .from("players")
-      .select("id, name, topdeck_id")
-      .in("id", playerIdChunk);
-
-    if (error) throw new Error(`Error fetching related players: ${error.message}`);
-    rows.push(...((data as PlayerRow[]) ?? []));
-  }
-
-  return new Map(rows.map((row) => [row.id, row]));
-}
-
-async function fetchCommandersById(commanderIds: string[]): Promise<Map<string, CommanderRow>> {
-  if (commanderIds.length === 0) return new Map();
-
-  const rows: CommanderRow[] = [];
-  for (const commanderIdChunk of chunkValues(commanderIds)) {
-    const { data, error } = await supabase
-      .from("commanders")
-      .select("id, name")
-      .in("id", commanderIdChunk);
-
-    if (error) throw new Error(`Error fetching related commanders: ${error.message}`);
-    rows.push(...((data as CommanderRow[]) ?? []));
-  }
-
-  return new Map(rows.map((row) => [row.id, row]));
-}
-
 const fetchCachedRawPlayerLogs = unstable_cache(
   async (playerId: string) =>
     withTiming("regional-player:raw-history", async () =>
-      fetchRawPlayerLogs(playerId)
+      fetchRawPlayerLogPage(playerId)
     ),
   ["regional-player-raw-history-v1"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
@@ -634,10 +366,11 @@ async function PlayerProfileBodyWrapper({
   const requestedRegion = decodeURIComponent(readRegionParam(resolvedSearchParams)).trim().toUpperCase();
   const regionFilter = requestedRegion === "ALL" ? "" : requestedRegion;
   const eloOnly = readStringParam(resolvedSearchParams, "eloOnly") === "true";
-  const [allPlayerLogs, lifetimeSummary] = await Promise.all([
+  const [playerLogPage, lifetimeSummary] = await Promise.all([
     fetchCachedRawPlayerLogs(player.id),
     fetchCachedPlayerProfileSummary(player.id),
   ]);
+  const allPlayerLogs = playerLogPage.logs;
   const filteredLogs = filterPlayerLogs(allPlayerLogs, eloOnly);
   const recentSummary = summarizePlayerLogs(filteredLogs, topdeckId, eloOnly);
   const allScoredLogs = eloOnly ? filterPlayerLogs(allPlayerLogs, false) : filteredLogs;
@@ -674,6 +407,7 @@ async function PlayerProfileBodyWrapper({
         player={player}
         searchParams={searchParams}
         rawPlayerLogs={allPlayerLogs}
+        rawPlayerLogsHasMore={playerLogPage.hasMore}
       />
     </>
   );
@@ -686,6 +420,7 @@ export async function PlayerProfileBody({
   player,
   searchParams,
   rawPlayerLogs,
+  rawPlayerLogsHasMore = false,
 }: {
   topdeckId: string;
   player: PlayerRow;
@@ -693,6 +428,7 @@ export async function PlayerProfileBody({
     | Promise<Record<string, string | string[] | undefined>>
     | Record<string, string | string[] | undefined>;
   rawPlayerLogs?: PlayerGameLog[];
+  rawPlayerLogsHasMore?: boolean;
 }) {
   const resolvedSearchParams = await Promise.resolve(searchParams);
   const requestedRegion = decodeURIComponent(readRegionParam(resolvedSearchParams)).trim().toUpperCase();
@@ -733,9 +469,9 @@ export async function PlayerProfileBody({
   const activeCommander = commanderProfile?.active_commander ?? null;
 
   const allPlayerLogs: PlayerGameLog[] =
-    rawPlayerLogs ?? (await fetchCachedRawPlayerLogs(player.id));
+    rawPlayerLogs ?? (await fetchCachedRawPlayerLogs(player.id)).logs;
   const playerLogs = filterPlayerLogs(allPlayerLogs, eloOnly);
-  const historyMayBeTruncated = allPlayerLogs.length >= PLAYER_HISTORY_DETAIL_LIMIT;
+  const historyMayBeTruncated = rawPlayerLogsHasMore;
   const {
     totalGames,
     totalWins,
