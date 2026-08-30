@@ -5,6 +5,7 @@ import { PostHogProvider } from "./providers";
 import { WebVitals } from "./web-vitals";
 import { MotifLayer } from "@/components/motifs/MotifLayer";
 import { SiteHeader } from "@/components/site-header";
+import { SupportBanner } from "@/components/support-banner";
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
@@ -58,6 +59,7 @@ export default function RootLayout({
           <div className="flex min-h-screen flex-col">
             <SiteHeader />
             <div className="flex-1">{children}</div>
+            <SupportBanner />
             <footer className="border-t border-border/60 px-4 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] text-center text-xs text-muted-foreground">
               Data provided by{" "}
               <a
