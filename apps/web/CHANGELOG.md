@@ -1,3 +1,10 @@
+# [1.29.0](https://github.com/abcEDH/cedh-research/compare/v1.28.0...v1.29.0) (2026-08-30)
+
+
+### Features
+
+* add donation support banner ([#334](https://github.com/abcEDH/cedh-research/issues/334)) ([b8b5f66](https://github.com/abcEDH/cedh-research/commit/b8b5f6604eaec64060a85091cc78280a05127acb))
+
 # [1.28.0](https://github.com/abcEDH/cedh-research/compare/v1.27.0...v1.28.0) (2026-08-16)
 
 
