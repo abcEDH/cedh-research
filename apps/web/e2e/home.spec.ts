@@ -55,6 +55,46 @@ test.describe("Home Page", () => {
     await expect(page).toHaveURL(/\/tournament-likelihood/);
   });
 
+  test("displays global support links", async ({ page }) => {
+    const supportBanner = page.getByRole("complementary", {
+      name: "Help keep tedh.gg running",
+    });
+
+    await expect(supportBanner).toBeVisible();
+    await expect(supportBanner.getByRole("link")).toHaveText([
+      "Contact Us",
+      "Discord",
+      "Support on Patreon",
+      "Buy Me a Coffee",
+    ]);
+    await expect(supportBanner.getByRole("link", { name: "Contact Us" })).toHaveAttribute(
+      "href",
+      "mailto:contact@tedh.gg"
+    );
+    await expect(supportBanner.getByRole("link", { name: "Discord" })).toHaveAttribute(
+      "href",
+      "https://discord.gg/MZCkEakB3d"
+    );
+    await expect(supportBanner.getByRole("link", { name: "Support on Patreon" })).toHaveAttribute(
+      "href",
+      "https://www.patreon.com/cw/tedh_gg"
+    );
+    await expect(supportBanner.getByRole("link", { name: "Buy Me a Coffee" })).toHaveAttribute(
+      "href",
+      "https://buymeacoffee.com/tedh_gg"
+    );
+    await expect(supportBanner.getByRole("link", { name: "Discord" })).toHaveAttribute(
+      "rel",
+      "noreferrer"
+    );
+    await expect(
+      supportBanner.getByRole("link", { name: "Buy Me a Coffee" })
+    ).toHaveAttribute("rel", "noreferrer");
+    await expect(
+      supportBanner.getByRole("link", { name: "Support on Patreon" })
+    ).toHaveAttribute("rel", "noreferrer");
+  });
+
   test("navigation links are valid", async ({ page, isMobile }) => {
     // "/commanders" is intentionally omitted from the nav (deprioritized);
     // the page stays reachable by URL but is not surfaced in header/drawer.
