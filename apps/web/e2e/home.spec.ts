@@ -61,17 +61,31 @@ test.describe("Home Page", () => {
     });
 
     await expect(supportBanner).toBeVisible();
-    await expect(supportBanner.getByRole("link", { name: "Buy Me a Coffee" })).toHaveAttribute(
+    await expect(supportBanner.getByRole("link")).toHaveText([
+      "Contact Us",
+      "Discord",
+      "Support on Patreon",
+      "Buy Me a Coffee",
+    ]);
+    await expect(supportBanner.getByRole("link", { name: "Contact Us" })).toHaveAttribute(
       "href",
-      "https://buymeacoffee.com/tedh_gg"
+      "mailto:contact@tedh.gg"
+    );
+    await expect(supportBanner.getByRole("link", { name: "Discord" })).toHaveAttribute(
+      "href",
+      "https://discord.gg/MZCkEakB3d"
     );
     await expect(supportBanner.getByRole("link", { name: "Support on Patreon" })).toHaveAttribute(
       "href",
       "https://www.patreon.com/cw/tedh_gg"
     );
-    await expect(supportBanner.getByRole("link", { name: "Email us" })).toHaveAttribute(
+    await expect(supportBanner.getByRole("link", { name: "Buy Me a Coffee" })).toHaveAttribute(
       "href",
-      "mailto:contact@tedh.gg"
+      "https://buymeacoffee.com/tedh_gg"
+    );
+    await expect(supportBanner.getByRole("link", { name: "Discord" })).toHaveAttribute(
+      "rel",
+      "noreferrer"
     );
     await expect(
       supportBanner.getByRole("link", { name: "Buy Me a Coffee" })

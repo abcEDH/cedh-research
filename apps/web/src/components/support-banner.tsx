@@ -1,4 +1,4 @@
-import { Coffee, HandHeart, Mail } from "lucide-react";
+import { Coffee, HandHeart, Mail, MessageCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
@@ -18,17 +18,19 @@ export function SupportBanner() {
           </p>
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-          <Button asChild className="h-11 w-full sm:w-auto">
-            <a
-              href="https://buymeacoffee.com/tedh_gg"
-              target="_blank"
-              rel="noreferrer"
-            >
-              <Coffee />
-              Buy Me a Coffee
+          <Button asChild variant="ghost" className="h-11 w-full text-muted-foreground hover:text-foreground sm:w-auto">
+            <a href="mailto:contact@tedh.gg">
+              <Mail />
+              Contact Us
             </a>
           </Button>
-          <Button asChild variant="outline" className="h-11 w-full sm:w-auto">
+          <Button asChild variant="ghost" className="h-11 w-full text-muted-foreground hover:text-foreground sm:w-auto">
+            <a href="https://discord.gg/MZCkEakB3d" target="_blank" rel="noreferrer">
+              <MessageCircle />
+              Discord
+            </a>
+          </Button>
+          <Button asChild variant="ghost" className="h-11 w-full text-muted-foreground hover:text-foreground sm:w-auto">
             <a
               href="https://www.patreon.com/cw/tedh_gg"
               target="_blank"
@@ -38,10 +40,14 @@ export function SupportBanner() {
               Support on Patreon
             </a>
           </Button>
-          <Button asChild variant="ghost" className="h-11 w-full sm:w-auto">
-            <a href="mailto:contact@tedh.gg">
-              <Mail />
-              Email us
+          <Button asChild variant="ghost" className="h-11 w-full text-muted-foreground hover:text-foreground sm:w-auto">
+            <a
+              href="https://buymeacoffee.com/tedh_gg"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <Coffee />
+              Buy Me a Coffee
             </a>
           </Button>
         </div>
