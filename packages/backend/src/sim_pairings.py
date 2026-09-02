@@ -9,11 +9,15 @@ from collections import defaultdict
 from sim_types import Pod, StandingRow, TournamentState
 
 
-def match_win_percentage(state: TournamentState, player_id: str) -> float:
+def match_point_percentage(state: TournamentState, player_id: str) -> float:
     standing = state.standings[player_id]
     if standing.pods_played <= 0:
         return 0.0
-    return max(standing.wins / float(standing.pods_played), 0.20)
+    return max(standing.points / float(standing.pods_played * 5), 0.20)
+
+
+def match_win_percentage(state: TournamentState, player_id: str) -> float:
+    return match_point_percentage(state, player_id)
 
 
 def opponent_match_win_percentage(state: TournamentState, player_id: str) -> float:
@@ -23,22 +27,36 @@ def opponent_match_win_percentage(state: TournamentState, player_id: str) -> flo
     total_opp_count = real_opp_count + synthetic_opp_count
     if total_opp_count <= 0:
         return 0.0
-    total = sum(match_win_percentage(state, opponent_id) for opponent_id in standing.opponents)
+    total = sum(match_point_percentage(state, opponent_id) for opponent_id in sorted(standing.opponents))
     total += synthetic_opp_count * 0.20
     return total / total_opp_count
 
 
-def standings_sort_key(state: TournamentState, player_id: str) -> tuple[float, float, int, str]:
+def assign_standings_random_tiebreakers(state: TournamentState, rng: random.Random) -> None:
+    eligible_player_ids = state.eligible_player_ids
+    player_ids = (
+        player_id
+        for player_id in sorted(state.standings)
+        if eligible_player_ids is None or player_id in eligible_player_ids
+    )
+    for player_id in player_ids:
+        state.standings_random_tiebreakers.setdefault(player_id, rng.random())
+
+
+def standings_sort_key(state: TournamentState, player_id: str) -> tuple[float, float, int, float, str]:
     standing = state.standings[player_id]
     return (
         -float(standing.points),
         -opponent_match_win_percentage(state, player_id),
         state.players[player_id].tiebreak_seed,
+        state.standings_random_tiebreakers.get(player_id, 0.0),
         player_id,
     )
 
 
-def sort_standings_rows(state: TournamentState) -> list[StandingRow]:
+def sort_standings_rows(state: TournamentState, rng: random.Random | None = None) -> list[StandingRow]:
+    if rng is not None:
+        assign_standings_random_tiebreakers(state, rng)
     eligible_player_ids = state.eligible_player_ids
     return sorted(
         (
@@ -77,22 +95,22 @@ def _build_initial_pods_from_pool(pool: list[str], pod_size: int) -> list[list[s
     return pods
 
 
-def _normalize_trailing_pods(pod_groups: list[list[str]]) -> list[list[str]]:
-    """Convert odd trailing player counts into explicit bye / 3-pod layouts.
+def _topdeck_pod_sizes(player_count: int, pod_size: int) -> list[int]:
+    if player_count <= 0:
+        return []
+    if pod_size != 4:
+        return [min(pod_size, player_count - index) for index in range(0, player_count, pod_size)]
 
-    Desired behavior:
-    - 4n + 1 players -> one 1-player bye chunk
-    - 4n + 2 players -> two 3-player chunks
-    - 4n + 3 players -> one 3-player chunk
-    """
-    if not pod_groups:
-        return pod_groups
-
-    last_chunk = pod_groups[-1]
-    if len(last_chunk) == 2 and len(pod_groups) >= 2 and len(pod_groups[-2]) >= 4:
-        donor = pod_groups[-2]
-        last_chunk.insert(0, donor.pop())
-    return pod_groups
+    full_pods, remainder = divmod(player_count, pod_size)
+    if remainder == 0:
+        return [4] * full_pods
+    if remainder == 1 and full_pods >= 2:
+        return [4] * (full_pods - 2) + [3, 3, 3]
+    if remainder == 2 and full_pods >= 1:
+        return [4] * (full_pods - 1) + [3, 3]
+    if remainder == 3:
+        return [4] * full_pods + [3]
+    return [player_count]
 
 
 def _optimize_pods_for_repeats(state: TournamentState, pods: list[list[str]]) -> list[list[str]]:
@@ -129,54 +147,49 @@ def _optimize_pods_for_repeats(state: TournamentState, pods: list[list[str]]) ->
 
 def _pods_from_brackets(
     state: TournamentState,
-    grouped: dict[int, list[str]],
+    grouped: dict[tuple[int, int, int, int], list[str]],
     pod_size: int,
+    rng: random.Random,
 ) -> list[list[str]]:
-    point_values = sorted(grouped.keys(), reverse=True)
-    carry_down: list[str] = []
+    ordered_players: list[str] = []
+    for record in sorted(grouped.keys(), reverse=True):
+        bucket = grouped[record][:]
+        rng.shuffle(bucket)
+        ordered_players.extend(bucket)
+
     pod_groups: list[list[str]] = []
+    start = 0
+    for size in _topdeck_pod_sizes(len(ordered_players), pod_size):
+        pod_groups.append(ordered_players[start : start + size])
+        start += size
 
-    for bracket_index, points in enumerate(point_values):
-        bucket = _sorted_players_for_pairing(state, grouped[points])
-        pool = carry_down + bucket
-        carry_down = []
-        is_last_bracket = bracket_index == len(point_values) - 1
-        if not is_last_bracket:
-            remainder = len(pool) % pod_size
-            if remainder:
-                carry_count = remainder
-                carry_down = pool[-carry_count:]
-                pool = pool[:-carry_count]
-        if pool:
-            pod_groups.extend(_build_initial_pods_from_pool(pool, pod_size))
-
-    if carry_down:
-        pod_groups.extend(_build_initial_pods_from_pool(carry_down, pod_size))
-    pod_groups = _normalize_trailing_pods(pod_groups)
     repeat_avoidance_max_pods = state.spec.repeat_avoidance_max_pods
-    if repeat_avoidance_max_pods is not None and (
-        repeat_avoidance_max_pods <= 0 or len(pod_groups) > repeat_avoidance_max_pods
+    if (
+        repeat_avoidance_max_pods is not None
+        and repeat_avoidance_max_pods > 0
+        and len(pod_groups) <= repeat_avoidance_max_pods
     ):
-        return pod_groups
-    return _optimize_pods_for_repeats(state, pod_groups)
+        return _optimize_pods_for_repeats(state, pod_groups)
+    return pod_groups
 
 
 def pair_swiss_round(state: TournamentState, round_index: int, rng: random.Random) -> list[Pod]:
-    grouped: dict[int, list[str]] = defaultdict(list)
+    grouped: dict[tuple[int, int, int, int], list[str]] = defaultdict(list)
     eligible_player_ids = state.eligible_player_ids
     for player_id, standing in state.standings.items():
         if eligible_player_ids is not None and player_id not in eligible_player_ids:
             continue
-        grouped[standing.points].append(player_id)
+        grouped[(standing.points, standing.wins, standing.draws, -standing.losses)].append(player_id)
 
     pod_size = state.spec.pod_size
-    pod_groups = _pods_from_brackets(state, grouped, pod_size)
+    pod_groups = _pods_from_brackets(state, grouped, pod_size, rng)
     pods: list[Pod] = []
     for index, pod_players in enumerate(pod_groups, start=1):
-        pod_players = _sorted_players_for_pairing(state, pod_players)
         if len(pod_players) < 1:
             continue
-        seats_by_player = {player_id: seat for seat, player_id in enumerate(pod_players, start=1)}
+        seated_players = pod_players[:]
+        rng.shuffle(seated_players)
+        seats_by_player = {player_id: seat for seat, player_id in enumerate(seated_players, start=1)}
         pods.append(
             Pod(
                 round_index=round_index,
@@ -189,8 +202,8 @@ def pair_swiss_round(state: TournamentState, round_index: int, rng: random.Rando
     return pods
 
 
-def select_top_cut(state: TournamentState) -> list[str]:
-    rows = sort_standings_rows(state)
+def select_top_cut(state: TournamentState, rng: random.Random | None = None) -> list[str]:
+    rows = sort_standings_rows(state, rng=rng)
     return [row.player_id for row in rows[: state.spec.top_cut]]
 
 

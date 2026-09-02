@@ -7,8 +7,10 @@ import argparse
 import json
 import math
 import os
+import sys
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from statistics import fmean
 from typing import Any
 
@@ -20,6 +22,7 @@ from run_historical_tournament_sim import (
 )
 from sim_engine import initialize_state
 from sim_models import load_draw_model_artifact
+from sim_types import FeatureContext, SimPlayer, TournamentSpec
 from tournament_sim_runner import run_simulation_from_state
 
 
@@ -32,6 +35,15 @@ CUT_LINE_BUCKETS = [0.0, 0.05, 0.1, 0.2, 0.35, 0.5, 0.75, 1.0]
 class ModelSpec:
     label: str
     path: str
+
+
+@dataclass(frozen=True)
+class PreparedTournament:
+    spec: TournamentSpec
+    players: list[SimPlayer]
+    entries: list[dict[str, Any]]
+    feature_context: FeatureContext
+    runtime_seconds: float
 
 
 def fetch_candidate_tournaments(
@@ -63,6 +75,39 @@ def parse_model(value: str) -> ModelSpec:
     if not label or not path:
         raise argparse.ArgumentTypeError("model must be LABEL=PATH")
     return ModelSpec(label=label, path=path)
+
+
+def log_progress(message: str) -> None:
+    print(message, file=sys.stderr, flush=True)
+
+
+def write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    tmp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    tmp_path.replace(path)
+
+
+def prepare_tournament(
+    client: SupabaseClient,
+    tournament_id: str,
+    *,
+    repeat_avoidance_max_pods: int,
+) -> PreparedTournament:
+    started = time.perf_counter()
+    spec, players, entries, feature_context = build_spec_and_players(
+        client,
+        tournament_id,
+        repeat_avoidance_max_pods=repeat_avoidance_max_pods,
+        active_players_only=True,
+    )
+    return PreparedTournament(
+        spec=spec,
+        players=players,
+        entries=entries,
+        feature_context=feature_context,
+        runtime_seconds=time.perf_counter() - started,
+    )
 
 
 def probability_at_point(distribution: list[dict[str, Any]], actual_points: int | None) -> float:
@@ -146,25 +191,20 @@ def bucket_rows(observations: list[tuple[float, int]], buckets: list[float]) -> 
     return rows
 
 
-def evaluate_model_on_tournament(
-    client: SupabaseClient,
+def evaluate_model_on_prepared_tournament(
+    prepared: PreparedTournament,
     model: Any,
     *,
     model_label: str,
-    tournament_id: str,
     simulations: int,
     seed: int,
     workers: int | None,
-    repeat_avoidance_max_pods: int,
 ) -> dict[str, Any]:
     started = time.perf_counter()
-    spec, players, entries, feature_context = build_spec_and_players(
-        client,
-        tournament_id,
-        repeat_avoidance_max_pods=repeat_avoidance_max_pods,
-        active_players_only=True,
-    )
-    state = initialize_state(spec, players, feature_context=feature_context)
+    spec = prepared.spec
+    players = prepared.players
+    entries = prepared.entries
+    state = initialize_state(spec, players, feature_context=prepared.feature_context)
     summary = run_simulation_from_state(
         state,
         model,
@@ -254,6 +294,7 @@ def evaluate_model_on_tournament(
             ),
         },
         "simulations": simulations,
+        "prepare_runtime_seconds": prepared.runtime_seconds,
         "runtime_seconds": time.perf_counter() - started,
     }
 
@@ -313,6 +354,98 @@ def strip_calibration_inputs(result: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in result.items() if key != "calibration_inputs"}
 
 
+def completed_success_cases(results_by_model: dict[str, list[dict[str, Any]]]) -> set[tuple[str, str]]:
+    return {
+        (label, str(result["tournament"]["id"]))
+        for label, results in results_by_model.items()
+        for result in results
+        if isinstance(result.get("tournament"), dict) and result["tournament"].get("id")
+    }
+
+
+def completed_error_cases(errors: list[dict[str, Any]]) -> set[tuple[str, str]]:
+    return {
+        (str(error.get("model")), str(error.get("tournament_id")))
+        for error in errors
+        if error.get("model") and error.get("tournament_id")
+    }
+
+
+def load_checkpoint(path: Path, model_labels: list[str]) -> tuple[dict[str, list[dict[str, Any]]], list[dict[str, Any]]]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    raw_results = payload.get("results") or {}
+    results_by_model = {
+        label: list(raw_results.get(label) or [])
+        for label in model_labels
+    }
+    for label, results in results_by_model.items():
+        if results and "calibration_inputs" not in results[0]:
+            raise RuntimeError(
+                f"Cannot resume from {path}: results for {label} do not include calibration_inputs."
+            )
+    return results_by_model, list(payload.get("errors") or [])
+
+
+def build_output_payload(
+    *,
+    started: float,
+    status: str,
+    args: argparse.Namespace,
+    model_specs: list[ModelSpec],
+    tournaments: list[dict[str, Any]],
+    results_by_model: dict[str, list[dict[str, Any]]],
+    errors: list[dict[str, Any]],
+    candidate_selection_seconds: float,
+    model_load_seconds: float,
+) -> dict[str, Any]:
+    total_cases = len(tournaments) * len(model_specs)
+    completed_cases = len(completed_success_cases(results_by_model) | completed_error_cases(errors))
+    return {
+        "status": status,
+        "config": {
+            "simulations": args.simulations,
+            "workers": args.workers,
+            "limit": args.limit,
+            "candidate_scan_limit": args.candidate_scan_limit,
+            "min_active_player_count": args.min_active_player_count,
+            "start_date_from": args.start_date_from,
+            "start_date_to": args.start_date_to,
+            "repeat_avoidance_max_pods": args.repeat_avoidance_max_pods,
+            "models": {spec.label: spec.path for spec in model_specs},
+        },
+        "progress": {
+            "completed_cases": completed_cases,
+            "total_cases": total_cases,
+            "successful_cases": sum(len(results) for results in results_by_model.values()),
+            "error_cases": len(errors),
+        },
+        "runtime_seconds": {
+            "total": time.perf_counter() - started,
+            "candidate_selection": candidate_selection_seconds,
+            "model_load": model_load_seconds,
+        },
+        "tournaments": tournaments,
+        "aggregate": {
+            label: aggregate_model_results(results)
+            for label, results in results_by_model.items()
+        },
+        "errors": errors,
+        "results": results_by_model,
+    }
+
+
+def output_for_stdout(payload: dict[str, Any], *, include_event_details: bool) -> dict[str, Any]:
+    if include_event_details:
+        return {
+            **payload,
+            "results": {
+                label: [strip_calibration_inputs(result) for result in results]
+                for label, results in payload.get("results", {}).items()
+            },
+        }
+    return {key: value for key, value in payload.items() if key != "results"}
+
+
 def main() -> None:
     started = time.perf_counter()
     parser = argparse.ArgumentParser(description=__doc__)
@@ -327,11 +460,30 @@ def main() -> None:
     parser.add_argument("--start-date-to")
     parser.add_argument("--repeat-avoidance-max-pods", type=int, default=32)
     parser.add_argument("--include-event-details", action="store_true")
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Write checkpoint/final JSON to this path after every event/model case.",
+    )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume completed event/model cases from --output. Requires a checkpoint with calibration inputs.",
+    )
+    parser.add_argument(
+        "--retry-errors",
+        action="store_true",
+        help="When resuming, discard checkpointed error cases so they are retried.",
+    )
     args = parser.parse_args()
 
     load_local_env()
     client = SupabaseClient(url=os.environ["SUPABASE_URL"], service_key=os.environ["SUPABASE_SERVICE_KEY"])
+    model_specs = list(args.model)
+    model_labels = [spec.label for spec in model_specs]
 
+    log_progress("Selecting candidate tournaments...")
     candidate_rows = fetch_candidate_tournaments(
         client,
         limit=args.candidate_scan_limit,
@@ -347,61 +499,154 @@ def main() -> None:
         if len(tournaments) >= args.limit:
             break
     candidate_selection_seconds = time.perf_counter() - started
+    log_progress(
+        f"Selected {len(tournaments)} tournaments with active_player_count >= "
+        f"{args.min_active_player_count} from {len(candidate_rows)} candidates."
+    )
 
     model_load_started = time.perf_counter()
-    models = {spec.label: load_draw_model_artifact(spec.path) for spec in args.model}
+    models = {spec.label: load_draw_model_artifact(spec.path) for spec in model_specs}
     model_load_seconds = time.perf_counter() - model_load_started
-    results_by_model: dict[str, list[dict[str, Any]]] = {spec.label: [] for spec in args.model}
-    errors: list[dict[str, Any]] = []
+    log_progress(f"Loaded {len(models)} models in {model_load_seconds:.1f}s.")
 
+    if args.resume and not args.output:
+        raise RuntimeError("--resume requires --output")
+    if args.resume and args.output and args.output.exists() and args.output.stat().st_size > 0:
+        results_by_model, errors = load_checkpoint(args.output, model_labels)
+        if args.retry_errors and errors:
+            log_progress(f"Retrying {len(errors)} checkpointed error cases from {args.output}.")
+            errors = []
+        log_progress(
+            f"Resumed {len(completed_success_cases(results_by_model))} successful cases "
+            f"and {len(errors)} errors from {args.output}."
+        )
+    else:
+        results_by_model = {spec.label: [] for spec in model_specs}
+        errors: list[dict[str, Any]] = []
+    completed_cases = completed_success_cases(results_by_model) | completed_error_cases(errors)
+
+    if args.output:
+        write_json_atomic(
+            args.output,
+            build_output_payload(
+                started=started,
+                status="running",
+                args=args,
+                model_specs=model_specs,
+                tournaments=tournaments,
+                results_by_model=results_by_model,
+                errors=errors,
+                candidate_selection_seconds=candidate_selection_seconds,
+                model_load_seconds=model_load_seconds,
+            ),
+        )
+
+    total_cases = len(tournaments) * len(model_specs)
+    prepared_by_tournament_id: dict[str, PreparedTournament] = {}
     for tournament_index, tournament in enumerate(tournaments):
         tournament_id = str(tournament["id"])
-        for model_index, spec in enumerate(args.model):
-            case_seed = args.seed + (tournament_index * 10_000) + (model_index * 1_000_000)
+        pending_specs = [
+            spec
+            for spec in model_specs
+            if (spec.label, tournament_id) not in completed_cases
+        ]
+        if not pending_specs:
+            log_progress(
+                f"[{tournament_index + 1}/{len(tournaments)}] "
+                f"Skipping {tournament['name']} ({tournament_id}); all model cases already complete."
+            )
+            continue
+        try:
+            prepared = prepared_by_tournament_id.get(tournament_id)
+            if prepared is None:
+                prepare_started = time.perf_counter()
+                prepared = prepare_tournament(
+                    client,
+                    tournament_id,
+                    repeat_avoidance_max_pods=args.repeat_avoidance_max_pods,
+                )
+                prepared_by_tournament_id[tournament_id] = prepared
+                log_progress(
+                    f"[{tournament_index + 1}/{len(tournaments)}] Prepared "
+                    f"{prepared.spec.name} ({prepared.spec.player_count} players, "
+                    f"Top {prepared.spec.top_cut}) in {time.perf_counter() - prepare_started:.1f}s."
+                )
+        except Exception as exc:  # pragma: no cover - CLI reporting path
+            for spec in pending_specs:
+                errors.append({"model": spec.label, "tournament_id": tournament_id, "error": str(exc)})
+            completed_cases = completed_success_cases(results_by_model) | completed_error_cases(errors)
+            log_progress(f"ERROR preparing {tournament_id}: {exc}")
+            if args.output:
+                write_json_atomic(
+                    args.output,
+                    build_output_payload(
+                        started=started,
+                        status="running",
+                        args=args,
+                        model_specs=model_specs,
+                        tournaments=tournaments,
+                        results_by_model=results_by_model,
+                        errors=errors,
+                        candidate_selection_seconds=candidate_selection_seconds,
+                        model_load_seconds=model_load_seconds,
+                    ),
+                )
+            continue
+
+        for spec in pending_specs:
+            case_seed = args.seed + (tournament_index * 10_000)
+            case_number = len(completed_cases) + 1
+            log_progress(
+                f"[case {case_number}/{total_cases}] Running {spec.label} on "
+                f"{prepared.spec.name} with seed {case_seed}..."
+            )
             try:
                 results_by_model[spec.label].append(
-                    evaluate_model_on_tournament(
-                        client,
+                    evaluate_model_on_prepared_tournament(
+                        prepared,
                         models[spec.label],
                         model_label=spec.label,
-                        tournament_id=tournament_id,
                         simulations=args.simulations,
                         seed=case_seed,
                         workers=args.workers,
-                        repeat_avoidance_max_pods=args.repeat_avoidance_max_pods,
                     )
                 )
+                runtime = results_by_model[spec.label][-1]["runtime_seconds"]
+                log_progress(f"[case {case_number}/{total_cases}] Completed {spec.label} in {runtime:.1f}s.")
             except Exception as exc:  # pragma: no cover - CLI reporting path
                 errors.append({"model": spec.label, "tournament_id": tournament_id, "error": str(exc)})
+                log_progress(f"[case {case_number}/{total_cases}] ERROR {spec.label} {tournament_id}: {exc}")
+            completed_cases = completed_success_cases(results_by_model) | completed_error_cases(errors)
+            if args.output:
+                write_json_atomic(
+                    args.output,
+                    build_output_payload(
+                        started=started,
+                        status="running",
+                        args=args,
+                        model_specs=model_specs,
+                        tournaments=tournaments,
+                        results_by_model=results_by_model,
+                        errors=errors,
+                        candidate_selection_seconds=candidate_selection_seconds,
+                        model_load_seconds=model_load_seconds,
+                    ),
+                )
 
-    output = {
-        "config": {
-            "simulations": args.simulations,
-            "workers": args.workers,
-            "limit": args.limit,
-            "candidate_scan_limit": args.candidate_scan_limit,
-            "min_active_player_count": args.min_active_player_count,
-            "repeat_avoidance_max_pods": args.repeat_avoidance_max_pods,
-            "models": {spec.label: spec.path for spec in args.model},
-        },
-        "runtime_seconds": {
-            "total": time.perf_counter() - started,
-            "candidate_selection": candidate_selection_seconds,
-            "model_load": model_load_seconds,
-        },
-        "tournaments": tournaments,
-        "aggregate": {
-            label: aggregate_model_results(results)
-            for label, results in results_by_model.items()
-        },
-        "errors": errors,
-    }
-    if args.include_event_details:
-        output["results"] = {
-            label: [strip_calibration_inputs(result) for result in results]
-            for label, results in results_by_model.items()
-        }
-    print(json.dumps(output, indent=2))
+    output = build_output_payload(
+        started=started,
+        status="complete",
+        args=args,
+        model_specs=model_specs,
+        tournaments=tournaments,
+        results_by_model=results_by_model,
+        errors=errors,
+        candidate_selection_seconds=candidate_selection_seconds,
+        model_load_seconds=model_load_seconds,
+    )
+    if args.output:
+        write_json_atomic(args.output, output)
+    print(json.dumps(output_for_stdout(output, include_event_details=args.include_event_details), indent=2))
 
 
 if __name__ == "__main__":

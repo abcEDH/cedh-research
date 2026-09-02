@@ -7,19 +7,37 @@ import argparse
 import json
 import os
 import random
+import re
 from collections import Counter, defaultdict
-from datetime import datetime
-from pathlib import Path
+from datetime import date, datetime
 from typing import Any
 
 from ingest import SupabaseClient, load_local_env
 from sim_engine import initialize_state
-from sim_models import load_draw_model_artifact
+from sim_models import DEFAULT_DRAW_MODEL_PATH, load_draw_model_artifact
 from sim_pairings import topdeck_bye_rank
 from sim_types import FeatureContext, PlayerHistory, SimPlayer, TournamentSpec
 from tournament_sim_runner import build_common_output, run_simulation_from_state
 
-DEFAULT_DRAW_MODEL_PATH = Path("/tmp/cedh_draw_model_artifact_v4.pkl")
+
+def parse_database_datetime(value: Any) -> datetime:
+    text = str(value).replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        match = re.match(r"^(.*T\d{2}:\d{2}:\d{2})\.(\d{1,6})([+-]\d{2}:\d{2})$", text)
+        if match:
+            prefix, fraction, offset = match.groups()
+            return datetime.fromisoformat(f"{prefix}.{fraction.ljust(6, '0')}{offset}")
+        raise
+
+
+def parse_database_date(value: Any) -> date | None:
+    if value is None:
+        return None
+    return parse_database_datetime(value).date()
+
+
 def fetch_all(
     client: SupabaseClient,
     table: str,
@@ -68,10 +86,31 @@ def fetch_entries(client: SupabaseClient, tournament_id: str) -> list[dict[str, 
         client,
         "tournament_entries",
         {
-            "select": "player_id,commander_id,final_standing,points,wins,losses,draws,made_top_cut,players(name,topdeck_id),commanders(name)",
+            "select": "player_id,commander_id,final_standing,points,wins,losses,draws,made_top_cut,players(name,topdeck_id),commanders(name,color_identity)",
             "tournament_id": f"eq.{tournament_id}",
         },
     )
+
+
+def fetch_topdeck_elos_for_topdeck_ids(client: SupabaseClient, topdeck_ids: list[str]) -> dict[str, float]:
+    if not topdeck_ids:
+        return {}
+    try:
+        rows = fetch_all(
+            client,
+            "topdeck_player_elos",
+            {
+                "select": "topdeck_id,elo",
+                "topdeck_id": f"in.({','.join(topdeck_ids)})",
+            },
+        )
+    except Exception:
+        return {}
+    return {
+        str(row["topdeck_id"]): float(row["elo"])
+        for row in rows
+        if row.get("topdeck_id") and row.get("elo") is not None
+    }
 
 
 def derive_top_cut_player_ids(entries: list[dict[str, Any]], top_cut: int) -> set[str]:
@@ -287,8 +326,32 @@ def fetch_pre_tournament_elos(
     player_ids: list[str],
     start_date: str,
 ) -> dict[str, float]:
-    ratings: dict[str, tuple[str, float]] = {}
+    start_day = parse_database_datetime(start_date).date()
+    ratings: dict[str, float] = {}
+    unresolved_player_ids = set(player_ids)
+
     for batch in batched(player_ids, 40):
+        rating_rows = fetch_all(
+            client,
+            "global_elo_ratings",
+            {
+                "select": "player_id,rating,last_game_date",
+                "region_type": "eq.global",
+                "region_key": "eq.ALL",
+                "player_id": f"in.{in_filter(batch)}",
+            },
+        )
+        for row in rating_rows:
+            player_id = row.get("player_id")
+            rating = row.get("rating")
+            last_game_date = parse_database_date(row.get("last_game_date"))
+            if not player_id or rating is None or last_game_date is None:
+                continue
+            if last_game_date < start_day:
+                ratings[str(player_id)] = float(rating)
+                unresolved_player_ids.discard(str(player_id))
+
+    for batch in batched([player_id for player_id in player_ids if player_id in unresolved_player_ids], 40):
         rows = fetch_all(
             client,
             "global_elo_game_events",
@@ -308,8 +371,8 @@ def fetch_pre_tournament_elos(
             if not player_id or game_date is None or rating_after is None:
                 continue
             if player_id not in ratings:
-                ratings[player_id] = (str(game_date), float(rating_after))
-    return {player_id: rating for player_id, (_, rating) in ratings.items()}
+                ratings[str(player_id)] = float(rating_after)
+    return ratings
 
 
 def build_feature_context(
@@ -395,21 +458,32 @@ def build_spec_and_players(
             ]
     swiss_rounds = infer_swiss_rounds(client, tournament_id)
     player_ids = [str(row["player_id"]) for row in entries if row.get("player_id")]
-    pre_elos = fetch_pre_tournament_elos(client, player_ids, str(tournament["start_date"]))
-    feature_context = build_feature_context(client, player_ids, str(tournament["start_date"]))
+    start_date = parse_database_datetime(tournament["start_date"])
+    pre_elos = fetch_pre_tournament_elos(client, player_ids, start_date.isoformat())
+    feature_context = build_feature_context(client, player_ids, start_date.isoformat())
 
     sortable_entries = []
+    topdeck_ids_for_elo = [
+        str((row.get("players") or {}).get("topdeck_id"))
+        for row in entries
+        if (row.get("players") or {}).get("topdeck_id")
+    ]
+    topdeck_elos = fetch_topdeck_elos_for_topdeck_ids(client, topdeck_ids_for_elo)
     for row in entries:
         player_id = row.get("player_id")
         player = row.get("players") or {}
+        commander = row.get("commanders") or {}
+        topdeck_id = player.get("topdeck_id")
         if not player_id:
             continue
         sortable_entries.append(
             (
                 str(player_id),
                 str(player.get("name") or player_id),
-                player.get("topdeck_id"),
+                topdeck_id,
                 float(pre_elos.get(str(player_id), 1500.0)),
+                topdeck_elos.get(str(topdeck_id)) if topdeck_id else None,
+                tuple(sorted({str(color).upper() for color in (commander.get("color_identity") or ()) if color})),
             )
         )
 
@@ -417,13 +491,15 @@ def build_spec_and_players(
     seeded_rng = random.Random(seed_source)
     seeded_rng.shuffle(sortable_entries)
     players = []
-    for tiebreak_seed, (player_id, name, topdeck_id, elo) in enumerate(sortable_entries, start=1):
+    for tiebreak_seed, (player_id, name, topdeck_id, elo, topdeck_elo, commander_colors) in enumerate(sortable_entries, start=1):
         players.append(
             SimPlayer(
                 player_id=player_id,
                 name=name,
                 elo=elo,
                 topdeck_id=topdeck_id,
+                topdeck_elo=topdeck_elo,
+                commander_colors=commander_colors,
                 tiebreak_seed=tiebreak_seed,
             )
         )
@@ -431,7 +507,7 @@ def build_spec_and_players(
     spec = TournamentSpec(
         tournament_id=str(tournament["id"]),
         name=str(tournament["name"]),
-        start_date=datetime.fromisoformat(str(tournament["start_date"]).replace("Z", "+00:00")),
+        start_date=start_date,
         swiss_rounds=swiss_rounds,
         top_cut=int(tournament.get("top_cut") or 0),
         player_count=len(players) if active_players_only else int(tournament.get("player_count") or len(players)),

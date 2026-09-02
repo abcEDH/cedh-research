@@ -13,10 +13,11 @@ from itertools import product
 from sim_models import (
     ELO_BASE,
     ELO_DIVISOR,
+    LoadedCandidateWinnerModel,
     LoadedDrawModel,
     build_round_snapshot,
     predict_decisive_win_probabilities,
-    predict_draw_probabilities,
+    predict_pod_outcome_probabilities,
 )
 from sim_pairings import pair_swiss_round, pair_topdeck_bracket, select_top_cut, sort_standings_rows, topdeck_bye_rank
 from sim_types import (
@@ -112,6 +113,7 @@ def clone_state(state: TournamentState) -> TournamentState:
         eligible_player_ids=set(state.eligible_player_ids) if state.eligible_player_ids is not None else None,
         fast_live_mode=state.fast_live_mode,
         track_round_stats=state.track_round_stats,
+        standings_random_tiebreakers=dict(state.standings_random_tiebreakers),
     )
 
 
@@ -241,11 +243,33 @@ def apply_bye(state: TournamentState, player_id: str) -> None:
         state.feature_context.player_history[player_id] = history
 
 
+def apply_points_drop_if_due(state: TournamentState, completed_round_number: int) -> bool:
+    drop_after_round = state.spec.drop_after_round
+    drop_min_points = state.spec.drop_min_points
+    if drop_after_round is None or drop_min_points is None:
+        return False
+    if drop_after_round <= 0 or drop_min_points < 0:
+        return False
+    if completed_round_number < drop_after_round:
+        return False
+
+    current_eligible = state.eligible_player_ids if state.eligible_player_ids is not None else set(state.standings)
+    next_eligible = {
+        player_id
+        for player_id in current_eligible
+        if state.standings[player_id].points >= drop_min_points
+    }
+    changed = state.eligible_player_ids != next_eligible
+    state.eligible_player_ids = next_eligible
+    return changed
+
+
 def simulate_swiss(
     state: TournamentState,
     rng: random.Random,
     draw_model: LoadedDrawModel,
     context: TournamentContext,
+    winner_model: LoadedCandidateWinnerModel | None = None,
     *,
     start_round_index: int = 0,
     locked_round_pods: list[Pod] | None = None,
@@ -263,6 +287,7 @@ def simulate_swiss(
         for bye_pod in bye_pods:
             apply_bye(state, bye_pod.player_ids[0])
         if not pods:
+            apply_points_drop_if_due(state, round_index + 1)
             continue
         if (
             locked_round_pods is not None
@@ -274,8 +299,14 @@ def simulate_swiss(
             win_probabilities = locked_round_win_probabilities
         else:
             round_snapshot = build_round_snapshot(state, context, round_index + 1)
-            draw_probabilities = predict_draw_probabilities(pods, state, context, draw_model, round_snapshot)
-            win_probabilities = predict_decisive_win_probabilities(pods, state)
+            draw_probabilities, win_probabilities = predict_pod_outcome_probabilities(
+                pods,
+                state,
+                context,
+                draw_model,
+                round_snapshot,
+                winner_model,
+            )
         round_results: list[PodResult] = []
         for pod in pods:
             result = simulate_pod(
@@ -286,6 +317,7 @@ def simulate_swiss(
             )
             round_results.append(result)
             apply_pod_result(state, result)
+        apply_points_drop_if_due(state, round_index + 1)
 
 
 def simulate_bracket_winner(
@@ -294,6 +326,7 @@ def simulate_bracket_winner(
     rng: random.Random,
     draw_model: LoadedDrawModel,
     context: TournamentContext,
+    winner_model: LoadedCandidateWinnerModel | None = None,
 ) -> tuple[str, dict[int, list[str]]]:
     remaining = qualified_player_ids[:]
     advancement_by_size: dict[int, list[str]] = {}
@@ -304,7 +337,7 @@ def simulate_bracket_winner(
     while len(remaining) > 1:
         auto_advancers, pods = pair_topdeck_bracket(remaining, round_index)
         winners: list[str] = auto_advancers[:]
-        win_probabilities = predict_decisive_win_probabilities(pods, state)
+        win_probabilities = predict_decisive_win_probabilities(pods, state, context, winner_model)
         round_results: list[PodResult] = []
         for pod in pods:
             pod_win_probabilities = win_probabilities[(pod.round_index, pod.table_number)]
@@ -331,6 +364,9 @@ def exact_top_cut_probabilities(
     state: TournamentState,
     *,
     max_exact_cut_size: int = 16,
+    start_round_index: int | None = None,
+    context: TournamentContext | None = None,
+    winner_model: LoadedCandidateWinnerModel | None = None,
 ) -> tuple[dict[str, float], dict[int, dict[str, float]]]:
     if len(qualified_player_ids) > max_exact_cut_size:
         raise ValueError(f"exact top-cut propagation is capped at {max_exact_cut_size} players")
@@ -338,38 +374,66 @@ def exact_top_cut_probabilities(
     initial_seed_rank = {player_id: index for index, player_id in enumerate(qualified_player_ids)}
     winner_probabilities: dict[str, float] = defaultdict(float)
     advancement_probabilities: dict[int, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    current_states: dict[tuple[str, ...], float] = {tuple(qualified_player_ids): 1.0}
+    round_index = state.spec.swiss_rounds if start_round_index is None else start_round_index
 
-    def visit(remaining: list[str], round_index: int, branch_probability: float) -> None:
-        if not remaining or branch_probability <= 0:
-            return
-        for player_id in remaining:
-            advancement_probabilities[len(remaining)][player_id] += branch_probability
-        if len(remaining) == 1:
-            winner_probabilities[remaining[0]] += branch_probability
-            return
+    while current_states:
+        branch_specs: list[tuple[tuple[str, ...], float, list[str], list[Pod]]] = []
+        batched_pods: list[Pod] = []
+        next_states: dict[tuple[str, ...], float] = defaultdict(float)
 
-        auto_advancers, pods = pair_topdeck_bracket(remaining, round_index)
-        if not pods:
-            if auto_advancers:
-                split_probability = branch_probability / len(auto_advancers)
-                for player_id in auto_advancers:
-                    winner_probabilities[player_id] += split_probability
-            return
+        for remaining_tuple, branch_probability in current_states.items():
+            if not remaining_tuple or branch_probability <= 0:
+                continue
+            remaining = list(remaining_tuple)
+            for player_id in remaining:
+                advancement_probabilities[len(remaining)][player_id] += branch_probability
+            if len(remaining) == 1:
+                winner_probabilities[remaining[0]] += branch_probability
+                continue
 
-        win_probabilities = predict_decisive_win_probabilities(pods, state)
-        pod_options = [
-            list(zip(pod.player_ids, win_probabilities[(pod.round_index, pod.table_number)], strict=False))
-            for pod in pods
-        ]
-        for outcome in product(*pod_options):
-            winners = auto_advancers + [player_id for player_id, _probability in outcome]
-            probability = branch_probability
-            for _player_id, player_probability in outcome:
-                probability *= player_probability
-            ordered_winners = sorted(winners, key=lambda player_id: initial_seed_rank[player_id])
-            visit(ordered_winners, round_index + 1, probability)
+            auto_advancers, pods = pair_topdeck_bracket(remaining, round_index)
+            if not pods:
+                if auto_advancers:
+                    split_probability = branch_probability / len(auto_advancers)
+                    for player_id in auto_advancers:
+                        winner_probabilities[player_id] += split_probability
+                continue
 
-    visit(qualified_player_ids, state.spec.swiss_rounds, 1.0)
+            copied_pods: list[Pod] = []
+            for pod in pods:
+                # Batch all branch pods into one model call per bracket round.
+                copied_pod = Pod(
+                    round_index=pod.round_index,
+                    table_number=len(batched_pods) + 1,
+                    player_ids=pod.player_ids,
+                    round_name=pod.round_name,
+                    seats_by_player=pod.seats_by_player,
+                )
+                copied_pods.append(copied_pod)
+                batched_pods.append(copied_pod)
+            branch_specs.append((remaining_tuple, branch_probability, auto_advancers, copied_pods))
+
+        if not branch_specs:
+            break
+
+        win_probabilities = predict_decisive_win_probabilities(batched_pods, state, context, winner_model)
+        for _remaining_tuple, branch_probability, auto_advancers, pods in branch_specs:
+            pod_options = [
+                list(zip(pod.player_ids, win_probabilities[(pod.round_index, pod.table_number)], strict=False))
+                for pod in pods
+            ]
+            for outcome in product(*pod_options):
+                winners = auto_advancers + [player_id for player_id, _probability in outcome]
+                probability = branch_probability
+                for _player_id, player_probability in outcome:
+                    probability *= player_probability
+                ordered_winners = tuple(sorted(winners, key=lambda player_id: initial_seed_rank[player_id]))
+                next_states[ordered_winners] += probability
+
+        current_states = next_states
+        round_index += 1
+
     return dict(winner_probabilities), {
         cut_size: dict(player_probabilities)
         for cut_size, player_probabilities in advancement_probabilities.items()
@@ -382,29 +446,100 @@ def resolve_bracket_probabilities(
     rng: random.Random,
     draw_model: LoadedDrawModel,
     context: TournamentContext,
+    winner_model: LoadedCandidateWinnerModel | None = None,
     *,
     exact_cut_sizes: tuple[int, ...] = (16, 10, 4),
 ) -> tuple[dict[str, float], dict[int, dict[str, float]]]:
+    exact_cut_sizes = tuple(sorted({cut_size for cut_size in exact_cut_sizes if cut_size > 0}, reverse=True))
+    if not exact_cut_sizes:
+        winner_id, advancement_by_size = simulate_bracket_winner(
+            qualified_player_ids,
+            state,
+            rng,
+            draw_model,
+            context,
+            winner_model,
+        )
+        winner_probabilities = {winner_id: 1.0} if winner_id else {}
+        advancement_probabilities = {
+            cut_size: {player_id: 1.0 for player_id in player_ids}
+            for cut_size, player_ids in advancement_by_size.items()
+        }
+        return winner_probabilities, advancement_probabilities
+
     if len(qualified_player_ids) in exact_cut_sizes:
         return exact_top_cut_probabilities(
             qualified_player_ids,
             state,
             max_exact_cut_size=max(exact_cut_sizes),
+            context=context,
+            winner_model=winner_model,
         )
 
-    winner_id, advancement_by_size = simulate_bracket_winner(
-        qualified_player_ids,
-        state,
-        rng,
-        draw_model,
-        context,
-    )
-    winner_probabilities = {winner_id: 1.0} if winner_id else {}
-    advancement_probabilities = {
-        cut_size: {player_id: 1.0 for player_id in player_ids}
-        for cut_size, player_ids in advancement_by_size.items()
+    remaining = qualified_player_ids[:]
+    initial_seed_rank = {player_id: index for index, player_id in enumerate(qualified_player_ids)}
+    round_index = state.spec.swiss_rounds
+    advancement_probabilities: dict[int, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    for player_id in remaining:
+        advancement_probabilities[len(remaining)][player_id] += 1.0
+
+    while len(remaining) > 1:
+        auto_advancers, pods = pair_topdeck_bracket(remaining, round_index)
+        if not pods:
+            if auto_advancers:
+                split_probability = 1.0 / len(auto_advancers)
+                winner_probabilities = {player_id: split_probability for player_id in auto_advancers}
+                return winner_probabilities, {
+                    cut_size: dict(player_probabilities)
+                    for cut_size, player_probabilities in advancement_probabilities.items()
+                }
+            break
+
+        next_size = len(auto_advancers) + len(pods)
+        win_probabilities = predict_decisive_win_probabilities(pods, state, context, winner_model)
+        if next_size in exact_cut_sizes:
+            for player_id in auto_advancers:
+                advancement_probabilities[next_size][player_id] += 1.0
+            sampled_winners = auto_advancers[:]
+            for pod in pods:
+                pod_win_probabilities = win_probabilities[(pod.round_index, pod.table_number)]
+                for player_id, probability in zip(pod.player_ids, pod_win_probabilities, strict=False):
+                    advancement_probabilities[next_size][player_id] += probability
+                sampled_winners.append(pod.player_ids[sample_index(pod_win_probabilities, rng)])
+
+            exact_players = sorted(sampled_winners, key=lambda player_id: initial_seed_rank[player_id])
+            winner_probabilities, exact_advancement_probabilities = exact_top_cut_probabilities(
+                exact_players,
+                state,
+                max_exact_cut_size=max(exact_cut_sizes),
+                start_round_index=round_index + 1,
+                context=context,
+                winner_model=winner_model,
+            )
+            for cut_size, player_probabilities in exact_advancement_probabilities.items():
+                if cut_size == next_size:
+                    continue
+                for player_id, probability in player_probabilities.items():
+                    advancement_probabilities[cut_size][player_id] += probability
+            return dict(winner_probabilities), {
+                cut_size: dict(player_probabilities)
+                for cut_size, player_probabilities in advancement_probabilities.items()
+            }
+
+        winners = auto_advancers[:]
+        for pod in pods:
+            pod_win_probabilities = win_probabilities[(pod.round_index, pod.table_number)]
+            winners.append(pod.player_ids[sample_index(pod_win_probabilities, rng)])
+        remaining = sorted(winners, key=lambda player_id: initial_seed_rank[player_id])
+        for player_id in remaining:
+            advancement_probabilities[len(remaining)][player_id] += 1.0
+        round_index += 1
+
+    winner_probabilities = {remaining[0]: 1.0} if remaining else {}
+    return winner_probabilities, {
+        cut_size: dict(player_probabilities)
+        for cut_size, player_probabilities in advancement_probabilities.items()
     }
-    return winner_probabilities, advancement_probabilities
 
 
 def simulate_tournament(
@@ -414,9 +549,10 @@ def simulate_tournament(
     *,
     seed: int | None = None,
     feature_context=None,
+    winner_model: LoadedCandidateWinnerModel | None = None,
 ) -> tuple[TournamentState, dict[str, float], list[str], dict[int, dict[str, float]]]:
     state = initialize_state(spec, entrants, feature_context=feature_context)
-    return simulate_from_state(state, draw_model, seed=seed)
+    return simulate_from_state(state, draw_model, seed=seed, winner_model=winner_model)
 
 
 def simulate_from_state(
@@ -424,6 +560,7 @@ def simulate_from_state(
     draw_model: LoadedDrawModel,
     *,
     seed: int | None = None,
+    winner_model: LoadedCandidateWinnerModel | None = None,
     start_round_index: int | None = None,
     locked_round_pods: list[Pod] | None = None,
     locked_round_draw_probabilities: dict[tuple[int, int], float] | None = None,
@@ -432,17 +569,22 @@ def simulate_from_state(
     rng = random.Random(seed)
     context = build_tournament_context(state.spec)
     effective_start_round = state.current_round_index if start_round_index is None else start_round_index
+    if apply_points_drop_if_due(state, effective_start_round):
+        locked_round_pods = None
+        locked_round_draw_probabilities = None
+        locked_round_win_probabilities = None
     simulate_swiss(
         state,
         rng,
         draw_model,
         context,
+        winner_model,
         start_round_index=effective_start_round,
         locked_round_pods=locked_round_pods,
         locked_round_draw_probabilities=locked_round_draw_probabilities,
         locked_round_win_probabilities=locked_round_win_probabilities,
     )
-    top_cut = select_top_cut(state) if state.spec.top_cut > 0 else []
+    top_cut = select_top_cut(state, rng=rng) if state.spec.top_cut > 0 else []
     if top_cut:
         winner_probabilities, advancement_probabilities = resolve_bracket_probabilities(
             top_cut,
@@ -450,6 +592,7 @@ def simulate_from_state(
             rng,
             draw_model,
             context,
+            winner_model,
         )
     else:
         winner_probabilities, advancement_probabilities = {}, {}
@@ -460,6 +603,7 @@ def _run_monte_carlo_batch(
     spec: TournamentSpec,
     entrants: list[SimPlayer],
     draw_model: LoadedDrawModel,
+    winner_model: LoadedCandidateWinnerModel | None,
     simulations: int,
     seed: int,
     feature_context: FeatureContext | None,
@@ -481,6 +625,7 @@ def _run_monte_carlo_batch(
             draw_model,
             seed=seed + simulation_index,
             feature_context=feature_context,
+            winner_model=winner_model,
         )
         for player_id, probability in winner_probabilities.items():
             win_counts[player_id] += probability
@@ -520,6 +665,7 @@ def _run_monte_carlo_batch(
 def _run_state_monte_carlo_batch(
     base_state: TournamentState,
     draw_model: LoadedDrawModel,
+    winner_model: LoadedCandidateWinnerModel | None,
     simulations: int,
     seed: int,
     start_round_index: int,
@@ -545,6 +691,7 @@ def _run_state_monte_carlo_batch(
             state,
             draw_model,
             seed=seed + simulation_index,
+            winner_model=winner_model,
             start_round_index=start_round_index,
             locked_round_pods=locked_round_pods,
             locked_round_draw_probabilities=locked_round_draw_probabilities,
@@ -644,6 +791,7 @@ def run_monte_carlo(
     simulations: int = 10_000,
     seed: int = 1,
     feature_context=None,
+    winner_model: LoadedCandidateWinnerModel | None = None,
     workers: int | None = None,
 ) -> SimulationSummary:
     effective_workers = workers if workers is not None else max(1, min(4, os.cpu_count() or 1))
@@ -652,6 +800,7 @@ def run_monte_carlo(
             spec,
             entrants,
             draw_model,
+            winner_model,
             simulations=simulations,
             seed=seed,
             feature_context=feature_context,
@@ -675,6 +824,7 @@ def run_monte_carlo(
                 [spec] * len(batch_specs),
                 [entrants] * len(batch_specs),
                 [draw_model] * len(batch_specs),
+                [winner_model] * len(batch_specs),
                 [simulation_count for simulation_count, _ in batch_specs],
                 [batch_seed for _, batch_seed in batch_specs],
                 [feature_context] * len(batch_specs),
@@ -689,6 +839,7 @@ def run_monte_carlo_from_state(
     *,
     simulations: int = 10_000,
     seed: int = 1,
+    winner_model: LoadedCandidateWinnerModel | None = None,
     workers: int | None = None,
     start_round_index: int | None = None,
     locked_round_pods: list[Pod] | None = None,
@@ -703,18 +854,19 @@ def run_monte_carlo_from_state(
     if locked_round_pods is not None:
         context = build_tournament_context(base_state.spec)
         round_snapshot = build_round_snapshot(base_state, context, effective_start_round + 1)
-        locked_round_draw_probabilities = predict_draw_probabilities(
+        locked_round_draw_probabilities, locked_round_win_probabilities = predict_pod_outcome_probabilities(
             locked_round_pods,
             base_state,
             context,
             draw_model,
             round_snapshot,
+            winner_model,
         )
-        locked_round_win_probabilities = predict_decisive_win_probabilities(locked_round_pods, base_state)
     if effective_workers <= 1 or simulations <= 1:
         return _run_state_monte_carlo_batch(
             base_state,
             draw_model,
+            winner_model,
             simulations=simulations,
             seed=seed,
             start_round_index=effective_start_round,
@@ -743,6 +895,7 @@ def run_monte_carlo_from_state(
                 _run_state_monte_carlo_batch,
                 [base_state] * len(batch_specs),
                 [draw_model] * len(batch_specs),
+                [winner_model] * len(batch_specs),
                 [simulation_count for simulation_count, _ in batch_specs],
                 [batch_seed for _, batch_seed in batch_specs],
                 [effective_start_round] * len(batch_specs),

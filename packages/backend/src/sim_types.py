@@ -190,6 +190,110 @@ ALL_DRAW_FEATURES = [
     "draw_vs_win_status_same_count",
     "pairwise_mutual_draw_benefit_count",
     "count_players_draw_as_good_as_win_for_bye",
+    "topdeck_elo_spread",
+    "topdeck_elo_mean",
+    "topdeck_elo_std",
+    "topdeck_elo_missing_count",
+    "topdeck_elo_minus_internal_mean",
+    "count_white_commanders",
+    "count_blue_commanders",
+    "count_black_commanders",
+    "count_red_commanders",
+    "count_green_commanders",
+    "avg_commander_color_count",
+    "max_commander_color_count",
+    "unique_commander_color_count",
+    "commander_color_data_missing_count",
+]
+
+OUTCOME_V3_DRAW_FEATURES = [
+    "is_topdeck_invitational_family",
+    "is_midseason_showdown_family",
+    "is_commander_invitational_family",
+    "is_invitational_like_family",
+    "is_championship_like_family",
+    "is_qualifier_like_family",
+    "is_redemption_like_family",
+    "is_league_like_family",
+    "is_open_like_family",
+    "is_high_stakes_like_family",
+    "elite_count_1600_x_cut_fraction",
+    "elite_count_1700_x_cut_fraction",
+    "elite_count_1800_x_cut_fraction",
+    "elite_count_1700_x_series_prior",
+    "elite_count_1800_x_series_prior",
+    "all_players_1700_plus",
+    "all_players_1800_plus",
+    "top2_mean_elo_x_series_prior",
+    "top3_mean_elo_x_series_prior",
+    "top3_mean_elo_x_round_number",
+    "mean_elo_x_global_recent_draw_rate_90d",
+    "series_minus_global_prior",
+    "series_minus_global_prior_abs",
+    "topdeck_invitational_x_series_prior",
+    "midseason_showdown_x_series_prior",
+    "invitational_like_x_series_prior",
+    "high_stakes_like_x_series_prior",
+    "invitational_like_x_high1700",
+    "high_stakes_like_x_high1700",
+    "high_stakes_like_x_cut_fraction",
+    "high_stakes_like_x_round_number",
+    "cut_or_bye_pressure_count",
+    "draw_locks_cut_or_bye",
+    "draw_hurts_cut_or_bye_status",
+    "asymmetric_cut_or_bye_incentive",
+    "draw_as_good_as_win_cut_or_bye_count",
+    "must_win_cut_or_bye_count",
+]
+
+ALL_DRAW_FEATURES.extend(OUTCOME_V3_DRAW_FEATURES)
+
+COMMANDER_DRAW_FEATURES = {
+    "count_white_commanders",
+    "count_blue_commanders",
+    "count_black_commanders",
+    "count_red_commanders",
+    "count_green_commanders",
+    "avg_commander_color_count",
+    "max_commander_color_count",
+    "unique_commander_color_count",
+    "commander_color_data_missing_count",
+}
+
+LIVE_DEFAULTED_DRAW_FEATURES = {
+    "global_recent_draw_rate_90d",
+    "series_prior_draw_rate",
+    "series_events_seen",
+    "state_prior_draw_rate",
+    "country_prior_draw_rate",
+    "series_prior_draw_rate_smoothed_50",
+    "series_prior_draw_rate_smoothed_100",
+    "series_prior_draw_rate_smoothed_250",
+    "series_prior_draw_rate_smoothed_500",
+    "series_events_seen_log",
+    "avg_player_prior_draw_smoothed_50",
+    "median_player_prior_draw_smoothed_50",
+    "max_player_prior_draw_smoothed_50",
+    "round_size_cut_prior_draw_rate_smoothed_100",
+    "pod_size_series_prior_draw_rate",
+    "series_pod_size_prior_draw_rate_smoothed_100",
+    "series_prior_draw_rate_residual",
+}
+
+TOPDECK_ELO_DRAW_FEATURES = {
+    "topdeck_elo_spread",
+    "topdeck_elo_mean",
+    "topdeck_elo_std",
+    "topdeck_elo_missing_count",
+    "topdeck_elo_minus_internal_mean",
+}
+
+DEFAULT_EXCLUDED_DRAW_FEATURES = (
+    COMMANDER_DRAW_FEATURES | LIVE_DEFAULTED_DRAW_FEATURES | TOPDECK_ELO_DRAW_FEATURES | set(OUTCOME_V3_DRAW_FEATURES)
+)
+
+DEFAULT_DRAW_MODEL_FEATURES = [
+    feature for feature in ALL_DRAW_FEATURES if feature not in DEFAULT_EXCLUDED_DRAW_FEATURES
 ]
 
 
@@ -199,6 +303,8 @@ class SimPlayer:
     name: str
     elo: float
     topdeck_id: str | None = None
+    topdeck_elo: float | None = None
+    commander_colors: tuple[str, ...] = ()
     tiebreak_seed: int = 0
 
 
@@ -246,6 +352,8 @@ class TournamentSpec:
     repeat_avoidance_max_pods: int | None = None
     state: str | None = None
     country: str | None = None
+    drop_after_round: int | None = None
+    drop_min_points: int | None = None
 
 
 @dataclass(slots=True)
@@ -319,6 +427,7 @@ class TournamentState:
     track_round_stats: bool = True
     round_draw_counts: dict[int, int] = field(default_factory=dict)
     round_pod_counts: dict[int, int] = field(default_factory=dict)
+    standings_random_tiebreakers: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
