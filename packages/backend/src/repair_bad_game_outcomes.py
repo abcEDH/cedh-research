@@ -43,7 +43,12 @@ def delete_tournament_games(client: Client, tournament_id: str) -> int:
     `DataIngester` now expects a plain `Client`, and subclassing the removed
     wrapper is no longer possible.
     """
-    result = client.table("games").delete().eq("tournament_id", tournament_id).select("id").execute()
+    result = (
+        client.table("games")
+        .delete(returning="representation")
+        .eq("tournament_id", tournament_id)
+        .execute()
+    )
     deleted = result.data
     return len(deleted) if isinstance(deleted, list) else 0
 
