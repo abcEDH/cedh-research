@@ -10,19 +10,19 @@ deployments:
     entrypoint: packages/backend/src/prefect_flows.py:daily_backend_refresh
     work_pool:
       name: cedh-managed
+      job_variables:
+        pip_packages:
+          - supabase>=2.16.0
+          - numpy>=2.2.6
+          - scikit-learn>=1.7.2
+          - python-dateutil>=2.8.2
+          - psycopg2-binary>=2.9.9
+          - requests>=2.31.0
+        env:
+          PYTHONUNBUFFERED: "1"
     schedule:
       cron: "0 6 * * *"
       timezone: UTC
     parameters:
       days: 7
       min_players: 16
-    job_variables:
-      pip_packages:
-        - supabase>=2.16.0
-        - numpy>=2.2.6
-        - scikit-learn>=1.7.2
-        - python-dateutil>=2.8.2
-        - psycopg2-binary>=2.9.9
-        - requests>=2.31.0
-      env:
-        PYTHONUNBUFFERED: "1"
