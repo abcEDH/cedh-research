@@ -35,11 +35,12 @@ an evaluation path; the custom image below is the production target.
 ## Register the deployment
 
 Create or select a work pool that executes Docker containers, then register the
-deployment from `packages/backend`:
+deployment from the repository root so the entrypoint path matches the
+deployment configuration:
 
 ```bash
-cd packages/backend
-uv run prefect deploy
+uv run --project packages/backend prefect deploy \
+  --prefect-file packages/backend/prefect.yaml
 ```
 
 The deployment is scheduled for 06:00 UTC daily. Run it manually first:
