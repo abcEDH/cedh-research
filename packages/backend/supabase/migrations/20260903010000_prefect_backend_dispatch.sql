@@ -1,23 +1,7 @@
--- Prefect owns production execution of the backend refresh. Keep Supabase
--- pg_cron for stale-job cleanup, but stop the old GitHub Actions dispatchers.
-
-DO $$
-DECLARE
-  v_job_name text;
-BEGIN
-  IF to_regclass('cron.job') IS NOT NULL THEN
-    FOREACH v_job_name IN ARRAY ARRAY[
-      'ingestion-refresh-daily-dispatch',
-      'elo-refresh-daily-dispatch'
-    ]
-    LOOP
-      IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = v_job_name) THEN
-        PERFORM cron.unschedule(v_job_name);
-      END IF;
-    END LOOP;
-  END IF;
-END;
-$$;
+-- Prepare the database for Prefect before any legacy dispatcher is disabled.
+-- The idempotent enqueue RPC changes land in the following migration. Keep the
+-- legacy dispatchers active until Prefect has been manually verified; disabling
+-- them is an operational cutover, not an automatic part of schema migration.
 
 ALTER TABLE public.ingestion_jobs
   DROP CONSTRAINT IF EXISTS ingestion_jobs_trigger_source_check;

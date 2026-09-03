@@ -50,9 +50,19 @@ uv run prefect deployment run 'daily-backend-refresh/daily-backend-refresh'
 
 Verify that the Prefect run creates an `ingestion_jobs` row with
 `trigger_source = 'prefect'`, then an `elo_maintenance_jobs` row after ingestion
-completes. Only after that verification should the migration
-`20260903010000_prefect_backend_dispatch.sql` be applied, because it disables the
-legacy GitHub Actions dispatch schedules.
+completes. The migrations `20260903010000_prefect_backend_dispatch.sql` and
+`20260903020000_prefect_enqueue_idempotency.sql` prepare the schema and enqueue
+RPCs but intentionally leave the legacy GitHub Actions dispatch schedules active.
+Only after that verification, disable the legacy schedules manually:
+
+```sql
+SELECT cron.unschedule(jobname)
+FROM cron.job
+WHERE jobname IN (
+  'ingestion-refresh-daily-dispatch',
+  'elo-refresh-daily-dispatch'
+);
+```
 
 ## Rollback
 
