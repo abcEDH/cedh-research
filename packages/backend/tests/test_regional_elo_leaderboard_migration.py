@@ -14,6 +14,9 @@ LEADERBOARD_TOPDECK_MIGRATION = (
 REGIONS_ACTIVE_SNAPSHOT_MIGRATION = (
     MIGRATIONS_DIR / "20260730000000_regional_elo_regions_active_snapshot.sql"
 )
+CANONICAL_COUNTS_RPC_MIGRATION = (
+    MIGRATIONS_DIR / "20260903000000_global_elo_canonical_counts_rpc.sql"
+)
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -30,6 +33,22 @@ RECENT_LAST_GAME_DATE = "2026-07-01"
 
 
 class RegionalEloLeaderboardMigrationTests(unittest.TestCase):
+    def test_canonical_counts_rpc_is_keyset_paginated_and_service_role_only(self) -> None:
+        sql = CANONICAL_COUNTS_RPC_MIGRATION.read_text()
+
+        self.assertIn("CREATE OR REPLACE FUNCTION public.get_global_elo_canonical_counts(", sql)
+        self.assertIn("p_after_player_id uuid DEFAULT NULL", sql)
+        self.assertIn("e.player_id > p_after_player_id", sql)
+        self.assertIn("ORDER BY e.player_id", sql)
+        self.assertIn(
+            "REVOKE ALL ON FUNCTION public.get_global_elo_canonical_counts(uuid, integer)",
+            sql,
+        )
+        self.assertIn(
+            "GRANT EXECUTE ON FUNCTION public.get_global_elo_canonical_counts(uuid, integer)\n  TO service_role;",
+            sql,
+        )
+
     def test_state_activity_migration_does_not_reference_country_key_too_early(self) -> None:
         sql = STATE_ACTIVITY_MIGRATION.read_text()
 

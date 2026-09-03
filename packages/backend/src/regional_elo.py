@@ -1318,8 +1318,10 @@ def fetch_canonical_event_counts(client: SupabaseClient) -> dict[str, dict[str, 
     """Return per-player canonical game counts and last_game_date from the
     leaderboard view.
 
-    The view aggregates from global_elo_game_events, which is the ground-truth
-    source. Bypasses the stale accumulator columns in global_elo_ratings that
+    The RPC aggregates from global_elo_game_events, which is the ground-truth
+    source. It has the same semantics as the global branch of the leaderboard
+    view, but avoids recomputing the wider regional view for every page.
+    This bypasses the stale accumulator columns in global_elo_ratings that
     drift when full recomputes run multiple times.
 
     ``last_game_date`` here is the player's true global last game date, unlike
@@ -1329,15 +1331,25 @@ def fetch_canonical_event_counts(client: SupabaseClient) -> dict[str, dict[str, 
 
     Must be called after game events for the current run have been upserted.
     """
-    rows = fetch_all(
-        client,
-        "regional_elo_leaderboard",
-        {
-            "select": "player_id,games_played,wins,losses,draws,last_game_date",
-            "region_type": f"eq.{GLOBAL_REGION_TYPE}",
-            "region_key": f"eq.{GLOBAL_REGION_KEY}",
-        },
-    )
+    rows: list[dict[str, Any]] = []
+    after_player_id: str | None = None
+    while True:
+        page = client.rpc(
+            "get_global_elo_canonical_counts",
+            {
+                "p_after_player_id": after_player_id,
+                "p_limit": 1000,
+            },
+        ) or []
+        if not page:
+            break
+        rows.extend(page)
+        if len(page) < 1000:
+            break
+        next_player_id = page[-1].get("player_id")
+        if not next_player_id or next_player_id == after_player_id:
+            raise RuntimeError("Canonical event-count RPC returned no pagination progress")
+        after_player_id = str(next_player_id)
     return {
         row["player_id"]: {
             "games_played": int(row.get("games_played") or 0),

@@ -11,6 +11,7 @@ export type EloDisplayStats = {
 const PLAYER_ID_BATCH_SIZE = 50;
 const GAME_PAGE_SIZE = 1000;
 type EloDisplayTier = "ranking" | "all";
+type EloDisplayStatsRecord = Record<string, EloDisplayStats>;
 
 function emptyStats(): EloDisplayStats {
   return { games_played: 0, wins: 0, draws: 0, losses: 0 };
@@ -26,12 +27,12 @@ function emptyStats(): EloDisplayStats {
 async function fetchEloDisplayStatsInner(
   topdeckIds: string[],
   tier: EloDisplayTier = "ranking"
-): Promise<Map<string, EloDisplayStats>> {
+): Promise<EloDisplayStatsRecord> {
   const uniqueTopdeckIds = Array.from(new Set(topdeckIds.filter(Boolean)));
-  const statsByTopdeckId = new Map<string, EloDisplayStats>();
+  const statsByTopdeckId: EloDisplayStatsRecord = {};
 
   for (const topdeckId of uniqueTopdeckIds) {
-    statsByTopdeckId.set(topdeckId, emptyStats());
+    statsByTopdeckId[topdeckId] = emptyStats();
   }
 
   for (let batchStart = 0; batchStart < uniqueTopdeckIds.length; batchStart += PLAYER_ID_BATCH_SIZE) {
@@ -58,7 +59,7 @@ async function fetchEloDisplayStatsInner(
 
       for (const row of rows) {
         if (!row.topdeck_id) continue;
-        const stats = statsByTopdeckId.get(row.topdeck_id);
+        const stats = statsByTopdeckId[row.topdeck_id];
         if (!stats) continue;
 
         if (row.result === "win") stats.wins += 1;
@@ -93,6 +94,5 @@ export async function fetchEloDisplayStats(
 ): Promise<Map<string, EloDisplayStats>> {
   const stableIds = Array.from(new Set(topdeckIds.filter(Boolean))).sort();
   const cached = await getCachedEloDisplayStatsInner(stableIds, tier);
-  if (cached instanceof Map) return cached;
   return new Map(Object.entries(cached));
 }
