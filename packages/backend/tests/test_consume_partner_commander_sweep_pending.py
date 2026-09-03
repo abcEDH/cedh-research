@@ -58,8 +58,8 @@ TOKEN = "11111111-1111-1111-1111-111111111111"
 class ReadSweepPendingStateTests(unittest.TestCase):
     def _client(self) -> Mock:
         client = Mock()
-        client.url = "https://example.supabase.co"
-        client.headers = {"apikey": "test"}
+        client.postgrest.base_url = "https://example.supabase.co/rest/v1"
+        client.postgrest.headers = {"apikey": "test"}
         return client
 
     def test_reads_pending_and_token_via_plain_select(self) -> None:
@@ -104,8 +104,8 @@ class ReadSweepPendingStateTests(unittest.TestCase):
 class AcknowledgeSweepPendingTests(unittest.TestCase):
     def _client(self) -> Mock:
         client = Mock()
-        client.url = "https://example.supabase.co"
-        client.headers = {"apikey": "test"}
+        client.postgrest.base_url = "https://example.supabase.co/rest/v1"
+        client.postgrest.headers = {"apikey": "test"}
         return client
 
     def test_posts_the_token_to_the_consume_rpc(self) -> None:
@@ -170,8 +170,8 @@ class MainAlreadyInFlightEloJobTests(unittest.TestCase):
         ack_result: bool = True,
     ) -> Mock:
         client = Mock()
-        client.url = "https://example.supabase.co"
-        client.headers = {"apikey": "test"}
+        client.postgrest.base_url = "https://example.supabase.co/rest/v1"
+        client.postgrest.headers = {"apikey": "test"}
 
         fake_regional_elo = types.ModuleType("regional_elo")
         fake_regional_elo.refresh_materialized_views = refresh_mvs
@@ -180,7 +180,7 @@ class MainAlreadyInFlightEloJobTests(unittest.TestCase):
 
         with (
             patch.object(consume_module, "load_credentials", return_value=("url", "key")),
-            patch.object(consume_module, "SupabaseClient", return_value=client),
+            patch.object(consume_module, "get_supabase_client", return_value=client),
             patch.object(consume_module, "requests") as mock_requests,
             patch.dict(
                 sys.modules,

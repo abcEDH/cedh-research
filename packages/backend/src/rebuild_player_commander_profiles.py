@@ -7,16 +7,17 @@ import argparse
 import logging
 import os
 from collections import defaultdict
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from typing import Any
 
-import requests
 from dateutil import parser as date_parser
 
-from ingest import SUPABASE_REST_BASE, SupabaseClient, load_local_env
+from ingest import SUPABASE_REST_BASE, load_local_env
+from supabase import Client
+from supabase_client import get_supabase_client, upsert_batched
 
 # Use timezone.utc for Python < 3.11 compatibility
-UTC = timezone.utc
+UTC = UTC
 
 try:
     import psycopg2
@@ -90,18 +91,16 @@ def chunked(values: list[Any], size: int) -> list[list[Any]]:
     return [values[index : index + size] for index in range(0, len(values), size)]
 
 
-def fetch_existing_profile_player_ids(client: SupabaseClient) -> list[str]:
+def fetch_existing_profile_player_ids(client: Client) -> list[str]:
+    """Page through player_commander_profiles by a `player_id > cursor` filter
+    rather than OFFSET, since OFFSET pagination degrades on large tables."""
     player_ids: list[str] = []
     last_player_id: str | None = None
     while True:
-        filters = {
-            "select": "player_id",
-            "order": "player_id.asc",
-            "limit": str(PAGE_SIZE),
-        }
+        query = client.table("player_commander_profiles").select("player_id").order("player_id", desc=False)
         if last_player_id:
-            filters["player_id"] = f"gt.{last_player_id}"
-        page = client.select("player_commander_profiles", filters)
+            query = query.gt("player_id", last_player_id)
+        page = query.limit(PAGE_SIZE).execute().data
         if not page:
             break
         player_ids.extend(
@@ -113,43 +112,32 @@ def fetch_existing_profile_player_ids(client: SupabaseClient) -> list[str]:
     return player_ids
 
 
-def delete_profile_rows_by_player_ids(client: SupabaseClient, player_ids: list[str]) -> int:
+def delete_profile_rows_by_player_ids(client: Client, player_ids: list[str]) -> int:
     deleted = 0
-    endpoint = f"{client.url}/rest/v1/player_commander_profiles"
     for chunk in chunked(player_ids, UPSERT_CHUNK_SIZE):
         if not chunk:
             continue
-        response = requests.delete(
-            endpoint,
-            headers=client.headers,
-            params={"player_id": f"in.({','.join(chunk)})"},
-            timeout=60,
-        )
-        response.raise_for_status()
+        client.table("player_commander_profiles").delete().in_("player_id", chunk).execute()
         deleted += len(chunk)
     return deleted
 
 
-def fetch_usage_rows_via_rest(client: SupabaseClient) -> list[dict[str, Any]]:
+def fetch_usage_rows_via_rest(client: Client) -> list[dict[str, Any]]:
+    """Page through tournament_entries by an `id > cursor` filter rather than
+    OFFSET, since OFFSET pagination degrades on large tables."""
+    columns = (
+        "id,player_id,decklist_url,"
+        "players!inner(topdeck_id,name),"
+        "commanders!inner(name),"
+        "tournaments!inner(id,name,start_date,topdeck_tid)"
+    )
     rows: list[dict[str, Any]] = []
     last_id: str | None = None
     while True:
-        filters = {
-            "select": (
-                "id,player_id,decklist_url,"
-                "players!inner(topdeck_id,name),"
-                "commanders!inner(name),"
-                "tournaments!inner(id,name,start_date,topdeck_tid)"
-            ),
-            "order": "id.asc",
-            "limit": str(PAGE_SIZE),
-        }
+        query = client.table("tournament_entries").select(columns).order("id", desc=False)
         if last_id:
-            filters["id"] = f"gt.{last_id}"
-        page = client.select(
-            "tournament_entries",
-            filters,
-        )
+            query = query.gt("id", last_id)
+        page = query.limit(PAGE_SIZE).execute().data
         if not page:
             break
         rows.extend(page)
@@ -408,7 +396,7 @@ def main() -> None:
         raise SystemExit("SUPABASE_SERVICE_KEY is required")
 
     reference_date = date_parser.parse(args.reference_date).date() if args.reference_date else datetime.now(UTC).date()
-    client = SupabaseClient(supabase_url, supabase_key)
+    client = get_supabase_client(supabase_url, supabase_key)
     db_url = os.environ.get("SUPABASE_DB_URL")
 
     logger.info("Fetching tournament entry usage rows...")
@@ -438,7 +426,7 @@ def main() -> None:
 
     total_upserted = 0
     for chunk in chunked(profile_rows, UPSERT_CHUNK_SIZE):
-        client.upsert("player_commander_profiles", chunk, on_conflict="player_id")
+        upsert_batched(client, "player_commander_profiles", chunk, on_conflict="player_id")
         total_upserted += len(chunk)
         logger.info("Upserted %s/%s profiles", total_upserted, len(profile_rows))
 

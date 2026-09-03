@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from statistics import fmean
 from typing import Any
 
-from ingest import SupabaseClient, load_local_env
+from ingest import load_local_env
 from run_historical_tournament_sim import (
     build_spec_and_players,
     derive_top_cut_player_ids,
@@ -20,8 +20,9 @@ from run_historical_tournament_sim import (
 )
 from sim_engine import initialize_state
 from sim_models import load_draw_model_artifact
+from supabase import Client
+from supabase_client import get_supabase_client
 from tournament_sim_runner import run_simulation_from_state
-
 
 TOP_CUT_BUCKETS = [index / 10 for index in range(11)]
 WINNER_BUCKETS = [0.0, 0.001, 0.0025, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 1.0]
@@ -35,25 +36,24 @@ class ModelSpec:
 
 
 def fetch_candidate_tournaments(
-    client: SupabaseClient,
+    client: Client,
     *,
     limit: int,
     min_player_count: int,
     start_date_from: str | None,
     start_date_to: str | None,
 ) -> list[dict[str, Any]]:
-    params = {
-        "select": "id,name,start_date,player_count,top_cut",
-        "top_cut": "gt.0",
-        "player_count": f"gte.{min_player_count}",
-        "order": "start_date.desc",
-        "limit": str(limit),
-    }
+    query = (
+        client.table("tournaments")
+        .select("id,name,start_date,player_count,top_cut")
+        .gt("top_cut", 0)
+        .gte("player_count", min_player_count)
+    )
     if start_date_from:
-        params["start_date"] = f"gte.{start_date_from}"
+        query = query.gte("start_date", start_date_from)
     if start_date_to:
-        params["start_date"] = f"lt.{start_date_to}"
-    return client.select("tournaments", params, max_retries=8)
+        query = query.lt("start_date", start_date_to)
+    return query.order("start_date", desc=True).limit(limit).execute().data
 
 
 def parse_model(value: str) -> ModelSpec:
@@ -114,8 +114,7 @@ def top_cut_recall(probabilities: dict[str, float], actual_top_cut_ids: set[str]
     if not actual_top_cut_ids or n <= 0:
         return None
     predicted = {
-        player_id
-        for player_id, _ in sorted(probabilities.items(), key=lambda item: item[1], reverse=True)[:n]
+        player_id for player_id, _ in sorted(probabilities.items(), key=lambda item: item[1], reverse=True)[:n]
     }
     return len(predicted & actual_top_cut_ids) / len(actual_top_cut_ids)
 
@@ -128,7 +127,7 @@ def brier_score(observations: list[tuple[float, int]]) -> float | None:
 
 def bucket_rows(observations: list[tuple[float, int]], buckets: list[float]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for left, right in zip(buckets, buckets[1:]):
+    for left, right in zip(buckets, buckets[1:], strict=False):
         if right == buckets[-1]:
             values = [(p, y) for p, y in observations if left <= p <= right]
         else:
@@ -147,7 +146,7 @@ def bucket_rows(observations: list[tuple[float, int]], buckets: list[float]) -> 
 
 
 def evaluate_model_on_tournament(
-    client: SupabaseClient,
+    client: Client,
     model: Any,
     *,
     model_label: str,
@@ -181,8 +180,12 @@ def evaluate_model_on_tournament(
         actual_points_at_rank(entries, spec.top_cut),
         spec.swiss_rounds,
     )
-    top_cut_probabilities = {player_id: float(summary["top_cut_probability"].get(player_id, 0.0)) for player_id in player_ids}
-    winner_probabilities = {player_id: float(summary["win_probability"].get(player_id, 0.0)) for player_id in player_ids}
+    top_cut_probabilities = {
+        player_id: float(summary["top_cut_probability"].get(player_id, 0.0)) for player_id in player_ids
+    }
+    winner_probabilities = {
+        player_id: float(summary["win_probability"].get(player_id, 0.0)) for player_id in player_ids
+    }
     cut_line_distribution = summary["point_requirements"]["top_cut"]
     expected_cut_line = expected_points(cut_line_distribution)
     cut_line_actual_probability = probability_at_point(cut_line_distribution, actual_cut_line_points)
@@ -215,9 +218,7 @@ def evaluate_model_on_tournament(
                 cut_line_actual_probability if actual_cut_line_points is not None else None
             ),
             "cut_line_log_loss": (
-                -math.log(max(cut_line_actual_probability, 1e-9))
-                if actual_cut_line_points is not None
-                else None
+                -math.log(max(cut_line_actual_probability, 1e-9)) if actual_cut_line_points is not None else None
             ),
             "cut_line_expected_abs_error": (
                 abs(expected_cut_line - actual_cut_line_points)
@@ -227,7 +228,8 @@ def evaluate_model_on_tournament(
             "cut_line_mode_hit": (
                 int(
                     bool(cut_line_distribution)
-                    and max(cut_line_distribution, key=lambda row: float(row["probability"]))["points"] == actual_cut_line_points
+                    and max(cut_line_distribution, key=lambda row: float(row["probability"]))["points"]
+                    == actual_cut_line_points
                 )
                 if actual_cut_line_points is not None
                 else None
@@ -241,8 +243,12 @@ def evaluate_model_on_tournament(
             "top_cut_recall_at_n": top_n_recall,
         },
         "calibration_inputs": {
-            "top_cut": [(top_cut_probabilities[player_id], int(player_id in actual_top_cut_ids)) for player_id in player_ids],
-            "winner": [(winner_probabilities[player_id], int(player_id == actual_winner_id)) for player_id in player_ids],
+            "top_cut": [
+                (top_cut_probabilities[player_id], int(player_id in actual_top_cut_ids)) for player_id in player_ids
+            ],
+            "winner": [
+                (winner_probabilities[player_id], int(player_id == actual_winner_id)) for player_id in player_ids
+            ],
             "cut_line": (
                 [
                     (float(row["probability"]), int(int(row["points"]) == actual_cut_line_points))
@@ -299,7 +305,9 @@ def aggregate_model_results(results: list[dict[str, Any]]) -> dict[str, Any]:
             "cut_line_log_loss": average_metric(results, ("metrics", "cut_line_log_loss")),
             "cut_line_expected_abs_error": average_metric(results, ("metrics", "cut_line_expected_abs_error")),
             "cut_line_mode_hit_rate": average_metric(results, ("metrics", "cut_line_mode_hit")),
-            "top_cut_recall_at_n": {n: fmean(values) for n, values in sorted(recall_values.items(), key=lambda item: int(item[0]))},
+            "top_cut_recall_at_n": {
+                n: fmean(values) for n, values in sorted(recall_values.items(), key=lambda item: int(item[0]))
+            },
         },
         "calibration": {
             "cut_line_probability_buckets": bucket_rows(cut_line_observations, CUT_LINE_BUCKETS),
@@ -330,7 +338,7 @@ def main() -> None:
     args = parser.parse_args()
 
     load_local_env()
-    client = SupabaseClient(url=os.environ["SUPABASE_URL"], service_key=os.environ["SUPABASE_SERVICE_KEY"])
+    client = get_supabase_client(url=os.environ["SUPABASE_URL"], key=os.environ["SUPABASE_SERVICE_KEY"])
 
     candidate_rows = fetch_candidate_tournaments(
         client,
@@ -390,10 +398,7 @@ def main() -> None:
             "model_load": model_load_seconds,
         },
         "tournaments": tournaments,
-        "aggregate": {
-            label: aggregate_model_results(results)
-            for label, results in results_by_model.items()
-        },
+        "aggregate": {label: aggregate_model_results(results) for label, results in results_by_model.items()},
         "errors": errors,
     }
     if args.include_event_details:

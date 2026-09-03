@@ -6,11 +6,11 @@ from __future__ import annotations
 import importlib.util
 import logging
 import os
-import time
 from datetime import date
 from typing import Any
 
 from supabase import Client, create_client
+from supabase_query import UPSERT_BATCH_SIZE, fetch_all, upsert_batched
 
 PSYCOPG2_AVAILABLE = importlib.util.find_spec("psycopg2") is not None
 if PSYCOPG2_AVAILABLE:
@@ -21,19 +21,13 @@ logger = logging.getLogger(__name__)
 
 SUPABASE_REST_BASE = "https://msjjihqbxtgjdtapywrj.supabase.co"
 
-# Max rows per PostgREST upsert request. A single upsert is one SQL statement,
-# so very large payloads (e.g. ~88k global Elo ratings) exceed the Postgres
-# statement_timeout (error 57014). Splitting into batches keeps each statement
-# well under the limit. Mirrors the chunking in rebuild_player_commander_profiles.py.
-UPSERT_BATCH_SIZE = 500
-
 # Maps PostgREST-style filter prefixes to (SQL operator, prefix length).
 # Used only by DirectPostgresClient.select() to translate shared filter dicts.
 _FILTER_OPS: dict[str, tuple[str, int]] = {
-    "eq.":    ("=",     3),
-    "neq.":   ("!=",    4),
-    "gte.":   (">=",    4),
-    "lte.":   ("<=",    4),
+    "eq.": ("=", 3),
+    "neq.": ("!=", 4),
+    "gte.": (">=", 4),
+    "lte.": ("<=", 4),
     "ilike.": ("ILIKE", 6),
 }
 
@@ -99,44 +93,6 @@ def _apply_filter(q: Any, col: str, val: str) -> Any:
     return q
 
 
-def _with_page_params(
-    params: dict[str, str] | list[tuple[str, str]], limit: int, offset: int
-) -> dict[str, str] | list[tuple[str, str]]:
-    if isinstance(params, list):
-        return [*params, ("limit", str(limit)), ("offset", str(offset))]
-    return {**params, "limit": str(limit), "offset": str(offset)}
-
-
-def _fetch_all_paginated(
-    client: SupabaseClient,
-    table: str,
-    params: dict[str, str] | list[tuple[str, str]],
-    limit: int = 1000,
-    label: str | None = None,
-    max_retries: int = 8,
-) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    offset = 0
-    started = time.time()
-    while True:
-        page = client.select(
-            table,
-            _with_page_params(params, limit, offset),
-            max_retries=max_retries,
-        )
-        if not page:
-            break
-        rows.extend(page)
-        if len(page) < limit:
-            break
-        offset += limit
-        if offset % 25000 == 0:
-            elapsed = time.time() - started
-            source = label or table
-            print(f"Fetched {offset:,} rows from {source} in {elapsed:.1f}s", flush=True)
-    return rows
-
-
 def eligible_game_ids(rows: list[dict[str, Any]], tier: str) -> set[str]:
     if tier not in ELO_TIER_FILTERS:
         raise ValueError(f"Unknown Elo tier: {tier}")
@@ -145,7 +101,7 @@ def eligible_game_ids(rows: list[dict[str, Any]], tier: str) -> set[str]:
 
 
 def fetch_tier_results_for_window(
-    client: SupabaseClient,
+    client: Client,
     window_start: date,
     window_end: date,
     tier: str,
@@ -154,16 +110,15 @@ def fetch_tier_results_for_window(
     if tier not in ELO_TIER_FILTERS:
         raise ValueError(f"Unknown Elo tier: {tier}")
 
-    params = [
-        ("select", select),
-        ("start_date", f"gte.{window_start.isoformat()}"),
-        ("start_date", f"lt.{window_end.isoformat()}"),
-        (ELO_TIER_FILTERS[tier], "eq.true"),
-    ]
-    eligible_rows = _fetch_all_paginated(
+    eligible_rows = fetch_all(
         client,
         "global_elo_game_results",
-        params,
+        columns=select,
+        filters=[
+            ("start_date", "gte", window_start.isoformat()),
+            ("start_date", "lt", window_end.isoformat()),
+            (ELO_TIER_FILTERS[tier], "eq", "true"),
+        ],
         label=f"global_elo_game_results {window_start:%Y-%m}",
     )
     if tier == "all":
@@ -175,10 +130,11 @@ def fetch_tier_results_for_window(
     for start in range(0, len(ordered_ids), 200):
         chunk = ordered_ids[start : start + 200]
         complete_rows.extend(
-            _fetch_all_paginated(
+            fetch_all(
                 client,
                 "global_elo_game_results",
-                [("select", select), ("game_id", f"in.({','.join(chunk)})")],
+                columns=select,
+                filters=[("game_id", "in", chunk)],
                 label=f"global_elo_game_results {window_start:%Y-%m} complete pods",
             )
         )
@@ -186,7 +142,7 @@ def fetch_tier_results_for_window(
 
 
 def fetch_existing_tids(
-    client: SupabaseClient,
+    client: Client,
     tids: list[str] | None = None,
 ) -> set[str]:
     """Return existing TopDeck tournament IDs from Supabase.
@@ -201,31 +157,18 @@ def fetch_existing_tids(
             chunk = [t for t in tids[start : start + chunk_size] if t]
             if not chunk:
                 continue
-            rows = client._client.table("tournaments").select("topdeck_tid").in_("topdeck_tid", chunk).execute().data
+            rows = client.table("tournaments").select("topdeck_tid").in_("topdeck_tid", chunk).execute().data
             existing.update(r["topdeck_tid"] for r in rows if r.get("topdeck_tid"))
         return existing
 
-    rows: list[dict[str, Any]] = []
-    offset = 0
-    limit = 1000
-    while True:
-        page = (
-            client._client.table("tournaments")
-            .select("topdeck_tid")
-            .not_.is_("topdeck_tid", "null")
-            .order("start_date", desc=True)
-            .order("topdeck_tid", desc=False)
-            .limit(limit)
-            .offset(offset)
-            .execute()
-            .data
-        )
-        if not page:
-            break
-        rows.extend(page)
-        if len(page) < limit:
-            break
-        offset += limit
+    rows = fetch_all(
+        client,
+        "tournaments",
+        columns="topdeck_tid",
+        filters=[("topdeck_tid", "not_is", "null")],
+        order=[("start_date", True), ("topdeck_tid", False)],
+        label="tournaments",
+    )
     return {r["topdeck_tid"] for r in rows if r.get("topdeck_tid")}
 
 
@@ -265,10 +208,7 @@ class SupabaseClient:
         if not isinstance(data, list):
             batches: list[list[dict[str, Any]]] = [[data]]
         else:
-            batches = [
-                data[i : i + UPSERT_BATCH_SIZE]
-                for i in range(0, len(data), UPSERT_BATCH_SIZE)
-            ] or [[]]
+            batches = [data[i : i + UPSERT_BATCH_SIZE] for i in range(0, len(data), UPSERT_BATCH_SIZE)] or [[]]
 
         collected: list[dict[str, Any]] = []
         try:
@@ -452,3 +392,22 @@ class DirectPostgresClient:
                 return []
             col_names = [desc[0] for desc in cursor.description]
             return [dict(zip(col_names, row, strict=False)) for row in results]
+
+
+# fetch_all/upsert_batched/UPSERT_BATCH_SIZE now live in supabase_query.py (see
+# AGENTS.md's module-extraction rule); re-exported here for the many existing
+# `from supabase_client import fetch_all` call sites.
+__all__ = [
+    "SUPABASE_REST_BASE",
+    "UPSERT_BATCH_SIZE",
+    "ELO_TIER_FILTERS",
+    "DirectPostgresClient",
+    "SupabaseClient",
+    "get_supabase_client",
+    "fetch_all",
+    "upsert_batched",
+    "eligible_game_ids",
+    "fetch_tier_results_for_window",
+    "fetch_existing_tids",
+    "_describe_request_failure",
+]

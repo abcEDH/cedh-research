@@ -30,7 +30,8 @@ from commander_oracle_identity import (
     group_duplicate_commander_rows,
 )
 from generate_legal_commander_pairings import fetch_bulk_cards
-from ingest import SupabaseClient
+from supabase import Client
+from supabase_client import get_supabase_client
 from sweep_partner_commander_order import (
     delete_commander_row,
     repoint_commander_matchups,
@@ -53,15 +54,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def fetch_commander_rows(client: SupabaseClient, limit: int) -> list[dict]:
-    return client.select(
-        "commanders",
-        {"select": "id,name,commander_names", "limit": limit, "order": "name.asc"},
+def fetch_commander_rows(client: Client, limit: int) -> list[dict]:
+    return (
+        client.table("commanders")
+        .select("id,name,commander_names")
+        .order("name", desc=False)
+        .limit(limit)
+        .execute()
+        .data
     )
 
 
 def merge_duplicate_group(
-    client: SupabaseClient,
+    client: Client,
     signature: tuple[str, ...],
     rows: list[dict],
     true_oracle_names: set[str],
@@ -89,7 +94,7 @@ def merge_duplicate_group(
 
 
 def run_sweep(
-    client: SupabaseClient,
+    client: Client,
     cards: list[dict],
     *,
     commander_limit: int,
@@ -101,13 +106,9 @@ def run_sweep(
     commanders = fetch_commander_rows(client, commander_limit)
     duplicate_groups = group_duplicate_commander_rows(commanders, name_to_oracle_id)
 
-    report_lines = [
-        "oracle_signature,canonical_id,canonical_name,duplicate_id,duplicate_name,merged"
-    ]
+    report_lines = ["oracle_signature,canonical_id,canonical_name,duplicate_id,duplicate_name,merged"]
     for signature, rows in duplicate_groups.items():
-        canonical, duplicates = merge_duplicate_group(
-            client, signature, rows, true_oracle_names, dry_run=dry_run
-        )
+        canonical, duplicates = merge_duplicate_group(client, signature, rows, true_oracle_names, dry_run=dry_run)
         for duplicate in duplicates:
             report_lines.append(
                 ",".join(
@@ -128,7 +129,7 @@ def main() -> None:
     args = build_arg_parser().parse_args()
 
     supabase_url, supabase_key = load_credentials()
-    client = SupabaseClient(supabase_url, supabase_key)
+    client = get_supabase_client(supabase_url, supabase_key)
 
     cards = fetch_bulk_cards(DEFAULT_CARDS_BULK_TYPE, args.timeout)
     report_lines = run_sweep(

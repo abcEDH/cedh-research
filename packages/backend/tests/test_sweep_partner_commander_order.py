@@ -184,16 +184,17 @@ class MergeForeignKeySafetyTests(unittest.TestCase):
             {"id": "duplicate-id", "name": duplicate_name, "commander_names": [self.PAIR_B, self.PAIR_A]},
         ]
         client = Mock()
-        client.url = "https://example.supabase.co"
-        client.headers = {"apikey": "test"}
-        client.select = Mock(return_value=commander_rows)
+        client.postgrest.base_url = "https://example.supabase.co/rest/v1"
+        client.postgrest.headers = {"apikey": "test"}
+        select_chain = client.table.return_value.select.return_value.order.return_value.limit.return_value
+        select_chain.execute.return_value.data = commander_rows
 
         pair_key = tuple(sorted((self.PAIR_A, self.PAIR_B)))
         with tempfile.TemporaryDirectory() as tmpdir:
             argv = ["sweep_partner_commander_order.py", "--report", str(Path(tmpdir) / "report.csv")]
             with (
                 patch.object(sweep_partner_commander_order, "load_credentials", return_value=("url", "key")),
-                patch.object(sweep_partner_commander_order, "SupabaseClient", return_value=client),
+                patch.object(sweep_partner_commander_order, "get_supabase_client", return_value=client),
                 patch.object(
                     sweep_partner_commander_order,
                     "load_legal_commander_pair_order_map",
@@ -353,16 +354,17 @@ class MergeReconcilesMetadataInMainTests(unittest.TestCase):
     def _run_main(self, canonical_row: dict, duplicate_row: dict) -> None:
         commander_rows = [canonical_row, duplicate_row]
         client = Mock()
-        client.url = "https://example.supabase.co"
-        client.headers = {"apikey": "test"}
-        client.select = Mock(return_value=commander_rows)
+        client.postgrest.base_url = "https://example.supabase.co/rest/v1"
+        client.postgrest.headers = {"apikey": "test"}
+        select_chain = client.table.return_value.select.return_value.order.return_value.limit.return_value
+        select_chain.execute.return_value.data = commander_rows
 
         pair_key = tuple(sorted((self.PAIR_A, self.PAIR_B)))
         with tempfile.TemporaryDirectory() as tmpdir:
             argv = ["sweep_partner_commander_order.py", "--report", str(Path(tmpdir) / "report.csv")]
             with (
                 patch.object(sweep_partner_commander_order, "load_credentials", return_value=("url", "key")),
-                patch.object(sweep_partner_commander_order, "SupabaseClient", return_value=client),
+                patch.object(sweep_partner_commander_order, "get_supabase_client", return_value=client),
                 patch.object(
                     sweep_partner_commander_order,
                     "load_legal_commander_pair_order_map",
@@ -463,8 +465,8 @@ class MarkSweepPendingTests(unittest.TestCase):
 
     def test_posts_merged_count_to_rpc(self) -> None:
         client = Mock()
-        client.url = "https://example.supabase.co"
-        client.headers = {"apikey": "test"}
+        client.postgrest.base_url = "https://example.supabase.co/rest/v1"
+        client.postgrest.headers = {"apikey": "test"}
 
         with patch.object(sweep_partner_commander_order, "requests") as mock_requests:
             mock_requests.post.return_value = Mock(raise_for_status=Mock())
@@ -482,8 +484,8 @@ class MarkSweepPendingTests(unittest.TestCase):
         which has already committed real merges by this point.
         """
         client = Mock()
-        client.url = "https://example.supabase.co"
-        client.headers = {"apikey": "test"}
+        client.postgrest.base_url = "https://example.supabase.co/rest/v1"
+        client.postgrest.headers = {"apikey": "test"}
 
         with patch.object(sweep_partner_commander_order, "requests") as mock_requests:
             mock_requests.RequestException = RuntimeError
@@ -500,16 +502,17 @@ class MarkSweepPendingTests(unittest.TestCase):
             {"id": "duplicate-id", "name": duplicate_name, "commander_names": [pair_b, pair_a]},
         ]
         client = Mock()
-        client.url = "https://example.supabase.co"
-        client.headers = {"apikey": "test"}
-        client.select = Mock(return_value=commander_rows)
+        client.postgrest.base_url = "https://example.supabase.co/rest/v1"
+        client.postgrest.headers = {"apikey": "test"}
+        select_chain = client.table.return_value.select.return_value.order.return_value.limit.return_value
+        select_chain.execute.return_value.data = commander_rows
 
         pair_key = tuple(sorted((pair_a, pair_b)))
         with tempfile.TemporaryDirectory() as tmpdir:
             argv = ["sweep_partner_commander_order.py", "--report", str(Path(tmpdir) / "report.csv")]
             with (
                 patch.object(sweep_partner_commander_order, "load_credentials", return_value=("url", "key")),
-                patch.object(sweep_partner_commander_order, "SupabaseClient", return_value=client),
+                patch.object(sweep_partner_commander_order, "get_supabase_client", return_value=client),
                 patch.object(
                     sweep_partner_commander_order,
                     "load_legal_commander_pair_order_map",
@@ -541,16 +544,17 @@ class MarkSweepPendingTests(unittest.TestCase):
             {"id": "duplicate-id", "name": duplicate_name, "commander_names": [pair_b, pair_a]},
         ]
         client = Mock()
-        client.url = "https://example.supabase.co"
-        client.headers = {"apikey": "test"}
-        client.select = Mock(return_value=commander_rows)
+        client.postgrest.base_url = "https://example.supabase.co/rest/v1"
+        client.postgrest.headers = {"apikey": "test"}
+        select_chain = client.table.return_value.select.return_value.order.return_value.limit.return_value
+        select_chain.execute.return_value.data = commander_rows
 
         pair_key = tuple(sorted((pair_a, pair_b)))
         with tempfile.TemporaryDirectory() as tmpdir:
             argv = ["sweep_partner_commander_order.py", "--dry-run", "--report", str(Path(tmpdir) / "report.csv")]
             with (
                 patch.object(sweep_partner_commander_order, "load_credentials", return_value=("url", "key")),
-                patch.object(sweep_partner_commander_order, "SupabaseClient", return_value=client),
+                patch.object(sweep_partner_commander_order, "get_supabase_client", return_value=client),
                 patch.object(
                     sweep_partner_commander_order,
                     "load_legal_commander_pair_order_map",

@@ -36,14 +36,15 @@ from collections.abc import Callable
 import requests
 
 from backfill_moxfield_commanders import load_credentials
-from supabase_client import SupabaseClient
+from supabase import Client
+from supabase_client import get_supabase_client
 
 CONSUME_RPC_NAME = "consume_partner_commander_sweep_pending"
 STATE_TABLE_NAME = "partner_commander_sweep_state"
 RPC_TIMEOUT_SECONDS = 30
 
 
-def read_sweep_pending_state(client: SupabaseClient) -> tuple[bool, str | None]:
+def read_sweep_pending_state(client: Client) -> tuple[bool, str | None]:
     """Read the current ``pending``/``token`` pair without clearing anything.
 
     A plain SELECT against the singleton row -- the ack itself (see
@@ -52,10 +53,10 @@ def read_sweep_pending_state(client: SupabaseClient) -> tuple[bool, str | None]:
     combined with clearing here: that's exactly the race the token exists to
     close (see the migration's header comment).
     """
-    endpoint = f"{client.url}/rest/v1/{STATE_TABLE_NAME}"
+    endpoint = f"{client.postgrest.base_url}/{STATE_TABLE_NAME}"
     response = requests.get(
         endpoint,
-        headers=client.headers,
+        headers=dict(client.postgrest.headers),
         params={"select": "pending,token", "id": "eq.true"},
         timeout=RPC_TIMEOUT_SECONDS,
     )
@@ -68,7 +69,7 @@ def read_sweep_pending_state(client: SupabaseClient) -> tuple[bool, str | None]:
     return bool(row.get("pending")), row.get("token")
 
 
-def acknowledge_sweep_pending(client: SupabaseClient, token: str) -> bool:
+def acknowledge_sweep_pending(client: Client, token: str) -> bool:
     """Compare-and-clear ack: only clears the flag if ``token`` still matches.
 
     Must only be called after this run's forced rebuild has succeeded --
@@ -81,16 +82,18 @@ def acknowledge_sweep_pending(client: SupabaseClient, token: str) -> bool:
     run read the token -- that pending state belongs to the newer request,
     not this run's to consume, so it's left alone.
     """
-    endpoint = f"{client.url}/rest/v1/rpc/{CONSUME_RPC_NAME}"
-    response = requests.post(endpoint, headers=client.headers, json={"p_token": token}, timeout=RPC_TIMEOUT_SECONDS)
+    endpoint = f"{client.postgrest.base_url}/rpc/{CONSUME_RPC_NAME}"
+    response = requests.post(
+        endpoint, headers=dict(client.postgrest.headers), json={"p_token": token}, timeout=RPC_TIMEOUT_SECONDS
+    )
     response.raise_for_status()
     return bool(response.json())
 
 
 def force_commander_view_rebuild(
-    client: SupabaseClient,
+    client: Client,
     *,
-    refresh_materialized_views: Callable[[SupabaseClient], int],
+    refresh_materialized_views: Callable[[Client], int],
     rebuild_player_commander_profiles: Callable[[], None],
 ) -> None:
     """Force the two commander-derived refreshes the pending flag guarantees.
@@ -117,7 +120,7 @@ def main() -> None:
     build_arg_parser().parse_args()
 
     supabase_url, supabase_key = load_credentials()
-    client = SupabaseClient(supabase_url, supabase_key)
+    client = get_supabase_client(supabase_url, supabase_key)
 
     pending, token = read_sweep_pending_state(client)
     print(f"sweep_pending_consumed={pending}")
