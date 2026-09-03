@@ -26,6 +26,18 @@ def runtime_secret(environment_name: str, block_name: str) -> str:
     return Secret.load(block_name).get()
 
 
+def runtime_environment() -> dict[str, str]:
+    """Build the CLI environment from deployment variables or Prefect blocks."""
+    environment = os.environ.copy()
+    for environment_name, block_name in (
+        ("SUPABASE_URL", "cedh-supabase-url"),
+        ("SUPABASE_SERVICE_KEY", "cedh-supabase-service-key"),
+        ("TOPDECK_API_KEY", "cedh-topdeck-api-key"),
+    ):
+        environment[environment_name] = runtime_secret(environment_name, block_name)
+    return environment
+
+
 @task(name="enqueue-job", retries=2, retry_delay_seconds=30)
 def enqueue_job(function_name: str) -> str | None:
     """Create one durable Supabase job, returning None when one is active."""
@@ -37,12 +49,19 @@ def enqueue_job(function_name: str) -> str | None:
 
 
 @task(name="run-backend-command", retries=0)
-def run_backend_command(arguments: Sequence[str]) -> None:
+def run_backend_command(arguments: Sequence[str], continue_on_error: bool = False) -> bool:
     """Run an existing backend CLI as a visible Prefect task."""
     logger = get_run_logger()
     command = [sys.executable, *arguments]
     logger.info("Running: %s", " ".join(command))
-    subprocess.run(command, cwd=BACKEND_ROOT, check=True, env=os.environ.copy())
+    try:
+        subprocess.run(command, cwd=BACKEND_ROOT, check=True, env=runtime_environment())
+    except subprocess.CalledProcessError:
+        if not continue_on_error:
+            raise
+        logger.warning("Command failed; continuing refresh: %s", " ".join(command))
+        return False
+    return True
 
 
 @flow(name="daily-backend-refresh", log_prints=True)
@@ -65,7 +84,10 @@ def daily_backend_refresh(days: int = 7, min_players: int = 16) -> str:
             ingestion_job_id,
         ]
     )
-    run_backend_command([str(SRC_ROOT / "sweep_partner_commander_order.py")])
+    run_backend_command(
+        [str(SRC_ROOT / "sweep_partner_commander_order.py")],
+        continue_on_error=True,
+    )
 
     elo_job_id = enqueue_job("enqueue_elo_refresh")
     if not elo_job_id:
