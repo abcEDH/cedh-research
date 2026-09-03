@@ -15,14 +15,17 @@ docker build -f packages/backend/Dockerfile \
 docker push ghcr.io/abcedh/cedh-backend:main
 ```
 
-The image needs these runtime environment variables in its Prefect work pool:
+The flow reads these runtime values from Prefect Secret blocks, falling back to
+environment variables for local/container execution:
 
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_KEY`
-- `TOPDECK_API_KEY`
-- optional `SUPABASE_DB_URL` for direct Postgres operations
+- `cedh-supabase-url` from `SUPABASE_URL`
+- `cedh-supabase-service-key` from `SUPABASE_SERVICE_KEY`
+- `cedh-topdeck-api-key` from `TOPDECK_API_KEY`
+- optional `cedh-supabase-db-url` from `SUPABASE_DB_URL`
 
-Do not commit those values to `prefect.yaml`.
+Create the blocks in Prefect Cloud. The deployment uses these exact block names;
+populate them from the team secret manager without committing their values to
+`prefect.yaml` or source control.
 
 The current first deployment uses the `cedh-managed` Prefect Managed pool so it
 can be tested without provisioning a separate cloud account. Managed execution
