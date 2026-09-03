@@ -13,16 +13,15 @@ import sys
 import time
 import traceback
 from collections import defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import requests
-from postgrest.exceptions import APIError
 
-from supabase import Client
-from supabase_client import DirectPostgresClient, fetch_all, get_supabase_client, upsert_batched
+from ingest import SupabaseClient
+from supabase_client import DirectPostgresClient
 
 K_FACTOR = 48
 DEFAULT_RATING = 1500.0
@@ -357,7 +356,9 @@ def process_results(
     game_events: list[dict[str, Any]] = []
     for gid, standings in games.items():
         meta = game_meta.get(gid, {})
-        game_events.extend(_process_one_game(standings, game_id=gid, **meta))
+        game_events.extend(
+            _process_one_game(standings, game_id=gid, **meta)
+        )
 
     # Fallback: rows without game_id get processed as one group (legacy behaviour).
     if ungrouped:
@@ -534,67 +535,99 @@ def update_ratings_with_games(
     return db_event_rows
 
 
-def claim_job(client: Client, job_id: str, github_run_id: int) -> bool:
+def claim_job(client: SupabaseClient, job_id: str, github_run_id: int) -> bool:
     """Atomically claim a job by transitioning it to 'running'."""
     try:
-        result = (
-            client.table(MAINTENANCE_JOBS_TABLE)
-            .update(
-                {
-                    "status": "running",
-                    "github_run_id": github_run_id,
-                    "started_at": utc_now().isoformat(),
-                    "heartbeat_at": utc_now().isoformat(),
-                }
-            )
-            .eq("id", job_id)
-            .in_("status", ["pending", "dispatched"])
-            .execute()
+        updated = client.update(
+            MAINTENANCE_JOBS_TABLE,
+            {
+                "status": "running",
+                "github_run_id": github_run_id,
+                "started_at": utc_now().isoformat(),
+                "heartbeat_at": utc_now().isoformat(),
+            },
+            {"id": f"eq.{job_id}", "status": "in.(pending,dispatched)"},
         )
-        return bool(result.data)
+        return bool(updated)
     except Exception as exc:
         print(f"Failed to claim job {job_id}: {exc}", flush=True)
         return False
 
 
-def update_job_heartbeat(client: Client, job_id: str) -> None:
+def update_job_heartbeat(client: SupabaseClient, job_id: str) -> None:
     """Best-effort heartbeat so stale-job detection knows we are alive."""
     if not job_id:
         return
     try:
-        client.table(MAINTENANCE_JOBS_TABLE).update({"heartbeat_at": utc_now().isoformat()}).eq("id", job_id).eq(
-            "status", "running"
-        ).execute()
+        client.update(
+            MAINTENANCE_JOBS_TABLE,
+            {"heartbeat_at": utc_now().isoformat()},
+            {"id": f"eq.{job_id}", "status": "eq.running"},
+        )
     except Exception as exc:
         # Best-effort: heartbeat failures should not fail the job
         print(f"Heartbeat failed for job {job_id} (safe to continue): {exc}", flush=True)
 
 
-def complete_job(client: Client, job_id: str, metrics: dict) -> None:
+def complete_job(client: SupabaseClient, job_id: str, metrics: dict) -> None:
     """Mark job as completed with output metrics."""
     now = utc_now().isoformat()
-    client.table(MAINTENANCE_JOBS_TABLE).update(
-        {"status": "completed", "completed_at": now, "heartbeat_at": now, **metrics}
-    ).eq("id", job_id).eq("status", "running").execute()
+    client.update(
+        MAINTENANCE_JOBS_TABLE,
+        {"status": "completed", "completed_at": now, "heartbeat_at": now, **metrics},
+        {"id": f"eq.{job_id}", "status": "eq.running"},
+    )
 
 
-def fail_job(client: Client, job_id: str, error: str) -> None:
+def fail_job(client: SupabaseClient, job_id: str, error: str) -> None:
     """Mark job as failed with error message."""
     try:
-        client.table(MAINTENANCE_JOBS_TABLE).update(
+        client.update(
+            MAINTENANCE_JOBS_TABLE,
             {
                 "status": "failed",
                 "completed_at": utc_now().isoformat(),
                 "error_text": error[:2000],
-            }
-        ).eq("id", job_id).in_("status", ["pending", "dispatched", "running"]).execute()
+            },
+            {"id": f"eq.{job_id}", "status": "in.(pending,dispatched,running)"},
+        )
     except Exception as exc:
         # Best-effort: failure logging should not crash the process
         print(f"Failed to record job failure for {job_id}: {exc}", flush=True)
 
 
+QueryParams = Mapping[str, Any] | Sequence[tuple[str, Any]]
+
+
+def with_paging_params(params: QueryParams, limit: int, offset: int) -> QueryParams:
+    page_params = {"limit": limit, "offset": offset}
+    if isinstance(params, Mapping):
+        return {**params, **page_params}
+    return [*params, *page_params.items()]
+
+
+def fetch_all(
+    client: SupabaseClient,
+    table: str,
+    params: QueryParams,
+    limit: int = 1000,
+    max_retries: int = 8,
+) -> list[dict[str, Any]]:
+    offset = 0
+    rows: list[dict[str, Any]] = []
+    while True:
+        page = client.select(table, with_paging_params(params, limit, offset), max_retries=max_retries)
+        if not page:
+            break
+        rows.extend(page)
+        if len(page) < limit:
+            break
+        offset += limit
+    return rows
+
+
 def fetch_participants_for_leaderboard(
-    client: Client,
+    client: SupabaseClient,
     lookback_months: int = ACTIVE_PLAYER_LOOKBACK_MONTHS,
     direct: DirectPostgresClient | None = None,
 ) -> list[dict[str, Any]]:
@@ -610,25 +643,31 @@ def fetch_participants_for_leaderboard(
     return fetch_all(
         client,
         "global_elo_game_results",
-        columns="game_id,entry_id,player_id,tournament_id,seat_position,result",
-        filters=[("start_date", "gte", cutoff), ("result", "neq", "bye")],
+        {
+            "select": "game_id,entry_id,player_id,tournament_id,seat_position,result",
+            "start_date": f"gte.{cutoff}",
+            "result": "neq.bye",
+        },
     )
 
 
 def fetch_commander_participants(
-    client: Client, lookback_months: int = COMMANDER_PRIMARY_LOOKBACK_MONTHS
+    client: SupabaseClient, lookback_months: int = COMMANDER_PRIMARY_LOOKBACK_MONTHS
 ) -> list[dict[str, Any]]:
     cutoff = get_past_months_cutoff(lookback_months)
     return fetch_all(
         client,
         "global_elo_game_results",
-        columns="game_id,entry_id,player_id,tournament_id,seat_position,result",
-        filters=[("start_date", "gte", str(cutoff)), ("result", "neq", "bye")],
+        {
+            "select": "game_id,entry_id,player_id,tournament_id,seat_position,result",
+            "start_date": "gte." + str(cutoff),
+            "result": "neq.bye",
+        },
     )
 
 
 def fetch_distinct_entry_ids(
-    client: Client,
+    client: SupabaseClient,
     lookback_months: int = ACTIVE_PLAYER_LOOKBACK_MONTHS,
     direct: DirectPostgresClient | None = None,
 ) -> set[str]:
@@ -642,31 +681,27 @@ def fetch_distinct_entry_ids(
     rows = fetch_all(
         client,
         "global_elo_game_results",
-        columns="player_id",
-        filters=[("start_date", "gte", cutoff)],
+        {
+            "select": "player_id",
+            "start_date": f"gte.{cutoff}",
+        },
     )
     return {r["player_id"] for r in rows}
 
 
 def _rpc_fetch_all(
-    client: Client,
+    client: SupabaseClient,
     function_name: str,
     payload: dict[str, Any] | None = None,
     limit: int = 1000,
 ) -> list[dict[str, Any]]:
-    """Paginate through a PostgREST RPC that accepts p_limit / p_offset.
-
-    Uses a raw POST (not `client.rpc()`) so a long, explicit timeout can be
-    set -- the underlying postgrest-py session's default timeout is much
-    shorter and would cut off a slow aggregate RPC.
-    """
+    """Paginate through a PostgREST RPC that accepts p_limit / p_offset."""
     rows: list[dict[str, Any]] = []
     offset = 0
-    endpoint = f"{client.postgrest.base_url}/rpc/{function_name}"
-    headers = dict(client.postgrest.headers)
+    endpoint = f"{client.url}/rest/v1/rpc/{function_name}"
     while True:
         page_payload = {**(payload or {}), "p_limit": limit, "p_offset": offset}
-        response = requests.post(endpoint, json=page_payload, headers=headers, timeout=600)
+        response = requests.post(endpoint, json=page_payload, headers=client.headers, timeout=600)
         if response.status_code >= 400:
             raise RuntimeError(f"RPC {function_name} failed: {response.status_code} {response.text}")
         page = response.json()
@@ -680,22 +715,22 @@ def _rpc_fetch_all(
     return rows
 
 
-def fetch_elo_watermark(client: Client) -> str | None:
+def fetch_elo_watermark(client: SupabaseClient) -> str | None:
     """Return the max game_date in global_elo_game_events, or None if the table is empty."""
-    rows = (
-        client.table("global_elo_game_events")
-        .select("game_date")
-        .eq("region_type", "global")
-        .order("game_date", desc=True)
-        .limit(1)
-        .execute()
-        .data
+    rows = client.select(
+        "global_elo_game_events",
+        {
+            "select": "game_date",
+            "region_type": "eq.global",
+            "order": "game_date.desc",
+            "limit": "1",
+        },
     )
     return rows[0]["game_date"] if rows else None
 
 
 def load_ratings_from_snapshot(
-    client: Client,
+    client: SupabaseClient,
     watermark: str,
 ) -> dict[tuple[str, str, str], dict[str, Any]]:
     """Load per-player Elo ratings as they stood just before *watermark* using the snapshot RPC."""
@@ -726,7 +761,7 @@ def load_ratings_from_snapshot(
 
 
 def fetch_participants_since(
-    client: Client,
+    client: SupabaseClient,
     since: str,
     direct: DirectPostgresClient | None = None,
 ) -> list[dict[str, Any]]:
@@ -742,20 +777,27 @@ def fetch_participants_since(
     return fetch_all(
         client,
         "global_elo_game_results",
-        columns="game_id,entry_id,player_id,tournament_id,start_date,seat_position,result,is_draw",
-        filters=[("start_date", "gte", since), ("result", "neq", "bye")],
+        {
+            "select": "game_id,entry_id,player_id,tournament_id,start_date,seat_position,result,is_draw",
+            "start_date": f"gte.{since}",
+            "result": "neq.bye",
+        },
     )
 
 
-def fetch_distinct_commander_ids(client: Client, lookback_months: int = COMMANDER_PRIMARY_LOOKBACK_MONTHS) -> set[str]:
+def fetch_distinct_commander_ids(
+    client: SupabaseClient, lookback_months: int = COMMANDER_PRIMARY_LOOKBACK_MONTHS
+) -> set[str]:
     cutoff = get_past_months_cutoff(lookback_months)
     # Uses PostgREST FK dot-filter: tournament_id is a FK to tournaments.start_date.
     # Tracked in issue #193 for verification before this function is activated.
     rows = fetch_all(
         client,
         "tournament_entries",
-        columns="commander_id",
-        filters=[("tournament_id.start_date", "gte", cutoff)],
+        {
+            "select": "commander_id",
+            "tournament_id.start_date": f"gte.{cutoff}",
+        },
     )
     return {r["commander_id"] for r in rows if r.get("commander_id")}
 
@@ -785,7 +827,7 @@ def build_player_profiles(
 UNKNOWN_COMMANDER_NAME = "Unknown Commander"
 
 
-def build_primary_commanders(client: Client) -> dict[str, tuple[str, float]]:
+def build_primary_commanders(client: SupabaseClient) -> dict[str, tuple[str, float]]:
     """Return {player_id: (commander_name, known_pct)} for players where known_pct >= 0.5.
 
     Queries tournament_entries joined to commanders, groups by player_id +
@@ -797,7 +839,7 @@ def build_primary_commanders(client: Client) -> dict[str, tuple[str, float]]:
     rows = fetch_all(
         client,
         "tournament_entries",
-        columns="player_id,commander_id,commanders(name)",
+        {"select": "player_id,commander_id,commanders(name)"},
     )
 
     # Tally per-player counts
@@ -829,7 +871,9 @@ def build_primary_commanders(client: Client) -> dict[str, tuple[str, float]]:
     return result
 
 
-def detect_active_players(client: Client, lookback_months: int = ACTIVE_PLAYER_LOOKBACK_MONTHS) -> list[dict[str, Any]]:
+def detect_active_players(
+    client: SupabaseClient, lookback_months: int = ACTIVE_PLAYER_LOOKBACK_MONTHS
+) -> list[dict[str, Any]]:
     """Identify players with recent activity.
 
     Dedup happens in Postgres via the get_active_global_elo_player_ids RPC
@@ -943,11 +987,13 @@ def _coerce_float(value: Any) -> float | None:
         return None
 
 
-def _api_error_is_missing_topdeck_column(exc: APIError, column_name: str) -> bool:
-    haystack = " ".join(str(part).lower() for part in (exc.code, exc.message, exc.details) if part)
+def _http_error_is_missing_topdeck_column(exc: requests.exceptions.HTTPError, column_name: str) -> bool:
+    response = exc.response
+    status_code = getattr(response, "status_code", None)
+    response_text = str(getattr(response, "text", "") or "").lower()
     normalized_column = column_name.lower()
 
-    if normalized_column not in haystack:
+    if status_code not in {400, 404} or normalized_column not in response_text:
         return False
 
     missing_column_markers = (
@@ -957,18 +1003,22 @@ def _api_error_is_missing_topdeck_column(exc: APIError, column_name: str) -> boo
         "does not exist",
         "unknown column",
     )
-    return any(marker in haystack for marker in missing_column_markers)
+    return any(marker in response_text for marker in missing_column_markers)
 
 
-def detect_topdeck_elo_id_column(client: Client) -> str:
+def detect_topdeck_elo_id_column(client: SupabaseClient) -> str:
     """Detect the TopDeck Elo id column without weakening full snapshot retries."""
-    last_schema_error: APIError | None = None
+    last_schema_error: requests.exceptions.HTTPError | None = None
     for id_column in ("topdeck_id", "uid"):
         try:
-            client.table("topdeck_player_elos").select(id_column).limit(1).execute()
+            client.select(
+                "topdeck_player_elos",
+                {"select": id_column, "limit": "1"},
+                max_retries=1,
+            )
             return id_column
-        except APIError as exc:
-            if _api_error_is_missing_topdeck_column(exc, id_column):
+        except requests.exceptions.HTTPError as exc:
+            if _http_error_is_missing_topdeck_column(exc, id_column):
                 last_schema_error = exc
                 continue
             raise
@@ -1213,23 +1263,23 @@ def _leaderboard_rank_sort_key(r: Mapping[str, Any]) -> tuple[float, float, int,
     )
 
 
-def fetch_player_index(client: Client) -> dict[str, dict[str, Any]]:
+def fetch_player_index(client: SupabaseClient) -> dict[str, dict[str, Any]]:
     """Fetch the player directory keyed by id for leaderboard enrichment."""
     rows = fetch_all(
         client,
         "players",
-        columns="id,name,topdeck_id",
+        {"select": "id,name,topdeck_id"},
     )
     return {row["id"]: row for row in rows if row.get("id")}
 
 
-def fetch_topdeck_elo_by_topdeck_id(client: Client) -> dict[str, float]:
+def fetch_topdeck_elo_by_topdeck_id(client: SupabaseClient) -> dict[str, float]:
     """Load the TopDeck Elo snapshot keyed by the external TopDeck player id."""
     selected_id_column = detect_topdeck_elo_id_column(client)
     rows = fetch_all(
         client,
         "topdeck_player_elos",
-        columns=f"{selected_id_column},elo",
+        {"select": f"{selected_id_column},elo"},
     )
     elo_by_topdeck_id: dict[str, float] = {}
     for row in rows:
@@ -1240,12 +1290,14 @@ def fetch_topdeck_elo_by_topdeck_id(client: Client) -> dict[str, float]:
     return elo_by_topdeck_id
 
 
-def fetch_primary_state_stats(client: Client) -> dict[str, dict[str, Any]]:
+def fetch_primary_state_stats(client: SupabaseClient) -> dict[str, dict[str, Any]]:
     """Load primary-state activity per player for country/state slice enrichment."""
     rows = fetch_all(
         client,
         "regional_elo_primary_state_assignments",
-        columns="player_id,region_type,region_key,country_key,activity_score,last_game_date",
+        {
+            "select": ("player_id,region_type,region_key,country_key,activity_score,last_game_date"),
+        },
     )
     by_player: dict[str, dict[str, Any]] = {}
     for row in rows:
@@ -1262,12 +1314,14 @@ def fetch_primary_state_stats(client: Client) -> dict[str, dict[str, Any]]:
     return by_player
 
 
-def fetch_canonical_event_counts(client: Client) -> dict[str, dict[str, Any]]:
+def fetch_canonical_event_counts(client: SupabaseClient) -> dict[str, dict[str, Any]]:
     """Return per-player canonical game counts and last_game_date from the
     leaderboard view.
 
-    The view aggregates from global_elo_game_events, which is the ground-truth
-    source. Bypasses the stale accumulator columns in global_elo_ratings that
+    The RPC aggregates from global_elo_game_events, which is the ground-truth
+    source. It has the same semantics as the global branch of the leaderboard
+    view, but avoids recomputing the wider regional view for every page.
+    This bypasses the stale accumulator columns in global_elo_ratings that
     drift when full recomputes run multiple times.
 
     ``last_game_date`` here is the player's true global last game date, unlike
@@ -1277,12 +1331,25 @@ def fetch_canonical_event_counts(client: Client) -> dict[str, dict[str, Any]]:
 
     Must be called after game events for the current run have been upserted.
     """
-    rows = fetch_all(
-        client,
-        "regional_elo_leaderboard",
-        columns="player_id,games_played,wins,losses,draws,last_game_date",
-        filters=[("region_type", "eq", GLOBAL_REGION_TYPE), ("region_key", "eq", GLOBAL_REGION_KEY)],
-    )
+    rows: list[dict[str, Any]] = []
+    after_player_id: str | None = None
+    while True:
+        page = client.rpc(
+            "get_global_elo_canonical_counts",
+            {
+                "p_after_player_id": after_player_id,
+                "p_limit": 1000,
+            },
+        ) or []
+        if not page:
+            break
+        rows.extend(page)
+        if len(page) < 1000:
+            break
+        next_player_id = page[-1].get("player_id")
+        if not next_player_id or next_player_id == after_player_id:
+            raise RuntimeError("Canonical event-count RPC returned no pagination progress")
+        after_player_id = str(next_player_id)
     return {
         row["player_id"]: {
             "games_played": int(row.get("games_played") or 0),
@@ -1296,12 +1363,12 @@ def fetch_canonical_event_counts(client: Client) -> dict[str, dict[str, Any]]:
     }
 
 
-def delete_stale_active_leaderboard_rows(client: Client, run_marker: str) -> None:
+def delete_stale_active_leaderboard_rows(client: SupabaseClient, run_marker: str) -> None:
     """Delete leaderboard rows that the current run did not refresh."""
     try:
-        endpoint = f"{client.postgrest.base_url}/{ACTIVE_LEADERBOARD_TABLE}"
+        endpoint = f"{client.url}/rest/v1/{ACTIVE_LEADERBOARD_TABLE}"
         params = {"updated_at": f"lt.{run_marker}"}
-        headers = {**dict(client.postgrest.headers), "Prefer": "return=minimal"}
+        headers = {**client.headers, "Prefer": "return=minimal"}
         response = requests.delete(endpoint, headers=headers, params=params, timeout=60)
         if response.status_code >= 400:
             print(
@@ -1313,21 +1380,25 @@ def delete_stale_active_leaderboard_rows(client: Client, run_marker: str) -> Non
 
 
 def upsert_active_leaderboard_rows(
-    client: Client,
+    client: SupabaseClient,
     rows: list[dict[str, Any]],
     batch_size: int = ACTIVE_LEADERBOARD_BATCH_SIZE,
 ) -> None:
     """Upsert leaderboard rows in batches keyed on (region_type, region_key, player_id)."""
-    upsert_batched(
-        client,
-        ACTIVE_LEADERBOARD_TABLE,
-        rows,
-        on_conflict="region_type,region_key,player_id",
-        batch_size=batch_size,
-    )
+    if not rows:
+        return
+    for start_index in range(0, len(rows), batch_size):
+        batch = rows[start_index : start_index + batch_size]
+        client.upsert(
+            ACTIVE_LEADERBOARD_TABLE,
+            batch,
+            on_conflict="region_type,region_key,player_id",
+        )
 
 
-def refresh_materialized_views(client: Client, direct: DirectPostgresClient | None = None) -> int:
+def refresh_materialized_views(
+    client: SupabaseClient, direct: DirectPostgresClient | None = None
+) -> int:
     """Refresh downstream materialized views. Returns count of successful refreshes.
 
     The heaviest refreshes (card_frequencies, card_performance) run for minutes
@@ -1335,8 +1406,7 @@ def refresh_materialized_views(client: Client, direct: DirectPostgresClient | No
     the client read timeout. When a direct Postgres connection is available, call
     the refresh functions through it to bypass the gateway entirely; the
     functions' own statement_timeout (30min) still bounds them. Fall back to a
-    long-timeout REST POST when no direct connection is configured -- not
-    client.rpc(), whose underlying session timeout is much shorter.
+    long-timeout REST POST when no direct connection is configured.
     """
     success_count = 0
     for fn_name in MATERIALIZED_VIEW_REFRESH_FUNCTIONS:
@@ -1345,9 +1415,9 @@ def refresh_materialized_views(client: Client, direct: DirectPostgresClient | No
             if direct is not None:
                 direct.call_function(fn_name)
             else:
-                endpoint = f"{client.postgrest.base_url}/rpc/{fn_name}"
+                endpoint = f"{client.url}/rest/v1/rpc/{fn_name}"
                 response = requests.post(
-                    endpoint, json={}, headers=dict(client.postgrest.headers), timeout=REFRESH_RPC_TIMEOUT_SECONDS
+                    endpoint, json={}, headers=client.headers, timeout=REFRESH_RPC_TIMEOUT_SECONDS
                 )
                 if response.status_code >= 400:
                     raise RuntimeError(f"{response.status_code} {response.text}")
@@ -1394,7 +1464,7 @@ def main() -> None:
         print("Error: SUPABASE_URL and SUPABASE_SERVICE_KEY must be set")
         sys.exit(1)
 
-    client = get_supabase_client(supabase_url, supabase_key)
+    client = SupabaseClient(supabase_url, supabase_key)
     db_url = os.environ.get("SUPABASE_DB_URL")
     direct: DirectPostgresClient | None = None
     if db_url:
@@ -1450,7 +1520,9 @@ def main() -> None:
             client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS, direct=direct
         )
         update_job_heartbeat(client, job_id)
-        player_ids = fetch_distinct_entry_ids(client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS, direct=direct)
+        player_ids = fetch_distinct_entry_ids(
+            client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS, direct=direct
+        )
         player_ratings = {}
         for pid in player_ids:
             key = (GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY, pid)
@@ -1470,8 +1542,7 @@ def main() -> None:
     print("Upserting global Elo ratings...")
     ratings_to_upsert = list(player_ratings.values())
     if ratings_to_upsert:
-        upsert_batched(
-            client,
+        client.upsert(
             "global_elo_ratings",
             ratings_to_upsert,
             on_conflict="player_id,region_type,region_key",
@@ -1499,8 +1570,7 @@ def main() -> None:
             profile["primary_commander_known_pct"] = None
 
     if profiles:
-        upsert_batched(
-            client,
+        client.upsert(
             "global_elo_player_profile_summaries",
             profiles,
             on_conflict="player_id",
@@ -1517,8 +1587,7 @@ def main() -> None:
         a["region_key"] = GLOBAL_REGION_KEY
 
     if active:
-        upsert_batched(
-            client,
+        client.upsert(
             "global_elo_state_activity",
             active,
             on_conflict="region_type,region_key,player_id",
@@ -1536,8 +1605,7 @@ def main() -> None:
                 on_conflict="region_type,region_key,game_id,player_id",
             )
         else:
-            upsert_batched(
-                client,
+            client.upsert(
                 "global_elo_game_events",
                 db_event_rows,
                 on_conflict="region_type,region_key,game_id,player_id",
@@ -1636,7 +1704,7 @@ if __name__ == "__main__":
                 _url = os.environ.get("SUPABASE_URL", "")
                 _key = os.environ.get("SUPABASE_SERVICE_KEY", "")
                 if _url and _key:
-                    _client = get_supabase_client(_url, _key)
+                    _client = SupabaseClient(_url, _key)
                     fail_job(_client, job_id_arg, str(exc))
         except Exception as report_exc:
             # Best-effort reporting failed; don't mask the original traceback.

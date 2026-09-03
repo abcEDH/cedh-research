@@ -1,3 +1,10 @@
+# [1.30.0](https://github.com/abcEDH/cedh-research/compare/v1.29.0...v1.30.0) (2026-09-03)
+
+
+### Features
+
+* **backend:** move maintenance refreshes to Prefect ([#338](https://github.com/abcEDH/cedh-research/issues/338)) ([8d741aa](https://github.com/abcEDH/cedh-research/commit/8d741aa5187868e1bd26293ab819311ab3343033))
+
 # [1.29.0](https://github.com/abcEDH/cedh-research/compare/v1.28.0...v1.29.0) (2026-08-30)
 
 

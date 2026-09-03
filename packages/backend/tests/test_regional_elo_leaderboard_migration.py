@@ -2,19 +2,27 @@ import sys
 import unittest
 from datetime import date
 from pathlib import Path
-from types import SimpleNamespace
 
-from postgrest.exceptions import APIError
+import requests
+
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "supabase" / "migrations"
 STATE_ACTIVITY_MIGRATION = MIGRATIONS_DIR / "20260406010000_global_elo_state_activity.sql"
-LEADERBOARD_TOPDECK_MIGRATION = MIGRATIONS_DIR / "20260501000000_regional_elo_leaderboard_topdeck_fields.sql"
-REGIONS_ACTIVE_SNAPSHOT_MIGRATION = MIGRATIONS_DIR / "20260730000000_regional_elo_regions_active_snapshot.sql"
+LEADERBOARD_TOPDECK_MIGRATION = (
+    MIGRATIONS_DIR / "20260501000000_regional_elo_leaderboard_topdeck_fields.sql"
+)
+REGIONS_ACTIVE_SNAPSHOT_MIGRATION = (
+    MIGRATIONS_DIR / "20260730000000_regional_elo_regions_active_snapshot.sql"
+)
+CANONICAL_COUNTS_RPC_MIGRATION = (
+    MIGRATIONS_DIR / "20260903000000_global_elo_canonical_counts_rpc.sql"
+)
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import regional_elo  # noqa: E402
+
 
 # Fixed reference date + a `last_game_date` comfortably inside
 # RANK_ACTIVITY_WINDOW_DAYS (183), used by tests below that predate the
@@ -25,6 +33,22 @@ RECENT_LAST_GAME_DATE = "2026-07-01"
 
 
 class RegionalEloLeaderboardMigrationTests(unittest.TestCase):
+    def test_canonical_counts_rpc_is_keyset_paginated_and_service_role_only(self) -> None:
+        sql = CANONICAL_COUNTS_RPC_MIGRATION.read_text()
+
+        self.assertIn("CREATE OR REPLACE FUNCTION public.get_global_elo_canonical_counts(", sql)
+        self.assertIn("p_after_player_id uuid DEFAULT NULL", sql)
+        self.assertIn("e.player_id > p_after_player_id", sql)
+        self.assertIn("ORDER BY e.player_id", sql)
+        self.assertIn(
+            "REVOKE ALL ON FUNCTION public.get_global_elo_canonical_counts(uuid, integer)",
+            sql,
+        )
+        self.assertIn(
+            "GRANT EXECUTE ON FUNCTION public.get_global_elo_canonical_counts(uuid, integer)\n  TO service_role;",
+            sql,
+        )
+
     def test_state_activity_migration_does_not_reference_country_key_too_early(self) -> None:
         sql = STATE_ACTIVITY_MIGRATION.read_text()
 
@@ -34,7 +58,9 @@ class RegionalEloLeaderboardMigrationTests(unittest.TestCase):
     def test_migration_adds_topdeck_elo_columns_idempotently(self) -> None:
         sql = LEADERBOARD_TOPDECK_MIGRATION.read_text()
 
-        self.assertIn("ALTER TABLE public.global_elo_active_leaderboard", sql)
+        self.assertIn(
+            "ALTER TABLE public.global_elo_active_leaderboard", sql
+        )
         self.assertIn("ADD COLUMN IF NOT EXISTS topdeck_elo numeric", sql)
         self.assertIn("ADD COLUMN IF NOT EXISTS topdeck_elo_rank integer", sql)
 
@@ -54,7 +80,9 @@ class RegionalEloLeaderboardMigrationTests(unittest.TestCase):
     def test_migration_recreates_alias_view_with_security_invoker(self) -> None:
         sql = LEADERBOARD_TOPDECK_MIGRATION.read_text()
 
-        self.assertIn("CREATE OR REPLACE VIEW public.regional_elo_active_leaderboard AS", sql)
+        self.assertIn(
+            "CREATE OR REPLACE VIEW public.regional_elo_active_leaderboard AS", sql
+        )
         self.assertIn("SELECT * FROM public.global_elo_active_leaderboard", sql)
         self.assertIn(
             "ALTER VIEW public.regional_elo_active_leaderboard SET (security_invoker = true)",
@@ -210,10 +238,16 @@ class AssignTopdeckEloRanksTests(unittest.TestCase):
 
         regional_elo.assign_topdeck_elo_ranks(rows, TEST_REFERENCE_DATE)
 
-        country_ranks = {r["player_name"]: r["topdeck_elo_rank"] for r in rows if r["region_type"] == "country"}
+        country_ranks = {
+            r["player_name"]: r["topdeck_elo_rank"]
+            for r in rows
+            if r["region_type"] == "country"
+        }
         self.assertEqual(country_ranks, {"Bob": 1, "Alice": 2})
 
-        global_ranks = [r["topdeck_elo_rank"] for r in rows if r["region_type"] == "global"]
+        global_ranks = [
+            r["topdeck_elo_rank"] for r in rows if r["region_type"] == "global"
+        ]
         self.assertEqual(global_ranks, [1])
 
 
@@ -291,7 +325,11 @@ class BuildActiveLeaderboardRowsTests(unittest.TestCase):
             reference_date=TEST_REFERENCE_DATE,
         )
 
-        ranks_by_name = {row["player_name"]: row["rank"] for row in rows if row["region_type"] == "global"}
+        ranks_by_name = {
+            row["player_name"]: row["rank"]
+            for row in rows
+            if row["region_type"] == "global"
+        }
         self.assertEqual(ranks_by_name["High Activity"], 1)
         self.assertEqual(ranks_by_name["Low Activity"], 2)
 
@@ -343,7 +381,9 @@ class BuildActiveLeaderboardRowsTests(unittest.TestCase):
             reference_date=TEST_REFERENCE_DATE,
         )
 
-        global_rows = {row["player_name"]: row for row in rows if row["region_type"] == "global"}
+        global_rows = {
+            row["player_name"]: row for row in rows if row["region_type"] == "global"
+        }
 
         # The real, rated player must be ranked ahead of the zero-game ghost
         # player even though the ghost's sentinel rating (DEFAULT_RATING,
@@ -434,7 +474,9 @@ class BuildActiveLeaderboardRowsTests(unittest.TestCase):
             reference_date=TEST_REFERENCE_DATE,
         )
 
-        global_rows = {row["player_name"]: row for row in rows if row["region_type"] == "global"}
+        global_rows = {
+            row["player_name"]: row for row in rows if row["region_type"] == "global"
+        }
 
         self.assertEqual(global_rows["Max Sternburg"]["topdeck_elo"], 2070.0)
         self.assertIsNone(global_rows["Max Sternburg"]["topdeck_elo_rank"])
@@ -508,7 +550,9 @@ class RankActivityWindowTests(unittest.TestCase):
             reference_date=self.REFERENCE_DATE,
         )
 
-        global_rows = {row["player_name"]: row for row in rows if row["region_type"] == "global"}
+        global_rows = {
+            row["player_name"]: row for row in rows if row["region_type"] == "global"
+        }
 
         self.assertIsNone(global_rows["Stale Player"]["topdeck_elo_rank"])
         self.assertEqual(global_rows["Active Player"]["topdeck_elo_rank"], 1)
@@ -593,86 +637,76 @@ class RankActivityWindowTests(unittest.TestCase):
         self.assertFalse(regional_elo._is_rank_eligible(none_row, self.REFERENCE_DATE))
 
 
-class _FakeQuery:
-    """Mimics the postgrest-py `.select(...).limit(...).offset(...).execute()` chain."""
-
-    def __init__(self, client: "_FakeSelectClient", table: str, columns: str) -> None:
-        self._client = client
-        self._table = table
-        self._columns = columns
-        self._limit: int | None = None
-        self._offset: int | None = None
-
-    def limit(self, n: int) -> "_FakeQuery":
-        self._limit = n
-        return self
-
-    def offset(self, n: int) -> "_FakeQuery":
-        self._offset = n
-        return self
-
-    def execute(self) -> SimpleNamespace:
-        return self._client._select(self._table, self._columns, self._limit, self._offset)
-
-
-class _FakeTable:
-    def __init__(self, client: "_FakeSelectClient", name: str) -> None:
-        self._client = client
-        self._name = name
-
-    def select(self, columns: str) -> _FakeQuery:
-        return _FakeQuery(self._client, self._name, columns)
-
-
-class _FakeSelectClient:
-    """Minimal stand-in for a supabase-py `Client`, recording each select call."""
-
-    def table(self, name: str) -> _FakeTable:
-        return _FakeTable(self, name)
-
-    def _select(self, table: str, columns: str, limit: int | None, offset: int | None) -> SimpleNamespace:
-        raise NotImplementedError
-
-
 class FetchTopdeckEloByTopdeckIdTests(unittest.TestCase):
     @staticmethod
-    def _missing_column_error(column: str) -> APIError:
-        return APIError({"code": "PGRST204", "message": f"Could not find the {column} column"})
+    def _http_error(status_code: int, text: str) -> requests.exceptions.HTTPError:
+        class FakeResponse:
+            def __init__(self) -> None:
+                self.status_code = status_code
+                self.text = text
+
+        return requests.exceptions.HTTPError(response=FakeResponse())
 
     def test_probes_legacy_uid_schema_then_fetches_snapshot_with_default_retries(
         self,
     ) -> None:
-        class FakeClient(_FakeSelectClient):
-            def __init__(self, missing_topdeck_id: APIError) -> None:
-                self.calls: list[tuple[str, str, int | None, int | None]] = []
+        class FakeClient:
+            def __init__(self, missing_topdeck_id: requests.exceptions.HTTPError) -> None:
+                self.calls: list[tuple[str, dict[str, object], int]] = []
                 self.missing_topdeck_id = missing_topdeck_id
 
-            def _select(self, table: str, columns: str, limit: int | None, offset: int | None) -> SimpleNamespace:
-                self.calls.append((table, columns, limit, offset))
-                if columns == "topdeck_id":
+            def select(
+                self,
+                table: str,
+                filters: dict[str, object] | None = None,
+                max_retries: int = 8,
+            ) -> list[dict[str, object]]:
+                params = filters or {}
+                self.calls.append((table, params, max_retries))
+                selected = params.get("select")
+                if selected == "topdeck_id":
                     raise self.missing_topdeck_id
-                if columns == "uid":
-                    return SimpleNamespace(data=[])
-                if columns == "uid,elo":
-                    return SimpleNamespace(data=[{"uid": "td-1", "elo": "2034.5"}])
-                return SimpleNamespace(data=[])
+                if selected == "uid":
+                    return []
+                if selected == "uid,elo":
+                    return [{"uid": "td-1", "elo": "2034.5"}]
+                return []
 
-        client = FakeClient(self._missing_column_error("topdeck_id"))
+        client = FakeClient(
+            self._http_error(
+                400,
+                '{"code":"PGRST204","message":"Could not find the topdeck_id column"}',
+            )
+        )
 
         result = regional_elo.fetch_topdeck_elo_by_topdeck_id(client)  # type: ignore[arg-type]
 
         self.assertEqual(result, {"td-1": 2034.5})
-        self.assertEqual(client.calls[0], ("topdeck_player_elos", "topdeck_id", 1, None))
-        self.assertEqual(client.calls[1], ("topdeck_player_elos", "uid", 1, None))
-        self.assertEqual(client.calls[2], ("topdeck_player_elos", "uid,elo", 1000, 0))
+        self.assertEqual(client.calls[0][1], {"select": "topdeck_id", "limit": "1"})
+        self.assertEqual(client.calls[0][2], 1)
+        self.assertEqual(client.calls[1][1], {"select": "uid", "limit": "1"})
+        self.assertEqual(client.calls[1][2], 1)
+        self.assertEqual(
+            client.calls[2][1],
+            {"select": "uid,elo", "limit": 1000, "offset": 0},
+        )
+        self.assertEqual(client.calls[2][2], 8)
 
     def test_transient_probe_error_is_not_treated_as_schema_fallback(self) -> None:
-        class FailingClient(_FakeSelectClient):
-            def _select(self, table: str, columns: str, limit: int | None, offset: int | None) -> SimpleNamespace:
-                raise APIError({"message": "temporarily unavailable for topdeck_id"})
+        class FakeClient:
+            def select(
+                self,
+                table: str,
+                filters: dict[str, object] | None = None,
+                max_retries: int = 8,
+            ) -> list[dict[str, object]]:
+                raise FetchTopdeckEloByTopdeckIdTests._http_error(
+                    500,
+                    '{"message":"temporarily unavailable for topdeck_id"}',
+                )
 
-        with self.assertRaises(APIError):
-            regional_elo.fetch_topdeck_elo_by_topdeck_id(FailingClient())  # type: ignore[arg-type]
+        with self.assertRaises(requests.exceptions.HTTPError):
+            regional_elo.fetch_topdeck_elo_by_topdeck_id(FakeClient())  # type: ignore[arg-type]
 
 
 if __name__ == "__main__":
