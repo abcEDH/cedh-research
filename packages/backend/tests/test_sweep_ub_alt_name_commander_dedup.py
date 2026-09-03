@@ -67,9 +67,11 @@ UNRELATED_ROW = {"id": "unrelated-id", "name": "Tymna the Weaver", "commander_na
 
 def make_fake_client(commander_rows: list[dict]) -> Mock:
     client = Mock()
-    client.url = "https://example.supabase.co"
-    client.headers = {"apikey": "test"}
-    client.select = Mock(return_value=commander_rows)
+    client.postgrest.base_url = "https://example.supabase.co/rest/v1"
+    client.postgrest.headers = {"apikey": "test"}
+    client.table.return_value.select.return_value.order.return_value.limit.return_value.execute.return_value.data = (
+        commander_rows
+    )
     return client
 
 
@@ -78,10 +80,10 @@ class FetchCommanderRowsTests(unittest.TestCase):
         client = make_fake_client([TRUE_ROW])
         rows = fetch_commander_rows(client, 500)
 
-        client.select.assert_called_once_with(
-            "commanders",
-            {"select": "id,name,commander_names", "limit": 500, "order": "name.asc"},
-        )
+        client.table.assert_any_call("commanders")
+        client.table.return_value.select.assert_called_once_with("id,name,commander_names")
+        client.table.return_value.select.return_value.order.assert_called_once_with("name", desc=False)
+        client.table.return_value.select.return_value.order.return_value.limit.assert_called_once_with(500)
         self.assertEqual(rows, [TRUE_ROW])
 
 
@@ -150,9 +152,7 @@ class MergeDuplicateGroupTests(unittest.TestCase):
             )
 
             self.assertEqual(mock_requests.patch.call_count, 3)
-            tournament_entries_call, commander_id_call, opponent_commander_id_call = (
-                mock_requests.patch.call_args_list
-            )
+            tournament_entries_call, commander_id_call, opponent_commander_id_call = mock_requests.patch.call_args_list
 
             self.assertIn("tournament_entries", tournament_entries_call.args[0])
             self.assertEqual(tournament_entries_call.kwargs["params"], {"commander_id": "eq.alt-id"})
@@ -163,12 +163,8 @@ class MergeDuplicateGroupTests(unittest.TestCase):
             self.assertEqual(commander_id_call.kwargs["json"], {"commander_id": "true-id"})
 
             self.assertIn("commander_matchups", opponent_commander_id_call.args[0])
-            self.assertEqual(
-                opponent_commander_id_call.kwargs["params"], {"opponent_commander_id": "eq.alt-id"}
-            )
-            self.assertEqual(
-                opponent_commander_id_call.kwargs["json"], {"opponent_commander_id": "true-id"}
-            )
+            self.assertEqual(opponent_commander_id_call.kwargs["params"], {"opponent_commander_id": "eq.alt-id"})
+            self.assertEqual(opponent_commander_id_call.kwargs["json"], {"opponent_commander_id": "true-id"})
 
             # The delete must only fire after every repoint call above.
             delete_call = mock_requests.delete.call_args

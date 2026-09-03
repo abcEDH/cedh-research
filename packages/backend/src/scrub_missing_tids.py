@@ -15,14 +15,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from ingest import (
-    SupabaseClient,
     TopDeckClient,
     dedupe_preserve_order,
     extract_name_and_tid,
     parse_tournament_start_date,
     write_tids,
 )
-
+from supabase_client import fetch_existing_tids, get_supabase_client
 
 TEST_NAME_RE = re.compile(r"(test|temp|copy)", re.IGNORECASE)
 
@@ -80,30 +79,6 @@ def fetch_topdeck_search_tids(topdeck: TopDeckClient, *, days: int) -> list[dict
     return candidates
 
 
-def fetch_existing_tids(client: SupabaseClient) -> set[str]:
-    rows: list[dict] = []
-    offset = 0
-    limit = 1000
-    while True:
-        page = client.select(
-            "tournaments",
-            {
-                "select": "topdeck_tid",
-                "topdeck_tid": "not.is.null",
-                "order": "start_date.desc,topdeck_tid.asc",
-                "limit": limit,
-                "offset": offset,
-            },
-        )
-        if not page:
-            break
-        rows.extend(page)
-        if len(page) < limit:
-            break
-        offset += limit
-    return {row["topdeck_tid"] for row in rows if row.get("topdeck_tid")}
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="Scrub TopDeck search results for missing tournaments")
     parser.add_argument("--days", type=int, default=45, help="Search window for TopDeck search_tournaments")
@@ -116,7 +91,7 @@ def main() -> None:
 
     topdeck_key, supabase_url, supabase_key = load_credentials()
     topdeck = TopDeckClient(topdeck_key)
-    supabase = SupabaseClient(supabase_url, supabase_key)
+    supabase = get_supabase_client(supabase_url, supabase_key)
 
     topdeck_rows = fetch_topdeck_search_tids(topdeck, days=args.days)
     existing_tids = fetch_existing_tids(supabase)
@@ -135,9 +110,7 @@ def main() -> None:
 
     preview = missing_rows[:20]
     for row in preview:
-        print(
-            f"{row['tid']}\tstart={row['start_date']}\t{row['name']}"
-        )
+        print(f"{row['tid']}\tstart={row['start_date']}\t{row['name']}")
 
 
 if __name__ == "__main__":

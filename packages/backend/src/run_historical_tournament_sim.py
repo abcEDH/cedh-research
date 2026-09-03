@@ -12,65 +12,45 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from ingest import SupabaseClient, load_local_env
+from ingest import load_local_env
 from sim_engine import initialize_state
 from sim_models import load_draw_model_artifact
 from sim_pairings import topdeck_bye_rank
 from sim_types import FeatureContext, PlayerHistory, SimPlayer, TournamentSpec
+from supabase import Client
+from supabase_client import fetch_all, get_supabase_client
 from tournament_sim_runner import build_common_output, run_simulation_from_state
 
 DEFAULT_DRAW_MODEL_PATH = Path("/tmp/cedh_draw_model_artifact_v4.pkl")
-def fetch_all(
-    client: SupabaseClient,
-    table: str,
-    params: dict[str, str],
-    *,
-    limit: int = 1000,
-) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    offset = 0
-    while True:
-        page = client.select(table, {**params, "limit": str(limit), "offset": str(offset)}, max_retries=8)
-        if not page:
-            break
-        rows.extend(page)
-        if len(page) < limit:
-            break
-        offset += limit
-    return rows
 
 
 def batched(values: list[str], batch_size: int) -> list[list[str]]:
     return [values[index : index + batch_size] for index in range(0, len(values), batch_size)]
 
 
-def in_filter(values: list[str]) -> str:
-    escaped = [value.replace('"', '\\"') for value in values]
-    return "(" + ",".join(f'"{value}"' for value in escaped) + ")"
-
-
-def fetch_tournament(client: SupabaseClient, tournament_id: str) -> dict[str, Any]:
-    rows = client.select(
-        "tournaments",
-        {
-            "select": "id,name,start_date,player_count,top_cut,state,country",
-            "id": f"eq.{tournament_id}",
-            "limit": "1",
-        },
+def fetch_tournament(client: Client, tournament_id: str) -> dict[str, Any]:
+    rows = (
+        client.table("tournaments")
+        .select("id,name,start_date,player_count,top_cut,state,country")
+        .eq("id", tournament_id)
+        .limit(1)
+        .execute()
+        .data
     )
     if not rows:
         raise RuntimeError(f"Tournament not found: {tournament_id}")
     return rows[0]
 
 
-def fetch_entries(client: SupabaseClient, tournament_id: str) -> list[dict[str, Any]]:
+def fetch_entries(client: Client, tournament_id: str) -> list[dict[str, Any]]:
     return fetch_all(
         client,
         "tournament_entries",
-        {
-            "select": "player_id,commander_id,final_standing,points,wins,losses,draws,made_top_cut,players(name,topdeck_id),commanders(name)",
-            "tournament_id": f"eq.{tournament_id}",
-        },
+        columns=(
+            "player_id,commander_id,final_standing,points,wins,losses,draws,"
+            "made_top_cut,players(name,topdeck_id),commanders(name)"
+        ),
+        filters=[("tournament_id", "eq", tournament_id)],
     )
 
 
@@ -105,26 +85,22 @@ def active_player_count_from_entries(entries: list[dict[str, Any]]) -> int:
     return sum(1 for entry in entries if entry.get("player_id") and entry_games_played(entry) > 0)
 
 
-def fetch_active_player_count_from_games(client: SupabaseClient, tournament_id: str) -> int:
+def fetch_active_player_count_from_games(client: Client, tournament_id: str) -> int:
     rows = fetch_all(
         client,
         "global_elo_game_results",
-        {
-            "select": "player_id",
-            "tournament_id": f"eq.{tournament_id}",
-        },
+        columns="player_id",
+        filters=[("tournament_id", "eq", tournament_id)],
     )
     return len({str(row["player_id"]) for row in rows if row.get("player_id")})
 
 
-def fetch_active_player_ids_from_games(client: SupabaseClient, tournament_id: str) -> set[str]:
+def fetch_active_player_ids_from_games(client: Client, tournament_id: str) -> set[str]:
     rows = fetch_all(
         client,
         "global_elo_game_results",
-        {
-            "select": "player_id",
-            "tournament_id": f"eq.{tournament_id}",
-        },
+        columns="player_id",
+        filters=[("tournament_id", "eq", tournament_id)],
     )
     return {str(row["player_id"]) for row in rows if row.get("player_id")}
 
@@ -133,13 +109,12 @@ def point_count_distribution(counts: Counter[int], total: int) -> list[dict[str,
     if total <= 0:
         return []
     return [
-        {"points": points, "probability": count / total, "count": count}
-        for points, count in sorted(counts.items())
+        {"points": points, "probability": count / total, "count": count} for points, count in sorted(counts.items())
     ]
 
 
 def fetch_historical_point_requirement_baseline(
-    client: SupabaseClient,
+    client: Client,
     *,
     active_player_count: int,
     top_cut: int,
@@ -165,15 +140,11 @@ def fetch_historical_point_requirement_baseline(
     tournaments = fetch_all(
         client,
         "tournaments",
-        {
-            "select": "id,top_cut,swiss_rounds",
-            "top_cut": f"eq.{top_cut}",
-        },
+        columns="id,top_cut,swiss_rounds",
+        filters=[("top_cut", "eq", top_cut)],
     )
     tournament_meta = {
-        str(row["id"]): row
-        for row in tournaments
-        if row.get("id") and str(row.get("id")) != str(exclude_tournament_id)
+        str(row["id"]): row for row in tournaments if row.get("id") and str(row.get("id")) != str(exclude_tournament_id)
     }
     if swiss_rounds is not None:
         tournament_meta = {
@@ -192,10 +163,8 @@ def fetch_historical_point_requirement_baseline(
         game_rows = fetch_all(
             client,
             "global_elo_game_results",
-            {
-                "select": "tournament_id,player_id",
-                "tournament_id": f"in.{in_filter(batch)}",
-            },
+            columns="tournament_id,player_id",
+            filters=[("tournament_id", "in", batch)],
         )
         active_players_by_tournament: dict[str, set[str]] = defaultdict(set)
         for row in game_rows:
@@ -206,10 +175,8 @@ def fetch_historical_point_requirement_baseline(
         rows = fetch_all(
             client,
             "tournament_entries",
-            {
-                "select": "tournament_id,player_id,final_standing,points,wins,losses,draws",
-                "tournament_id": f"in.{in_filter(batch)}",
-            },
+            columns="tournament_id,player_id,final_standing,points,wins,losses,draws",
+            filters=[("tournament_id", "in", batch)],
         )
         by_tournament: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for row in rows:
@@ -238,13 +205,11 @@ def fetch_historical_point_requirement_baseline(
                     continue
             if len(standings_rows) < top_cut:
                 continue
-            points_by_rank = {rank: points for rank, points in standings_rows}
+            points_by_rank = dict(standings_rows)
             if top_cut not in points_by_rank:
                 continue
             top_cut_points = points_by_rank[top_cut]
-            if top_cut_points <= 0 or (
-                max_possible_points is not None and top_cut_points > max_possible_points
-            ):
+            if top_cut_points <= 0 or (max_possible_points is not None and top_cut_points > max_possible_points):
                 continue
             bye_points = points_by_rank.get(bye_rank) if bye_rank is not None else None
             if bye_points is not None and (
@@ -267,14 +232,12 @@ def fetch_historical_point_requirement_baseline(
     }
 
 
-def infer_swiss_rounds(client: SupabaseClient, tournament_id: str) -> int:
+def infer_swiss_rounds(client: Client, tournament_id: str) -> int:
     rows = fetch_all(
         client,
         "global_elo_game_results",
-        {
-            "select": "round_number",
-            "tournament_id": f"eq.{tournament_id}",
-        },
+        columns="round_number",
+        filters=[("tournament_id", "eq", tournament_id)],
     )
     round_numbers = [int(row["round_number"]) for row in rows if row.get("round_number") is not None]
     if not round_numbers:
@@ -283,7 +246,7 @@ def infer_swiss_rounds(client: SupabaseClient, tournament_id: str) -> int:
 
 
 def fetch_pre_tournament_elos(
-    client: SupabaseClient,
+    client: Client,
     player_ids: list[str],
     start_date: str,
 ) -> dict[str, float]:
@@ -292,14 +255,14 @@ def fetch_pre_tournament_elos(
         rows = fetch_all(
             client,
             "global_elo_game_events",
-            {
-                "select": "player_id,game_date,rating_after",
-                "region_type": "eq.global",
-                "region_key": "eq.ALL",
-                "game_date": f"lt.{start_date}",
-                "player_id": f"in.{in_filter(batch)}",
-                "order": "game_date.desc",
-            },
+            columns="player_id,game_date,rating_after",
+            filters=[
+                ("region_type", "eq", "global"),
+                ("region_key", "eq", "ALL"),
+                ("game_date", "lt", start_date),
+                ("player_id", "in", batch),
+            ],
+            order=("game_date", True),
         )
         for row in rows:
             player_id = row.get("player_id")
@@ -313,7 +276,7 @@ def fetch_pre_tournament_elos(
 
 
 def build_feature_context(
-    client: SupabaseClient,
+    client: Client,
     player_ids: list[str],
     start_date: str,
 ) -> FeatureContext:
@@ -323,11 +286,8 @@ def build_feature_context(
         rows = fetch_all(
             client,
             "global_elo_game_results",
-            {
-                "select": "game_id,player_id,result",
-                "player_id": f"in.{in_filter(batch)}",
-                "start_date": f"lt.{start_date}",
-            },
+            columns="game_id,player_id,result",
+            filters=[("player_id", "in", batch), ("start_date", "lt", start_date)],
         )
         for row in rows:
             player_id = row.get("player_id")
@@ -377,7 +337,7 @@ def build_feature_context(
 
 
 def build_spec_and_players(
-    client: SupabaseClient,
+    client: Client,
     tournament_id: str,
     *,
     repeat_avoidance_max_pods: int | None = None,
@@ -389,9 +349,7 @@ def build_spec_and_players(
         active_player_ids = fetch_active_player_ids_from_games(client, tournament_id)
         if active_player_ids:
             entries = [
-                entry
-                for entry in entries
-                if entry.get("player_id") and str(entry["player_id"]) in active_player_ids
+                entry for entry in entries if entry.get("player_id") and str(entry["player_id"]) in active_player_ids
             ]
     swiss_rounds = infer_swiss_rounds(client, tournament_id)
     player_ids = [str(row["player_id"]) for row in entries if row.get("player_id")]
@@ -458,7 +416,7 @@ def main() -> None:
     args = parser.parse_args()
 
     load_local_env()
-    client = SupabaseClient(url=os.environ["SUPABASE_URL"], service_key=os.environ["SUPABASE_SERVICE_KEY"])
+    client = get_supabase_client(url=os.environ["SUPABASE_URL"], key=os.environ["SUPABASE_SERVICE_KEY"])
     spec, players, entries, feature_context = build_spec_and_players(
         client,
         args.tournament_id,

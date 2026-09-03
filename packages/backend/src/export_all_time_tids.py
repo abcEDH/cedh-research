@@ -19,7 +19,8 @@ import os
 from pathlib import Path
 from typing import Any
 
-from ingest import SupabaseClient
+from supabase import Client
+from supabase_client import fetch_all, get_supabase_client
 
 
 def load_credentials() -> tuple[str, str]:
@@ -44,28 +45,15 @@ def load_credentials() -> tuple[str, str]:
     return supabase_url, supabase_key
 
 
-def fetch_all_tournaments(client: SupabaseClient) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    offset = 0
-    limit = 1000
-    while True:
-        page = client.select(
-            "tournaments",
-            {
-                "select": "topdeck_tid,start_date,player_count",
-                "topdeck_tid": "not.is.null",
-                "order": "start_date.asc,topdeck_tid.asc",
-                "limit": limit,
-                "offset": offset,
-            },
-        )
-        if not page:
-            break
-        rows.extend(page)
-        if len(page) < limit:
-            break
-        offset += limit
-    return rows
+def fetch_all_tournaments(client: Client) -> list[dict[str, Any]]:
+    return fetch_all(
+        client,
+        "tournaments",
+        columns="topdeck_tid,start_date,player_count",
+        filters=[("topdeck_tid", "not_is", "null")],
+        order=[("start_date", False), ("topdeck_tid", False)],
+        label="tournaments",
+    )
 
 
 def main() -> None:
@@ -80,14 +68,10 @@ def main() -> None:
     args = parser.parse_args()
 
     supabase_url, supabase_key = load_credentials()
-    client = SupabaseClient(supabase_url, supabase_key)
+    client = get_supabase_client(supabase_url, supabase_key)
     rows = fetch_all_tournaments(client)
 
-    filtered = [
-        row["topdeck_tid"].strip()
-        for row in rows
-        if row.get("topdeck_tid")
-    ]
+    filtered = [row["topdeck_tid"].strip() for row in rows if row.get("topdeck_tid")]
 
     deduped: list[str] = []
     seen: set[str] = set()
@@ -114,7 +98,8 @@ def main() -> None:
                 "# Source: Supabase public.tournaments.topdeck_tid plus optional supplemental files",
                 "# Ordering: start_date ASC, topdeck_tid ASC",
                 "# Note: this is not true all-time discovery; it only exports already-ingested tournaments",
-                "# Refresh with: python src/export_all_time_tids.py [--supplemental data/all_time_tids.supplemental.txt]",
+                "# Refresh with: python src/export_all_time_tids.py "
+                "[--supplemental data/all_time_tids.supplemental.txt]",
                 "",
                 *deduped,
                 "",

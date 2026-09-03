@@ -9,7 +9,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.modules["psycopg2"] = None
 
 fake_ingest = types.ModuleType("ingest")
-fake_ingest.SupabaseClient = MagicMock
 fake_ingest.load_local_env = MagicMock
 _real_ingest = sys.modules.get("ingest")
 sys.modules["ingest"] = fake_ingest

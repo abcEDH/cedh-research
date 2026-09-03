@@ -15,10 +15,11 @@ from backfill_moxfield_commanders import (
 )
 from ingest import (
     PARTNER_ORDER_OVERRIDES,
-    SupabaseClient,
     clean_commander_card_name,
     load_legal_commander_pair_order_map,
 )
+from supabase import Client
+from supabase_client import get_supabase_client
 
 
 def format_report_line(
@@ -55,15 +56,15 @@ def current_pair_order(row: dict) -> tuple[str, str] | None:
     return tuple(parts)
 
 
-def fetch_entries_for_commander(client: SupabaseClient, commander_id: str, limit: int) -> list[dict]:
-    return client.select(
-        "tournament_entries",
-        {
-            "select": "id,decklist_url,players(topdeck_id),tournaments(topdeck_tid,start_date)",
-            "commander_id": f"eq.{commander_id}",
-            "limit": limit,
-            "order": "tournaments(start_date).desc",
-        },
+def fetch_entries_for_commander(client: Client, commander_id: str, limit: int) -> list[dict]:
+    return (
+        client.table("tournament_entries")
+        .select("id,decklist_url,players(topdeck_id),tournaments(topdeck_tid,start_date)")
+        .eq("commander_id", commander_id)
+        .order("tournaments(start_date)", desc=True)
+        .limit(limit)
+        .execute()
+        .data
     )
 
 
@@ -178,13 +179,13 @@ def merge_commander_metadata(retained: dict, duplicate: dict) -> dict:
     return patch
 
 
-def update_commander_metadata(client: SupabaseClient, commander_id: str, patch: dict) -> None:
+def update_commander_metadata(client: Client, commander_id: str, patch: dict) -> None:
     if not patch:
         return
-    endpoint = f"{client.url}/rest/v1/commanders"
+    endpoint = f"{client.postgrest.base_url}/commanders"
     response = requests.patch(
         endpoint,
-        headers=client.headers,
+        headers=dict(client.postgrest.headers),
         params={"id": f"eq.{commander_id}"},
         json=patch,
         timeout=60,
@@ -193,14 +194,14 @@ def update_commander_metadata(client: SupabaseClient, commander_id: str, patch: 
 
 
 def repoint_tournament_entries(
-    client: SupabaseClient,
+    client: Client,
     source_commander_id: str,
     target_commander_id: str,
 ) -> None:
-    endpoint = f"{client.url}/rest/v1/tournament_entries"
+    endpoint = f"{client.postgrest.base_url}/tournament_entries"
     response = requests.patch(
         endpoint,
-        headers=client.headers,
+        headers=dict(client.postgrest.headers),
         params={"commander_id": f"eq.{source_commander_id}"},
         json={"commander_id": target_commander_id},
         timeout=60,
@@ -209,7 +210,7 @@ def repoint_tournament_entries(
 
 
 def repoint_commander_matchups(
-    client: SupabaseClient,
+    client: Client,
     source_commander_id: str,
     target_commander_id: str,
 ) -> None:
@@ -226,11 +227,11 @@ def repoint_commander_matchups(
     safely re-runnable: once a column has been repointed, re-running finds no
     matching rows and is a no-op.
     """
-    endpoint = f"{client.url}/rest/v1/commander_matchups"
+    endpoint = f"{client.postgrest.base_url}/commander_matchups"
     for column in ("commander_id", "opponent_commander_id"):
         response = requests.patch(
             endpoint,
-            headers=client.headers,
+            headers=dict(client.postgrest.headers),
             params={column: f"eq.{source_commander_id}"},
             json={column: target_commander_id},
             timeout=60,
@@ -239,15 +240,15 @@ def repoint_commander_matchups(
 
 
 def update_commander_row(
-    client: SupabaseClient,
+    client: Client,
     commander_id: str,
     target_name: str,
     target_order: tuple[str, str],
 ) -> None:
-    endpoint = f"{client.url}/rest/v1/commanders"
+    endpoint = f"{client.postgrest.base_url}/commanders"
     response = requests.patch(
         endpoint,
-        headers=client.headers,
+        headers=dict(client.postgrest.headers),
         params={"id": f"eq.{commander_id}"},
         json={"name": target_name, "commander_names": list(target_order)},
         timeout=60,
@@ -255,18 +256,18 @@ def update_commander_row(
     response.raise_for_status()
 
 
-def delete_commander_row(client: SupabaseClient, commander_id: str) -> None:
-    endpoint = f"{client.url}/rest/v1/commanders"
+def delete_commander_row(client: Client, commander_id: str) -> None:
+    endpoint = f"{client.postgrest.base_url}/commanders"
     response = requests.delete(
         endpoint,
-        headers=client.headers,
+        headers=dict(client.postgrest.headers),
         params={"id": f"eq.{commander_id}"},
         timeout=60,
     )
     response.raise_for_status()
 
 
-def mark_sweep_pending(client: SupabaseClient, merged_count: int) -> None:
+def mark_sweep_pending(client: Client, merged_count: int) -> None:
     """Flag a live merge for the next maintenance run to pick up (#314).
 
     ``chain-elo`` in ``ci-backend-ingestion.yml`` skips dispatching a
@@ -287,11 +288,11 @@ def mark_sweep_pending(client: SupabaseClient, merged_count: int) -> None:
     already committed real merges by this point) -- it's surfaced as a
     warning instead, matching the sweep's overall best-effort posture.
     """
-    endpoint = f"{client.url}/rest/v1/rpc/mark_partner_commander_sweep_pending"
+    endpoint = f"{client.postgrest.base_url}/rpc/mark_partner_commander_sweep_pending"
     try:
         response = requests.post(
             endpoint,
-            headers=client.headers,
+            headers=dict(client.postgrest.headers),
             json={"p_merged_count": merged_count},
             timeout=30,
         )
@@ -314,11 +315,13 @@ def main() -> None:
     args = parser.parse_args()
 
     supabase_url, supabase_key = load_credentials()
-    client = SupabaseClient(supabase_url, supabase_key)
+    client = get_supabase_client(supabase_url, supabase_key)
     session = requests.Session()
 
     commander_select_columns = "id,name,commander_names," + ",".join(RECONCILABLE_METADATA_COLUMNS)
-    commanders = client.select("commanders", {"select": commander_select_columns, "limit": 5000, "order": "name.asc"})
+    commanders = (
+        client.table("commanders").select(commander_select_columns).order("name", desc=False).limit(5000).execute().data
+    )
     partner_rows = [row for row in commanders if current_pair_order(row)]
     name_to_id = {row["name"]: row["id"] for row in commanders if row.get("name")}
     id_to_row = {row["id"]: row for row in commanders if row.get("id")}

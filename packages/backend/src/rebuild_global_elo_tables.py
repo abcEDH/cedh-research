@@ -13,9 +13,11 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 import requests
+from postgrest.exceptions import APIError
 
-from ingest import SupabaseClient, load_local_env
-from supabase_client import fetch_tier_results_for_window
+from ingest import load_local_env
+from supabase import Client
+from supabase_client import fetch_all, fetch_tier_results_for_window, get_supabase_client, upsert_batched
 
 try:
     import psycopg2
@@ -45,7 +47,6 @@ SEAT_ELO_BONUS = {
     3: -96.0,
     4: -145.0,
 }
-
 
 
 REGION_COUNTRY_BY_STATE = {
@@ -287,7 +288,6 @@ REGION_COUNTRY_BY_STATE = {
 }
 
 
-
 def parse_datetime(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -346,40 +346,6 @@ def empty_rating(player_id: str) -> dict[str, Any]:
     }
 
 
-def with_page_params(
-    params: dict[str, str] | list[tuple[str, str]], limit: int, offset: int
-) -> dict[str, str] | list[tuple[str, str]]:
-    if isinstance(params, list):
-        return [*params, ("limit", str(limit)), ("offset", str(offset))]
-    return {**params, "limit": str(limit), "offset": str(offset)}
-
-
-def fetch_all(
-    client: SupabaseClient,
-    table: str,
-    params: dict[str, str] | list[tuple[str, str]],
-    limit: int = 1000,
-    label: str | None = None,
-    max_retries: int = 8,
-) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    offset = 0
-    started = time.time()
-    while True:
-        page = client.select(table, with_page_params(params, limit, offset), max_retries=max_retries)
-        if not page:
-            break
-        rows.extend(page)
-        if len(page) < limit:
-            break
-        offset += limit
-        if offset % 25000 == 0:
-            elapsed = time.time() - started
-            source = label or table
-            print(f"Fetched {offset:,} rows from {source} in {elapsed:.1f}s", flush=True)
-    return rows
-
-
 def eligible_game_ids(rows: list[dict[str, Any]], tier: str) -> set[str]:
     if tier not in ELO_TIER_FILTERS:
         raise ValueError(f"Unknown Elo tier: {tier}")
@@ -388,24 +354,31 @@ def eligible_game_ids(rows: list[dict[str, Any]], tier: str) -> set[str]:
 
 
 def rpc_fetch_all(
-    client: SupabaseClient,
+    client: Client,
     function_name: str,
     payload: dict[str, Any] | None = None,
     limit: int = 1000,
     label: str | None = None,
     timeout: int = 600,
 ) -> list[dict[str, Any]]:
+    """Paginate through a PostgREST RPC that accepts p_limit / p_offset.
+
+    Uses a raw POST (not `client.rpc()`) so a long, explicit timeout can be
+    set -- the underlying postgrest-py session's default timeout is much
+    shorter and would cut off a slow aggregate RPC.
+    """
     rows: list[dict[str, Any]] = []
     offset = 0
     started = time.time()
     source = label or function_name
-    endpoint = f"{client.url}/rest/v1/rpc/{function_name}"
+    endpoint = f"{client.postgrest.base_url}/rpc/{function_name}"
+    headers = dict(client.postgrest.headers)
     while True:
         page_payload = {**(payload or {}), "p_limit": limit, "p_offset": offset}
         response = requests.post(
             endpoint,
             json=page_payload,
-            headers=client.headers,
+            headers=headers,
             timeout=timeout,
         )
         if response.status_code >= 400:
@@ -423,51 +396,32 @@ def rpc_fetch_all(
     return rows
 
 
-def _http_error_is_missing_topdeck_column(exc: requests.exceptions.HTTPError, column_name: str) -> bool:
-    response = exc.response
-    status_code = getattr(response, "status_code", None)
-    response_text = str(getattr(response, "text", "") or "").lower()
-    normalized_column = column_name.lower()
-
-    if status_code not in {400, 404} or normalized_column not in response_text:
+def _api_error_matches(exc: APIError, needle: str, markers: tuple[str, ...]) -> bool:
+    haystack = " ".join(str(part).lower() for part in (exc.code, exc.message, exc.details) if part)
+    if needle.lower() not in haystack:
         return False
-
-    missing_column_markers = (
-        "42703",
-        "pgrst204",
-        "could not find",
-        "does not exist",
-        "unknown column",
-    )
-    return any(marker in response_text for marker in missing_column_markers)
+    return any(marker in haystack for marker in markers)
 
 
-def _http_error_is_missing_table(exc: requests.exceptions.HTTPError, table_name: str) -> bool:
-    response = exc.response
-    status_code = getattr(response, "status_code", None)
-    response_text = str(getattr(response, "text", "") or "").lower()
-    normalized_table = table_name.lower()
-    if status_code not in {400, 404} or normalized_table not in response_text:
-        return False
-    return any(
-        marker in response_text
-        for marker in ("42p01", "pgrst205", "could not find", "does not exist")
+def _api_error_is_missing_topdeck_column(exc: APIError, column_name: str) -> bool:
+    return _api_error_matches(
+        exc, column_name, ("42703", "pgrst204", "could not find", "does not exist", "unknown column")
     )
 
 
-def detect_topdeck_elo_id_column(client: SupabaseClient) -> str:
+def _api_error_is_missing_table(exc: APIError, table_name: str) -> bool:
+    return _api_error_matches(exc, table_name, ("42p01", "pgrst205", "could not find", "does not exist"))
+
+
+def detect_topdeck_elo_id_column(client: Client) -> str:
     """Detect the TopDeck Elo id column without weakening full snapshot retries."""
-    last_schema_error: requests.exceptions.HTTPError | None = None
+    last_schema_error: APIError | None = None
     for id_column in ("topdeck_id", "uid"):
         try:
-            client.select(
-                "topdeck_player_elos",
-                {"select": id_column, "limit": "1"},
-                max_retries=1,
-            )
+            client.table("topdeck_player_elos").select(id_column).limit(1).execute()
             return id_column
-        except requests.exceptions.HTTPError as exc:
-            if _http_error_is_missing_topdeck_column(exc, id_column):
+        except APIError as exc:
+            if _api_error_is_missing_topdeck_column(exc, id_column):
                 last_schema_error = exc
                 if id_column == "topdeck_id":
                     print(
@@ -480,13 +434,13 @@ def detect_topdeck_elo_id_column(client: SupabaseClient) -> str:
     raise RuntimeError("topdeck_player_elos is missing both topdeck_id and uid columns") from last_schema_error
 
 
-def fetch_topdeck_elos(client: SupabaseClient) -> dict[str, float]:
+def fetch_topdeck_elos(client: Client) -> dict[str, float]:
     """Read TopDeck Elo rows from either the normalized or legacy live schema."""
     id_column = detect_topdeck_elo_id_column(client)
     rows = fetch_all(
         client,
         "topdeck_player_elos",
-        {"select": f"{id_column},elo"},
+        columns=f"{id_column},elo",
     )
     return {str(row[id_column]): float(row["elo"]) for row in rows if row.get(id_column) and row.get("elo") is not None}
 
@@ -540,7 +494,7 @@ def game_sort_key(item: tuple[str, list[dict[str, Any]]]) -> tuple[Any, ...]:
     )
 
 
-def fetch_results_by_month(client: SupabaseClient, tier: str = "ranking") -> list[dict[str, Any]]:
+def fetch_results_by_month(client: Client, tier: str = "ranking") -> list[dict[str, Any]]:
     if tier not in ELO_TIER_FILTERS:
         raise ValueError(f"Unknown Elo tier: {tier}")
     select = (
@@ -562,7 +516,7 @@ def fetch_results_by_month(client: SupabaseClient, tier: str = "ranking") -> lis
 
 
 def fetch_results_from_tournament_start(
-    client: SupabaseClient,
+    client: Client,
     threshold_start_date: str,
     tier: str = "ranking",
 ) -> list[dict[str, Any]]:
@@ -579,11 +533,7 @@ def fetch_results_from_tournament_start(
     for window_start in windows:
         window_end = next_month(window_start)
         rows = fetch_tier_results_for_window(client, window_start, window_end, tier, select)
-        filtered = [
-            row
-            for row in rows
-            if (row.get("start_date") or "") >= threshold_start_date
-        ]
+        filtered = [row for row in rows if (row.get("start_date") or "") >= threshold_start_date]
         all_rows.extend(filtered)
         print(
             f"Fetched {len(filtered):,} suffix rows for {window_start:%Y-%m}; total {len(all_rows):,}",
@@ -610,26 +560,26 @@ def can_use_snapshot_db() -> bool:
 
 
 def try_fetch_snapshot_table(
-    client: SupabaseClient,
+    client: Client,
     table: str,
     select: str,
     label: str,
 ) -> list[dict[str, Any]] | None:
     try:
         rows = fetch_all(
-        client,
-        table,
-        {"select": select, "order": "player_id.asc"},
-        label=label,
-        max_retries=1,
-    )
-    except requests.exceptions.HTTPError:
+            client,
+            table,
+            columns=select,
+            order=("player_id", False),
+            label=label,
+        )
+    except APIError:
         return None
     return rows
 
 
 def fetch_rating_snapshot_before(
-    client: SupabaseClient,
+    client: Client,
     threshold_start_date: str,
 ) -> dict[str, dict[str, Any]]:
     query = """
@@ -729,11 +679,11 @@ def fetch_rating_snapshot_before(
     return ratings
 
 
-def fetch_seat_positions(client: SupabaseClient) -> dict[tuple[str, str], int]:
+def fetch_seat_positions(client: Client) -> dict[tuple[str, str], int]:
     rows = fetch_all(
         client,
         "game_participants",
-        {"select": "game_id,entry_id,seat_position"},
+        columns="game_id,entry_id,seat_position",
         label="game_participants",
     )
     seats: dict[tuple[str, str], int] = {}
@@ -747,7 +697,7 @@ def fetch_seat_positions(client: SupabaseClient) -> dict[tuple[str, str], int]:
 
 
 def fetch_seat_positions_for_games(
-    client: SupabaseClient,
+    client: Client,
     game_ids: set[str],
 ) -> dict[tuple[str, str], int]:
     if not game_ids:
@@ -757,12 +707,12 @@ def fetch_seat_positions_for_games(
     chunk_size = 200
     for start in range(0, len(ordered_ids), chunk_size):
         chunk = ordered_ids[start : start + chunk_size]
-        rows = client.select(
-            "game_participants",
-            {
-                "select": "game_id,entry_id,seat_position",
-                "game_id": f"in.({','.join(chunk)})",
-            },
+        rows = (
+            client.table("game_participants")
+            .select("game_id,entry_id,seat_position")
+            .in_("game_id", chunk)
+            .execute()
+            .data
         )
         for row in rows:
             game_id = row.get("game_id")
@@ -773,15 +723,13 @@ def fetch_seat_positions_for_games(
     return seats
 
 
-def fetch_recent_state_results(client: SupabaseClient, since: date) -> list[dict[str, Any]]:
+def fetch_recent_state_results(client: Client, since: date) -> list[dict[str, Any]]:
     select = "player_id,state,country,result,start_date"
     rows = fetch_all(
         client,
         "global_elo_game_results",
-        {
-            "select": select,
-            "start_date": f"gte.{since.isoformat()}",
-        },
+        columns=select,
+        filters=[("start_date", "gte", since.isoformat())],
         label="recent state results",
     )
     return rows
@@ -795,38 +743,41 @@ def merge_seat_positions(results: list[dict[str, Any]], seats: dict[tuple[str, s
             row["seat_position"] = seats.get((game_id, entry_id))
 
 
-def rest_delete(client: SupabaseClient, table: str, params: dict[str, str]) -> None:
-    response = requests.delete(
-        f"{client.url}/rest/v1/{table}",
-        headers={**client.headers, "Prefer": "return=minimal"},
-        params=params,
-        timeout=120,
-    )
-    if response.status_code >= 400:
-        raise RuntimeError(f"DELETE {table} failed: {response.status_code} {response.text}")
+def rest_delete(client: Client, table: str, filters: dict[str, str]) -> None:
+    """Delete rows from `table` matching simple PostgREST-style filter strings
+    (e.g. `{"region_type": "eq.global"}` or `{"player_id": "not.is.null"}`)."""
+    query = client.table(table).delete()
+    for col, val in filters.items():
+        if val == "not.is.null":
+            query = query.not_.is_(col, "null")
+        elif val.startswith("eq."):
+            query = query.eq(col, val[3:])
+        else:
+            raise ValueError(f"Unsupported delete filter for column {col}: {val!r}")
+    query.execute()
 
 
 def chunked_upsert(
-    client: SupabaseClient,
+    client: Client,
     table: str,
     rows: list[dict[str, Any]],
     on_conflict: str,
     chunk_size: int = 1000,
 ) -> None:
     for start in range(0, len(rows), chunk_size):
-        client.upsert(table, rows[start : start + chunk_size], on_conflict=on_conflict)
+        upsert_batched(client, table, rows[start : start + chunk_size], on_conflict=on_conflict)
         if start and start % 25000 == 0:
             print(f"Upserted {start:,}/{len(rows):,} rows into {table}", flush=True)
 
 
-def delete_by_tournament_ids(client: SupabaseClient, table: str, tournament_ids: set[str]) -> None:
+def delete_by_tournament_ids(client: Client, table: str, tournament_ids: set[str]) -> None:
     if not tournament_ids:
         return
     ordered_ids = sorted(tournament_ids)
     chunk_size = 200
     for start in range(0, len(ordered_ids), chunk_size):
         chunk = ordered_ids[start : start + chunk_size]
-        rest_delete(client, table, {"tournament_id": f"in.({','.join(chunk)})"})
+        client.table(table).delete().in_("tournament_id", chunk).execute()
 
 
 def update_state_activity_from_result(
@@ -897,7 +848,7 @@ def update_state_activity_from_result(
 
 
 def fetch_state_activity_snapshot(
-    client: SupabaseClient,
+    client: Client,
 ) -> tuple[
     dict[tuple[str, str], dict[str, Any]],
     dict[str, dict[str, str | None]],
@@ -951,8 +902,7 @@ def fetch_state_activity_snapshot(
     )
     if activity_rows is not None and meta_rows is not None:
         print(
-            f"Fetched state snapshot tables with {len(activity_rows):,} activity rows "
-            f"and {len(meta_rows):,} meta rows",
+            f"Fetched state snapshot tables with {len(activity_rows):,} activity rows and {len(meta_rows):,} meta rows",
             flush=True,
         )
     elif can_use_snapshot_db():
@@ -1044,23 +994,15 @@ def apply_game(
     deltas: dict[str, float] = defaultdict(float)
     expected_scores: dict[str, float] = {}
     before_ratings = {
-        row["player_id"]: float(
-            ratings.get(row["player_id"], {}).get("rating") or DEFAULT_RATING
-        )
+        row["player_id"]: float(ratings.get(row["player_id"], {}).get("rating") or DEFAULT_RATING)
         for row in participants
     }
 
     draw_count = sum(1 for row in participants if row.get("result") == "draw")
     k_factor = K_FACTOR_DRAW if draw_count else K_FACTOR_DECISIVE
-    use_seat_bonus = (
-        len(participants) == 4
-        and sorted(
-            row.get("seat_position")
-            for row in participants
-            if isinstance(row.get("seat_position"), int)
-        )
-        == [0, 1, 2, 3]
-    )
+    use_seat_bonus = len(participants) == 4 and sorted(
+        row.get("seat_position") for row in participants if isinstance(row.get("seat_position"), int)
+    ) == [0, 1, 2, 3]
     expected_ratings = {}
     for row in participants:
         player_id = row["player_id"]
@@ -1363,7 +1305,7 @@ def finalize_rows(
 
 
 def build_rows(
-    client: SupabaseClient,
+    client: Client,
     results: list[dict[str, Any]],
     ratings: dict[str, dict[str, Any]] | None = None,
     state_activity: dict[tuple[str, str], dict[str, Any]] | None = None,
@@ -1389,7 +1331,7 @@ def build_rows(
 
 
 def fetch_existing_rating_state(
-    client: SupabaseClient,
+    client: Client,
 ) -> tuple[
     dict[str, dict[str, Any]],
     dict[tuple[str, str], dict[str, Any]],
@@ -1399,7 +1341,7 @@ def fetch_existing_rating_state(
     rating_rows = fetch_all(
         client,
         "global_elo_ratings",
-        {"select": "player_id,region_type,region_key,rating,games_played,wins,draws,losses,last_game_date"},
+        columns="player_id,region_type,region_key,rating,games_played,wins,draws,losses,last_game_date",
         label="global_elo_ratings",
     )
     for row in rating_rows:
@@ -1422,12 +1364,10 @@ def fetch_existing_rating_state(
     state_rows = fetch_all(
         client,
         "global_elo_state_activity",
-        {
-            "select": (
-                "region_type,region_key,country_key,player_id,games_30d,games_90d,games_365d,"
-                "games_lifetime,wins,draws,losses,last_game_date,activity_score,is_primary_state"
-            )
-        },
+        columns=(
+            "region_type,region_key,country_key,player_id,games_30d,games_90d,games_365d,"
+            "games_lifetime,wins,draws,losses,last_game_date,activity_score,is_primary_state"
+        ),
         label="global_elo_state_activity",
     )
     for row in state_rows:
@@ -1456,7 +1396,7 @@ def fetch_existing_rating_state(
     profile_rows = fetch_all(
         client,
         "global_elo_player_profile_summaries",
-        {"select": "player_id,topdeck_id,player_name"},
+        columns="player_id,topdeck_id,player_name",
         label="global_elo_player_profile_summaries",
     )
     for row in profile_rows:
@@ -1554,7 +1494,7 @@ def main() -> None:
     key = os.environ.get("SUPABASE_SERVICE_KEY")
     if not url or not key:
         raise SystemExit("SUPABASE_URL and SUPABASE_SERVICE_KEY are required")
-    client = SupabaseClient(url, key)
+    client = get_supabase_client(url, key)
 
     incremental_start: dict[str, Any] | None = None
     if args.since_start_date:

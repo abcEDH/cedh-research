@@ -14,19 +14,22 @@ import os
 import sys
 import time
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 from dateutil import parser as date_parser
 
+from supabase import Client
 from supabase_client import (
     SUPABASE_REST_BASE,
     DirectPostgresClient,
     SupabaseClient,
     _describe_request_failure,
     fetch_existing_tids,
+    get_supabase_client,
+    upsert_batched,
 )
 from topdeck_client import (
     TOPDECK_FIRESTORE_PROJECT,
@@ -66,8 +69,8 @@ FUTURE_START_DATE_GRACE = timedelta(days=2)
 
 def is_future_start_date(ts: datetime) -> bool:
     """True if ts is more than FUTURE_START_DATE_GRACE ahead of now (UTC)."""
-    naive_ts = ts.astimezone(timezone.utc).replace(tzinfo=None) if ts.tzinfo is not None else ts
-    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    naive_ts = ts.astimezone(UTC).replace(tzinfo=None) if ts.tzinfo is not None else ts
+    now_utc = datetime.now(UTC).replace(tzinfo=None)
     return naive_ts > now_utc + FUTURE_START_DATE_GRACE
 
 
@@ -595,7 +598,7 @@ def sanitize_commander_payload(
     return canonical_name, [part.strip() for part in canonical_name.split(" / ") if part.strip()]
 
 
-def fetch_existing_partner_order_map(client: SupabaseClient) -> dict[tuple[str, str], tuple[str, str]]:
+def fetch_existing_partner_order_map(client: Client) -> dict[tuple[str, str], tuple[str, str]]:
     """Map each known 2-commander pair (order-insensitive) to its already-established order.
 
     ``normalize_partner_order()`` picks a canonical order for a partner pair purely
@@ -618,9 +621,13 @@ def fetch_existing_partner_order_map(client: SupabaseClient) -> dict[tuple[str, 
     Ties (if a pair somehow already has more than one row) resolve to whichever
     row was created first, since rows are fetched oldest-first.
     """
-    rows = client.select(
-        "commanders",
-        {"select": "commander_names,created_at", "limit": 20000, "order": "created_at.asc"},
+    rows = (
+        client.table("commanders")
+        .select("commander_names,created_at")
+        .order("created_at", desc=False)
+        .limit(20000)
+        .execute()
+        .data
     )
     order_map: dict[tuple[str, str], tuple[str, str]] = {}
     for row in rows:
@@ -641,7 +648,7 @@ class DataIngester:
     def __init__(
         self,
         topdeck: TopDeckClient,
-        supabase: SupabaseClient,
+        supabase: Client,
     ):
         self.topdeck = topdeck
         self.supabase = supabase
@@ -678,7 +685,7 @@ class DataIngester:
             return self.commander_cache[name]
 
         # Try to find existing
-        existing = self.supabase.select("commanders", {"name": f"eq.{name}"})
+        existing = self.supabase.table("commanders").select("*").eq("name", name).execute().data
         if existing:
             self.commander_cache[name] = existing[0]["id"]
             return existing[0]["id"]
@@ -688,7 +695,7 @@ class DataIngester:
             "name": name,
             "commander_names": canonical_names,
         }
-        result = self.supabase.upsert("commanders", data, on_conflict="name")
+        result = self.supabase.table("commanders").upsert(data, on_conflict="name").execute().data
         if result:
             self.commander_cache[name] = result[0]["id"]
             return result[0]["id"]
@@ -703,14 +710,14 @@ class DataIngester:
             return self.player_cache[topdeck_id]
 
         # Try to find existing
-        existing = self.supabase.select("players", {"topdeck_id": f"eq.{topdeck_id}"})
+        existing = self.supabase.table("players").select("*").eq("topdeck_id", topdeck_id).execute().data
         if existing:
             self.player_cache[topdeck_id] = existing[0]["id"]
             return existing[0]["id"]
 
         # Create new
         data = {"topdeck_id": topdeck_id, "name": name}
-        result = self.supabase.upsert("players", data, on_conflict="topdeck_id")
+        result = self.supabase.table("players").upsert(data, on_conflict="topdeck_id").execute().data
         if result:
             self.player_cache[topdeck_id] = result[0]["id"]
             return result[0]["id"]
@@ -746,7 +753,7 @@ class DataIngester:
             for canonical_name, canonical_names in rows_by_canonical_name.items()
         ]
 
-        result = self.supabase.upsert("commanders", data, on_conflict="name")
+        result = upsert_batched(self.supabase, "commanders", data, on_conflict="name")
         if not result:
             logger.error("Failed to batch upsert commanders")
             return {}
@@ -768,12 +775,8 @@ class DataIngester:
         ]
         for start in range(0, len(unknown_topdeck_ids), 100):
             chunk = unknown_topdeck_ids[start : start + 100]
-            existing_players = self.supabase.select(
-                "players",
-                {
-                    "topdeck_id": f"in.({','.join(chunk)})",
-                    "select": "topdeck_id,name",
-                },
+            existing_players = (
+                self.supabase.table("players").select("topdeck_id,name").in_("topdeck_id", chunk).execute().data
             )
             for existing_player in existing_players:
                 topdeck_id = existing_player.get("topdeck_id")
@@ -783,7 +786,7 @@ class DataIngester:
 
         data = [{"topdeck_id": tid, "name": name} for tid, name in player_data.items()]
 
-        result = self.supabase.upsert("players", data, on_conflict="topdeck_id")
+        result = upsert_batched(self.supabase, "players", data, on_conflict="topdeck_id")
         if not result:
             logger.error("Failed to batch upsert players")
             return {}
@@ -807,7 +810,9 @@ class DataIngester:
 
         result: list[dict[str, Any]] = []
         for db_entries in entries_by_keys.values():
-            upserted = self.supabase.upsert("tournament_entries", db_entries, on_conflict="tournament_id,player_id")
+            upserted = upsert_batched(
+                self.supabase, "tournament_entries", db_entries, on_conflict="tournament_id,player_id"
+            )
             if upserted:
                 result.extend(upserted)
 
@@ -888,7 +893,7 @@ class DataIngester:
             "tier": tier,
         }
 
-        result = self.supabase.upsert("tournaments", tournament_data, on_conflict="topdeck_tid")
+        result = self.supabase.table("tournaments").upsert(tournament_data, on_conflict="topdeck_tid").execute().data
         if not result:
             logger.error(f"Failed to upsert tournament: {tid}")
             return None
@@ -1139,7 +1144,9 @@ class DataIngester:
                     }
 
                     try:
-                        game_result = self.supabase.upsert("games", game_record, on_conflict="game_key")
+                        game_result = (
+                            self.supabase.table("games").upsert(game_record, on_conflict="game_key").execute().data
+                        )
                         if game_result:
                             games_processed += 1
                             participant_records: list[dict[str, Any]] = []
@@ -1161,11 +1168,10 @@ class DataIngester:
                                 }
                                 participant_records.append(participant_record)
                             if participant_records:
-                                self.supabase.upsert(
-                                    "game_participants",
+                                self.supabase.table("game_participants").upsert(
                                     participant_records,
                                     on_conflict="game_id,entry_id",
-                                )
+                                ).execute()
                     except Exception as e:
                         logger.warning(f"Failed to upsert game {game_key}: {e}")
                     continue
@@ -1204,7 +1210,9 @@ class DataIngester:
 
                     # Upsert game
                     try:
-                        game_result = self.supabase.upsert("games", game_record, on_conflict="game_key")
+                        game_result = (
+                            self.supabase.table("games").upsert(game_record, on_conflict="game_key").execute().data
+                        )
                         if game_result:
                             games_processed += 1
                             participant_records: list[dict[str, Any]] = []
@@ -1228,11 +1236,10 @@ class DataIngester:
                                 }
                                 participant_records.append(participant_record)
                             if participant_records:
-                                self.supabase.upsert(
-                                    "game_participants",
+                                self.supabase.table("game_participants").upsert(
                                     participant_records,
                                     on_conflict="game_id,entry_id",
-                                )
+                                ).execute()
                     except Exception as e:
                         logger.warning(f"Failed to upsert game {game_key}: {e}")
 
@@ -1300,7 +1307,7 @@ INGESTION_JOBS_TABLE = "ingestion_jobs"
 INGESTION_JOB_ALREADY_CLAIMED_EXIT_CODE = 20
 
 
-def claim_ingestion_job(client: SupabaseClient, job_id: str, github_run_id: int) -> bool:
+def claim_ingestion_job(client: Client, job_id: str, github_run_id: int) -> bool:
     """Atomically claim an ingestion job by transitioning it to 'running'.
 
     Returns True if the job was claimed, False if it was already claimed by
@@ -1308,55 +1315,53 @@ def claim_ingestion_job(client: SupabaseClient, job_id: str, github_run_id: int)
     caller can distinguish conflicts from failures.
     """
     now = datetime.now().astimezone().isoformat()
-    updated = client.update(
-        INGESTION_JOBS_TABLE,
-        {
-            "status": "running",
-            "github_run_id": github_run_id,
-            "started_at": now,
-            "heartbeat_at": now,
-        },
-        {"id": f"eq.{job_id}", "status": "in.(pending,dispatched)"},
+    result = (
+        client.table(INGESTION_JOBS_TABLE)
+        .update(
+            {
+                "status": "running",
+                "github_run_id": github_run_id,
+                "started_at": now,
+                "heartbeat_at": now,
+            }
+        )
+        .eq("id", job_id)
+        .in_("status", ["pending", "dispatched"])
+        .execute()
     )
-    return bool(updated)
+    return bool(result.data)
 
 
-def update_ingestion_heartbeat(client: SupabaseClient, job_id: str) -> None:
+def update_ingestion_heartbeat(client: Client, job_id: str) -> None:
     """Best-effort heartbeat for ingestion job."""
     if not job_id:
         return
     try:
-        client.update(
-            INGESTION_JOBS_TABLE,
-            {"heartbeat_at": datetime.now().astimezone().isoformat()},
-            {"id": f"eq.{job_id}", "status": "eq.running"},
-        )
+        client.table(INGESTION_JOBS_TABLE).update({"heartbeat_at": datetime.now().astimezone().isoformat()}).eq(
+            "id", job_id
+        ).eq("status", "running").execute()
     except Exception as exc:
         logger.warning(f"Ingestion heartbeat failed for {job_id} (safe to continue): {exc}")
 
 
-def complete_ingestion_job(client: SupabaseClient, job_id: str, metrics: dict) -> None:
+def complete_ingestion_job(client: Client, job_id: str, metrics: dict) -> None:
     """Mark ingestion job as completed with metrics."""
     now = datetime.now().astimezone().isoformat()
-    client.update(
-        INGESTION_JOBS_TABLE,
-        {"status": "completed", "completed_at": now, "heartbeat_at": now, **metrics},
-        {"id": f"eq.{job_id}", "status": "eq.running"},
-    )
+    client.table(INGESTION_JOBS_TABLE).update(
+        {"status": "completed", "completed_at": now, "heartbeat_at": now, **metrics}
+    ).eq("id", job_id).eq("status", "running").execute()
 
 
-def fail_ingestion_job(client: SupabaseClient, job_id: str, error: str) -> None:
+def fail_ingestion_job(client: Client, job_id: str, error: str) -> None:
     """Mark ingestion job as failed."""
     try:
-        client.update(
-            INGESTION_JOBS_TABLE,
+        client.table(INGESTION_JOBS_TABLE).update(
             {
                 "status": "failed",
                 "completed_at": datetime.now().astimezone().isoformat(),
                 "error_text": error[:2000],
-            },
-            {"id": f"eq.{job_id}", "status": "in.(pending,dispatched,running)"},
-        )
+            }
+        ).eq("id", job_id).in_("status", ["pending", "dispatched", "running"]).execute()
     except Exception as exc:
         logger.error(f"Failed to record ingestion failure for {job_id}: {exc}")
 
@@ -1398,23 +1403,20 @@ def default_backfill_run_key(path: Path, batch_size: int) -> str:
     return f"{stem}-bs{batch_size}-{ts}"
 
 
-def fetch_failed_tids_for_run(client: SupabaseClient, run_key: str) -> list[str]:
+def fetch_failed_tids_for_run(client: Client, run_key: str) -> list[str]:
     """Return TIDs marked as failed for a given backfill run key."""
-    runs = client.select(
-        "ingestion_backfill_runs",
-        {"select": "id", "run_key": f"eq.{run_key}"},
-    )
+    runs = client.table("ingestion_backfill_runs").select("id").eq("run_key", run_key).execute().data
     if not runs:
         return []
     run_id = runs[0]["id"]
-    events = client.select(
-        "ingestion_backfill_events",
-        {
-            "select": "tid",
-            "run_id": f"eq.{run_id}",
-            "event_type": "eq.process_failed",
-            "tid": "not.is.null",
-        },
+    events = (
+        client.table("ingestion_backfill_events")
+        .select("tid")
+        .eq("run_id", run_id)
+        .eq("event_type", "process_failed")
+        .not_.is_("tid", "null")
+        .execute()
+        .data
     )
     seen: set[str] = set()
     result: list[str] = []
@@ -1427,7 +1429,7 @@ def fetch_failed_tids_for_run(client: SupabaseClient, run_key: str) -> list[str]
 
 
 def upsert_backfill_run(
-    client: SupabaseClient,
+    client: Client,
     run_key: str,
     tids_path: Path,
     batch_size: int,
@@ -1441,21 +1443,25 @@ def upsert_backfill_run(
     import hashlib
 
     manifest_sha256 = hashlib.sha256(tids_path.read_bytes()).hexdigest()
-    rows = client.upsert(
-        "ingestion_backfill_runs",
-        {
-            "run_key": run_key,
-            "manifest_path": str(tids_path),
-            "manifest_sha256": manifest_sha256,
-            "batch_size": batch_size,
-            "discovered_tournament_count": total_tournaments,
-            "total_batches": total_batches,
-            "requested_start_date": start_date,
-            "requested_end_date": end_date,
-            "status": status,
-            "updated_at": utc_now_iso(),
-        },
-        on_conflict="run_key",
+    rows = (
+        client.table("ingestion_backfill_runs")
+        .upsert(
+            {
+                "run_key": run_key,
+                "manifest_path": str(tids_path),
+                "manifest_sha256": manifest_sha256,
+                "batch_size": batch_size,
+                "discovered_tournament_count": total_tournaments,
+                "total_batches": total_batches,
+                "requested_start_date": start_date,
+                "requested_end_date": end_date,
+                "status": status,
+                "updated_at": utc_now_iso(),
+            },
+            on_conflict="run_key",
+        )
+        .execute()
+        .data
     )
     if isinstance(rows, list) and rows:
         return rows[0]
@@ -1465,7 +1471,7 @@ def upsert_backfill_run(
 
 
 def upsert_backfill_batch(
-    client: SupabaseClient,
+    client: Client,
     run_id: str,
     batch_index: int,
     batch_start: int,
@@ -1490,11 +1496,7 @@ def upsert_backfill_batch(
         payload["finished_at"] = utc_now_iso()
     if error_text is not None:
         payload["error_text"] = error_text
-    rows = client.upsert(
-        "ingestion_backfill_batches",
-        payload,
-        on_conflict="run_id,batch_index",
-    )
+    rows = client.table("ingestion_backfill_batches").upsert(payload, on_conflict="run_id,batch_index").execute().data
     if isinstance(rows, list) and rows:
         return rows[0]
     if isinstance(rows, dict):
@@ -1503,7 +1505,7 @@ def upsert_backfill_batch(
 
 
 def append_backfill_event(
-    client: SupabaseClient,
+    client: Client,
     run_id: str,
     batch_index: int,
     event_type: str,
@@ -1511,20 +1513,19 @@ def append_backfill_event(
     payload: dict[str, Any] | None = None,
 ) -> None:
     """Insert a row into ingestion_backfill_events."""
-    client.upsert(
-        "ingestion_backfill_events",
+    client.table("ingestion_backfill_events").upsert(
         {
             "run_id": run_id,
             "batch_index": batch_index,
             "tid": tid,
             "event_type": event_type,
             "payload": payload or {},
-        },
-    )
+        }
+    ).execute()
 
 
 def update_backfill_run_progress(
-    client: SupabaseClient,
+    client: Client,
     run_row: dict[str, Any],
     processed_count: int,
     succeeded_count: int,
@@ -1558,11 +1559,7 @@ def update_backfill_run_progress(
         data["last_completed_tid"] = last_completed_tid
     if last_success_at is not None:
         data["last_success_at"] = last_success_at
-    client.update(
-        "ingestion_backfill_runs",
-        data,
-        {"id": f"eq.{run_row['id']}"},
-    )
+    client.table("ingestion_backfill_runs").update(data).eq("id", run_row["id"]).execute()
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -1647,7 +1644,7 @@ def main():
 
     # Initialize clients
     topdeck = TopDeckClient(topdeck_api_key)
-    supabase = SupabaseClient(supabase_url, supabase_key)
+    supabase = get_supabase_client(supabase_url, supabase_key)
     db_client = None
 
     # Initialize ingester
@@ -1954,7 +1951,10 @@ def _run_ingestion(args, topdeck, supabase, ingester, job_id):
                     continue
 
                 if is_future_start_date(ts):
-                    logger.warning(f"Skipping {tid}: start_date {ts.isoformat()} is more than {FUTURE_START_DATE_GRACE} in the future")
+                    logger.warning(
+                        f"Skipping {tid}: start_date {ts.isoformat()} is more than "
+                        f"{FUTURE_START_DATE_GRACE} in the future"
+                    )
                     if args.record_backfill and run_row:
                         append_backfill_event(
                             ingester.supabase,

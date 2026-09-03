@@ -1,10 +1,9 @@
 import sys
 import types
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 from unittest import TestCase, main
 from unittest.mock import MagicMock
-
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.modules["psycopg2"] = None
@@ -13,7 +12,6 @@ _real_ingest = sys.modules.get("ingest")
 
 fake_ingest = types.ModuleType("ingest")
 fake_ingest.SUPABASE_REST_BASE = "https://example.supabase.co"
-fake_ingest.SupabaseClient = MagicMock
 fake_ingest.load_local_env = MagicMock
 sys.modules["ingest"] = fake_ingest
 
@@ -35,7 +33,7 @@ class RebuildPlayerCommanderProfilesTests(TestCase):
                 "topdeck_id": "topdeck-1",
                 "player_name": "Player One",
                 "commander_name": "Tivit, Seller of Secrets",
-                "start_date": datetime(2026, 6, 14, 18, 30, tzinfo=timezone.utc),
+                "start_date": datetime(2026, 6, 14, 18, 30, tzinfo=UTC),
                 "topdeck_tid": "tournament-slug",
                 "tournament_id": "tournament-1",
                 "tournament_name": "Test Tournament",
@@ -53,7 +51,7 @@ class RebuildPlayerCommanderProfilesTests(TestCase):
                 "topdeck_id": "topdeck-1",
                 "player_name": "Player One",
                 "commander_name": "Tivit, Seller of Secrets",
-                "start_date": datetime(2030, 10, 26, tzinfo=timezone.utc),
+                "start_date": datetime(2030, 10, 26, tzinfo=UTC),
                 "topdeck_tid": "test-event-for-dan-and-noam",
                 "tournament_id": "tournament-1",
                 "tournament_name": "Test Event for Dan and Noam",
@@ -69,7 +67,7 @@ class RebuildPlayerCommanderProfilesTests(TestCase):
             "topdeck-1": [
                 {
                     "commander_name": "Kinnan, Bonder Prodigy",
-                    "start_date": datetime(2026, 6, 1, tzinfo=timezone.utc),
+                    "start_date": datetime(2026, 6, 1, tzinfo=UTC),
                 },
                 {
                     "commander_name": "Rograkh, Son of Rohgahh",
@@ -94,7 +92,7 @@ class RebuildPlayerCommanderProfilesTests(TestCase):
                 "topdeck_id": "topdeck-1",
                 "player_name": "Player One",
                 "commander_name": "Kinnan, Bonder Prodigy",
-                "start_date": datetime(2026, 6, 1, tzinfo=timezone.utc),
+                "start_date": datetime(2026, 6, 1, tzinfo=UTC),
             },
             {
                 "player_id": "player-1",

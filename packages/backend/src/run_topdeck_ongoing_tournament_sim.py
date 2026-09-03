@@ -36,8 +36,8 @@ from sim_models import (
     SEAT_ELO_BONUS,
     build_round_snapshot,
     load_draw_model_artifact,
-    predict_draw_probabilities,
     predict_decisive_win_probabilities,
+    predict_draw_probabilities,
 )
 from sim_pairings import select_top_cut, sort_standings_rows, topdeck_bye_rank
 from sim_types import FeatureContext, Pod, PodResult, SimPlayer, TournamentSpec
@@ -119,13 +119,11 @@ def infer_structure(
 
     if swiss_rounds is None:
         raise RuntimeError(
-            "Unable to infer total swiss rounds from the TopDeck payload/event page. "
-            "Pass --swiss-rounds explicitly."
+            "Unable to infer total swiss rounds from the TopDeck payload/event page. Pass --swiss-rounds explicitly."
         )
     if top_cut is None:
         raise RuntimeError(
-            "Unable to infer top cut size from the TopDeck payload/event page. "
-            "Pass --top-cut explicitly."
+            "Unable to infer top cut size from the TopDeck payload/event page. Pass --top-cut explicitly."
         )
     return swiss_rounds, top_cut
 
@@ -155,20 +153,8 @@ def standings_tiebreak_seed_map(tournament: dict[str, Any]) -> dict[str, int]:
     return seeds
 
 
-def in_filter(values: list[str]) -> str:
-    escaped = [value.replace('"', '\\"') for value in values]
-    return "(" + ",".join(f'"{value}"' for value in escaped) + ")"
-
-
 def fetch_existing_players(client, topdeck_ids: list[str]) -> dict[str, dict[str, str]]:
-    rows = client.select(
-        "players",
-        {
-            "select": "id,topdeck_id,name",
-            "topdeck_id": f"in.{in_filter(topdeck_ids)}",
-        },
-        max_retries=8,
-    )
+    rows = client.table("players").select("id,topdeck_id,name").in_("topdeck_id", topdeck_ids).execute().data
     return {
         str(row["topdeck_id"]): {
             "id": str(row["id"]),
@@ -190,9 +176,7 @@ def build_pods_for_round(round_data: dict[str, Any], round_index: int, id_map: d
     for table in round_data.get("tables") or []:
         players = table.get("players") or []
         player_ids = [
-            id_map[str(player.get("id"))]
-            for player in players
-            if player.get("id") and str(player.get("id")) in id_map
+            id_map[str(player.get("id"))] for player in players if player.get("id") and str(player.get("id")) in id_map
         ]
         if len(player_ids) < 2:
             continue
@@ -241,7 +225,7 @@ def build_result_for_table(pod: Pod, table: dict[str, Any], id_map: dict[str, st
         player_ids=pod.player_ids,
         is_draw=draw,
         winner_id=normalized_winner_id,
-        win_probabilities=tuple(),
+        win_probabilities=(),
         draw_probability=0.0,
     )
 
@@ -295,8 +279,7 @@ def split_rounds(
                 round_number,
                 dict(
                     Counter(
-                        str(table.get("status") or "").strip()
-                        or ("Completed" if table_completed(table) else "Active")
+                        str(table.get("status") or "").strip() or ("Completed" if table_completed(table) else "Active")
                         for table in tables
                     )
                 ),
@@ -342,16 +325,12 @@ def build_base_state(
     player_names = collect_players(tournament)
     if excluded_topdeck_ids:
         player_names = {
-            topdeck_id: name
-            for topdeck_id, name in player_names.items()
-            if topdeck_id not in excluded_topdeck_ids
+            topdeck_id: name for topdeck_id, name in player_names.items() if topdeck_id not in excluded_topdeck_ids
         }
     tiebreak_seeds = standings_tiebreak_seed_map(tournament)
     if excluded_topdeck_ids:
         tiebreak_seeds = {
-            topdeck_id: seed
-            for topdeck_id, seed in tiebreak_seeds.items()
-            if topdeck_id not in excluded_topdeck_ids
+            topdeck_id: seed for topdeck_id, seed in tiebreak_seeds.items() if topdeck_id not in excluded_topdeck_ids
         }
     topdeck_ids = sorted(player_names)
     start_date = parse_start_date(tournament.get("startDate"))
@@ -509,28 +488,15 @@ def run_live_monte_carlo(
 
     return {
         "win_probability": {
-            player_id: probability / simulations
-            for player_id, probability in win_probability_totals.items()
+            player_id: probability / simulations for player_id, probability in win_probability_totals.items()
         },
-        "top_cut_probability": {
-            player_id: count / simulations
-            for player_id, count in top_cut_counts.items()
-        },
+        "top_cut_probability": {player_id: count / simulations for player_id, count in top_cut_counts.items()},
         "advancement_probability": {
-            cut_size: {
-                player_id: probability / simulations
-                for player_id, probability in player_probabilities.items()
-            }
+            cut_size: {player_id: probability / simulations for player_id, probability in player_probabilities.items()}
             for cut_size, player_probabilities in advancement_totals.items()
         },
-        "expected_points": {
-            player_id: total / simulations
-            for player_id, total in expected_points.items()
-        },
-        "expected_finish": {
-            player_id: total / simulations
-            for player_id, total in expected_finish.items()
-        },
+        "expected_points": {player_id: total / simulations for player_id, total in expected_points.items()},
+        "expected_finish": {player_id: total / simulations for player_id, total in expected_finish.items()},
         "point_requirements": {
             "top_cut": [
                 {"points": points, "probability": count / simulations, "count": count}
@@ -559,7 +525,10 @@ def main() -> None:
         "--repeat-avoidance-max-pods",
         type=int,
         default=32,
-        help="Run repeat-opponent swap optimization only when generated Swiss pod count is at or below this value. Use 0 to disable.",
+        help=(
+            "Run repeat-opponent swap optimization only when generated Swiss pod count is at "
+            "or below this value. Use 0 to disable."
+        ),
     )
     parser.add_argument(
         "--sample-top-cut",
@@ -583,12 +552,13 @@ def main() -> None:
     player_names = collect_players(tournament)
     topdeck_ids = sorted(player_names)
     start_date = parse_start_date(tournament.get("startDate"))
-    from ingest import SupabaseClient  # local import to keep script entry focused
+    from supabase_client import get_supabase_client  # local import to keep script entry focused
 
-    client = SupabaseClient(url=os.environ["SUPABASE_URL"], service_key=os.environ["SUPABASE_SERVICE_KEY"])
+    client = get_supabase_client(url=os.environ["SUPABASE_URL"], key=os.environ["SUPABASE_SERVICE_KEY"])
     existing_players = fetch_existing_players(client, topdeck_ids)
     player_records = {
-        topdeck_id: existing_players.get(topdeck_id) or {"id": f"topdeck:{topdeck_id}", "name": player_names[topdeck_id]}
+        topdeck_id: existing_players.get(topdeck_id)
+        or {"id": f"topdeck:{topdeck_id}", "name": player_names[topdeck_id]}
         for topdeck_id in topdeck_ids
     }
     known_player_ids = [record["id"] for record in player_records.values() if not record["id"].startswith("topdeck:")]

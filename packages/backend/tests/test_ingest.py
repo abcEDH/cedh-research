@@ -1,11 +1,11 @@
-import unittest
 import os
 import sys
 import types
+import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
-
 
 try:
     import requests as requests_module
@@ -34,23 +34,45 @@ sys.modules.setdefault("dateutil.parser", dateutil_parser_module)
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from ingest import (  # noqa: E402
-    _describe_request_failure,
-    clean_commander_card_name,
-    DataIngester,
-    extract_standing_rates,
-    fetch_existing_partner_order_map,
     INGESTION_JOB_ALREADY_CLAIMED_EXIT_CODE,
+    DataIngester,
+    claim_ingestion_job,
+    clean_commander_card_name,
+    complete_ingestion_job,
+    extract_standing_rates,
+    fail_ingestion_job,
+    fetch_existing_partner_order_map,
     load_commander_oracle_aliases,
+    main,
     normalize_commander_name,
     normalize_partner_order,
     resolve_record_fields,
     sanitize_commander_payload,
-    SupabaseClient,
-    claim_ingestion_job,
-    complete_ingestion_job,
-    fail_ingestion_job,
-    main,
 )
+
+
+def _make_fluent_client() -> Mock:
+    """Build a Mock supabase-py Client whose `.table(name).select(...)` and
+    `.table(name).update(...)` chains (any `.eq()`/`.in_()`/`.order()`/etc in
+    any order) resolve to a shared `.execute().data`, mirroring the fluent
+    builder ingest.py now uses. `.upsert(...)` is left for callers to
+    configure per-test since its return value usually depends on the payload.
+    """
+    client = Mock()
+
+    select_chain = Mock()
+    for method in ("eq", "neq", "gte", "lte", "gt", "lt", "ilike", "in_", "order", "limit", "offset"):
+        getattr(select_chain, method).return_value = select_chain
+    select_chain.not_ = Mock()
+    select_chain.not_.is_.return_value = select_chain
+    client.table.return_value.select.return_value = select_chain
+
+    update_chain = Mock()
+    for method in ("eq", "in_"):
+        getattr(update_chain, method).return_value = update_chain
+    client.table.return_value.update.return_value = update_chain
+
+    return client
 
 
 class ResolveRecordFieldsTests(unittest.TestCase):
@@ -249,8 +271,8 @@ class PartnerOrderReconciliationTests(unittest.TestCase):
     """
 
     def test_fetch_existing_partner_order_map_builds_sorted_pair_lookup(self) -> None:
-        client = Mock()
-        client.select.return_value = [
+        client = _make_fluent_client()
+        client.table.return_value.select.return_value.execute.return_value.data = [
             {
                 "commander_names": ["Tymna the Weaver", "Kraum, Ludevic's Opus"],
                 "created_at": "2026-01-01T00:00:00Z",
@@ -268,8 +290,8 @@ class PartnerOrderReconciliationTests(unittest.TestCase):
         self.assertEqual(len(order_map), 1)
 
     def test_reconcile_partner_order_prefers_existing_db_row(self) -> None:
-        supabase = Mock()
-        supabase.select.return_value = [
+        supabase = _make_fluent_client()
+        supabase.table.return_value.select.return_value.execute.return_value.data = [
             {
                 "commander_names": ["Zzzephyr, Test Commander", "Aaardvark, Test Partner"],
                 "created_at": "2025-01-01T00:00:00Z",
@@ -286,7 +308,7 @@ class PartnerOrderReconciliationTests(unittest.TestCase):
         self.assertEqual(reconciled_names, ["Zzzephyr, Test Commander", "Aaardvark, Test Partner"])
         # The lookup is cached: a second call must not re-query Supabase.
         ingester._reconcile_partner_order("x", ["Aaardvark, Test Partner", "Zzzephyr, Test Commander"])
-        supabase.select.assert_called_once()
+        supabase.table.return_value.select.assert_called_once()
 
     @patch("ingest.load_legal_commander_pair_order_map", return_value={})
     @patch(
@@ -307,13 +329,16 @@ class PartnerOrderReconciliationTests(unittest.TestCase):
         existing_order = ("Zzzephyr, Test Commander", "Aaardvark, Test Partner")
         pair_key = tuple(sorted(existing_order))  # the alphabetical fallback order
 
-        supabase = Mock()
-        supabase.select.return_value = [{"commander_names": list(existing_order), "created_at": "2025-01-01T00:00:00Z"}]
+        supabase = _make_fluent_client()
+        supabase.table.return_value.select.return_value.execute.return_value.data = [
+            {"commander_names": list(existing_order), "created_at": "2025-01-01T00:00:00Z"}
+        ]
 
-        def fake_upsert(table, data, on_conflict=None, max_retries=3):
-            return [{"name": row["name"], "id": "commander-1"} for row in data]
+        def fake_upsert(data, on_conflict=None):
+            result = [{"name": row["name"], "id": "commander-1"} for row in data]
+            return SimpleNamespace(execute=lambda: SimpleNamespace(data=result))
 
-        supabase.upsert.side_effect = fake_upsert
+        supabase.table.return_value.upsert.side_effect = fake_upsert
 
         # Tournament A's decklist lists the commanders alphabetically.
         ingester_a = DataIngester(Mock(), supabase)
@@ -329,8 +354,8 @@ class PartnerOrderReconciliationTests(unittest.TestCase):
         self.assertEqual(id_map_a[commander_name_a], "commander-1")
         self.assertEqual(id_map_b[commander_name_b], "commander-1")
 
-        for call in supabase.upsert.call_args_list:
-            _table, data = call.args[0], call.args[1]
+        for call in supabase.table.return_value.upsert.call_args_list:
+            data = call.args[0]
             self.assertEqual(len(data), 1)
             self.assertEqual(data[0]["name"], " / ".join(existing_order))
             self.assertEqual(data[0]["commander_names"], list(existing_order))
@@ -354,16 +379,19 @@ class PartnerOrderReconciliationTests(unittest.TestCase):
         key_alpha = " / ".join(pair_key)  # "Aaardvark, Test Partner / Zzzephyr, Test Commander"
         key_reverse = " / ".join(reversed(pair_key))  # "Zzzephyr, Test Commander / Aaardvark, Test Partner"
 
-        supabase = Mock()
-        supabase.select.return_value = [{"commander_names": list(existing_order), "created_at": "2025-01-01T00:00:00Z"}]
+        supabase = _make_fluent_client()
+        supabase.table.return_value.select.return_value.execute.return_value.data = [
+            {"commander_names": list(existing_order), "created_at": "2025-01-01T00:00:00Z"}
+        ]
 
         upsert_calls: list[dict] = []
 
-        def fake_upsert(table, data, on_conflict=None, max_retries=3):
-            upsert_calls.append({"table": table, "data": data, "on_conflict": on_conflict})
-            return [{"name": row["name"], "id": "commander-1"} for row in data]
+        def fake_upsert(data, on_conflict=None):
+            upsert_calls.append({"data": data, "on_conflict": on_conflict})
+            result = [{"name": row["name"], "id": "commander-1"} for row in data]
+            return SimpleNamespace(execute=lambda: SimpleNamespace(data=result))
 
-        supabase.upsert.side_effect = fake_upsert
+        supabase.table.return_value.upsert.side_effect = fake_upsert
 
         ingester = DataIngester(Mock(), supabase)
         id_map = ingester.batch_upsert_commanders({key_alpha: list(pair_key), key_reverse: list(reversed(pair_key))})
@@ -399,16 +427,18 @@ class PartnerOrderReconciliationTests(unittest.TestCase):
         pair_key = tuple(sorted(existing_order))  # alphabetical fallback
         alpha_name = " / ".join(pair_key)
 
-        supabase = Mock()
+        supabase = _make_fluent_client()
         # ``fetch_existing_partner_order_map`` reads via ``select`` with the
         # ``commander_names,created_at`` projection; the legacy path then does
         # its own ``select`` lookup by the reconciled name. The first call
         # builds the order map; the second must return the existing row for the
         # reconciled name so the legacy path finds it instead of creating a
         # duplicate.
-        supabase.select.side_effect = [
-            [{"commander_names": list(existing_order), "created_at": "2025-01-01T00:00:00Z"}],  # order map
-            [{"id": "commander-1", "name": " / ".join(existing_order)}],  # legacy lookup hit
+        supabase.table.return_value.select.return_value.execute.side_effect = [
+            SimpleNamespace(
+                data=[{"commander_names": list(existing_order), "created_at": "2025-01-01T00:00:00Z"}]
+            ),  # order map
+            SimpleNamespace(data=[{"id": "commander-1", "name": " / ".join(existing_order)}]),  # legacy lookup hit
         ]
 
         ingester = DataIngester(Mock(), supabase)
@@ -418,11 +448,10 @@ class PartnerOrderReconciliationTests(unittest.TestCase):
         # The legacy path must have looked up by the *reconciled* name, not the
         # alphabetical one -- otherwise it would have missed the row and
         # inserted a duplicate.
-        legacy_lookup_call = supabase.select.call_args_list[1]
-        self.assertEqual(legacy_lookup_call.args[0], "commanders")
-        self.assertEqual(legacy_lookup_call.args[1], {"name": f"eq.{' / '.join(existing_order)}"})
+        legacy_lookup_call = supabase.table.return_value.select.return_value.eq.call_args_list[-1]
+        self.assertEqual(legacy_lookup_call.args, ("name", " / ".join(existing_order)))
         # And no upsert/create should have been needed.
-        supabase.upsert.assert_not_called()
+        supabase.table.return_value.upsert.assert_not_called()
 
     @patch("ingest.load_legal_commander_pair_order_map", return_value={})
     @patch(
@@ -441,14 +470,17 @@ class PartnerOrderReconciliationTests(unittest.TestCase):
         pair_key = tuple(sorted(existing_order))
         single_commander_name = "Solo, Test Commander"
 
-        supabase = Mock()
-        supabase.select.return_value = [{"commander_names": list(existing_order), "created_at": "2025-01-01T00:00:00Z"}]
+        supabase = _make_fluent_client()
+        supabase.table.return_value.select.return_value.execute.return_value.data = [
+            {"commander_names": list(existing_order), "created_at": "2025-01-01T00:00:00Z"}
+        ]
 
-        def fake_upsert(table, data, on_conflict=None, max_retries=3):
+        def fake_upsert(data, on_conflict=None):
             # Only echo back the single-commander row; drop the partner row.
-            return [{"name": row["name"], "id": "solo-id"} for row in data if row["name"] == single_commander_name]
+            result = [{"name": row["name"], "id": "solo-id"} for row in data if row["name"] == single_commander_name]
+            return SimpleNamespace(execute=lambda: SimpleNamespace(data=result))
 
-        supabase.upsert.side_effect = fake_upsert
+        supabase.table.return_value.upsert.side_effect = fake_upsert
 
         ingester = DataIngester(Mock(), supabase)
         id_map = ingester.batch_upsert_commanders(
@@ -484,11 +516,13 @@ class PartnerOrderReconciliationTests(unittest.TestCase):
         alpha_name = " / ".join(pair_key)
         reconciled_name = " / ".join(existing_order)
 
-        supabase = Mock()
-        supabase.select.return_value = [{"commander_names": list(existing_order), "created_at": "2025-01-01T00:00:00Z"}]
-        supabase.upsert.side_effect = lambda table, data, on_conflict=None, max_retries=3: [
-            {"name": row["name"], "id": "commander-1"} for row in data
+        supabase = _make_fluent_client()
+        supabase.table.return_value.select.return_value.execute.return_value.data = [
+            {"commander_names": list(existing_order), "created_at": "2025-01-01T00:00:00Z"}
         ]
+        supabase.table.return_value.upsert.side_effect = lambda data, on_conflict=None: SimpleNamespace(
+            execute=lambda: SimpleNamespace(data=[{"name": row["name"], "id": "commander-1"} for row in data])
+        )
 
         ingester = DataIngester(Mock(), supabase)
         id_map = ingester.batch_upsert_commanders({alpha_name: list(pair_key)})
@@ -512,8 +546,10 @@ class PartnerOrderReconciliationTests(unittest.TestCase):
         existing_order = ("Zzzephyr, Test Commander", "Aaardvark, Test Partner")
         pair_key = tuple(sorted(existing_order))
 
-        supabase = Mock()
-        supabase.select.return_value = [{"commander_names": list(existing_order), "created_at": "2025-01-01T00:00:00Z"}]
+        supabase = _make_fluent_client()
+        supabase.table.return_value.select.return_value.execute.return_value.data = [
+            {"commander_names": list(existing_order), "created_at": "2025-01-01T00:00:00Z"}
+        ]
         ingester = DataIngester(Mock(), supabase)
 
         # First call populates the cache and reconciles to the DB order.
@@ -535,30 +571,31 @@ class PartnerOrderReconciliationTests(unittest.TestCase):
         self.assertEqual(names2, list(existing_order))
 
         # Exactly one select call across both reconciliations.
-        supabase.select.assert_called_once()
+        supabase.table.return_value.select.assert_called_once()
 
 
 class IngestionJobLifecycleTests(unittest.TestCase):
     def test_claim_ingestion_job_sends_update(self) -> None:
-        client = Mock()
-        client.update.return_value = [{"id": "job-1"}]
+        client = _make_fluent_client()
+        client.table.return_value.update.return_value.execute.return_value.data = [{"id": "job-1"}]
         result = claim_ingestion_job(client, "job-1", github_run_id=99)
         self.assertTrue(result)
-        client.update.assert_called_once()
-        call_args = client.update.call_args
-        self.assertEqual(call_args.args[0], "ingestion_jobs")
-        self.assertEqual(call_args.args[1]["status"], "running")
-        self.assertEqual(call_args.args[1]["github_run_id"], 99)
+        client.table.assert_any_call("ingestion_jobs")
+        update_call = client.table.return_value.update.call_args
+        self.assertEqual(update_call.args[0]["status"], "running")
+        self.assertEqual(update_call.args[0]["github_run_id"], 99)
+        client.table.return_value.update.return_value.eq.assert_called_once_with("id", "job-1")
+        client.table.return_value.update.return_value.in_.assert_called_once_with("status", ["pending", "dispatched"])
 
     def test_claim_ingestion_job_returns_false_on_empty(self) -> None:
-        client = Mock()
-        client.update.return_value = []
+        client = _make_fluent_client()
+        client.table.return_value.update.return_value.execute.return_value.data = []
         result = claim_ingestion_job(client, "job-1", github_run_id=0)
         self.assertFalse(result)
 
     def test_claim_ingestion_job_raises_on_operational_error(self) -> None:
-        client = Mock()
-        client.update.side_effect = ConnectionError("Supabase unreachable")
+        client = _make_fluent_client()
+        client.table.return_value.update.return_value.execute.side_effect = ConnectionError("Supabase unreachable")
         with self.assertRaises(ConnectionError):
             claim_ingestion_job(client, "job-1", github_run_id=0)
 
@@ -575,7 +612,7 @@ class IngestionJobLifecycleTests(unittest.TestCase):
     @patch("ingest.update_ingestion_heartbeat")
     @patch("ingest.claim_ingestion_job")
     @patch("ingest.DataIngester")
-    @patch("ingest.SupabaseClient")
+    @patch("ingest.get_supabase_client")
     @patch("ingest.TopDeckClient")
     @patch("ingest.load_local_env")
     def test_main_exits_with_distinct_code_when_job_already_claimed(
@@ -611,7 +648,7 @@ class IngestionJobLifecycleTests(unittest.TestCase):
     @patch("ingest.update_ingestion_heartbeat")
     @patch("ingest.claim_ingestion_job")
     @patch("ingest.DataIngester")
-    @patch("ingest.SupabaseClient")
+    @patch("ingest.get_supabase_client")
     @patch("ingest.TopDeckClient")
     @patch("ingest.load_local_env")
     def test_main_exits_when_claim_ingestion_job_errors(
@@ -636,17 +673,17 @@ class IngestionJobLifecycleTests(unittest.TestCase):
         mock_run_ingestion.assert_not_called()
 
     def test_fail_ingestion_job_truncates_error(self) -> None:
-        client = Mock()
+        client = _make_fluent_client()
         fail_ingestion_job(client, "job-1", "x" * 3000)
-        call_args = client.update.call_args
-        self.assertLessEqual(len(call_args.args[1]["error_text"]), 2000)
+        call_args = client.table.return_value.update.call_args
+        self.assertLessEqual(len(call_args.args[0]["error_text"]), 2000)
 
     def test_complete_ingestion_job_sets_completed_status(self) -> None:
-        client = Mock()
+        client = _make_fluent_client()
         complete_ingestion_job(client, "job-1", {"duration_seconds": 42.5})
-        call_args = client.update.call_args
-        self.assertEqual(call_args.args[1]["status"], "completed")
-        self.assertEqual(call_args.args[1]["duration_seconds"], 42.5)
+        call_args = client.table.return_value.update.call_args
+        self.assertEqual(call_args.args[0]["status"], "completed")
+        self.assertEqual(call_args.args[0]["duration_seconds"], 42.5)
 
 
 class ProcessTournamentFutureStartDateTests(unittest.TestCase):
@@ -683,7 +720,7 @@ class ProcessTournamentFutureStartDateTests(unittest.TestCase):
 
     def test_ingests_tournament_with_recent_start_date(self) -> None:
         supabase = Mock()
-        supabase.upsert.return_value = [{"id": "tournament-1"}]
+        supabase.table.return_value.upsert.return_value.execute.return_value.data = [{"id": "tournament-1"}]
         topdeck = Mock()
         topdeck.get_tournament_tier.return_value = None
         ingester = DataIngester(topdeck, supabase)
@@ -700,7 +737,7 @@ class ProcessTournamentFutureStartDateTests(unittest.TestCase):
         result = ingester.process_tournament(tournament)
 
         self.assertIsNotNone(result)
-        self.assertTrue(supabase.upsert.called)
+        self.assertTrue(supabase.table.return_value.upsert.called)
 
 
 if __name__ == "__main__":
