@@ -746,7 +746,7 @@ def merge_seat_positions(results: list[dict[str, Any]], seats: dict[tuple[str, s
 def rest_delete(client: Client, table: str, filters: dict[str, str]) -> None:
     """Delete rows from `table` matching simple PostgREST-style filter strings
     (e.g. `{"region_type": "eq.global"}` or `{"player_id": "not.is.null"}`)."""
-    query = client.table(table).delete()
+    query = client.table(table).delete(returning="minimal")
     for col, val in filters.items():
         if val == "not.is.null":
             query = query.not_.is_(col, "null")
@@ -777,7 +777,7 @@ def delete_by_tournament_ids(client: Client, table: str, tournament_ids: set[str
     chunk_size = 200
     for start in range(0, len(ordered_ids), chunk_size):
         chunk = ordered_ids[start : start + chunk_size]
-        client.table(table).delete().in_("tournament_id", chunk).execute()
+        client.table(table).delete(returning="minimal").in_("tournament_id", chunk).execute()
 
 
 def update_state_activity_from_result(
