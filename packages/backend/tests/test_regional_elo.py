@@ -547,9 +547,9 @@ class BuildPrimaryCommandersTests(TestCase):
 class CanonicalEventCountsTests(TestCase):
     """Tests for fetch_canonical_event_counts and canonical path in build_active_leaderboard_rows."""
 
-    @patch("regional_elo.fetch_all")
-    def test_fetch_canonical_event_counts_queries_leaderboard_view(self, mock_fetch_all: Mock) -> None:
-        mock_fetch_all.return_value = [
+    def test_fetch_canonical_event_counts_uses_bounded_event_rpc(self) -> None:
+        client = Mock()
+        client.rpc.return_value = [
             {
                 "player_id": "p1",
                 "games_played": 10,
@@ -559,25 +559,24 @@ class CanonicalEventCountsTests(TestCase):
                 "last_game_date": "2026-06-27",
             },
         ]
-        result = regional_elo.fetch_canonical_event_counts(Mock())
-        table_arg = mock_fetch_all.call_args[0][1]
-        params_arg = mock_fetch_all.call_args[0][2]
-        self.assertEqual(table_arg, "regional_elo_leaderboard")
-        self.assertIn("games_played", params_arg.get("select", ""))
-        self.assertIn("last_game_date", params_arg.get("select", ""))
-        self.assertIn(regional_elo.GLOBAL_REGION_TYPE, str(params_arg.get("region_type", "")))
+        result = regional_elo.fetch_canonical_event_counts(client)
+        rpc_name = client.rpc.call_args[0][0]
+        payload = client.rpc.call_args[0][1]
+        self.assertEqual(rpc_name, "get_global_elo_canonical_counts")
+        self.assertIsNone(payload["p_after_player_id"])
+        self.assertEqual(payload["p_limit"], 1000)
         self.assertEqual(result["p1"]["wins"], 5)
         self.assertEqual(result["p1"]["losses"], 3)
         self.assertEqual(result["p1"]["draws"], 2)
         self.assertEqual(result["p1"]["last_game_date"], "2026-06-27")
 
-    @patch("regional_elo.fetch_all")
-    def test_fetch_canonical_event_counts_skips_rows_without_player_id(self, mock_fetch_all: Mock) -> None:
-        mock_fetch_all.return_value = [
+    def test_fetch_canonical_event_counts_skips_rows_without_player_id(self) -> None:
+        client = Mock()
+        client.rpc.return_value = [
             {"player_id": None, "games_played": 5, "wins": 2, "losses": 2, "draws": 1},
             {"player_id": "p1", "games_played": 3, "wins": 1, "losses": 1, "draws": 1},
         ]
-        result = regional_elo.fetch_canonical_event_counts(Mock())
+        result = regional_elo.fetch_canonical_event_counts(client)
         self.assertEqual(list(result.keys()), ["p1"])
 
     def test_build_active_leaderboard_rows_uses_canonical_counts_over_rating_row(self) -> None:
