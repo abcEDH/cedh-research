@@ -1,3 +1,10 @@
+## [1.30.1](https://github.com/abcEDH/cedh-research/compare/v1.30.0...v1.30.1) (2026-09-03)
+
+
+### Performance Improvements
+
+* replace force-dynamic with ISR on static-safe pages ([#337](https://github.com/abcEDH/cedh-research/issues/337)) ([95cce85](https://github.com/abcEDH/cedh-research/commit/95cce8547dad90176d082eb3e9836d29e3daf812))
+
 # [1.30.0](https://github.com/abcEDH/cedh-research/compare/v1.29.0...v1.30.0) (2026-09-03)
 
 
