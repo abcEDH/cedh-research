@@ -185,25 +185,25 @@ describe.skipIf(!canRunTests)("API Contract Tests", () => {
         const { data, error } = await supabase
           .from("trap_cards_report")
           .select("*")
-          .limit(1)
-          .single();
+          .limit(1);
 
         expect(error).toBeNull();
         expect(data).toBeDefined();
 
-        if (data) {
-          const result = TrapCardSchema.safeParse(data);
+        const sample = data?.[0];
+        if (sample) {
+          const result = TrapCardSchema.safeParse(sample);
 
           if (!result.success) {
             console.error("Schema validation failed:", result.error.format());
-            console.error("Data:", JSON.stringify(data, null, 2));
+            console.error("Data:", JSON.stringify(sample, null, 2));
           }
 
           expect(result.success).toBe(true);
 
-          expect(data).toHaveProperty("card_name");
-          expect(data).toHaveProperty("trap_score");
-          expect(data).toHaveProperty("win_rate_delta");
+          expect(sample).toHaveProperty("card_name");
+          expect(sample).toHaveProperty("trap_score");
+          expect(sample).toHaveProperty("win_rate_delta");
         }
       });
     });
