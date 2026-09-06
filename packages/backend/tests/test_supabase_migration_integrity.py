@@ -102,6 +102,46 @@ class SupabaseMigrationIntegrityTests(unittest.TestCase):
         self.assertIn("GRANT EXECUTE ON FUNCTION mark_partner_commander_sweep_pending(integer) TO service_role;", sql)
         self.assertIn("GRANT EXECUTE ON FUNCTION consume_partner_commander_sweep_pending(uuid) TO service_role;", sql)
 
+    def test_winrate_matrix_and_pod_metrics_rpcs_use_issue_specified_signatures(self) -> None:
+        """#147/#148 spell out these exact signatures (top_n/days_back, no p_ prefix, matching
+        default values) since PostgREST callers pass parameters by name."""
+        sql = (MIGRATIONS_DIR / "20260906000000_winrate_matrix_and_pod_metrics_rpc.sql").read_text()
+
+        self.assertIn(
+            "CREATE OR REPLACE FUNCTION public.get_winrate_matrix(\n"
+            "  top_n integer DEFAULT 30,\n"
+            "  days_back integer DEFAULT 180\n"
+            ")",
+            sql,
+        )
+        self.assertIn(
+            "CREATE OR REPLACE FUNCTION public.get_pod_metrics(\n"
+            "  top_n integer DEFAULT 30,\n"
+            "  days_back integer DEFAULT 180\n"
+            ")",
+            sql,
+        )
+
+    def test_winrate_matrix_omits_empty_cells_and_forces_mirror_to_fifty_percent(self) -> None:
+        sql = (MIGRATIONS_DIR / "20260906000000_winrate_matrix_and_pod_metrics_rpc.sql").read_text()
+
+        # Empty cells (no games) must be omitted entirely, not returned with a null winrate.
+        self.assertIn("WHERE c.x_games > 0", sql)
+        # Mirror cells (commander vs itself) must be exactly 50%, regardless of parity.
+        self.assertIn("WHEN c.x_a_commander_id = c.x_b_commander_id THEN 0.5::numeric", sql)
+
+    def test_winrate_matrix_and_pod_metrics_grant_execute_to_public_postgrest_roles(self) -> None:
+        """These back a public page (#150/#151), so -- unlike the service-role-only maintenance
+        RPCs elsewhere in this directory -- anon/authenticated must be able to call them."""
+        sql = (MIGRATIONS_DIR / "20260906000000_winrate_matrix_and_pod_metrics_rpc.sql").read_text()
+
+        for fn, signature in (
+            ("get_winrate_matrix", "integer, integer"),
+            ("get_pod_metrics", "integer, integer"),
+        ):
+            for role in ("anon", "authenticated", "service_role"):
+                self.assertIn(f"GRANT EXECUTE ON FUNCTION public.{fn}({signature}) TO {role};", sql)
+
     def test_canonical_leaderboard_counts_preserves_existing_column_order(self) -> None:
         sql = (MIGRATIONS_DIR / "20260409140000_fix_global_leaderboard_canonical_counts.sql").read_text()
 
