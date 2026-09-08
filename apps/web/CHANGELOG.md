@@ -1,3 +1,10 @@
+## [1.30.2](https://github.com/abcEDH/cedh-research/compare/v1.30.1...v1.30.2) (2026-09-08)
+
+
+### Performance Improvements
+
+* reduce Supabase maintenance workload ([#345](https://github.com/abcEDH/cedh-research/issues/345)) ([e69470b](https://github.com/abcEDH/cedh-research/commit/e69470b684b7020b06e8883a2ca6e57239bd6c18))
+
 ## [1.30.1](https://github.com/abcEDH/cedh-research/compare/v1.30.0...v1.30.1) (2026-09-03)
 
 
