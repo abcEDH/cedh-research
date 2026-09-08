@@ -1,12 +1,10 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { unstable_cache } from "next/cache";
 import type { Metadata } from "next";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CommanderRowBackdrop } from "@/components/commanders/commander-row-backdrop";
 import type { CommanderUsageRow } from "@/lib/meta-prep";
-import { withTiming } from "@/lib/performance";
 import { supabase } from "@/lib/supabase";
 import { OpponentRecordsTable } from "./opponent-records-table";
 import {
@@ -29,7 +27,7 @@ import {
   sortAchievementsByFinish,
   isKnownCommanderName,
 } from "./player-profile-components";
-import { fetchRawPlayerLogPage } from "./player-log-data";
+import { fetchCachedRawPlayerLogPage } from "./player-log-data";
 
 export const revalidate = 86400; // 24 hours
 export const dynamicParams = true;
@@ -38,8 +36,6 @@ export const metadata: Metadata = {
 };
 
 const ACHIEVEMENTS_PAGE_SIZE = 10;
-const PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS = 60 * 60 * 24;
-
 export async function generateStaticParams() {
   try {
     const { data, error } = await supabase
@@ -305,15 +301,6 @@ function achievementTournamentKey(tournamentName: string | null | undefined, sta
   return `${tournamentName ?? "Unknown tournament"}:${(startDate ?? "").slice(0, 10)}`;
 }
 
-const fetchCachedRawPlayerLogs = unstable_cache(
-  async (playerId: string) =>
-    withTiming("regional-player:raw-history", async () =>
-      fetchRawPlayerLogPage(playerId)
-    ),
-  ["regional-player-raw-history-v1"],
-  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
-);
-
 export default async function RegionalPlayerPage({
   params,
   searchParams,
@@ -367,7 +354,7 @@ async function PlayerProfileBodyWrapper({
   const regionFilter = requestedRegion === "ALL" ? "" : requestedRegion;
   const eloOnly = readStringParam(resolvedSearchParams, "eloOnly") === "true";
   const [playerLogPage, lifetimeSummary] = await Promise.all([
-    fetchCachedRawPlayerLogs(player.id),
+    fetchCachedRawPlayerLogPage(player.id),
     fetchCachedPlayerProfileSummary(player.id),
   ]);
   const allPlayerLogs = playerLogPage.logs;
@@ -469,7 +456,7 @@ export async function PlayerProfileBody({
   const activeCommander = commanderProfile?.active_commander ?? null;
 
   const allPlayerLogs: PlayerGameLog[] =
-    rawPlayerLogs ?? (await fetchCachedRawPlayerLogs(player.id)).logs;
+    rawPlayerLogs ?? (await fetchCachedRawPlayerLogPage(player.id)).logs;
   const playerLogs = filterPlayerLogs(allPlayerLogs, eloOnly);
   const historyMayBeTruncated = rawPlayerLogsHasMore;
   const {

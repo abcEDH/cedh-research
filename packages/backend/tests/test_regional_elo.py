@@ -91,7 +91,7 @@ class RefreshMaterializedViewsTests(TestCase):
             result = regional_elo.refresh_materialized_views(client)
 
         # Called via direct POST (long read timeout), not client.rpc's 120s default.
-        self.assertEqual(post.call_count, 4)
+        self.assertEqual(post.call_count, 2)
         called_endpoints = [call.args[0] for call in post.call_args_list]
         for fn in regional_elo.MATERIALIZED_VIEW_REFRESH_FUNCTIONS:
             self.assertIn(f"{client.url}/rest/v1/rpc/{fn}", called_endpoints)
@@ -99,21 +99,19 @@ class RefreshMaterializedViewsTests(TestCase):
         self.assertEqual(
             post.call_args.kwargs["timeout"], regional_elo.REFRESH_RPC_TIMEOUT_SECONDS
         )
-        self.assertEqual(result, 4)
+        self.assertEqual(result, 2)
 
     def test_refresh_materialized_views_continues_on_failure(self) -> None:
         client = self._client()
         responses = [
             Mock(status_code=500, text="boom"),
             Mock(status_code=200),
-            Mock(status_code=200),
-            Mock(status_code=200),
         ]
         with patch("regional_elo.requests.post", side_effect=responses) as post:
             result = regional_elo.refresh_materialized_views(client)
 
-        self.assertEqual(post.call_count, 4)
-        self.assertEqual(result, 3)
+        self.assertEqual(post.call_count, 2)
+        self.assertEqual(result, 1)
 
     def test_refresh_materialized_views_returns_success_count(self) -> None:
         client = self._client()
@@ -121,7 +119,7 @@ class RefreshMaterializedViewsTests(TestCase):
             post.return_value = Mock(status_code=200)
             result = regional_elo.refresh_materialized_views(client)
 
-        self.assertEqual(result, 4)
+        self.assertEqual(result, 2)
 
     def test_refresh_materialized_views_uses_direct_connection_when_available(self) -> None:
         client = self._client()
@@ -131,10 +129,10 @@ class RefreshMaterializedViewsTests(TestCase):
 
         # Direct path bypasses the REST gateway (no POST) and its 504s.
         post.assert_not_called()
-        self.assertEqual(direct.call_function.call_count, 4)
+        self.assertEqual(direct.call_function.call_count, 2)
         called = [c.args[0] for c in direct.call_function.call_args_list]
         self.assertEqual(called, regional_elo.MATERIALIZED_VIEW_REFRESH_FUNCTIONS)
-        self.assertEqual(result, 4)
+        self.assertEqual(result, 2)
 
 
 class RegionalEloCliValidationTests(TestCase):

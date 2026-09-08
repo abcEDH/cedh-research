@@ -1,11 +1,13 @@
 import "server-only";
 
+import { unstable_cache } from "next/cache";
 import { supabase } from "@/lib/supabase";
 import { withTiming } from "@/lib/performance";
 import type { PlayerGameLog } from "./player-stats";
 
 const PLAYER_GAME_LOG_LIMIT = 500;
 const PLAYER_GAME_LOG_FETCH_LIMIT = PLAYER_GAME_LOG_LIMIT + 1;
+const PLAYER_LOG_CACHE_REVALIDATE_SECONDS = 60 * 60 * 24;
 
 export type PlayerGameLogPage = {
   logs: PlayerGameLog[];
@@ -85,6 +87,15 @@ export async function fetchRawPlayerLogPage(playerId: string): Promise<PlayerGam
     };
   });
 }
+
+// Both the profile and versus pages need the same bounded history. Keep one
+// cache namespace so navigating between them does not issue duplicate RPCs.
+export const fetchCachedRawPlayerLogPage = unstable_cache(
+  async (playerId: string) =>
+    withTiming("regional-player:raw-history", () => fetchRawPlayerLogPage(playerId)),
+  ["regional-player-raw-history-v2"],
+  { revalidate: PLAYER_LOG_CACHE_REVALIDATE_SECONDS }
+);
 
 export async function fetchRawPlayerLogs(playerId: string): Promise<PlayerGameLog[]> {
   return (await fetchRawPlayerLogPage(playerId)).logs;
