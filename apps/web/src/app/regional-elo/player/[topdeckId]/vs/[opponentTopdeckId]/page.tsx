@@ -8,7 +8,7 @@ import {
   type PlayerRow,
 } from "../../player-log-data";
 import { buildPlayerVersusHref } from "../../player-routes";
-import { filterPlayerLogs } from "../../player-stats";
+import { filterPlayerLogs, type PlayerGameLog } from "../../player-stats";
 
 export const metadata: Metadata = {
   robots: { index: false, follow: false },
@@ -117,7 +117,7 @@ function formatPlayerSeatCommanderLabel(
 function buildPodRows(
   player: PlayerRow,
   opponent: PlayerRow,
-  log: Awaited<ReturnType<typeof fetchRawPlayerLogs>>[number]
+  log: PlayerGameLog
 ) {
   return [
     {
