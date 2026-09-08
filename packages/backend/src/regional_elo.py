@@ -911,8 +911,6 @@ def compute_commander_recency_weight(
 
 MATERIALIZED_VIEW_REFRESH_FUNCTIONS = [
     "refresh_commander_trends",
-    "refresh_card_frequencies",
-    "refresh_card_performance",
     "refresh_regional_elo_data_validity",
 ]
 
@@ -1401,12 +1399,13 @@ def refresh_materialized_views(
 ) -> int:
     """Refresh downstream materialized views. Returns count of successful refreshes.
 
-    The heaviest refreshes (card_frequencies, card_performance) run for minutes
-    and the Supabase REST gateway returns a 504 before they finish, regardless of
-    the client read timeout. When a direct Postgres connection is available, call
-    the refresh functions through it to bypass the gateway entirely; the
-    functions' own statement_timeout (30min) still bounds them. Fall back to a
-    long-timeout REST POST when no direct connection is configured.
+    The card-frequency and card-performance materialized views are intentionally
+    not refreshed by the Elo pipeline. They are legacy /commanders surfaces and
+    their refreshes are too expensive for the daily maintenance path.
+
+    When a direct Postgres connection is available, call the remaining refresh
+    functions through it to bypass the gateway. Fall back to a long-timeout REST
+    POST when no direct connection is configured.
     """
     success_count = 0
     for fn_name in MATERIALIZED_VIEW_REFRESH_FUNCTIONS:
