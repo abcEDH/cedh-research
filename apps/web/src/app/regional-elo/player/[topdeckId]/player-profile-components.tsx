@@ -547,7 +547,7 @@ export async function PlayerProfileGrid({
   const displayedUniqueOpponents = displaySummary?.opponentRecords.length;
 
   return (
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-9">
+    <div className="grid grid-cols-2 gap-3 md:gap-4 xl:grid-cols-9 [&_[data-slot=card]]:gap-3 [&_[data-slot=card]]:py-3 [&_[data-slot=card-header]]:gap-1 [&_[data-slot=card-header]]:px-3 [&_[data-slot=card-content]]:px-3 md:[&_[data-slot=card]]:gap-6 md:[&_[data-slot=card]]:py-6 md:[&_[data-slot=card-header]]:gap-2 md:[&_[data-slot=card-header]]:px-6 md:[&_[data-slot=card-content]]:px-6">
       <Card className="knd-panel">
         <CardHeader>
           <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
@@ -555,7 +555,7 @@ export async function PlayerProfileGrid({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-1">
-          <div className="text-2xl font-semibold text-foreground">
+          <div className="text-xl font-semibold text-foreground sm:text-2xl">
             {stateLeaderboardHref && isActiveRank(regionalRank) && regionalRank ? (
               <Link href={stateLeaderboardHref} className="hover:text-primary">
                 #{regionalRank.rank}
@@ -582,7 +582,7 @@ export async function PlayerProfileGrid({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-1">
-          <div className="text-2xl font-semibold text-foreground">
+          <div className="text-xl font-semibold text-foreground sm:text-2xl">
             {countryLeaderboardHref && isActiveRank(countryRank) && countryRank ? (
               <Link href={countryLeaderboardHref} className="hover:text-primary">
                 #{countryRank.rank}
@@ -609,7 +609,7 @@ export async function PlayerProfileGrid({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-1">
-          <div className="text-2xl font-semibold text-foreground">
+          <div className="text-xl font-semibold text-foreground sm:text-2xl">
             {isActiveRank(globalEloRank) && globalEloRank ? (
               <Link href="/regional-elo" className="hover:text-primary">
                 #{globalEloRank.rank}
@@ -635,7 +635,7 @@ export async function PlayerProfileGrid({
               rel="noreferrer"
               className="block hover:text-primary"
             >
-              <div className="text-2xl font-semibold text-foreground">
+              <div className="text-xl font-semibold text-foreground sm:text-2xl">
                 {globalSnapshot?.rank
                   ? `#${globalSnapshot.rank}`
                   : globalEloRank?.topdeck_elo_rank
@@ -652,7 +652,7 @@ export async function PlayerProfileGrid({
             </a>
           ) : (
             <div className="block">
-              <div className="text-2xl font-semibold text-foreground">
+              <div className="text-xl font-semibold text-foreground sm:text-2xl">
                 {globalSnapshot?.rank
                   ? `#${globalSnapshot.rank}`
                   : globalEloRank?.topdeck_elo_rank
@@ -676,7 +676,7 @@ export async function PlayerProfileGrid({
             TopDeck Elo
           </CardTitle>
         </CardHeader>
-        <CardContent className="text-2xl font-semibold text-foreground">
+        <CardContent className="text-xl font-semibold text-foreground sm:text-2xl">
           {displayedTopdeckElo === null ? "—" : Math.round(displayedTopdeckElo)}
         </CardContent>
       </Card>
@@ -686,7 +686,7 @@ export async function PlayerProfileGrid({
             Games Played
           </CardTitle>
         </CardHeader>
-        <CardContent className="text-2xl font-semibold text-foreground">
+        <CardContent className="text-xl font-semibold text-foreground sm:text-2xl">
           {displayedGames}
         </CardContent>
       </Card>
@@ -696,7 +696,7 @@ export async function PlayerProfileGrid({
             Record
           </CardTitle>
         </CardHeader>
-        <CardContent className="text-2xl font-semibold text-foreground">
+        <CardContent className="text-xl font-semibold text-foreground sm:text-2xl">
           {displayedWins}-{displayedLosses}-{displayedDraws}
         </CardContent>
       </Card>
@@ -759,7 +759,7 @@ async function UniqueOpponentsCard({ player }: { player: PlayerRow }) {
 
 export function PlayerProfileGridSkeleton() {
   return (
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-9">
+    <div className="grid grid-cols-2 gap-3 md:gap-4 xl:grid-cols-9">
       {Array.from({ length: 9 }).map((_, i) => (
         <Card key={i} className="knd-panel animate-pulse">
           <CardHeader>
