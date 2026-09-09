@@ -36,6 +36,11 @@ function parsePeriod(params: SearchParams): PeriodOption {
   return value && value in PERIOD_DAYS ? (value as PeriodOption) : "3 Months";
 }
 
+function parsePage(params: SearchParams): number {
+  const value = Number.parseInt(paramValue(params, "page") ?? "1", 10);
+  return Number.isFinite(value) && value > 0 ? value : 1;
+}
+
 export default async function TournamentsPage({ searchParams }: PageProps) {
   const params = await searchParams;
 
@@ -44,6 +49,7 @@ export default async function TournamentsPage({ searchParams }: PageProps) {
       initialSort={parseSort(params)}
       initialTier={parseTier(params)}
       initialPeriod={parsePeriod(params)}
+      initialPage={parsePage(params)}
     />
   );
 }
