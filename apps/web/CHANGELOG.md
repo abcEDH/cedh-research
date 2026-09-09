@@ -1,3 +1,10 @@
+# [1.32.0](https://github.com/abcEDH/cedh-research/compare/v1.31.0...v1.32.0) (2026-09-09)
+
+
+### Features
+
+* paginate filtered tournaments ([#349](https://github.com/abcEDH/cedh-research/issues/349)) ([d566464](https://github.com/abcEDH/cedh-research/commit/d566464143d4dd7e0a7c01f776b2e42cf30f1919))
+
 # [1.31.0](https://github.com/abcEDH/cedh-research/compare/v1.30.2...v1.31.0) (2026-09-09)
 
 
