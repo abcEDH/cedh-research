@@ -1,3 +1,10 @@
+# [1.31.0](https://github.com/abcEDH/cedh-research/compare/v1.30.2...v1.31.0) (2026-09-09)
+
+
+### Features
+
+* add PostHog usage analytics dashboard ([#347](https://github.com/abcEDH/cedh-research/issues/347)) ([a11a404](https://github.com/abcEDH/cedh-research/commit/a11a404889cbd87c4417929ad5fdb2d15cc59de7))
+
 ## [1.30.2](https://github.com/abcEDH/cedh-research/compare/v1.30.1...v1.30.2) (2026-09-08)
 
 
