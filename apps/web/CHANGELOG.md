@@ -1,3 +1,10 @@
+## [1.32.1](https://github.com/abcEDH/cedh-research/compare/v1.32.0...v1.32.1) (2026-09-09)
+
+
+### Bug Fixes
+
+* compact player profile stats on mobile ([#350](https://github.com/abcEDH/cedh-research/issues/350)) ([c97e4fe](https://github.com/abcEDH/cedh-research/commit/c97e4fef84129e03e22053f23340da480ec11f80))
+
 # [1.32.0](https://github.com/abcEDH/cedh-research/compare/v1.31.0...v1.32.0) (2026-09-09)
 
 
