@@ -23,6 +23,7 @@ These ADRs were extracted retroactively on 2026-05-03 from git history, merged P
 | [0013](0013-topdeck-attribution-and-compliance.md) | TopDeck Attribution and API Compliance | Accepted | `apps/web/`, `packages/backend/` | PR #53 |
 | [0014](0014-retire-dead-surfaces-wholesale.md) | Retire Dead Surfaces Wholesale | Accepted | repo-wide | `CONTRIBUTING.md`, PR #51, `docs/supported-surfaces.md` |
 | [0016](0016-rank-activity-window-and-topdeck-snapshot-pruning.md) | Rank Activity Window and TopDeck Snapshot Pruning | Accepted | `packages/backend/` | PR #263, issue #252 |
+| [0017](0017-exclude-future-elo-games.md) | Exclude Future Games from Elo | Accepted | `packages/backend/` | Maintenance run 34937202746 |
 
 ## How decisions cluster
 

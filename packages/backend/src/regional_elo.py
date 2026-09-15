@@ -21,6 +21,7 @@ from typing import Any
 import requests
 
 from ingest import SupabaseClient
+from elo_time import exclude_future_games, utc_datetime
 from supabase_client import DirectPostgresClient
 
 K_FACTOR = 48
@@ -329,7 +330,7 @@ def process_results(
     game_meta: dict[str, dict[str, Any]] = {}
     ungrouped: list[tuple[float, int, dict[str, Any]]] = []
 
-    for p in participant_records:
+    for p in exclude_future_games(participant_records):
         player_id = p.get("player_id") or p.get("entry_id") or ""
         entry_id = p.get("entry_id") or player_id
         standing: dict[str, Any] = {
@@ -382,7 +383,7 @@ def update_ratings_with_games(
     # Group all events by game_id to process one game at a time.
     events_by_game: dict[str, list[dict[str, Any]]] = defaultdict(list)
     no_game_id: list[dict[str, Any]] = []
-    for event in game_events:
+    for event in exclude_future_games(game_events, date_key="game_date"):
         gid = event.get("game_id") or ""
         if gid:
             events_by_game[gid].append(event)
@@ -461,6 +462,14 @@ def update_ratings_with_games(
         game_id = first["game_id"]
         tournament_id = first.get("tournament_id") or ""
         game_date = first.get("game_date")
+        if game_date:
+            for pid in players_in_game:
+                key = pid_to_key.get(pid)
+                if key:
+                    row = player_ratings[key]
+                    played_on = utc_datetime(game_date).date().isoformat()
+                    row["last_game_date"] = max(str(row.get("last_game_date") or ""), played_on)
+                    row["updated_at"] = utc_now().isoformat()
         opponent_count = first.get("opponent_count") or (len(players_in_game) - 1)
 
         # Collect per-player outcome from the events (win > draw > loss).
@@ -644,7 +653,7 @@ def fetch_participants_for_leaderboard(
         client,
         "global_elo_game_results",
         {
-            "select": "game_id,entry_id,player_id,tournament_id,seat_position,result",
+            "select": "game_id,entry_id,player_id,tournament_id,start_date,seat_position,result",
             "start_date": f"gte.{cutoff}",
             "result": "neq.bye",
         },
@@ -716,17 +725,23 @@ def _rpc_fetch_all(
 
 
 def fetch_elo_watermark(client: SupabaseClient) -> str | None:
-    """Return the max game_date in global_elo_game_events, or None if the table is empty."""
+    """Return the latest non-future global game date, never a future restart point."""
+    cutoff = utc_now()
     rows = client.select(
         "global_elo_game_events",
         {
             "select": "game_date",
             "region_type": "eq.global",
+            "region_key": "eq.ALL",
+            "game_date": f"lte.{cutoff.isoformat()}",
             "order": "game_date.desc",
             "limit": "1",
         },
     )
-    return rows[0]["game_date"] if rows else None
+    watermark = rows[0]["game_date"] if rows else None
+    if watermark and utc_datetime(watermark) > cutoff:
+        raise ValueError("Refusing a future-dated Elo watermark")
+    return watermark
 
 
 def load_ratings_from_snapshot(
@@ -734,6 +749,8 @@ def load_ratings_from_snapshot(
     watermark: str,
 ) -> dict[tuple[str, str, str], dict[str, Any]]:
     """Load per-player Elo ratings as they stood just before *watermark* using the snapshot RPC."""
+    if utc_datetime(watermark) > utc_now():
+        raise ValueError("Refusing a future-dated Elo snapshot cutoff")
     rows = _rpc_fetch_all(
         client,
         "get_global_elo_snapshot_before",
@@ -756,6 +773,7 @@ def load_ratings_from_snapshot(
             "losses": int(row.get("losses") or 0),
             "win_streak": 0,
             "loss_streak": 0,
+            "last_game_date": row.get("last_game_date"),
         }
     return ratings
 

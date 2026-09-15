@@ -16,6 +16,7 @@ import requests
 from postgrest.exceptions import APIError
 
 from ingest import load_local_env
+from elo_time import exclude_future_games
 from supabase import Client
 from supabase_client import fetch_all, fetch_tier_results_for_window, get_supabase_client, upsert_batched
 
@@ -507,7 +508,7 @@ def fetch_results_by_month(client: Client, tier: str = "ranking") -> list[dict[s
     for window_start in windows:
         window_end = next_month(window_start)
         rows = fetch_tier_results_for_window(client, window_start, window_end, tier, select)
-        all_rows.extend(rows)
+        all_rows.extend(exclude_future_games(rows))
         print(
             f"Fetched {len(rows):,} rows for {window_start:%Y-%m}; total {len(all_rows):,}",
             flush=True,
@@ -533,7 +534,7 @@ def fetch_results_from_tournament_start(
     for window_start in windows:
         window_end = next_month(window_start)
         rows = fetch_tier_results_for_window(client, window_start, window_end, tier, select)
-        filtered = [row for row in rows if (row.get("start_date") or "") >= threshold_start_date]
+        filtered = [row for row in exclude_future_games(rows) if (row.get("start_date") or "") >= threshold_start_date]
         all_rows.extend(filtered)
         print(
             f"Fetched {len(filtered):,} suffix rows for {window_start:%Y-%m}; total {len(all_rows):,}",
@@ -974,6 +975,8 @@ def apply_game(
     now: date,
     update_activity: bool = True,
 ) -> list[dict[str, Any]]:
+    if len(exclude_future_games(game_rows)) != len(game_rows):
+        return []
     participants: list[dict[str, Any]] = []
     seen_players: set[str] = set()
     for row in game_rows:
@@ -1097,7 +1100,7 @@ def build_state_from_results(
     today = datetime.now(UTC).date()
 
     games: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for row in results:
+    for row in exclude_future_games(results):
         games[row["game_id"]].append(row)
 
     for index, (_, rows) in enumerate(sorted(games.items(), key=game_sort_key), start=1):

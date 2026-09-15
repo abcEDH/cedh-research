@@ -22,6 +22,15 @@ else:
 
 
 class RebuildGlobalEloTablesTests(TestCase):
+    def test_full_rebuild_excludes_future_cached_inputs(self) -> None:
+        rows = [
+            {"game_id": "future", "player_id": f"p{i}", "start_date": "2030-10-26T16:00:00Z",
+             "result": "win" if i == 0 else "loss"}
+            for i in range(4)
+        ]
+        ratings, activity, meta, events = rebuild.build_state_from_results(rows)
+        self.assertEqual((ratings, activity, meta, events), ({}, {}, {}, []))
+
     def test_eligible_game_ids_preserves_games_with_mixed_participant_eligibility(self) -> None:
         rows = [
             {"game_id": "game-1", "ranking_eligible": True},

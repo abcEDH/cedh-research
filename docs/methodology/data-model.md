@@ -161,7 +161,8 @@ erDiagram
 - `global_elo_ratings`: Global per-player rating state.
 - `global_elo_leaderboard`: Global leaderboard view with country/state filter rows derived from global ratings.
 - `global_elo_regions`: Region availability and update metadata.
-- `global_elo_game_results`: Base view for global Elo calculations.
+- `global_elo_game_results`: Base view for global Elo calculations. Both global and regional Elo result views exclude tournaments whose start timestamp is later than the current database time, including later times on the same day. Raw tournament and game records remain available for ingestion and correction.
+- `global_elo_game_events`: Persisted per-player Elo changes. `global_elo_game_events_no_future_date` rejects future `game_date` values on writes. Maintenance also bounds its restart timestamp and rejects future inputs before scoring. See ADR 0017 for recovery behavior.
 
 ### Meta Preparation
 
