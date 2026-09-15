@@ -82,9 +82,34 @@ class RebuildGlobalEloTablesTests(TestCase):
 
         self.assertEqual(args.tier, "local")
 
+    def test_canonical_rebuild_defaults_to_all_events(self) -> None:
+        args = rebuild.build_arg_parser().parse_args([])
+        self.assertEqual(args.tier, "all")
+        rebuild.validate_apply_tier(True, args.tier)
+
+    def test_all_events_rebuild_scores_small_events_and_leagues(self) -> None:
+        for name in ("Eight-player local", "Monthly league"):
+            with self.subTest(event=name):
+                rows = [
+                    {
+                        "game_id": "g", "tournament_id": "t", "tournament_name": name,
+                        "player_id": f"p{i}", "entry_id": f"e{i}", "player_name": f"P{i}",
+                        "start_date": "2026-01-01T00:00:00Z", "seat_position": i,
+                        "result": "win" if i == 0 else "loss", "ranking_eligible": False,
+                        "all_eligible": True,
+                    }
+                    for i in range(4)
+                ]
+                ratings, _, _, events = rebuild.build_state_from_results(rows)
+                self.assertEqual(len(ratings), 4)
+                self.assertEqual(len(events), 4)
+                self.assertTrue(all(r["games_played"] == 1 for r in ratings.values()))
+
     def test_validate_apply_tier_rejects_alternate_tiers(self) -> None:
         with self.assertRaises(SystemExit):
             rebuild.validate_apply_tier(True, "local")
+        with self.assertRaises(SystemExit):
+            rebuild.validate_apply_tier(True, "ranking")
 
         rebuild.validate_apply_tier(False, "local")
 

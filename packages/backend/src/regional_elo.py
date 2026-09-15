@@ -647,6 +647,7 @@ def fetch_participants_for_leaderboard(
             {
                 "start_date": f"gte.{cutoff}",
                 "result": "neq.bye",
+                "all_eligible": "eq.true",
             },
         )
     return fetch_all(
@@ -656,6 +657,7 @@ def fetch_participants_for_leaderboard(
             "select": "game_id,entry_id,player_id,tournament_id,start_date,seat_position,result",
             "start_date": f"gte.{cutoff}",
             "result": "neq.bye",
+            "all_eligible": "eq.true",
         },
     )
 
@@ -790,6 +792,7 @@ def fetch_participants_since(
             {
                 "start_date": f"gte.{since}",
                 "result": "neq.bye",
+                "all_eligible": "eq.true",
             },
         )
     return fetch_all(
@@ -799,6 +802,7 @@ def fetch_participants_since(
             "select": "game_id,entry_id,player_id,tournament_id,start_date,seat_position,result,is_draw",
             "start_date": f"gte.{since}",
             "result": "neq.bye",
+            "all_eligible": "eq.true",
         },
     )
 

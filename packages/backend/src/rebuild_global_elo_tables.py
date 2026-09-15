@@ -495,7 +495,7 @@ def game_sort_key(item: tuple[str, list[dict[str, Any]]]) -> tuple[Any, ...]:
     )
 
 
-def fetch_results_by_month(client: Client, tier: str = "ranking") -> list[dict[str, Any]]:
+def fetch_results_by_month(client: Client, tier: str = "all") -> list[dict[str, Any]]:
     if tier not in ELO_TIER_FILTERS:
         raise ValueError(f"Unknown Elo tier: {tier}")
     select = (
@@ -519,7 +519,7 @@ def fetch_results_by_month(client: Client, tier: str = "ranking") -> list[dict[s
 def fetch_results_from_tournament_start(
     client: Client,
     threshold_start_date: str,
-    tier: str = "ranking",
+    tier: str = "all",
 ) -> list[dict[str, Any]]:
     if tier not in ELO_TIER_FILTERS:
         raise ValueError(f"Unknown Elo tier: {tier}")
@@ -1458,8 +1458,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--tier",
         choices=tuple(ELO_TIER_FILTERS),
-        default="ranking",
-        help="Elo dataset to rebuild; ranking is the TopDeck-compatible default",
+        default="all",
+        help="Internal Elo uses all completed events, including small events and leagues",
     )
     parser.add_argument(
         "--since-start-date",
@@ -1470,9 +1470,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def validate_apply_tier(apply: bool, tier: str) -> None:
-    if apply and tier != "ranking":
+    if apply and tier != "all":
         raise SystemExit(
-            "--apply is supported only for --tier ranking because alternate tiers "
+            "--apply is supported only for --tier all because restricted tiers "
             "must not overwrite canonical Elo tables."
         )
 
@@ -1481,7 +1481,7 @@ def validate_incremental_tier(since_start_date: str, tier: str) -> None:
     if since_start_date:
         raise SystemExit(
             "Incremental rebuilds are disabled because the available state snapshots "
-            "are not guaranteed to contain ranking-eligible games only. Run a full "
+            "are not guaranteed to match the all-events dataset. Run a full "
             "rebuild without --since-start-date."
         )
 

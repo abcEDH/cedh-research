@@ -448,6 +448,7 @@ class FetchParticipantsSinceTests(TestCase):
         self.assertIn("start_date", params)
         self.assertTrue(params["start_date"].startswith("gte."))
         self.assertIn("neq.bye", params.get("result", ""))
+        self.assertEqual(params["all_eligible"], "eq.true")
 
     def test_direct_path_uses_gte_filter(self) -> None:
         direct = Mock()
@@ -457,6 +458,7 @@ class FetchParticipantsSinceTests(TestCase):
 
         params = direct.select.call_args[0][1]
         self.assertTrue(params["start_date"].startswith("gte."))
+        self.assertEqual(params["all_eligible"], "eq.true")
 
 
 class BuildPrimaryCommandersTests(TestCase):
