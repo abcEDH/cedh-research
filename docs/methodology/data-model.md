@@ -185,3 +185,21 @@ The Next.js app reads from Supabase views for most pages to keep the anon role s
 - Meta prep: `player_commander_entries`
 
 If a view is missing, the corresponding page will show empty state messaging.
+
+## Corrected game identities
+
+`superseded_game_keys` records administrator-verified obsolete `games.game_key`
+values and the canonical game UUID retained after cleanup. Only the service role
+can access this registry. `trg_skip_superseded_game_reimport` runs after canonical
+key construction and skips inserts or updates targeting a registered obsolete
+key, including `ON CONFLICT` upserts. Other game identities are unchanged.
+
+This handles confirmed duplicates caused by mixing internal TopDeck pod indexes
+with displayed table numbers. Cleanup must verify the source pod, retain a backup,
+and replay downstream internal Elo after removing copies. Registering keys is an
+explicit maintenance operation, not automatic deduplication by player set: leagues
+can legitimately repeat the same matchup. A later source correction that reuses a
+retired key requires administrator review of its registry entry.
+
+The September 2026 cleanup targets confirmed identical copies. Conflicting results
+and overlapping separate TopDeck event pages require their own source review.

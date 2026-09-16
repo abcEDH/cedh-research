@@ -25,6 +25,7 @@ These ADRs were extracted retroactively on 2026-05-03 from git history, merged P
 | [0016](0016-rank-activity-window-and-topdeck-snapshot-pruning.md) | Rank Activity Window and TopDeck Snapshot Pruning | Accepted | `packages/backend/` | PR #263, issue #252 |
 | [0017](0017-exclude-future-elo-games.md) | Exclude Future Games from Elo | Accepted | `packages/backend/` | Maintenance run 34937202746 |
 | [0018](0018-all-events-for-internal-elo.md) | All Completed Events Contribute to Internal Elo | Accepted | `packages/backend/` | User-directed all-events rebuild |
+| [0019](0019-superseded-game-identities.md) | Preserve Verified Game Identity Corrections | Accepted | `packages/backend/` | PR #354 |
 
 ## How decisions cluster
 
