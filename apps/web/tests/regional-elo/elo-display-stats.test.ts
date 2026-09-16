@@ -68,11 +68,11 @@ describe("fetchEloDisplayStats", () => {
     });
   });
 
-  it("falls back to leaderboard counters when the RPC is unavailable", async () => {
+  it("does not overwrite leaderboard counters when the RPC is unavailable", async () => {
     state.error = { message: "database unavailable" };
 
     await expect(fetchEloDisplayStats(["player-1"])).resolves.toEqual(
-      new Map([["player-1", { games_played: 0, wins: 0, draws: 0, losses: 0 }]])
+      new Map()
     );
   });
 });

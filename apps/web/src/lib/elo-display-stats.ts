@@ -40,8 +40,11 @@ async function fetchEloDisplayStatsInner(
   });
 
   if (error) {
-    console.error("Elo display stats RPC failed; using leaderboard counters:", error);
-    return statsByTopdeckId;
+    console.error("Elo display stats RPC failed; retaining leaderboard counters:", error);
+    // An empty map tells callers to retain the persisted counters already
+    // returned by global_elo_active_leaderboard. Returning zero-valued entries
+    // here would overwrite those valid aggregates during a migration rollout.
+    return {};
   }
 
   for (const row of (data ?? []) as Array<{

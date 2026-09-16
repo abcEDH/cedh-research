@@ -116,7 +116,9 @@ async function getLeaderboardPreview(): Promise<LeaderboardPlayer[]> {
     });
   } catch (error) {
     console.error("Error fetching home leaderboard preview:", error);
-    return [];
+    // Reject so unstable_cache does not retain an empty leaderboard for six
+    // hours after a transient Supabase failure. Home handles this per request.
+    throw error;
   }
 }
 
@@ -290,7 +292,10 @@ export default async function Home({
   const resolvedSearchParams = await Promise.resolve(searchParams);
   const eloOnly = isEloOnlyParam(resolvedSearchParams?.eloOnly);
   const [allLeaderboardPlayers, recentTournaments] = await Promise.all([
-    getCachedLeaderboardPreview(),
+    getCachedLeaderboardPreview().catch((error) => {
+      console.error("Home leaderboard cache refresh failed:", error);
+      return [];
+    }),
     getCachedRecentTournaments().catch((error) => {
       console.error("Home recent tournaments cache refresh failed:", error);
       return [];
