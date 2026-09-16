@@ -64,9 +64,9 @@ async function fetchEloDisplayStatsInner(
 
 const getCachedEloDisplayStatsInner = unstable_cache(
   fetchEloDisplayStatsInner,
-  // v2 clears zero-valued fallback entries cached before RPC failures were
-  // changed to preserve the shared leaderboard snapshot.
-  ["elo-display-stats-v2"],
+  // v3 clears zero-valued fallback entries created before RPC failures were
+  // moved outside the cached callback.
+  ["elo-display-stats-v3"],
   { revalidate: 60 * 60 * 24 }
 );
 
