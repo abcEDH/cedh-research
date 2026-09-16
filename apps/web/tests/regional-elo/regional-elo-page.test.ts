@@ -152,6 +152,37 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/lib/supabase", () => ({
   supabase: {
     from: (table: string) => new MockQuery(table),
+    rpc: (name: string, args: { p_topdeck_ids: string[]; p_tier: "ranking" | "all" }) => {
+      if (name !== "get_elo_display_stats") {
+        return Promise.resolve({ data: null, error: { message: `Unexpected RPC: ${name}` } });
+      }
+
+      const statsByTopdeckId = new Map<
+        string,
+        { topdeck_id: string; games_played: number; wins: number; draws: number; losses: number }
+      >();
+      for (const row of tableData.global_elo_game_results) {
+        const topdeckId = row.topdeck_id as string;
+        const isEligible = args.p_tier === "ranking" ? row.ranking_eligible : row.all_eligible;
+        if (!isEligible || !args.p_topdeck_ids.includes(topdeckId)) continue;
+
+        const stats = statsByTopdeckId.get(topdeckId) ?? {
+          topdeck_id: topdeckId,
+          games_played: 0,
+          wins: 0,
+          draws: 0,
+          losses: 0,
+        };
+        if (row.result === "win") stats.wins += 1;
+        else if (row.result === "draw") stats.draws += 1;
+        else if (row.result === "loss") stats.losses += 1;
+        else continue;
+        stats.games_played += 1;
+        statsByTopdeckId.set(topdeckId, stats);
+      }
+
+      return Promise.resolve({ data: Array.from(statsByTopdeckId.values()), error: null });
+    },
   },
 }));
 
