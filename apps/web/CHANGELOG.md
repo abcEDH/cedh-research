@@ -1,3 +1,13 @@
+## [1.32.2](https://github.com/abcEDH/cedh-research/compare/v1.32.1...v1.32.2) (2026-09-16)
+
+
+### Bug Fixes
+
+* address Elo aggregate review feedback ([4cbafe9](https://github.com/abcEDH/cedh-research/commit/4cbafe94ec245a7a02123240c89f44aa41c69d68))
+* invalidate stale Elo display stat cache ([e4f676c](https://github.com/abcEDH/cedh-research/commit/e4f676cdbffcd3d3a9a97171b69cedfac68801db))
+* prevent Elo display stats query timeout ([356fe21](https://github.com/abcEDH/cedh-research/commit/356fe219e7935643ac14701b2e9f3fb307ff2180))
+* retain leaderboard aggregates on RPC fallback ([c014bde](https://github.com/abcEDH/cedh-research/commit/c014bde6298ccbe3b827a16873903be4b17909d1))
+
 ## [1.32.1](https://github.com/abcEDH/cedh-research/compare/v1.32.0...v1.32.1) (2026-09-09)
 
 
