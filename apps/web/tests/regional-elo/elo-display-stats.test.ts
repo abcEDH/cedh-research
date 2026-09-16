@@ -1,10 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
-  rows: [] as Array<{ topdeck_id: string; result: string }>,
-  ranges: [] as Array<[number, number]>,
-  eligibilityColumns: [] as string[],
-  error: null as Error | null,
+  rows: [] as Array<{
+    topdeck_id: string;
+    games_played: number;
+    wins: number;
+    draws: number;
+    losses: number;
+  }>,
+  error: null as { message: string } | null,
+  rpcCalls: [] as Array<{ name: string; args: unknown }>,
 }));
 
 vi.mock("next/cache", () => ({
@@ -13,28 +18,9 @@ vi.mock("next/cache", () => ({
 
 vi.mock("@/lib/supabase", () => ({
   supabase: {
-    from: vi.fn(() => {
-      const query = {
-        select: () => query,
-        in: () => query,
-        eq: (column: string) => {
-          if (column.endsWith("_eligible")) state.eligibilityColumns.push(column);
-          return query;
-        },
-        order: () => query,
-        range: (start: number, end: number) => {
-          state.ranges.push([start, end]);
-          return query;
-        },
-        then: (
-          onfulfilled?: (value: { data: unknown[]; error: Error | null }) => unknown
-        ) =>
-          Promise.resolve({
-            data: state.rows.slice(state.ranges.at(-1)?.[0] ?? 0, (state.ranges.at(-1)?.[1] ?? -1) + 1),
-            error: state.error,
-          }).then(onfulfilled),
-      };
-      return query;
+    rpc: vi.fn((name: string, args: unknown) => {
+      state.rpcCalls.push({ name, args });
+      return Promise.resolve({ data: state.rows, error: state.error });
     }),
   },
 }));
@@ -44,17 +30,13 @@ import { fetchEloDisplayStats } from "@/lib/elo-display-stats";
 describe("fetchEloDisplayStats", () => {
   beforeEach(() => {
     state.rows = [];
-    state.ranges = [];
-    state.eligibilityColumns = [];
+    state.rpcCalls = [];
     state.error = null;
   });
 
-  it("paginates at the Supabase boundary and preserves all eligible W-L-D rows", async () => {
+  it("uses the bounded aggregate RPC and preserves its W-L-D counters", async () => {
     state.rows = [
-      { topdeck_id: "player-1", result: "win" },
-      ...Array.from({ length: 1000 }, () => ({ topdeck_id: "player-1", result: "loss" })),
-      { topdeck_id: "player-1", result: "draw" },
-      { topdeck_id: "player-1", result: "bye" },
+      { topdeck_id: "player-1", games_played: 1002, wins: 1, draws: 1, losses: 1000 },
     ];
 
     const stats = await fetchEloDisplayStats(["player-1"]);
@@ -65,26 +47,32 @@ describe("fetchEloDisplayStats", () => {
       draws: 1,
       losses: 1000,
     });
-    expect(state.ranges).toEqual([
-      [0, 999],
-      [1000, 1999],
+    expect(state.rpcCalls).toEqual([
+      {
+        name: "get_elo_display_stats",
+        args: { p_topdeck_ids: ["player-1"], p_tier: "ranking" },
+      },
     ]);
-    expect(state.eligibilityColumns).toEqual(["ranking_eligible", "ranking_eligible"]);
   });
 
   it("uses all-game eligibility for the explicit drill-down", async () => {
-    state.rows = [{ topdeck_id: "player-1", result: "win" }];
+    state.rows = [
+      { topdeck_id: "player-1", games_played: 1, wins: 1, draws: 0, losses: 0 },
+    ];
 
     await fetchEloDisplayStats(["player-1"], "all");
 
-    expect(state.eligibilityColumns).toEqual(["all_eligible"]);
+    expect(state.rpcCalls[0]).toEqual({
+      name: "get_elo_display_stats",
+      args: { p_topdeck_ids: ["player-1"], p_tier: "all" },
+    });
   });
 
-  it("propagates a failed display aggregate query", async () => {
-    state.error = new Error("database unavailable");
+  it("falls back to leaderboard counters when the RPC is unavailable", async () => {
+    state.error = { message: "database unavailable" };
 
-    await expect(fetchEloDisplayStats(["player-1"])).rejects.toThrow(
-      "Elo display stats query failed: database unavailable"
+    await expect(fetchEloDisplayStats(["player-1"])).resolves.toEqual(
+      new Map([["player-1", { games_played: 0, wins: 0, draws: 0, losses: 0 }]])
     );
   });
 });

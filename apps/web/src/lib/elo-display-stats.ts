@@ -8,8 +8,6 @@ export type EloDisplayStats = {
   losses: number;
 };
 
-const PLAYER_ID_BATCH_SIZE = 50;
-const GAME_PAGE_SIZE = 1000;
 type EloDisplayTier = "ranking" | "all";
 type EloDisplayStatsRecord = Record<string, EloDisplayStats>;
 
@@ -21,8 +19,9 @@ function emptyStats(): EloDisplayStats {
  * Return display-only aggregates for ranking-eligible games.
  *
  * The Elo/rank values remain sourced from the leaderboard snapshot. This read
- * only changes the counters shown beside those values and deliberately pages
- * through the game-level view so long player histories are complete.
+ * only changes the counters shown beside those values. The database function
+ * starts from the displayed player IDs, rather than paging the much wider
+ * game-results view through PostgREST.
  */
 async function fetchEloDisplayStatsInner(
   topdeckIds: string[],
@@ -35,43 +34,30 @@ async function fetchEloDisplayStatsInner(
     statsByTopdeckId[topdeckId] = emptyStats();
   }
 
-  for (let batchStart = 0; batchStart < uniqueTopdeckIds.length; batchStart += PLAYER_ID_BATCH_SIZE) {
-    const batch = uniqueTopdeckIds.slice(batchStart, batchStart + PLAYER_ID_BATCH_SIZE);
-    const eligibilityColumn = tier === "ranking" ? "ranking_eligible" : "all_eligible";
+  const { data, error } = await supabase.rpc("get_elo_display_stats", {
+    p_topdeck_ids: uniqueTopdeckIds,
+    p_tier: tier,
+  });
 
-    for (let pageStart = 0; ; pageStart += GAME_PAGE_SIZE) {
-      const { data, error } = await supabase
-        .from("global_elo_game_results")
-        .select("game_id, topdeck_id, result")
-        .in("topdeck_id", batch)
-        .eq(eligibilityColumn, true)
-        .order("game_id", { ascending: true })
-        .range(pageStart, pageStart + GAME_PAGE_SIZE - 1);
+  if (error) {
+    console.error("Elo display stats RPC failed; using leaderboard counters:", error);
+    return statsByTopdeckId;
+  }
 
-      if (error) {
-        throw new Error(`Elo display stats query failed: ${error.message}`);
-      }
-
-      const rows = (data ?? []) as Array<{
-        topdeck_id: string | null;
-        result: string | null;
-      }>;
-
-      for (const row of rows) {
-        if (!row.topdeck_id) continue;
-        const stats = statsByTopdeckId[row.topdeck_id];
-        if (!stats) continue;
-
-        if (row.result === "win") stats.wins += 1;
-        else if (row.result === "draw") stats.draws += 1;
-        else if (row.result === "loss") stats.losses += 1;
-        else continue;
-
-        stats.games_played += 1;
-      }
-
-      if (rows.length < GAME_PAGE_SIZE) break;
-    }
+  for (const row of (data ?? []) as Array<{
+    topdeck_id: string | null;
+    games_played: number | null;
+    wins: number | null;
+    draws: number | null;
+    losses: number | null;
+  }>) {
+    if (!row.topdeck_id || !statsByTopdeckId[row.topdeck_id]) continue;
+    statsByTopdeckId[row.topdeck_id] = {
+      games_played: row.games_played ?? 0,
+      wins: row.wins ?? 0,
+      draws: row.draws ?? 0,
+      losses: row.losses ?? 0,
+    };
   }
 
   return statsByTopdeckId;
