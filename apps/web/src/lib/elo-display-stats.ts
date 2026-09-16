@@ -40,11 +40,7 @@ async function fetchEloDisplayStatsInner(
   });
 
   if (error) {
-    console.error("Elo display stats RPC failed; retaining leaderboard counters:", error);
-    // An empty map tells callers to retain the persisted counters already
-    // returned by global_elo_active_leaderboard. Returning zero-valued entries
-    // here would overwrite those valid aggregates during a migration rollout.
-    return {};
+    throw new Error(`Elo display stats RPC failed: ${error.message}`);
   }
 
   for (const row of (data ?? []) as Array<{
@@ -68,7 +64,9 @@ async function fetchEloDisplayStatsInner(
 
 const getCachedEloDisplayStatsInner = unstable_cache(
   fetchEloDisplayStatsInner,
-  ["elo-display-stats-v1"],
+  // v2 clears zero-valued fallback entries cached before RPC failures were
+  // changed to preserve the shared leaderboard snapshot.
+  ["elo-display-stats-v2"],
   { revalidate: 60 * 60 * 24 }
 );
 
@@ -82,6 +80,13 @@ export async function fetchEloDisplayStats(
   tier: EloDisplayTier = "ranking"
 ): Promise<Map<string, EloDisplayStats>> {
   const stableIds = Array.from(new Set(topdeckIds.filter(Boolean))).sort();
-  const cached = await getCachedEloDisplayStatsInner(stableIds, tier);
-  return new Map(Object.entries(cached));
+  try {
+    const cached = await getCachedEloDisplayStatsInner(stableIds, tier);
+    return new Map(Object.entries(cached));
+  } catch (error) {
+    console.error("Elo display stats RPC failed; retaining leaderboard counters:", error);
+    // Keep the persisted counters returned by global_elo_active_leaderboard.
+    // This sits outside unstable_cache so a failed RPC is never cached.
+    return new Map();
+  }
 }

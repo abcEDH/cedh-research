@@ -29,13 +29,12 @@ AS $$
   JOIN public.game_participants gp ON gp.entry_id = te.id
   JOIN public.games g ON g.id = gp.game_id
   JOIN public.tournaments t ON t.id = g.tournament_id
-  WHERE p.topdeck_id = ANY (p_topdeck_ids)
+  WHERE p.topdeck_id = ANY (p_topdeck_ids[1:50])
     AND (
       (p_tier = 'ranking'
         AND t.player_count >= 30
         AND t.start_date::date <= CURRENT_DATE
         AND LOWER(COALESCE(g.status, 'completed')) IN ('completed', 'complete', 'done')
-        AND COALESCE(NULLIF(BTRIM(te.decklist_text), ''), NULLIF(BTRIM(te.decklist_url), '')) IS NOT NULL
         AND COALESCE(t.topdeck_tid, '') NOT ILIKE '%league%'
         AND t.name NOT ILIKE '%league%'
         AND t.name NOT ILIKE '%casual%'

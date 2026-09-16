@@ -274,7 +274,9 @@ const getCachedRecentTournaments = unstable_cache(
 
 const getCachedLeaderboardPreview = unstable_cache(
   getLeaderboardPreview,
-  ["home-leaderboard-preview-v4"],
+  // v5 clears any empty result cached before transient refresh failures were
+  // made retryable.
+  ["home-leaderboard-preview-v5"],
   { revalidate: HOME_CACHE_REVALIDATE_SECONDS }
 );
 
