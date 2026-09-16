@@ -203,3 +203,21 @@ retired key requires administrator review of its registry entry.
 
 The September 2026 cleanup targets confirmed identical copies. Conflicting results
 and overlapping separate TopDeck event pages require their own source review.
+
+### Non-league round integrity
+
+`elo_conflicted_games` identifies completed, non-future games in which a player
+appears at multiple tables within one non-league tournament round. Numeric round
+identity takes precedence over a redundant round label; named bracket rounds
+remain separate. The regional/global Elo input views exclude every participant
+of every affected pod. Raw games remain available for source review. An explicit
+`tournaments.is_league = true` exempts legitimate league rematches.
+
+This guard is evaluated from current source rows rather than a stale audit list.
+Correcting pairings automatically restores input eligibility; publishing corrected
+ratings still requires a chronological Elo rebuild. Confirmed extra copies use
+`superseded_game_keys` to prevent re-import. A retired key must not be registered
+if a different valid game now occupies it after a table-number correction.
+
+Player display names are not identity keys. Source participants with different
+TopDeck IDs must retain distinct player/entry records even when names match.
