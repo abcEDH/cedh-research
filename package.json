@@ -21,10 +21,14 @@
     "web:test:e2e:url": "cd apps/web && BASE_URL=$npm_config_base_url playwright test",
     "web:test:e2e:ui": "cd apps/web && playwright test --ui",
     "web:test:e2e:prod": "cd apps/web && BASE_URL=${BASE_URL:-https://tedh.gg} playwright test",
+    "lint:boundaries": "depcruise --config .dependency-cruiser.cjs packages",
     "backend:install": "python -m pip install -r packages/backend/requirements.txt",
     "backend:ingest": "python packages/backend/src/ingest.py"
   },
   "overrides": {
     "postcss": "^8.5.15"
+  },
+  "devDependencies": {
+    "dependency-cruiser": "18.3.1"
   }
 }

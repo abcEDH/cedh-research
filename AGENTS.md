@@ -10,6 +10,8 @@ Cross-cutting rules for this repo. Package-specific knowledge lives in each pack
 `AGENTS.md` — see [`packages/backend/AGENTS.md`](packages/backend/AGENTS.md) for backend
 operations, ingestion commands, and known issues.
 
+Packages are deep modules: see [`packages/README.md`](packages/README.md) before adding or importing one.
+
 ---
 
 ## Module Extraction (Python)
