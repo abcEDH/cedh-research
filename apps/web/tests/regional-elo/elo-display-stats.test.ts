@@ -25,7 +25,10 @@ vi.mock("@/lib/supabase", () => ({
   },
 }));
 
-import { fetchEloDisplayStats } from "@/lib/elo-display-stats";
+import {
+  fetchEloDisplayStats,
+  overlayEloDisplayStats,
+} from "@/lib/elo-display-stats";
 
 describe("fetchEloDisplayStats", () => {
   beforeEach(() => {
@@ -74,5 +77,33 @@ describe("fetchEloDisplayStats", () => {
     await expect(fetchEloDisplayStats(["player-1"])).resolves.toEqual(
       new Map()
     );
+  });
+
+  it("overlays fresh counters onto copied leaderboard rows", async () => {
+    state.rows = [
+      { topdeck_id: "player-1", games_played: 4, wins: 2, draws: 1, losses: 1 },
+    ];
+    const rows = [
+      { topdeck_id: "player-1", games_played: 20, wins: 10, draws: 5, losses: 5, tier: "A" },
+      { topdeck_id: null, games_played: 3, wins: 1, draws: 1, losses: 1, tier: "B" },
+    ];
+
+    const overlaid = await overlayEloDisplayStats(rows);
+
+    expect(overlaid).toEqual([
+      { ...rows[0], games_played: 4, wins: 2, draws: 1, losses: 1 },
+      rows[1],
+    ]);
+    expect(overlaid[0]).not.toBe(rows[0]);
+    expect(overlaid[1]).not.toBe(rows[1]);
+  });
+
+  it("preserves persisted counters when the RPC fails", async () => {
+    state.error = { message: "database unavailable" };
+    const rows = [
+      { topdeck_id: "player-1", games_played: 20, wins: 10, draws: 5, losses: 5, tier: "A" },
+    ];
+
+    await expect(overlayEloDisplayStats(rows)).resolves.toEqual(rows);
   });
 });

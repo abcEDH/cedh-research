@@ -8,7 +8,7 @@ export type EloDisplayStats = {
   losses: number;
 };
 
-type EloDisplayTier = "ranking" | "all";
+export type EloDisplayTier = "ranking" | "all";
 type EloDisplayStatsRecord = Record<string, EloDisplayStats>;
 
 function emptyStats(): EloDisplayStats {
@@ -89,4 +89,28 @@ export async function fetchEloDisplayStats(
     // This sits outside unstable_cache so a failed RPC is never cached.
     return new Map();
   }
+}
+
+export type EloDisplayRow = {
+  topdeck_id: string | null;
+  games_played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+};
+
+/** Overlay fresh display counters while preserving the persisted row snapshot on failure. */
+export async function overlayEloDisplayStats<T extends EloDisplayRow>(
+  rows: readonly T[],
+  tier: EloDisplayTier = "ranking"
+): Promise<T[]> {
+  const stats = await fetchEloDisplayStats(
+    rows.flatMap((row) => (row.topdeck_id ? [row.topdeck_id] : [])),
+    tier
+  );
+
+  return rows.map((row) => {
+    const freshStats = row.topdeck_id ? stats.get(row.topdeck_id) : undefined;
+    return freshStats ? { ...row, ...freshStats } : { ...row };
+  });
 }
