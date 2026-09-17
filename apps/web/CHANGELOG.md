@@ -1,3 +1,10 @@
+## [1.32.3](https://github.com/abcEDH/cedh-research/compare/v1.32.2...v1.32.3) (2026-09-17)
+
+
+### Bug Fixes
+
+* centralize Elo display counter fallback ([#360](https://github.com/abcEDH/cedh-research/issues/360)) ([d6f018e](https://github.com/abcEDH/cedh-research/commit/d6f018ef89ae6a2d6a850a1a3aeadac39639a09a))
+
 ## [1.32.2](https://github.com/abcEDH/cedh-research/compare/v1.32.1...v1.32.2) (2026-09-16)
 
 
