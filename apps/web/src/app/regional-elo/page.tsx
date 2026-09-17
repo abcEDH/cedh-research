@@ -6,7 +6,7 @@ import { RegionSelector } from "./region-selector";
 import { unstable_cache } from "next/cache";
 import { withTiming } from "@/lib/performance";
 import { EloGameFilter } from "@/components/elo-game-filter";
-import { fetchEloDisplayStats } from "@/lib/elo-display-stats";
+import { overlayEloDisplayStats } from "@/lib/elo-display-stats";
 
 export const dynamic = "force-dynamic";
 const GLOBAL_REGION_KEY = "ALL";
@@ -479,23 +479,11 @@ export default async function RegionalEloPage({
   // Strip internal-only fields (e.g. `rating`) before this data flows into the client
   // component below — `RegionalLeaderboardTable` is a client component, so anything left on
   // these rows is serialized into the page's payload and inspectable by any visitor.
-  const displayStats = await fetchEloDisplayStats(
-    leaderboardRows
-      .map((row) => row.topdeck_id)
-      .filter((value): value is string => Boolean(value)),
+  const leaderboardWithDisplayStats = await overlayEloDisplayStats(
+    leaderboardRows,
     eloOnly ? "ranking" : "all"
   );
-  const leaderboard: ClientLeaderboardRow[] = leaderboardRows.map((row) =>
-    toClientLeaderboardRow({
-      ...row,
-      ...(displayStats?.get(row.topdeck_id ?? "") ?? {
-        games_played: row.games_played,
-        wins: row.wins,
-        draws: row.draws,
-        losses: row.losses,
-      }),
-    })
-  );
+  const leaderboard: ClientLeaderboardRow[] = leaderboardWithDisplayStats.map(toClientLeaderboardRow);
 
   const playerKeys = leaderboard
     .map((r) => ({ player_id: r.player_id, topdeck_id: r.topdeck_id }))

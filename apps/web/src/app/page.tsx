@@ -15,7 +15,7 @@ import Link from "next/link";
 import { HomeSearchBar } from "@/components/home-search-bar";
 import { EloGameFilter } from "@/components/elo-game-filter";
 import { CommanderRowBackdrop } from "@/components/commanders/commander-row-backdrop";
-import { fetchEloDisplayStats } from "@/lib/elo-display-stats";
+import { overlayEloDisplayStats } from "@/lib/elo-display-stats";
 import { TIER_MIN } from "@/lib/tournaments";
 
 const HOME_CACHE_REVALIDATE_SECONDS = 60 * 60 * 6; // 6 hours
@@ -303,19 +303,10 @@ export default async function Home({
       return [];
     }),
   ]);
-  const displayStats = await fetchEloDisplayStats(
-    allLeaderboardPlayers.map((player) => player.topdeck_id),
+  const leaderboardPlayers = await overlayEloDisplayStats(
+    allLeaderboardPlayers,
     eloOnly ? "ranking" : "all"
   );
-  const leaderboardPlayers = allLeaderboardPlayers.map((player) => ({
-    ...player,
-    ...(displayStats?.get(player.topdeck_id) ?? {
-      games_played: player.games_played,
-      wins: player.wins,
-      draws: player.draws,
-      losses: player.losses,
-    }),
-  }));
 
   return (
     <div className="min-h-screen">
