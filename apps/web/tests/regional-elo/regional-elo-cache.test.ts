@@ -77,7 +77,7 @@ describe("regional-elo cache configuration", () => {
 
   it("getCachedLatestCommanders returns a plain object, not a Map", async () => {
     // Import the module - our mock makes unstable_cache pass through the callback
-    await import("@/app/regional-elo/page");
+    await import("@/lib/regional-elo/fetchers");
 
     // We can't directly call getCachedLatestCommanders since it's not exported,
     // but we can verify the pattern: the wrapper converts Map to plain object
@@ -102,7 +102,7 @@ describe("regional-elo cache configuration", () => {
     const fs = await import("fs");
     const path = await import("path");
     const source = fs.readFileSync(
-      path.resolve(__dirname, "../../src/app/regional-elo/page.tsx"),
+      path.resolve(__dirname, "../../src/lib/regional-elo/fetchers.ts"),
       "utf-8"
     );
 
@@ -114,7 +114,7 @@ describe("regional-elo cache configuration", () => {
     const fs = await import("fs");
     const path = await import("path");
     const source = fs.readFileSync(
-      path.resolve(__dirname, "../../src/app/regional-elo/page.tsx"),
+      path.resolve(__dirname, "../../src/lib/regional-elo/fetchers.ts"),
       "utf-8"
     );
 
