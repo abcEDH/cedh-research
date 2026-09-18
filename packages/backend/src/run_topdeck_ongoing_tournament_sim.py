@@ -33,7 +33,6 @@ from sim_engine import (
 from sim_models import (
     ELO_BASE,
     ELO_DIVISOR,
-    SEAT_ELO_BONUS,
     build_round_snapshot,
     load_draw_model_artifact,
     predict_decisive_win_probabilities,
@@ -48,8 +47,6 @@ from tournament_sim_runner import (
 )
 
 DEFAULT_DRAW_MODEL_PATH = Path("/tmp/cedh_draw_model_artifact_v4.pkl")
-K_FACTOR_DECISIVE = 64
-K_FACTOR_DRAW = 26
 
 
 def fetch_event_page_html(event_id: str) -> str:
@@ -231,16 +228,25 @@ def build_result_for_table(pod: Pod, table: dict[str, Any], id_map: dict[str, st
 
 
 def update_elos_for_result(state, pod: Pod, result: PodResult) -> None:
+    from internal_elo import is_top_cut, learning_rate, seat_offsets
+
     player_ids = list(result.player_ids)
     if len(player_ids) < 2:
         return
-    k_factor = K_FACTOR_DRAW if result.is_draw else K_FACTOR_DECISIVE
+    top_cut = is_top_cut(pod.round_name)
+    if top_cut and result.is_draw:
+        winners = [pid for pid in player_ids if pod.seats_by_player.get(pid) == 1]
+        if len(winners) != 1:
+            raise ValueError("Top-cut draw requires a unique seat 1")
+        result.is_draw = False
+        result.winner_id = winners[0]
+    k_factor = learning_rate(top_cut=top_cut, draw=result.is_draw, league=state.spec.is_league)
     use_seat_bonus = len(player_ids) == 4 and sorted(pod.seats_by_player.values()) == [1, 2, 3, 4]
     effective_ratings: dict[str, float] = {}
     for player_id in player_ids:
         rating = float(state.players[player_id].elo)
         if use_seat_bonus:
-            rating += SEAT_ELO_BONUS.get(pod.seats_by_player.get(player_id), 0.0)
+            rating += seat_offsets(top_cut).get(pod.seats_by_player.get(player_id), 0.0)
         effective_ratings[player_id] = rating
     total_equity = sum(math.pow(ELO_BASE, effective_ratings[player_id] / ELO_DIVISOR) for player_id in player_ids)
     if total_equity <= 0:
@@ -358,6 +364,16 @@ def build_base_state(
         )
         for topdeck_id in topdeck_ids
     ]
+    if "is_league" not in tournament:
+        league_rows = (
+            client.table("tournaments")
+            .select("is_league")
+            .eq("topdeck_tid", str(tournament.get("id") or tournament.get("TID")))
+            .limit(1)
+            .execute()
+            .data
+        )
+        tournament["is_league"] = bool(league_rows and league_rows[0].get("is_league"))
     spec = TournamentSpec(
         tournament_id=str(tournament.get("id") or tournament.get("TID")),
         name=str(tournament.get("name") or tournament.get("id") or "TopDeck Event"),
@@ -365,6 +381,7 @@ def build_base_state(
         swiss_rounds=swiss_rounds,
         top_cut=top_cut,
         player_count=len(players),
+        is_league=bool(tournament.get("is_league", False)),
         repeat_avoidance_max_pods=repeat_avoidance_max_pods,
         state=((tournament.get("eventData") or {}).get("state")),
         country=((tournament.get("eventData") or {}).get("country")),

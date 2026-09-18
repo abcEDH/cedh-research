@@ -7,7 +7,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-
 ALL_DRAW_FEATURES = [
     "is_swiss",
     "pod_size",
@@ -246,6 +245,7 @@ class TournamentSpec:
     repeat_avoidance_max_pods: int | None = None
     state: str | None = None
     country: str | None = None
+    is_league: bool = False
 
 
 @dataclass(slots=True)

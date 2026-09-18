@@ -348,4 +348,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    from rebuild_global_elo_tables import main as canonical_main
+    canonical_main()

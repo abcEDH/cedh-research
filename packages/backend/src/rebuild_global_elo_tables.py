@@ -15,7 +15,17 @@ from typing import Any
 import requests
 from postgrest.exceptions import APIError
 
+from elo_time import exclude_future_games
 from ingest import load_local_env
+from internal_elo import (
+    SWISS_DRAW_K,
+    SWISS_SEAT_OFFSETS,
+    SWISS_WIN_K,
+    is_top_cut,
+    learning_rate,
+    resolve_topcut_draws,
+    seat_offsets,
+)
 from supabase import Client
 from supabase_client import fetch_all, fetch_tier_results_for_window, get_supabase_client, upsert_batched
 
@@ -28,8 +38,8 @@ try:
 except ImportError:
     PSYCOPG2_AVAILABLE = False
 
-K_FACTOR_DECISIVE = 64
-K_FACTOR_DRAW = 26
+K_FACTOR_DECISIVE = SWISS_WIN_K
+K_FACTOR_DRAW = SWISS_DRAW_K
 DEFAULT_RATING = 1500.0
 ELO_BASE = 2
 ELO_DIVISOR = 200
@@ -41,12 +51,7 @@ ELO_TIER_FILTERS = {
     "all": "all_eligible",
 }
 ACTIVE_LOOKBACK_DAYS = 180
-SEAT_ELO_BONUS = {
-    1: 0.0,
-    2: -52.0,
-    3: -96.0,
-    4: -145.0,
-}
+SEAT_ELO_BONUS = SWISS_SEAT_OFFSETS
 
 
 REGION_COUNTRY_BY_STATE = {
@@ -974,6 +979,9 @@ def apply_game(
     now: date,
     update_activity: bool = True,
 ) -> list[dict[str, Any]]:
+    if len(exclude_future_games(game_rows)) != len(game_rows):
+        return []
+    game_rows = resolve_topcut_draws(game_rows)
     participants: list[dict[str, Any]] = []
     seen_players: set[str] = set()
     for row in game_rows:
@@ -999,7 +1007,8 @@ def apply_game(
     }
 
     draw_count = sum(1 for row in participants if row.get("result") == "draw")
-    k_factor = K_FACTOR_DRAW if draw_count else K_FACTOR_DECISIVE
+    top_cut = is_top_cut(participants[0].get("round_name"), participants[0].get("round_number"))
+    k_factor = learning_rate(top_cut=top_cut, draw=bool(draw_count), league=bool(participants[0].get("is_league")))
     use_seat_bonus = len(participants) == 4 and sorted(
         row.get("seat_position") for row in participants if isinstance(row.get("seat_position"), int)
     ) == [0, 1, 2, 3]
@@ -1010,7 +1019,7 @@ def apply_game(
         if use_seat_bonus:
             seat_position = row.get("seat_position")
             if isinstance(seat_position, int):
-                expected_rating += SEAT_ELO_BONUS.get(seat_position + 1, 0.0)
+                expected_rating += seat_offsets(top_cut).get(seat_position + 1, 0.0)
         expected_ratings[player_id] = expected_rating
     total_equity = sum(rating_equity(expected_ratings[row["player_id"]]) for row in participants)
 
@@ -1097,7 +1106,7 @@ def build_state_from_results(
     today = datetime.now(UTC).date()
 
     games: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for row in results:
+    for row in resolve_topcut_draws(exclude_future_games(results)):
         games[row["game_id"]].append(row)
 
     for index, (_, rows) in enumerate(sorted(games.items(), key=game_sort_key), start=1):
@@ -1455,8 +1464,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--tier",
         choices=tuple(ELO_TIER_FILTERS),
-        default="ranking",
-        help="Elo dataset to rebuild; ranking is the TopDeck-compatible default",
+        default="all",
+        help="Canonical internal Elo includes all completed eligible games",
     )
     parser.add_argument(
         "--since-start-date",
@@ -1467,10 +1476,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def validate_apply_tier(apply: bool, tier: str) -> None:
-    if apply and tier != "ranking":
+    if apply and tier != "all":
         raise SystemExit(
-            "--apply is supported only for --tier ranking because alternate tiers "
-            "must not overwrite canonical Elo tables."
+            "--apply is supported only for --tier all because alternate tiers must not overwrite canonical Elo tables."
         )
 
 
@@ -1490,6 +1498,11 @@ def main() -> None:
     validate_incremental_tier(args.since_start_date, args.tier)
 
     load_local_env()
+    if args.tier == "all":
+        from internal_elo_maintenance import run
+
+        print(run(apply=args.apply), flush=True)
+        return
     url = os.environ.get("SUPABASE_URL")
     key = os.environ.get("SUPABASE_SERVICE_KEY")
     if not url or not key:
