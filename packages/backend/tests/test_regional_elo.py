@@ -5,7 +5,6 @@ from pathlib import Path
 from unittest import TestCase, main
 from unittest.mock import Mock, patch
 
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import regional_elo  # noqa: E402
@@ -198,7 +197,8 @@ class CanonicalMaintenanceTests(TestCase):
                 {"SUPABASE_URL": "https://test.supabase.co", "SUPABASE_SERVICE_KEY": "test-key", "SUPABASE_DB_URL": ""},
             ):
                 with patch("regional_elo.SupabaseClient"), patch("regional_elo.refresh_materialized_views"):
-                    with patch("internal_elo_maintenance.run", return_value={}) as rebuild:
+                    rebuild = Mock(return_value={})
+                    with patch.dict(sys.modules, {"internal_elo_maintenance": Mock(run=rebuild)}):
                         regional_elo.main()
         self.assertTrue(rebuild.call_args.kwargs["apply"])
         self.assertTrue(callable(rebuild.call_args.kwargs["heartbeat"]))
@@ -322,7 +322,7 @@ class UpdateRatingsTests(TestCase):
                 "opponent_count": 1,
             }
         ]
-        db_rows = regional_elo.update_ratings_with_games(ratings, events)
+        regional_elo.update_ratings_with_games(ratings, events)
         self.assertEqual(ratings[("global", "ALL", "p1")]["wins"], 1)
         self.assertEqual(ratings[("global", "ALL", "p2")]["losses"], 1)
 

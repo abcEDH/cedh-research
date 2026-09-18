@@ -2,9 +2,9 @@ import sys
 import unittest
 from datetime import date
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 import requests
-
 
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "supabase" / "migrations"
 STATE_ACTIVITY_MIGRATION = MIGRATIONS_DIR / "20260406010000_global_elo_state_activity.sql"
@@ -22,7 +22,6 @@ CANONICAL_COUNTS_RPC_MIGRATION = (
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import regional_elo  # noqa: E402
-
 
 # Fixed reference date + a `last_game_date` comfortably inside
 # RANK_ACTIVITY_WINDOW_DAYS (183), used by tests below that predate the
@@ -482,16 +481,12 @@ class BuildActiveLeaderboardRowsTests(unittest.TestCase):
         self.assertIsNone(global_rows["Max Sternburg"]["topdeck_elo_rank"])
         self.assertEqual(global_rows["Real Player"]["topdeck_elo_rank"], 1)
 
-    def test_stale_cleanup_uses_minimal_return_and_runs_outside_nonempty_guard(self) -> None:
-        source = Path(regional_elo.__file__).read_text()
-
-        self.assertIn('"Prefer": "return=minimal"', source)
-        self.assertIn("if all_leaderboard_rows:", source)
-        self.assertIn("delete_stale_active_leaderboard_rows(client, leaderboard_run_marker)", source)
-        self.assertNotIn(
-            "        delete_stale_active_leaderboard_rows(client, leaderboard_run_marker)",
-            source,
-        )
+    def test_legacy_stale_cleanup_uses_bounded_minimal_return(self) -> None:
+        client = Mock(url="https://example.test", headers={})
+        with patch("regional_elo.requests.delete", return_value=Mock(status_code=204)) as delete:
+            regional_elo.delete_stale_active_leaderboard_rows(client, "2026-09-18T00:00:00Z")
+        self.assertEqual(delete.call_args.kwargs["headers"]["Prefer"], "return=minimal")
+        self.assertEqual(delete.call_args.kwargs["params"], {"updated_at": "lt.2026-09-18T00:00:00Z"})
 
 
 class RankActivityWindowTests(unittest.TestCase):
