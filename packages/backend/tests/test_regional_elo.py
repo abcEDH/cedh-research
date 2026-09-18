@@ -190,6 +190,46 @@ class FetchDistinctCommanderIdsTests(TestCase):
 
 
 class CanonicalMaintenanceTests(TestCase):
+    def test_job_completion_maps_only_existing_job_columns(self):
+        counts = {
+            "global_elo_ratings": 10,
+            "global_elo_state_activity": 20,
+            "global_elo_game_events": 30,
+            "global_elo_active_leaderboard": 40,
+            "global_elo_player_profile_summaries": 50,
+        }
+        result = {"counts": counts, "model_version": "test", "source_cutoff": "2026-01-01"}
+        with patch.object(sys, "argv", ["regional_elo.py", "--apply", "--job-id", "job-1"]):
+            with patch.dict(
+                os.environ,
+                {
+                    "SUPABASE_URL": "https://test.supabase.co",
+                    "SUPABASE_SERVICE_KEY": "test-key",
+                    "SUPABASE_DB_URL": "",
+                },
+            ):
+                with patch.dict(sys.modules, {"internal_elo_maintenance": Mock(run=Mock(return_value=result))}):
+                    with patch("regional_elo.SupabaseClient"), patch("regional_elo.claim_job", return_value=True):
+                        with (
+                            patch("regional_elo.refresh_materialized_views"),
+                            patch("regional_elo.complete_job") as complete,
+                        ):
+                            regional_elo.main()
+        payload = complete.call_args.args[2]
+        self.assertEqual(payload["ratings_count"], 10)
+        self.assertEqual(payload["game_events_count"], 30)
+        self.assertEqual(
+            set(payload),
+            {
+                "ratings_count",
+                "state_activity_count",
+                "game_events_count",
+                "leaderboard_count",
+                "profile_count",
+                "duration_seconds",
+            },
+        )
+
     def test_apply_uses_atomic_canonical_rebuild(self):
         with patch.object(sys, "argv", ["regional_elo.py", "--apply"]):
             with patch.dict(

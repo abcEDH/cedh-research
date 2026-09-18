@@ -15,6 +15,7 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from time import monotonic
 from typing import Any
 
 import requests
@@ -1500,10 +1501,23 @@ def main() -> None:
     # invalidates incremental snapshots, and backfilled events can predate them.
     from internal_elo_maintenance import run as run_internal_elo
 
+    started = monotonic()
     result = run_internal_elo(apply=True, heartbeat=lambda: update_job_heartbeat(client, job_id))
     refresh_materialized_views(client, direct=direct)
     if job_id:
-        complete_job(client, job_id, result)
+        counts = result["counts"]
+        complete_job(
+            client,
+            job_id,
+            {
+                "ratings_count": counts["global_elo_ratings"],
+                "state_activity_count": counts["global_elo_state_activity"],
+                "game_events_count": counts["global_elo_game_events"],
+                "leaderboard_count": counts["global_elo_active_leaderboard"],
+                "profile_count": counts["global_elo_player_profile_summaries"],
+                "duration_seconds": monotonic() - started,
+            },
+        )
     return
 
 
