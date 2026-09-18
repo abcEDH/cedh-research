@@ -1,5 +1,14 @@
 # Data Model (Supabase Schema)
 
+## Internal Elo model publication
+
+`internal_elo_model_runs` records the model version, source cutoff, full-precision
+parameters, output counts, and publication timestamp. It is service-only and is
+written atomically with the five derived Elo tables. Raw top-cut draws remain in
+source tables; internal Elo events resolve them to modeled wins/losses. See
+[ADR 0021](../decisions/0021-tuned-internal-elo.md) for the model and safeguards.
+Displayed Elo continues to use TopDeck values.
+
 This document summarizes the Supabase schema used to power cEDH Analytics, including core tables and curated analytical views.
 
 ## Source of Truth

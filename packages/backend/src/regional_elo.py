@@ -10,7 +10,6 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-import time
 import traceback
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
@@ -356,9 +355,7 @@ def process_results(
     game_events: list[dict[str, Any]] = []
     for gid, standings in games.items():
         meta = game_meta.get(gid, {})
-        game_events.extend(
-            _process_one_game(standings, game_id=gid, **meta)
-        )
+        game_events.extend(_process_one_game(standings, game_id=gid, **meta))
 
     # Fallback: rows without game_id get processed as one group (legacy behaviour).
     if ungrouped:
@@ -1332,13 +1329,16 @@ def fetch_canonical_event_counts(client: SupabaseClient) -> dict[str, dict[str, 
     rows: list[dict[str, Any]] = []
     after_player_id: str | None = None
     while True:
-        page = client.rpc(
-            "get_global_elo_canonical_counts",
-            {
-                "p_after_player_id": after_player_id,
-                "p_limit": 1000,
-            },
-        ) or []
+        page = (
+            client.rpc(
+                "get_global_elo_canonical_counts",
+                {
+                    "p_after_player_id": after_player_id,
+                    "p_limit": 1000,
+                },
+            )
+            or []
+        )
         if not page:
             break
         rows.extend(page)
@@ -1394,9 +1394,7 @@ def upsert_active_leaderboard_rows(
         )
 
 
-def refresh_materialized_views(
-    client: SupabaseClient, direct: DirectPostgresClient | None = None
-) -> int:
+def refresh_materialized_views(client: SupabaseClient, direct: DirectPostgresClient | None = None) -> int:
     """Refresh downstream materialized views. Returns count of successful refreshes.
 
     The card-frequency and card-performance materialized views are intentionally
@@ -1415,9 +1413,7 @@ def refresh_materialized_views(
                 direct.call_function(fn_name)
             else:
                 endpoint = f"{client.url}/rest/v1/rpc/{fn_name}"
-                response = requests.post(
-                    endpoint, json={}, headers=client.headers, timeout=REFRESH_RPC_TIMEOUT_SECONDS
-                )
+                response = requests.post(endpoint, json={}, headers=client.headers, timeout=REFRESH_RPC_TIMEOUT_SECONDS)
                 if response.status_code >= 400:
                     raise RuntimeError(f"{response.status_code} {response.text}")
             success_count += 1
@@ -1490,8 +1486,6 @@ def main() -> None:
             print("--apply not specified; using dry-run mode")
             print("Use --apply to write changes, --job-id to track as maintenance job")
 
-    start = time.time()
-
     if dry_run:
         smoke_days = args.smoke_days
         cutoff = get_past_days_cutoff(smoke_days)
@@ -1502,188 +1496,15 @@ def main() -> None:
         sys.exit(0)
 
     # Incremental or cold-start: choose participant fetch strategy based on watermark.
-    print("Checking event-log watermark for incremental mode...")
-    watermark = fetch_elo_watermark(client)
-    update_job_heartbeat(client, job_id)
+    # One canonical full-history replay owns internal ratings. A parameter change
+    # invalidates incremental snapshots, and backfilled events can predate them.
+    from internal_elo_maintenance import run as run_internal_elo
 
-    if watermark:
-        print(f"Watermark found: {watermark} — loading snapshot and fetching new games only")
-        player_ratings = load_ratings_from_snapshot(client, watermark)
-        print(f"Loaded {len(player_ratings):,} player ratings from snapshot")
-        update_job_heartbeat(client, job_id)
-        print(f"Fetching new participants since {watermark}...")
-        participant_rows = fetch_participants_since(client, watermark, direct=direct)
-    else:
-        print("No watermark — cold start: building ratings from full game history")
-        participant_rows = fetch_participants_for_leaderboard(
-            client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS, direct=direct
-        )
-        update_job_heartbeat(client, job_id)
-        player_ids = fetch_distinct_entry_ids(
-            client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS, direct=direct
-        )
-        player_ratings = {}
-        for pid in player_ids:
-            key = (GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY, pid)
-            player_ratings[key] = create_empty_ratings_row(pid, GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY)
-
-    print(f"Found {len(participant_rows):,} participant rows to process")
-    update_job_heartbeat(client, job_id)
-
-    # Process results and update ratings; collect game event rows for upsert.
-    print("Processing results for global ratings...")
-    game_events = process_results(participant_rows)
-    db_event_rows = update_ratings_with_games(player_ratings, game_events)
-
-    update_job_heartbeat(client, job_id)
-
-    # Apply to database
-    print("Upserting global Elo ratings...")
-    ratings_to_upsert = list(player_ratings.values())
-    if ratings_to_upsert:
-        client.upsert(
-            "global_elo_ratings",
-            ratings_to_upsert,
-            on_conflict="player_id,region_type,region_key",
-        )
-
-    update_job_heartbeat(client, job_id)
-
-    # Build player profiles
-    print("Building player profiles...")
-    profiles = build_player_profiles(ratings_to_upsert)
-
-    # Enrich profiles with primary commander data
-    print("Building primary commanders...")
-    primary_commanders = build_primary_commanders(client)
-    commander_profile_count = 0
-    for profile in profiles:
-        pid = profile.get("player_id")
-        if pid and pid in primary_commanders:
-            name, known_pct = primary_commanders[pid]
-            profile["primary_commander_name"] = name
-            profile["primary_commander_known_pct"] = known_pct
-            commander_profile_count += 1
-        else:
-            profile["primary_commander_name"] = None
-            profile["primary_commander_known_pct"] = None
-
-    if profiles:
-        client.upsert(
-            "global_elo_player_profile_summaries",
-            profiles,
-            on_conflict="player_id",
-        )
-
-    update_job_heartbeat(client, job_id)
-
-    # Detect active players
-    print("Detecting active players...")
-    active = detect_active_players(client)
-    for a in active:
-        a["last_active"] = str(utc_now().date())
-        a["region_type"] = GLOBAL_REGION_TYPE
-        a["region_key"] = GLOBAL_REGION_KEY
-
-    if active:
-        client.upsert(
-            "global_elo_state_activity",
-            active,
-            on_conflict="region_type,region_key,player_id",
-        )
-
-    update_job_heartbeat(client, job_id)
-
-    # Upsert game events — always written; uses DirectPostgres bulk path when available.
-    print(f"Recording {len(db_event_rows):,} game events...")
-    if db_event_rows:
-        if direct is not None:
-            direct.upsert(
-                "global_elo_game_events",
-                db_event_rows,
-                on_conflict="region_type,region_key,game_id,player_id",
-            )
-        else:
-            client.upsert(
-                "global_elo_game_events",
-                db_event_rows,
-                on_conflict="region_type,region_key,game_id,player_id",
-            )
-
-    update_job_heartbeat(client, job_id)
-
-    # Refresh downstream materialized views
-    print("Refreshing materialized views...")
-    mv_count = refresh_materialized_views(client, direct=direct)
-    print(f"Refreshed {mv_count}/{len(MATERIALIZED_VIEW_REFRESH_FUNCTIONS)} materialized views.")
-
-    update_job_heartbeat(client, job_id)
-
-    # Compute leaderboard after game events are committed so the view's canonical
-    # counts include the current run. Persist global, country, and state slices so
-    # /regional-elo can serve sorted reads (including TopDeck Elo) without a
-    # second query against topdeck_player_elos.
-    print("Computing leaderboard...")
-    print("Loading player directory...")
-    player_index = fetch_player_index(client)
-    print(f"Loaded {len(player_index)} player rows")
-
-    print("Loading TopDeck Elo snapshot...")
-    topdeck_elo_by_topdeck_id = fetch_topdeck_elo_by_topdeck_id(client)
-    print(f"Loaded {len(topdeck_elo_by_topdeck_id)} TopDeck Elo entries")
-
-    print("Loading primary-state activity stats...")
-    state_stats_by_player = fetch_primary_state_stats(client)
-    print(f"Loaded {len(state_stats_by_player)} primary-state stat rows")
-
-    print("Loading canonical game event counts...")
-    canonical_counts = fetch_canonical_event_counts(client)
-    print(f"Loaded canonical counts for {len(canonical_counts)} players")
-
-    leaderboard_run_marker = utc_now().isoformat()
-    all_leaderboard_rows = build_active_leaderboard_rows(
-        ratings_to_upsert,
-        player_index,
-        topdeck_elo_by_topdeck_id,
-        state_stats_by_player,
-        leaderboard_run_marker,
-        canonical_counts,
-    )
-
-    if all_leaderboard_rows:
-        print(f"Upserting {len(all_leaderboard_rows)} active leaderboard rows (global + country + state)...")
-        upsert_active_leaderboard_rows(client, all_leaderboard_rows)
-    delete_stale_active_leaderboard_rows(client, leaderboard_run_marker)
-
-    update_job_heartbeat(client, job_id)
-
-    duration = time.time() - start
-
-    metrics = JobMetrics(
-        ratings_count=len(ratings_to_upsert),
-        state_activity_count=len(active),
-        game_events_count=len(db_event_rows),
-        leaderboard_count=len(all_leaderboard_rows),
-        profile_count=len(profiles),
-        commander_profile_count=commander_profile_count,
-        duration_seconds=duration,
-    )
-
-    print(f"Done in {duration:.1f}s. Ratings: {metrics.ratings_count}")
+    result = run_internal_elo(apply=True, heartbeat=lambda: update_job_heartbeat(client, job_id))
+    refresh_materialized_views(client, direct=direct)
     if job_id:
-        complete_job(
-            client,
-            job_id,
-            {
-                "ratings_count": metrics.ratings_count,
-                "state_activity_count": metrics.state_activity_count,
-                "game_events_count": metrics.game_events_count,
-                "leaderboard_count": metrics.leaderboard_count,
-                "profile_count": metrics.profile_count,
-                "commander_profile_count": metrics.commander_profile_count,
-                "duration_seconds": metrics.duration_seconds,
-            },
-        )
+        complete_job(client, job_id, result)
+    return
 
 
 if __name__ == "__main__":

@@ -31,7 +31,7 @@ def batched(values: list[str], batch_size: int) -> list[list[str]]:
 def fetch_tournament(client: Client, tournament_id: str) -> dict[str, Any]:
     rows = (
         client.table("tournaments")
-        .select("id,name,start_date,player_count,top_cut,state,country")
+        .select("id,name,start_date,player_count,top_cut,state,country,is_league")
         .eq("id", tournament_id)
         .limit(1)
         .execute()
@@ -396,6 +396,7 @@ def build_spec_and_players(
         repeat_avoidance_max_pods=repeat_avoidance_max_pods,
         state=tournament.get("state"),
         country=tournament.get("country"),
+        is_league=bool(tournament.get("is_league", False)),
     )
     return spec, players, entries, feature_context
 

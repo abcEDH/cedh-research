@@ -26,6 +26,8 @@ These ADRs were extracted retroactively on 2026-05-03 from git history, merged P
 
 ## How decisions cluster
 
+- [0021 — Versioned internal Elo and atomic maintenance](0021-tuned-internal-elo.md): accepted; shared prediction parameters, full-history replay, and model-version publication.
+
 - **Data flow:** 0003 → 0005 → 0006 (Supabase → persisted read models → cached at the edge). Mutations to one usually require touching the next.
 - **Operations:** 0007 → 0008 (split pipelines + manual-only Elo). Define what runs where and when.
 - **Release path:** 0004 → 0009 (Vercel + tedh.gg). How code reaches users.
