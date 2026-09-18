@@ -359,6 +359,9 @@ class UpdateRatingsTests(TestCase):
         self.assertAlmostEqual(winner["rating_delta"], winner["rating_after"] - winner["rating_before"], places=5)
         self.assertEqual(winner["game_id"], "g1")
         self.assertEqual(winner["region_type"], "global")
+        for row in ratings.values():
+            self.assertEqual(row["last_game_date"], "2026-01-01")
+            self.assertIn("updated_at", row)
 
 
 class FetchEloWatermarkTests(TestCase):
@@ -369,15 +372,29 @@ class FetchEloWatermarkTests(TestCase):
         result = regional_elo.fetch_elo_watermark(client)
 
         self.assertEqual(result, "2026-05-11T16:00:00+00:00")
-        client.select.assert_called_once_with(
-            "global_elo_game_events",
-            {
-                "select": "game_date",
-                "region_type": "eq.global",
-                "order": "game_date.desc",
-                "limit": "1",
-            },
-        )
+        params = client.select.call_args.args[1]
+        self.assertEqual(params["region_key"], "eq.ALL")
+        self.assertTrue(params["game_date"].startswith("lte."))
+
+    def test_refuses_future_watermark_even_if_source_ignores_filter(self) -> None:
+        client = Mock()
+        client.select.return_value = [{"game_date": "2030-10-26T16:00:00Z"}]
+        with self.assertRaises(ValueError):
+            regional_elo.fetch_elo_watermark(client)
+
+    def test_refuses_future_snapshot_before_querying(self) -> None:
+        with patch("regional_elo._rpc_fetch_all") as rpc:
+            with self.assertRaises(ValueError):
+                regional_elo.load_ratings_from_snapshot(Mock(), "2030-10-26T16:00:00Z")
+            rpc.assert_not_called()
+
+    def test_future_pod_never_produces_rating_events(self) -> None:
+        rows = [
+            {"game_id": "future", "player_id": f"p{i}", "seat_position": i,
+             "result": "win" if i == 0 else "loss", "start_date": "2030-10-26T16:00:00Z"}
+            for i in range(4)
+        ]
+        self.assertEqual(regional_elo.process_results(rows), [])
 
     def test_returns_none_when_table_empty(self) -> None:
         client = Mock()
@@ -431,6 +448,7 @@ class FetchParticipantsSinceTests(TestCase):
         self.assertIn("start_date", params)
         self.assertTrue(params["start_date"].startswith("gte."))
         self.assertIn("neq.bye", params.get("result", ""))
+        self.assertEqual(params["all_eligible"], "eq.true")
 
     def test_direct_path_uses_gte_filter(self) -> None:
         direct = Mock()
@@ -440,6 +458,7 @@ class FetchParticipantsSinceTests(TestCase):
 
         params = direct.select.call_args[0][1]
         self.assertTrue(params["start_date"].startswith("gte."))
+        self.assertEqual(params["all_eligible"], "eq.true")
 
 
 class BuildPrimaryCommandersTests(TestCase):
