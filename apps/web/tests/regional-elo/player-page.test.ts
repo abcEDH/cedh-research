@@ -303,11 +303,11 @@ const tableData: TableData = {
     },
   ],
   tournaments: [
-    { id: "tournament-1", name: "California Open I", start_date: "2026-04-03", state: "California" },
-    { id: "tournament-2", name: "California Open II", start_date: "2026-04-02", state: "California" },
-    { id: "tournament-3", name: "California Open III", start_date: "2026-04-01", state: "California" },
-    { id: "tournament-4", name: "Unknown Region Open", start_date: "2026-04-04", state: null },
-    { id: "tournament-5", name: "Inactive Open", start_date: "2025-01-01", state: "California" },
+    { id: "tournament-1", name: "California Open I", start_date: "2026-04-03", state: "California", player_count: 32 },
+    { id: "tournament-2", name: "California Open II", start_date: "2026-04-02", state: "California", player_count: 29 },
+    { id: "tournament-3", name: "California Open III", start_date: "2026-04-01", state: "California", player_count: 32 },
+    { id: "tournament-4", name: "Unknown Region Open", start_date: "2026-04-04", state: null, player_count: 12 },
+    { id: "tournament-5", name: "Inactive Open", start_date: "2025-01-01", state: "California", player_count: 32 },
   ],
   commanders: [
     { id: "cmd-1", name: "Rograkh / Silas" },
@@ -319,6 +319,48 @@ const tableData: TableData = {
 
 function applyFilters(rows: Array<Record<string, unknown>>, filters: Array<(row: Record<string, unknown>) => boolean>) {
   return rows.filter((row) => filters.every((filter) => filter(row)));
+}
+
+function buildPlayerGameLogRpcRows(playerId: string) {
+  const entries = tableData.tournament_entries.filter((row) => row.player_id === playerId);
+  return entries.flatMap((entry) => {
+    const participantRows = tableData.game_participants.filter((row) => row.entry_id === entry.id);
+    return participantRows.map((participant) => {
+      const game = tableData.games.find((row) => row.id === participant.game_id)!;
+      const tournament = tableData.tournaments.find((row) => row.id === game.tournament_id)!;
+      const commander = tableData.commanders.find((row) => row.id === entry.commander_id);
+      const opponents = tableData.game_participants
+        .filter((row) => row.game_id === game.id && row.entry_id !== entry.id)
+        .map((row) => {
+          const opponentEntry = tableData.tournament_entries.find((value) => value.id === row.entry_id)!;
+          const opponent = tableData.players.find((value) => value.id === opponentEntry.player_id)!;
+          const opponentCommander = tableData.commanders.find((value) => value.id === opponentEntry.commander_id);
+          return {
+            topdeckId: opponent.topdeck_id,
+            playerName: opponent.name,
+            commanderName: opponentCommander?.name ?? null,
+            seat: Number(row.seat_position) + 1,
+            result: row.result,
+          };
+        });
+
+      return {
+        game_id: game.id,
+        game_date: tournament.start_date,
+        tournament_name: tournament.name,
+        state: tournament.state,
+        round_number: game.round_number,
+        round_name: game.round_name,
+        table_number: game.table_number,
+        seat_position: participant.seat_position,
+        commander_name: commander?.name ?? null,
+        game_result: participant.result,
+        tournament_player_count: tournament.player_count,
+        ranking_eligible: Number(tournament.player_count) >= 30,
+        opponents,
+      };
+    });
+  });
 }
 
 class MockQuery {
@@ -462,6 +504,17 @@ vi.mock("@/lib/topdeck", () => ({
 vi.mock("@/lib/supabase", () => ({
   supabase: {
     from: (table: string) => new MockQuery(table),
+    rpc: (
+      _name: string,
+      args: { p_player_id: string; p_limit: number; p_offset: number }
+    ) =>
+      Promise.resolve({
+        data: buildPlayerGameLogRpcRows(args.p_player_id).slice(
+          args.p_offset,
+          args.p_offset + args.p_limit
+        ),
+        error: null,
+      }),
   },
 }));
 
@@ -539,7 +592,7 @@ describe("RegionalPlayerPage", () => {
     expect(html).toContain("Inactive Player");
     expect(html).toMatch(/State Rank[\s\S]*?>--</);
     expect(html).toMatch(/Global Rank[\s\S]*?>--</);
-    expect(html).toContain("1600");
+    expect(html).toContain("1502");
   });
 
   it("links opponent records to the head-to-head page", async () => {
@@ -547,6 +600,66 @@ describe("RegionalPlayerPage", () => {
 
     expect(html).toContain("/regional-elo/player/CCIQroaCHHQi7EELyNXlHiHQiQy1/vs/opp-a");
     expect(html).not.toContain('href="/regional-elo/player/opp-a"');
+  });
+
+  it("filters aggregate W-L-D stats to 30-player events when enabled", async () => {
+    const html = await renderPlayerPage("CCIQroaCHHQi7EELyNXlHiHQiQy1", { eloOnly: "true" });
+
+    expect(html).toContain("Show 30+ player games only");
+    expect(html).toContain('role="switch"');
+    expect(html).toContain('aria-checked="true"');
+    expect(html).toMatch(/Overall[\s\S]*?>2 games[\s\S]*?>1-0-1</);
+    expect(html).toContain(
+      "/regional-elo/player/CCIQroaCHHQi7EELyNXlHiHQiQy1/vs/opp-a?eloOnly=true"
+    );
+  });
+
+  it("preserves the all-games selection when returning to the leaderboard", async () => {
+    const html = await renderPlayerPage("CCIQroaCHHQi7EELyNXlHiHQiQy1", { eloOnly: "false" });
+
+    expect(html).toContain('href="/regional-elo?eloOnly=false"');
+  });
+
+  it("updates profile game tiles to match the filtered summary", async () => {
+    const componentsModule = await import(
+      "@/app/regional-elo/player/[topdeckId]/player-profile-components"
+    );
+    const element = await componentsModule.PlayerProfileGrid({
+      topdeckId: "CCIQroaCHHQi7EELyNXlHiHQiQy1",
+      player: tableData.players[0] as {
+        id: string;
+        name: string;
+        topdeck_id: string;
+      },
+      regionFilter: "",
+      displaySummary: {
+        totalGames: 2,
+        totalWins: 1,
+        totalDraws: 1,
+        totalLosses: 0,
+        seatRows: [],
+        opponentRecords: [
+          {
+            opponentTopdeckId: "opp-a",
+            opponentName: "Opponent A",
+            wins: 1,
+            draws: 1,
+            losses: 0,
+            games: 2,
+          },
+        ],
+        commanderRecords: [],
+        bestOpponentMatchup: null,
+        worstOpponentMatchup: null,
+        bestCommanderMatchup: null,
+        worstCommanderMatchup: null,
+      },
+    });
+    const html = renderToStaticMarkup(element);
+
+    expect(html).toMatch(/Games Played[\s\S]*?>2</);
+    expect(html).toMatch(/Record[\s\S]*?>1-0-1</);
+    expect(html).toMatch(/Unique Opponents[\s\S]*?>1</);
   });
 });
 
@@ -572,5 +685,34 @@ describe("RegionalPlayerVsPage", () => {
     expect(html).toContain("/regional-elo/player/CCIQroaCHHQi7EELyNXlHiHQiQy1");
     expect(html).toContain("/regional-elo/player/opp-a");
     expect(html).toContain("1-1-0");
+  });
+
+  it("filters shared history and mirrored records to 30-player events", async () => {
+    const pageModule = await import("@/app/regional-elo/player/[topdeckId]/vs/[opponentTopdeckId]/page");
+    const element = await pageModule.default({
+      params: { topdeckId: "CCIQroaCHHQi7EELyNXlHiHQiQy1", opponentTopdeckId: "opp-a" },
+      searchParams: { eloOnly: "true" },
+    });
+
+    const html = renderToStaticMarkup(element);
+
+    expect(html).toContain("Show 30+ player games only");
+    expect(html).toContain('role="switch"');
+    expect(html).toContain('aria-checked="true"');
+    expect(html).toMatch(/Alex Lien Record[\s\S]*?>1-0-0</);
+    expect(html).toMatch(/Opponent A Record[\s\S]*?>0-1-0</);
+    expect(html).toMatch(/Shared Games[\s\S]*?>1</);
+    expect(html).toContain(
+      "/regional-elo/player/CCIQroaCHHQi7EELyNXlHiHQiQy1/vs/opp-a?eloOnly=true"
+    );
+    expect(html).toContain(
+      'href="/regional-elo/player/CCIQroaCHHQi7EELyNXlHiHQiQy1?eloOnly=true"'
+    );
+    expect(html).toContain('href="/regional-elo/player/opp-a?eloOnly=true"');
+    expect(html).toContain(
+      "/regional-elo/player/opp-a/vs/CCIQroaCHHQi7EELyNXlHiHQiQy1?eloOnly=true"
+    );
+    expect(html).toContain("California Open I");
+    expect(html).not.toContain("California Open II");
   });
 });

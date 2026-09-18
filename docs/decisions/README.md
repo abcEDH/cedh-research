@@ -22,8 +22,13 @@ These ADRs were extracted retroactively on 2026-05-03 from git history, merged P
 | [0012](0012-ai-review-is-advisory.md) | AI Code Review Is Advisory; Humans Approve Merges | Accepted | review process | `CONTRIBUTING.md`, PR #156 declined-suggestion thread |
 | [0013](0013-topdeck-attribution-and-compliance.md) | TopDeck Attribution and API Compliance | Accepted | `apps/web/`, `packages/backend/` | PR #53 |
 | [0014](0014-retire-dead-surfaces-wholesale.md) | Retire Dead Surfaces Wholesale | Accepted | repo-wide | `CONTRIBUTING.md`, PR #51, `docs/supported-surfaces.md` |
+| [0016](0016-rank-activity-window-and-topdeck-snapshot-pruning.md) | Rank Activity Window and TopDeck Snapshot Pruning | Accepted | `packages/backend/` | PR #263, issue #252 |
+
+| [0022](0022-hybrid-draw-model.md) | Hybrid draw model with internal Elo winner probabilities | Accepted | `packages/backend/` | PR #295 |
 
 ## How decisions cluster
+
+- [0021 — Versioned internal Elo and atomic maintenance](0021-tuned-internal-elo.md): accepted; shared prediction parameters, full-history replay, and model-version publication.
 
 - **Data flow:** 0003 → 0005 → 0006 (Supabase → persisted read models → cached at the edge). Mutations to one usually require touching the next.
 - **Operations:** 0007 → 0008 (split pipelines + manual-only Elo). Define what runs where and when.

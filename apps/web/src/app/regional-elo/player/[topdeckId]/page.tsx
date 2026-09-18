@@ -1,11 +1,17 @@
 import { Suspense } from "react";
 import Link from "next/link";
+import type { Metadata } from "next";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CommanderRowBackdrop } from "@/components/commanders/commander-row-backdrop";
 import type { CommanderUsageRow } from "@/lib/meta-prep";
 import { supabase } from "@/lib/supabase";
 import { OpponentRecordsTable } from "./opponent-records-table";
-import { summarizePlayerLogs, type PlayerGameLog } from "./player-stats";
+import {
+  filterPlayerLogs,
+  summarizePlayerLogs,
+  type PlayerGameLog,
+} from "./player-stats";
 import {
   PlayerHeader,
   PlayerHeaderSkeleton,
@@ -16,32 +22,42 @@ import {
   fetchCachedRegionalRanks,
   fetchCachedPlayerProfileSummary,
   fetchCachedPlayerCommanderProfile,
-  fetchCachedPlayerEventLogs,
   fetchCachedPlayerAchievements,
   fetchCachedPlayerCommanderUsageRows,
-  fetchEntries,
   sortAchievementsByFinish,
   isKnownCommanderName,
 } from "./player-profile-components";
+import { fetchCachedRawPlayerLogPage } from "./player-log-data";
 
 export const revalidate = 86400; // 24 hours
 export const dynamicParams = true;
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
-const SUPABASE_PAGE_SIZE = 1000;
-const SUPABASE_IN_CHUNK_SIZE = 100;
 const ACHIEVEMENTS_PAGE_SIZE = 10;
-
 export async function generateStaticParams() {
-  const { data } = await supabase
-    .from("global_elo_active_leaderboard")
-    .select("topdeck_id, rank")
-    .eq("region_type", "global")
-    .eq("region_key", "ALL")
-    .order("rank", { ascending: true })
-    .limit(500);
-  return (data ?? [])
-    .filter((row): row is { topdeck_id: string; rank: number } => Boolean(row?.topdeck_id))
-    .map((row) => ({ topdeckId: String(row.topdeck_id) }));
+  try {
+    const { data, error } = await supabase
+      .from("global_elo_active_leaderboard")
+      .select("topdeck_id, rank")
+      .eq("region_type", "global")
+      .eq("region_key", "ALL")
+      .order("rank", { ascending: true })
+      .limit(500);
+
+    if (error) {
+      console.warn("generateStaticParams: Failed to fetch leaderboard data", error);
+      return [];
+    }
+
+    return (data ?? [])
+      .filter((row): row is { topdeck_id: string; rank: number } => Boolean(row?.topdeck_id))
+      .map((row) => ({ topdeckId: String(row.topdeck_id) }));
+  } catch (err) {
+    console.warn("generateStaticParams: Unexpected error during fetch", err);
+    return [];
+  }
 }
 
 export type PlayerRow = {
@@ -53,42 +69,6 @@ export type PlayerRow = {
 export type PlayerCommanderUsageRow = CommanderUsageRow & {
   tournament_name: string | null;
   tournament_topdeck_tid: string | null;
-};
-
-export type EntryRow = {
-  id: string;
-  tournament_id: string;
-  player_id: string;
-  commander_id: string | null;
-};
-
-export type CommanderRow = {
-  id: string;
-  name: string;
-};
-
-export type ParticipantRow = {
-  game_id: string;
-  entry_id: string;
-  seat_position: number;
-  result: string;
-};
-
-export type GameRow = {
-  id: string;
-  tournament_id: string;
-  round_number: number | null;
-  round_name: string | null;
-  table_number: number | null;
-  is_draw: boolean;
-  winner_id: string | null;
-};
-
-export type TournamentRow = {
-  id: string;
-  name: string;
-  start_date: string;
-  state: string | null;
 };
 
 export type LeaderboardRankRow = {
@@ -215,20 +195,6 @@ export type PlayerEventOpponentRow = {
   game_result: string;
 };
 
-function toRoundLabel(game: GameRow) {
-  if (game.round_name) return game.round_name;
-  if (game.round_number !== null) return `Round ${game.round_number}`;
-  return "Bracket";
-}
-
-function chunkValues<T>(values: T[], size = SUPABASE_IN_CHUNK_SIZE) {
-  const chunks: T[][] = [];
-  for (let index = 0; index < values.length; index += size) {
-    chunks.push(values.slice(index, index + size));
-  }
-  return chunks;
-}
-
 function readRegionParam(
   params:
     | Record<string, string | string[] | undefined>
@@ -285,7 +251,8 @@ function buildPlayerProfileHref(
   achievementCommanderSearch = "",
   achievementSort: AchievementSort = "best",
   achievementDateFrom = "",
-  achievementDateTo = ""
+  achievementDateTo = "",
+  eloOnly = false
 ) {
   const params = new URLSearchParams();
   if (regionFilter) params.set("region", regionFilter);
@@ -297,6 +264,7 @@ function buildPlayerProfileHref(
   if (achievementDateFrom) params.set("achievementDateFrom", achievementDateFrom);
   if (achievementDateTo) params.set("achievementDateTo", achievementDateTo);
   if (achievementsPage > 1) params.set("achievementsPage", String(achievementsPage));
+  if (eloOnly) params.set("eloOnly", "true");
   const query = params.toString();
   return `/regional-elo/player/${topdeckId}${query ? `?${query}` : ""}`;
 }
@@ -331,217 +299,6 @@ function formatPlacementRatio(placement: number | null, playerCount: number | nu
 
 function achievementTournamentKey(tournamentName: string | null | undefined, startDate: string | null | undefined) {
   return `${tournamentName ?? "Unknown tournament"}:${(startDate ?? "").slice(0, 10)}`;
-}
-
-async function fetchGamesAndParticipants(entryIds: string[]) {
-  const participants: ParticipantRow[] = [];
-  for (const entryIdChunk of chunkValues(entryIds)) {
-    for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
-      const { data, error } = await supabase
-        .from("game_participants")
-        .select("game_id, entry_id, seat_position, result")
-        .in("entry_id", entryIdChunk)
-        .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
-
-      if (error) throw new Error(`Error fetching player game participants: ${error.message}`);
-      participants.push(...((data as ParticipantRow[]) ?? []));
-      if (!data || data.length < SUPABASE_PAGE_SIZE) break;
-    }
-  }
-
-  const gameIds = Array.from(new Set(participants.map((row) => row.game_id)));
-  if (gameIds.length === 0) {
-    return {
-      participants: [],
-      games: [] as GameRow[],
-      allParticipants: [] as ParticipantRow[],
-    };
-  }
-
-  const games: GameRow[] = [];
-  const allParticipants: ParticipantRow[] = [];
-
-  for (const gameIdChunk of chunkValues(gameIds)) {
-    for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
-      const { data, error } = await supabase
-        .from("games")
-        .select("id, tournament_id, round_number, round_name, table_number, is_draw, winner_id")
-        .in("id", gameIdChunk)
-        .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
-
-      if (error) throw new Error(`Error fetching player games: ${error.message}`);
-      games.push(...((data as GameRow[]) ?? []));
-      if (!data || data.length < SUPABASE_PAGE_SIZE) break;
-    }
-  }
-
-  for (const gameIdChunk of chunkValues(gameIds)) {
-    for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
-      const { data, error } = await supabase
-        .from("game_participants")
-        .select("game_id, entry_id, seat_position, result")
-        .in("game_id", gameIdChunk)
-        .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
-
-      if (error) throw new Error(`Error fetching pod participants: ${error.message}`);
-      allParticipants.push(...((data as ParticipantRow[]) ?? []));
-      if (!data || data.length < SUPABASE_PAGE_SIZE) break;
-    }
-  }
-
-  return {
-    participants,
-    games,
-    allParticipants,
-  };
-}
-
-async function buildPlayerLogsFromRawHistory(entries: EntryRow[]): Promise<PlayerGameLog[]> {
-  const entryIds = entries.map((row) => row.id);
-  const { participants, games, allParticipants } = await fetchGamesAndParticipants(entryIds);
-
-  const gamesById = new Map(games.map((row) => [row.id, row]));
-  const entryById = new Map(entries.map((row) => [row.id, row]));
-  const tournamentIds = Array.from(new Set(games.map((row) => row.tournament_id)));
-  const tournamentsById = await fetchTournaments(tournamentIds);
-
-  const playerParticipants = participants.filter((participant) => {
-    if (!gamesById.has(participant.game_id)) return false;
-    return true;
-  });
-  const playerGameIds = Array.from(new Set(playerParticipants.map((row) => row.game_id)));
-  const relatedParticipants = allParticipants.filter((row) => playerGameIds.includes(row.game_id));
-  const relatedEntryIds = Array.from(new Set(relatedParticipants.map((row) => row.entry_id)));
-  const relatedEntriesById = await fetchEntriesById(relatedEntryIds);
-  const relatedPlayerIds = Array.from(
-    new Set(Array.from(relatedEntriesById.values()).map((row) => row.player_id))
-  );
-  const relatedCommanderIds = Array.from(
-    new Set(
-      Array.from(relatedEntriesById.values())
-        .map((row) => row.commander_id)
-        .filter((value): value is string => Boolean(value))
-    )
-  );
-  const playersById = await fetchPlayersById(relatedPlayerIds);
-  const commandersById = await fetchCommandersById(relatedCommanderIds);
-
-  return playerParticipants
-    .map((participant) => {
-      const game = gamesById.get(participant.game_id);
-      const playerEntry = entryById.get(participant.entry_id);
-      if (!game || !playerEntry) return null;
-
-      const tournament = tournamentsById.get(game.tournament_id);
-      const commanderName = playerEntry.commander_id
-        ? commandersById.get(playerEntry.commander_id)?.name ?? null
-        : null;
-      const pod = relatedParticipants
-        .filter((row) => row.game_id === participant.game_id && row.entry_id !== participant.entry_id)
-        .map((row) => {
-          const opponentEntry = relatedEntriesById.get(row.entry_id);
-          const opponentPlayer = opponentEntry ? playersById.get(opponentEntry.player_id) : null;
-          const opponentCommander = opponentEntry?.commander_id
-            ? commandersById.get(opponentEntry.commander_id)?.name ?? null
-            : null;
-
-          return {
-            topdeckId: opponentPlayer?.topdeck_id ?? null,
-            playerName: opponentPlayer?.name ?? "Unknown",
-            commanderName: opponentCommander,
-            seat: row.seat_position + 1,
-            result: row.result,
-          };
-        })
-        .sort((a, b) => a.seat - b.seat);
-
-      return {
-        gameId: participant.game_id,
-        startDate: tournament?.start_date ?? "",
-        tournamentName: tournament?.name ?? "Unknown tournament",
-        state: tournament?.state ?? null,
-        roundLabel: toRoundLabel(game),
-        tableLabel: game.table_number !== null ? `Table ${game.table_number}` : "Bracket",
-        seat: participant.seat_position + 1,
-        result: participant.result,
-        commanderName,
-        opponents: pod,
-      } satisfies PlayerGameLog;
-    })
-    .filter((value): value is PlayerGameLog => Boolean(value))
-    .sort((a, b) => b.startDate.localeCompare(a.startDate));
-}
-
-async function fetchTournaments(tournamentIds: string[]): Promise<Map<string, TournamentRow>> {
-  if (tournamentIds.length === 0) return new Map();
-
-  const rows: TournamentRow[] = [];
-  for (const tournamentIdChunk of chunkValues(tournamentIds)) {
-    const { data, error } = await supabase
-      .from("tournaments")
-      .select("id, name, start_date, state")
-      .in("id", tournamentIdChunk);
-
-    if (error) throw new Error(`Error fetching tournaments: ${error.message}`);
-    rows.push(...((data as TournamentRow[]) ?? []));
-  }
-
-  return new Map(rows.map((row) => [row.id, row]));
-}
-
-async function fetchEntriesById(entryIds: string[]): Promise<Map<string, EntryRow>> {
-  if (entryIds.length === 0) return new Map();
-
-  const rows: EntryRow[] = [];
-  for (const entryIdChunk of chunkValues(entryIds)) {
-    for (let offset = 0; ; offset += SUPABASE_PAGE_SIZE) {
-      const { data, error } = await supabase
-        .from("tournament_entries")
-        .select("id, tournament_id, player_id, commander_id")
-        .in("id", entryIdChunk)
-        .range(offset, offset + SUPABASE_PAGE_SIZE - 1);
-
-      if (error) throw new Error(`Error fetching related tournament entries: ${error.message}`);
-      rows.push(...((data as EntryRow[]) ?? []));
-      if (!data || data.length < SUPABASE_PAGE_SIZE) break;
-    }
-  }
-
-  return new Map(rows.map((row) => [row.id, row]));
-}
-
-async function fetchPlayersById(playerIds: string[]): Promise<Map<string, PlayerRow>> {
-  if (playerIds.length === 0) return new Map();
-
-  const rows: PlayerRow[] = [];
-  for (const playerIdChunk of chunkValues(playerIds)) {
-    const { data, error } = await supabase
-      .from("players")
-      .select("id, name, topdeck_id")
-      .in("id", playerIdChunk);
-
-    if (error) throw new Error(`Error fetching related players: ${error.message}`);
-    rows.push(...((data as PlayerRow[]) ?? []));
-  }
-
-  return new Map(rows.map((row) => [row.id, row]));
-}
-
-async function fetchCommandersById(commanderIds: string[]): Promise<Map<string, CommanderRow>> {
-  if (commanderIds.length === 0) return new Map();
-
-  const rows: CommanderRow[] = [];
-  for (const commanderIdChunk of chunkValues(commanderIds)) {
-    const { data, error } = await supabase
-      .from("commanders")
-      .select("id, name")
-      .in("id", commanderIdChunk);
-
-    if (error) throw new Error(`Error fetching related commanders: ${error.message}`);
-    rows.push(...((data as CommanderRow[]) ?? []));
-  }
-
-  return new Map(rows.map((row) => [row.id, row]));
 }
 
 export default async function RegionalPlayerPage({
@@ -595,6 +352,31 @@ async function PlayerProfileBodyWrapper({
   const resolvedSearchParams = await Promise.resolve(searchParams);
   const requestedRegion = decodeURIComponent(readRegionParam(resolvedSearchParams)).trim().toUpperCase();
   const regionFilter = requestedRegion === "ALL" ? "" : requestedRegion;
+  const eloOnly = readStringParam(resolvedSearchParams, "eloOnly") === "true";
+  const [playerLogPage, lifetimeSummary] = await Promise.all([
+    fetchCachedRawPlayerLogPage(player.id),
+    fetchCachedPlayerProfileSummary(player.id),
+  ]);
+  const allPlayerLogs = playerLogPage.logs;
+  const filteredLogs = filterPlayerLogs(allPlayerLogs, eloOnly);
+  const recentSummary = summarizePlayerLogs(filteredLogs, topdeckId, eloOnly);
+  const allScoredLogs = eloOnly ? filterPlayerLogs(allPlayerLogs, false) : filteredLogs;
+  const allGameSummary = summarizePlayerLogs(allScoredLogs, topdeckId, false);
+  const displaySummary = eloOnly && lifetimeSummary
+    ? {
+        ...recentSummary,
+        totalGames: lifetimeSummary.games_played,
+        totalWins: lifetimeSummary.wins,
+        totalDraws: lifetimeSummary.draws,
+        totalLosses: lifetimeSummary.losses,
+      }
+    : {
+        ...recentSummary,
+        totalGames: allGameSummary.totalGames,
+        totalWins: allGameSummary.totalWins,
+        totalDraws: allGameSummary.totalDraws,
+        totalLosses: allGameSummary.totalLosses,
+      };
 
   return (
     <>
@@ -603,6 +385,7 @@ async function PlayerProfileBodyWrapper({
           topdeckId={topdeckId}
           player={player}
           regionFilter={regionFilter}
+          displaySummary={displaySummary}
         />
       </Suspense>
 
@@ -610,6 +393,8 @@ async function PlayerProfileBodyWrapper({
         topdeckId={topdeckId}
         player={player}
         searchParams={searchParams}
+        rawPlayerLogs={allPlayerLogs}
+        rawPlayerLogsHasMore={playerLogPage.hasMore}
       />
     </>
   );
@@ -621,12 +406,16 @@ export async function PlayerProfileBody({
   topdeckId,
   player,
   searchParams,
+  rawPlayerLogs,
+  rawPlayerLogsHasMore = false,
 }: {
   topdeckId: string;
   player: PlayerRow;
   searchParams?:
     | Promise<Record<string, string | string[] | undefined>>
     | Record<string, string | string[] | undefined>;
+  rawPlayerLogs?: PlayerGameLog[];
+  rawPlayerLogsHasMore?: boolean;
 }) {
   const resolvedSearchParams = await Promise.resolve(searchParams);
   const requestedRegion = decodeURIComponent(readRegionParam(resolvedSearchParams)).trim().toUpperCase();
@@ -639,9 +428,14 @@ export async function PlayerProfileBody({
   );
   const achievementDateFrom = readStringParam(resolvedSearchParams, "achievementDateFrom");
   const achievementDateTo = readStringParam(resolvedSearchParams, "achievementDateTo");
-  const backHref = regionFilter
-    ? `/regional-elo?scope=state&region=${encodeURIComponent(regionFilter)}`
-    : "/regional-elo";
+  const eloOnly = readStringParam(resolvedSearchParams, "eloOnly") === "true";
+  const backParams = new URLSearchParams();
+  if (regionFilter) {
+    backParams.set("scope", "state");
+    backParams.set("region", regionFilter);
+  }
+  if (!eloOnly) backParams.set("eloOnly", "false");
+  const backHref = `/regional-elo${backParams.toString() ? `?${backParams.toString()}` : ""}`;
 
   const [
     globalEloRank,
@@ -650,8 +444,6 @@ export async function PlayerProfileBody({
     commanderProfile,
     commanderUsageRows,
     fetchedAchievementRows,
-    eventPlayerLogsResult,
-    rawEntries,
   ] = await Promise.all([
     fetchCachedGlobalEloRank(player.id),
     fetchCachedRegionalRanks(player.id),
@@ -659,20 +451,14 @@ export async function PlayerProfileBody({
     fetchCachedPlayerCommanderProfile(topdeckId),
     fetchCachedPlayerCommanderUsageRows(player.id, topdeckId, player.name),
     fetchCachedPlayerAchievements(player.id, topdeckId),
-    Promise.resolve(fetchCachedPlayerEventLogs(player.id, ""))
-      .then((value) => ({ status: "fulfilled" as const, value }))
-      .catch((reason) => ({ status: "rejected" as const, reason })),
-    fetchEntries(player.id),
   ]);
 
   const activeCommander = commanderProfile?.active_commander ?? null;
 
-  const eventPlayerLogs =
-    eventPlayerLogsResult.status === "fulfilled" ? eventPlayerLogsResult.value : [];
-  const playerLogs: PlayerGameLog[] =
-    eventPlayerLogs.length > 0
-      ? eventPlayerLogs
-      : await buildPlayerLogsFromRawHistory(rawEntries);
+  const allPlayerLogs: PlayerGameLog[] =
+    rawPlayerLogs ?? (await fetchCachedRawPlayerLogPage(player.id)).logs;
+  const playerLogs = filterPlayerLogs(allPlayerLogs, eloOnly);
+  const historyMayBeTruncated = rawPlayerLogsHasMore;
   const {
     totalGames,
     totalWins,
@@ -685,7 +471,7 @@ export async function PlayerProfileBody({
     worstOpponentMatchup,
     bestCommanderMatchup,
     worstCommanderMatchup,
-  } = summarizePlayerLogs(playerLogs, topdeckId);
+  } = summarizePlayerLogs(playerLogs, topdeckId, eloOnly);
   const achievementResultByTournament = playerLogs.reduce(
     (results, log) => {
       const key = achievementTournamentKey(log.tournamentName, log.startDate);
@@ -708,7 +494,7 @@ export async function PlayerProfileBody({
       const gameResults = achievementResultByTournament.get(
         achievementTournamentKey(row.tournamentName, row.startDate)
       );
-      if (!gameResults?.games) return row;
+      if (!gameResults?.games) return eloOnly ? null : row;
       return {
         ...row,
         wins: gameResults.wins,
@@ -717,7 +503,7 @@ export async function PlayerProfileBody({
         recordGames: gameResults.games,
       };
     })
-    .filter((row: PlayerAchievementRow) => row.recordGames > 0);
+    .filter((row): row is PlayerAchievementRow => Boolean(row && row.recordGames > 0));
 
   const normalizedAchievementTournamentSearch = achievementTournamentSearch.toLocaleLowerCase();
   const normalizedAchievementCommanderSearch = achievementCommanderSearch.toLocaleLowerCase();
@@ -864,11 +650,64 @@ export async function PlayerProfileBody({
       });
     }
   }
+  const eloToggleHref = buildPlayerProfileHref(
+    topdeckId,
+    regionFilter,
+    1,
+    achievementTournamentSearch,
+    achievementCommanderSearch,
+    achievementSort,
+    achievementDateFrom,
+    achievementDateTo,
+    !eloOnly
+  );
   return (
     <>
       <Link href={backHref} className="-mt-6 block text-sm text-muted-foreground hover:text-foreground">
         ← Back to region leaderboard
       </Link>
+
+      {historyMayBeTruncated ? (
+        <p className="rounded-lg border border-border/60 bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
+          Matchup, seat, commander, and achievement breakdowns below use the most recent 500
+          games. Lifetime summary cards use the precomputed player profile totals.
+        </p>
+      ) : null}
+
+      <Card className="knd-panel">
+        <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
+          <div>
+            <div className="text-sm font-medium text-foreground">Game filter</div>
+            <p className="text-xs text-muted-foreground">
+              Aggregate W-L-D stats can be limited to Elo-worthy events with 30+ players; Elo
+              rankings are unchanged.
+            </p>
+          </div>
+          <div className="flex min-h-11 items-center gap-3">
+            <span className="text-sm text-foreground">Show 30+ player games only</span>
+            <Link
+              href={eloToggleHref}
+              role="switch"
+              aria-checked={eloOnly}
+              aria-label="Show 30+ player games only"
+              className="inline-flex min-h-11 min-w-11 items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+            >
+              <span
+                aria-hidden="true"
+                className={`relative block h-6 w-11 rounded-full transition-colors ${
+                  eloOnly ? "bg-primary" : "bg-muted-foreground/40"
+                }`}
+              >
+                <span
+                  className={`absolute top-1 h-4 w-4 rounded-full bg-background shadow-sm transition-transform ${
+                    eloOnly ? "translate-x-6" : "translate-x-1"
+                  }`}
+                />
+              </span>
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card className="knd-panel">
         <CardHeader>
@@ -903,8 +742,11 @@ export async function PlayerProfileBody({
                           : latestTournamentByCommander.get(row.commander) ?? null;
                       const commanderLabel = row.commander === "Unknown Commander" ? "Unknown" : row.commander;
                       return (
-                        <tr key={row.commander} className="border-t border-border/60">
+                        <tr key={row.commander} className="relative border-t border-border/60">
                           <td className="px-2 py-3">
+                            {row.commander !== "Unknown Commander" ? (
+                              <CommanderRowBackdrop name={row.commander} />
+                            ) : null}
                             {decklistUrl ? (
                               <a
                                 href={decklistUrl}
@@ -936,11 +778,14 @@ export async function PlayerProfileBody({
                                   rel="noreferrer"
                                   className="hover:text-primary"
                                 >
-                                  {formatShortDate(latestTournament.date)} | {latestTournament.name}
+                                  {formatShortDate(latestTournament.date)}
+                                  {/* Tournament names blow out the column width on phones */}
+                                  <span className="hidden sm:inline"> | {latestTournament.name}</span>
                                 </a>
                               ) : (
                                 <span>
-                                  {formatShortDate(latestTournament.date)} | {latestTournament.name}
+                                  {formatShortDate(latestTournament.date)}
+                                  <span className="hidden sm:inline"> | {latestTournament.name}</span>
                                 </span>
                               )
                             ) : (
@@ -1001,7 +846,7 @@ export async function PlayerProfileBody({
                           </td>
                           <td className="px-2 py-3">
                             <Link
-                              href={`/regional-elo/player/${topdeckId}?region=${encodeURIComponent(regionKey)}`}
+                              href={buildPlayerProfileHref(topdeckId, regionKey, 1, "", "", "best", "", "", eloOnly)}
                               className={
                                 isActive
                                   ? "font-semibold text-foreground hover:text-primary"
@@ -1139,7 +984,7 @@ export async function PlayerProfileBody({
                     )}
                   </div>
                 </div>
-                <OpponentRecordsTable records={opponentRecords} playerTopdeckId={topdeckId} />
+                <OpponentRecordsTable records={opponentRecords} playerTopdeckId={topdeckId} eloOnly={eloOnly} />
               </CardContent>
             </Card>
 
@@ -1205,6 +1050,7 @@ export async function PlayerProfileBody({
             <CardContent>
               <form method="get" className="mb-4 grid gap-3 md:grid-cols-[1fr_1fr_auto_auto_auto_auto_auto]">
                 {regionFilter ? <input type="hidden" name="region" value={regionFilter} /> : null}
+                {eloOnly ? <input type="hidden" name="eloOnly" value="true" /> : null}
                 <label className="space-y-1 text-xs uppercase tracking-[0.2em] text-muted-foreground">
                   Tournament
                   <input
@@ -1255,7 +1101,7 @@ export async function PlayerProfileBody({
                 achievementDateTo ||
                 achievementSort !== "best" ? (
                   <Link
-                    href={buildPlayerProfileHref(topdeckId, regionFilter, 1)}
+                    href={buildPlayerProfileHref(topdeckId, regionFilter, 1, "", "", "best", "", "", eloOnly)}
                     className="self-end rounded-md border border-border/70 px-3 py-2 text-center text-sm text-foreground hover:border-primary/40 hover:text-primary"
                   >
                     Clear
@@ -1267,7 +1113,7 @@ export async function PlayerProfileBody({
                   <thead className="text-left text-xs uppercase tracking-[0.2em] text-muted-foreground">
                     <tr>
                       <th className="px-2 py-3">Tournament</th>
-                      <th className="px-2 py-3">
+                      <th className="px-2 py-3 hidden sm:table-cell">
                         <Link
                           href={buildPlayerProfileHref(
                             topdeckId,
@@ -1277,14 +1123,14 @@ export async function PlayerProfileBody({
                             achievementCommanderSearch,
                             "recent",
                             achievementDateFrom,
-                            achievementDateTo
+                            achievementDateTo,
+                            eloOnly
                           )}
                           className={achievementSort === "recent" ? "text-foreground" : "hover:text-primary"}
                         >
                           Date
                         </Link>
                       </th>
-                      <th className="px-2 py-3 hidden sm:table-cell">Date</th>
                       <th className="px-2 py-3">Commander</th>
                       <th className="px-2 py-3 text-right">Finish</th>
                       <th className="px-2 py-3 text-right hidden md:table-cell">W-L-D</th>
@@ -1363,14 +1209,15 @@ export async function PlayerProfileBody({
                           achievementCommanderSearch,
                           achievementSort,
                           achievementDateFrom,
-                          achievementDateTo
+                          achievementDateTo,
+                          eloOnly
                         )}
-                        className="rounded-md border border-border/70 px-3 py-1.5 text-foreground hover:border-primary/40 hover:text-primary"
+                        className="rounded-md border border-border/70 px-3 py-2.5 text-foreground hover:border-primary/40 hover:text-primary sm:py-1.5"
                       >
                         Previous
                       </Link>
                     ) : (
-                      <span className="rounded-md border border-border/40 px-3 py-1.5 text-muted-foreground/60">
+                      <span className="rounded-md border border-border/40 px-3 py-2.5 text-muted-foreground/60 sm:py-1.5">
                         Previous
                       </span>
                     )}
@@ -1387,14 +1234,15 @@ export async function PlayerProfileBody({
                           achievementCommanderSearch,
                           achievementSort,
                           achievementDateFrom,
-                          achievementDateTo
+                          achievementDateTo,
+                          eloOnly
                         )}
-                        className="rounded-md border border-border/70 px-3 py-1.5 text-foreground hover:border-primary/40 hover:text-primary"
+                        className="rounded-md border border-border/70 px-3 py-2.5 text-foreground hover:border-primary/40 hover:text-primary sm:py-1.5"
                       >
                         Next
                       </Link>
                     ) : (
-                      <span className="rounded-md border border-border/40 px-3 py-1.5 text-muted-foreground/60">
+                      <span className="rounded-md border border-border/40 px-3 py-2.5 text-muted-foreground/60 sm:py-1.5">
                         Next
                       </span>
                     )}

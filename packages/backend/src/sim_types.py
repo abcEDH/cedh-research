@@ -7,7 +7,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-
 ALL_DRAW_FEATURES = [
     "is_swiss",
     "pod_size",
@@ -354,6 +353,7 @@ class TournamentSpec:
     country: str | None = None
     drop_after_round: int | None = None
     drop_min_points: int | None = None
+    is_league: bool = False
 
 
 @dataclass(slots=True)
@@ -445,16 +445,12 @@ class SimulationSummary:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "win_probability": {
-                player_id: count / self.simulations for player_id, count in self.win_counts.items()
-            },
+            "win_probability": {player_id: count / self.simulations for player_id, count in self.win_counts.items()},
             "top_cut_probability": {
                 player_id: count / self.simulations for player_id, count in self.top_cut_counts.items()
             },
             "advancement_probability": {
-                cut_size: {
-                    player_id: count / self.simulations for player_id, count in player_counts.items()
-                }
+                cut_size: {player_id: count / self.simulations for player_id, count in player_counts.items()}
                 for cut_size, player_counts in self.advancement_counts.items()
             },
             "expected_points": {
@@ -464,9 +460,7 @@ class SimulationSummary:
                 player_id: total / self.simulations for player_id, total in self.expected_finish_total.items()
             },
             "round_draw_rate": {
-                round_index: (
-                    self.round_draw_counts.get(round_index, 0) / self.round_pod_counts.get(round_index, 1)
-                )
+                round_index: (self.round_draw_counts.get(round_index, 0) / self.round_pod_counts.get(round_index, 1))
                 for round_index in self.round_pod_counts
             },
             "point_requirements": {

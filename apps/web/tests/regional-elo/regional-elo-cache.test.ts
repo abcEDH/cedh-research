@@ -77,7 +77,7 @@ describe("regional-elo cache configuration", () => {
 
   it("getCachedLatestCommanders returns a plain object, not a Map", async () => {
     // Import the module - our mock makes unstable_cache pass through the callback
-    await import("@/app/regional-elo/page");
+    await import("@/lib/regional-elo/fetchers");
 
     // We can't directly call getCachedLatestCommanders since it's not exported,
     // but we can verify the pattern: the wrapper converts Map to plain object
@@ -102,7 +102,7 @@ describe("regional-elo cache configuration", () => {
     const fs = await import("fs");
     const path = await import("path");
     const source = fs.readFileSync(
-      path.resolve(__dirname, "../../src/app/regional-elo/page.tsx"),
+      path.resolve(__dirname, "../../src/lib/regional-elo/fetchers.ts"),
       "utf-8"
     );
 
@@ -114,7 +114,7 @@ describe("regional-elo cache configuration", () => {
     const fs = await import("fs");
     const path = await import("path");
     const source = fs.readFileSync(
-      path.resolve(__dirname, "../../src/app/regional-elo/page.tsx"),
+      path.resolve(__dirname, "../../src/lib/regional-elo/fetchers.ts"),
       "utf-8"
     );
 
@@ -127,6 +127,9 @@ describe("regional-elo cache configuration", () => {
     expect(primaryReadSource).toContain('.order("topdeck_elo_rank", { ascending: true, nullsFirst: false })');
     expect(primaryReadSource).not.toContain('.order("rank", { ascending: true })');
     expect(source).toContain("normalizeLeaderboardRows");
+    expect(source).toContain('.from("global_elo_active_regions")');
+    expect(source).toContain('["regional-elo-regions-v5"]');
+    expect(source).toContain('["regional-elo-leaderboard-v6"]');
     expect(source).toContain('console.info(`[regional-elo] ${event}`, details);');
     expect(source).toContain('logReadSummary("leaderboard-cache-miss"');
     expect(source).toContain('logReadSummary("latest-commanders-cache-miss"');

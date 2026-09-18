@@ -8,7 +8,7 @@ import json
 import os
 from pathlib import Path
 
-from ingest import SupabaseClient, TopDeckClient, load_local_env
+from ingest import TopDeckClient, load_local_env
 from run_historical_tournament_sim import (
     build_feature_context,
     fetch_historical_point_requirement_baseline,
@@ -24,6 +24,7 @@ from run_topdeck_ongoing_tournament_sim import (
 )
 from sim_models import load_draw_model_artifact
 from sim_types import FeatureContext
+from supabase_client import get_supabase_client
 from tournament_sim_runner import DEFAULT_ADVANCEMENT_SIZES, build_common_output, run_simulation_from_state
 
 
@@ -56,7 +57,7 @@ def main() -> None:
         top_cut_override=args.top_cut,
     )
 
-    client = SupabaseClient(url=os.environ["SUPABASE_URL"], service_key=os.environ["SUPABASE_SERVICE_KEY"])
+    client = get_supabase_client(url=os.environ["SUPABASE_URL"], key=os.environ["SUPABASE_SERVICE_KEY"])
     player_names = collect_players(tournament)
     excluded_topdeck_ids = {
         topdeck_id
@@ -69,9 +70,7 @@ def main() -> None:
         excluded_names = ", ".join(player_names[topdeck_id] for topdeck_id in sorted(excluded_topdeck_ids))
         print(f"Excluding players: {excluded_names}", file=os.sys.stderr, flush=True)
         player_names = {
-            topdeck_id: name
-            for topdeck_id, name in player_names.items()
-            if topdeck_id not in excluded_topdeck_ids
+            topdeck_id: name for topdeck_id, name in player_names.items() if topdeck_id not in excluded_topdeck_ids
         }
     topdeck_ids = sorted(player_names)
     existing_players = fetch_existing_players(client, topdeck_ids)
@@ -80,11 +79,7 @@ def main() -> None:
         or {"id": f"topdeck:{topdeck_id}", "name": player_names[topdeck_id]}
         for topdeck_id in topdeck_ids
     }
-    known_player_ids = [
-        record["id"]
-        for record in player_records.values()
-        if not record["id"].startswith("topdeck:")
-    ]
+    known_player_ids = [record["id"] for record in player_records.values() if not record["id"].startswith("topdeck:")]
     start_date = parse_start_date(tournament.get("startDate"))
     feature_context = (
         build_feature_context(client, known_player_ids, start_date.isoformat())

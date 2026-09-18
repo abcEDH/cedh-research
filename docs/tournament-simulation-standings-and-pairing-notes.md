@@ -1,3 +1,5 @@
+> Scope note: this document describes the July working stack. The web simulator and SSE endpoint belong to PR #297 and are not shipped by the backend model PR #295. They require a separately deployed Python runtime and access/concurrency controls before release.
+
 # Tournament Simulation Standings And Pairing Notes
 
 Date: 2026-05-26

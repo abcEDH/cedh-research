@@ -104,12 +104,8 @@ def build_common_output(
         "simulations": summary["simulations"],
     }
 
-    ordered_cut_sizes = [
-        cut_size for cut_size in DEFAULT_ADVANCEMENT_SIZES if cut_size in advancement_probability
-    ]
-    ordered_cut_sizes.extend(
-        sorted(set(advancement_probability) - set(ordered_cut_sizes), reverse=True)
-    )
+    ordered_cut_sizes = [cut_size for cut_size in DEFAULT_ADVANCEMENT_SIZES if cut_size in advancement_probability]
+    ordered_cut_sizes.extend(sorted(set(advancement_probability) - set(ordered_cut_sizes), reverse=True))
     for cut_size in ordered_cut_sizes:
         output[f"top_top{cut_size}_probabilities"] = top_probability_rows(
             advancement_probability.get(cut_size, {}),

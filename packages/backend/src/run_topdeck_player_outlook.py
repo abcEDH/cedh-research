@@ -9,7 +9,8 @@ import os
 import random
 from collections import defaultdict
 
-from ingest import SupabaseClient, TopDeckClient, load_local_env
+from ingest import TopDeckClient, load_local_env
+from run_historical_tournament_sim import build_feature_context
 from run_topdeck_ongoing_tournament_sim import (
     DEFAULT_DRAW_MODEL_PATH,
     build_base_state,
@@ -19,7 +20,6 @@ from run_topdeck_ongoing_tournament_sim import (
     infer_structure,
     parse_start_date,
 )
-from run_historical_tournament_sim import build_feature_context
 from sim_engine import (
     apply_pod_result,
     build_tournament_context,
@@ -35,6 +35,7 @@ from sim_models import (
 )
 from sim_pairings import select_top_cut, sort_standings_rows
 from sim_types import Pod, PodResult
+from supabase_client import get_supabase_client
 
 
 def normalize_distribution(counts: dict[int, int], total: int) -> dict[str, float]:
@@ -268,7 +269,9 @@ def main() -> None:
     load_local_env()
     topdeck = TopDeckClient(os.environ["TOPDECK_API_KEY"])
     tournament = topdeck.get_tournament(args.event_id)
-    event_html = "" if args.swiss_rounds is not None and args.top_cut is not None else fetch_event_page_html(args.event_id)
+    event_html = (
+        "" if args.swiss_rounds is not None and args.top_cut is not None else fetch_event_page_html(args.event_id)
+    )
     swiss_rounds, top_cut = infer_structure(
         tournament,
         event_html,
@@ -279,14 +282,17 @@ def main() -> None:
     player_names = collect_players(tournament)
     topdeck_ids = sorted(player_names)
     start_date = parse_start_date(tournament.get("startDate"))
-    client = SupabaseClient(url=os.environ["SUPABASE_URL"], service_key=os.environ["SUPABASE_SERVICE_KEY"])
+    client = get_supabase_client(url=os.environ["SUPABASE_URL"], key=os.environ["SUPABASE_SERVICE_KEY"])
     existing_players = fetch_existing_players(client, topdeck_ids)
     player_records = {
-        topdeck_id: existing_players.get(topdeck_id) or {"id": f"topdeck:{topdeck_id}", "name": player_names[topdeck_id]}
+        topdeck_id: existing_players.get(topdeck_id)
+        or {"id": f"topdeck:{topdeck_id}", "name": player_names[topdeck_id]}
         for topdeck_id in topdeck_ids
     }
     known_player_ids = [record["id"] for record in player_records.values() if not record["id"].startswith("topdeck:")]
-    feature_context = build_feature_context(client, known_player_ids, start_date.isoformat()) if known_player_ids else None
+    feature_context = (
+        build_feature_context(client, known_player_ids, start_date.isoformat()) if known_player_ids else None
+    )
     state, active_round_index, active_round_pods, _ = build_base_state(
         client,
         tournament,

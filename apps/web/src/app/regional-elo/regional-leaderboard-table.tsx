@@ -2,20 +2,21 @@
 
 import Link from "next/link";
 
+// Client-facing row shape. Deliberately excludes `rating` (internal Elo) — this component
+// runs in the browser, so any field present here is serialized into the page payload. See
+// issue #253 / the `toClientLeaderboardRow` helper in page.tsx.
 type LeaderboardRow = {
   region_type: string;
   region_key: string;
   player_id: string;
   player_name: string;
   topdeck_id: string | null;
-  rating: number;
   games_played: number;
   wins: number;
   draws: number;
   losses: number;
   last_game_date: string | null;
   rank: number;
-  hidden_rating?: number;
   topdeck_elo?: number | null;
   topdeck_elo_rank?: number | null;
 };
@@ -52,6 +53,7 @@ export function RegionalLeaderboardTable({
   selectedCountry,
   selectedRegion,
   playerSearch,
+  eloOnly = true,
 }: {
   latestByPlayer: Record<string, LatestCommanderRow>;
   leaderboard: LeaderboardRow[];
@@ -62,6 +64,7 @@ export function RegionalLeaderboardTable({
   selectedCountry?: string;
   selectedRegion?: string;
   playerSearch: string;
+  eloOnly: boolean;
 }) {
   const totalPages = Math.max(Math.ceil(totalCount / pageSize), 1);
   const start = totalCount === 0 ? 0 : (currentPage - 1) * pageSize + 1;
@@ -78,6 +81,11 @@ export function RegionalLeaderboardTable({
     }
     if (playerSearch) {
       params.set("q", playerSearch);
+    }
+    if (eloOnly) {
+      params.set("eloOnly", "true");
+    } else {
+      params.set("eloOnly", "false");
     }
     if (nextPage > 1) {
       params.set("page", String(nextPage));
@@ -108,10 +116,13 @@ export function RegionalLeaderboardTable({
                 row.topdeck_elo_rank ?? (currentPage - 1) * pageSize + index + 1;
               const playerHref =
                 row.topdeck_id && row.region_type === "state"
-                  ? `/regional-elo/player/${row.topdeck_id}?region=${encodeURIComponent(row.region_key)}`
-                  : row.topdeck_id
+                ? `/regional-elo/player/${row.topdeck_id}?region=${encodeURIComponent(row.region_key)}`
+                : row.topdeck_id
                     ? `/regional-elo/player/${row.topdeck_id}`
                     : "";
+              const playerHrefWithFilter = playerHref
+                ? `${playerHref}${playerHref.includes("?") ? "&" : "?"}eloOnly=${eloOnly}`
+                : playerHref;
               return (
                 <tr key={row.player_id} className="border-t border-border/60">
                   <td className="px-2 py-3 text-muted-foreground">#{displayRank}</td>
@@ -120,7 +131,7 @@ export function RegionalLeaderboardTable({
                       <div className="space-y-1">
                         <Link
                           className="font-medium text-foreground hover:text-primary truncate max-w-[120px] sm:max-w-none block"
-                          href={playerHref}
+                          href={playerHrefWithFilter}
                         >
                           {row.player_name}
                         </Link>

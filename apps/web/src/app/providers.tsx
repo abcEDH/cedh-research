@@ -16,7 +16,7 @@ function PostHogPageviewTracker() {
         : pathname
       posthog.capture('$pageview', {
         $current_url: window.location.origin + url,
-        path: pathname,
+        $pathname: pathname,
       })
     }
   }, [pathname, searchParams])

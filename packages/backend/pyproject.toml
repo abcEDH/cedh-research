@@ -5,10 +5,12 @@ description = "Backend ingestion and analytics utilities for cEDH research"
 requires-python = ">=3.12"
 dependencies = [
   "numpy>=2.2.6",
-  "scikit-learn>=1.7.2",
+  "prefect>=3.8.4,<4",
+  "scikit-learn==1.7.2",
   "python-dateutil>=2.8.2",
   "psycopg2-binary>=2.9.9",
   "requests>=2.31.0",
+  "supabase>=2.16.0",
 ]
 
 [dependency-groups]
@@ -22,3 +24,4 @@ dev = [
 
 [tool.uv]
 package = false
+exclude-newer = "2026-09-03T00:00:00Z"

@@ -3,9 +3,8 @@
 
 from __future__ import annotations
 
-import pickle
-import re
 import os
+import re
 from bisect import bisect_left
 from collections import defaultdict
 from dataclasses import dataclass
@@ -21,10 +20,19 @@ for thread_env_var in (
 ):
     os.environ.setdefault(thread_env_var, "1")
 
-import numpy as np
+import numpy as np  # noqa: E402
 
-from sim_pairings import opponent_match_win_percentage, topdeck_bye_rank
-from sim_types import ALL_DRAW_FEATURES, FeatureContext, Pod, RoundFeatureSnapshot, TournamentContext, TournamentState
+from internal_elo import SWISS_SEAT_OFFSETS, is_top_cut, seat_offsets  # noqa: E402
+from model_artifacts import load_model_artifact  # noqa: E402
+from sim_pairings import opponent_match_win_percentage, topdeck_bye_rank  # noqa: E402
+from sim_types import (  # noqa: E402
+    ALL_DRAW_FEATURES,
+    FeatureContext,
+    Pod,
+    RoundFeatureSnapshot,
+    TournamentContext,
+    TournamentState,
+)
 
 ELO_BASE = 2.0
 ELO_DIVISOR = 200.0
@@ -35,12 +43,7 @@ DEFAULT_DRAW_MODEL_PATH = (
     / "v4"
     / "pod_outcome_model_artifact_v4_draw_elo_hybrid.pkl"
 )
-SEAT_ELO_BONUS = {
-    1: 0.0,
-    2: -52.0,
-    3: -96.0,
-    4: -145.0,
-}
+SEAT_ELO_BONUS = SWISS_SEAT_OFFSETS
 
 
 @dataclass(slots=True)
@@ -188,8 +191,7 @@ def outcome_v3_family_flags(series_key: str | None, tournament_name: str | None)
 
 
 def load_draw_model_artifact(path: Path | str = DEFAULT_DRAW_MODEL_PATH) -> LoadedDrawModel:
-    with Path(path).open("rb") as handle:
-        artifact = pickle.load(handle)
+    artifact = load_model_artifact(path)
     selection = artifact["selection"]
     feature_indexes = np.asarray([ALL_DRAW_FEATURES.index(feature) for feature in selection["features"]], dtype=int)
     target = str(artifact.get("target") or "draw")
@@ -212,8 +214,7 @@ def load_draw_model_artifact(path: Path | str = DEFAULT_DRAW_MODEL_PATH) -> Load
 
 
 def load_candidate_winner_model_artifact(path: Path | str) -> LoadedCandidateWinnerModel:
-    with Path(path).open("rb") as handle:
-        artifact = pickle.load(handle)
+    artifact = load_model_artifact(path)
     features = list(artifact.get("features") or artifact.get("candidate_features") or CANDIDATE_WINNER_FEATURES)
     unknown_features = [feature for feature in features if feature not in CANDIDATE_WINNER_FEATURES]
     if unknown_features:
@@ -221,7 +222,9 @@ def load_candidate_winner_model_artifact(path: Path | str) -> LoadedCandidateWin
     return LoadedCandidateWinnerModel(
         features=features,
         model=artifact["model"],
-        blend_weight=max(0.0, min(1.0, float(artifact.get("blend_weight", artifact.get("selected_blend_weight", 1.0))))),
+        blend_weight=max(
+            0.0, min(1.0, float(artifact.get("blend_weight", artifact.get("selected_blend_weight", 1.0))))
+        ),
         model_type=str(artifact.get("model_type") or "hist_gradient_boosting"),
         classes=tuple(int(value) for value in artifact.get("classes", ())),
     )
@@ -231,10 +234,10 @@ def rating_equity(rating: float) -> float:
     return pow(ELO_BASE, rating / ELO_DIVISOR)
 
 
-def effective_player_rating(player, seat: int | None = None) -> float:
+def effective_player_rating(player, seat: int | None = None, *, top_cut: bool = False) -> float:
     rating = float(player.elo)
     if seat in SEAT_ELO_BONUS:
-        rating += SEAT_ELO_BONUS[seat]
+        rating += seat_offsets(top_cut)[seat]
     return rating
 
 
@@ -243,7 +246,7 @@ def _points_percentiles(points_by_player: dict[str, int]) -> dict[str, float]:
     field_size = max(1, len(players))
     ranked_points = sorted(points_by_player.values(), reverse=True)
     if field_size <= 1:
-        return {player_id: 1.0 for player_id in players}
+        return dict.fromkeys(players, 1.0)
     by_points: dict[int, list[int]] = {}
     for index, points in enumerate(ranked_points):
         by_points.setdefault(points, []).append(index)
@@ -251,10 +254,7 @@ def _points_percentiles(points_by_player: dict[str, int]) -> dict[str, float]:
     for points, indexes in by_points.items():
         avg_rank = (indexes[0] + indexes[-1]) / 2.0
         percentile_by_points[points] = 1.0 - (avg_rank / (field_size - 1))
-    return {
-        player_id: percentile_by_points.get(points_by_player[player_id], 0.5)
-        for player_id in players
-    }
+    return {player_id: percentile_by_points.get(points_by_player[player_id], 0.5) for player_id in players}
 
 
 def _hypothetical_rank_by_player(
@@ -299,12 +299,24 @@ def build_round_snapshot(
     field_size = max(1, len(state.players))
     cut_fraction = min(1.0, context.top_cut / field_size) if context.top_cut > 0 else 0.0
     cut_size_bucket = (
-        0 if context.top_cut <= 0 else 1 if context.top_cut <= 4 else 2 if context.top_cut <= 8 else 3 if context.top_cut <= 16 else 4 if context.top_cut <= 32 else 5
+        0
+        if context.top_cut <= 0
+        else 1
+        if context.top_cut <= 4
+        else 2
+        if context.top_cut <= 8
+        else 3
+        if context.top_cut <= 16
+        else 4
+        if context.top_cut <= 32
+        else 5
     )
     points_by_player = {player_id: state.standings[player_id].points for player_id in state.players}
     point_percentiles = _points_percentiles(points_by_player)
     sorted_point_values = sorted(points_by_player.values(), reverse=True)
-    cut_rank_index = min(max(context.top_cut - 1, 0), max(len(sorted_point_values) - 1, 0)) if sorted_point_values else 0
+    cut_rank_index = (
+        min(max(context.top_cut - 1, 0), max(len(sorted_point_values) - 1, 0)) if sorted_point_values else 0
+    )
     cut_line_points = sorted_point_values[cut_rank_index] if sorted_point_values and context.top_cut > 0 else 0
     feature_context = state.feature_context
     history_point_expectations = []
@@ -318,12 +330,16 @@ def build_round_snapshot(
     projected_final_points: list[float] = []
     for player_id, current_points in points_by_player.items():
         history = feature_context.player_history.get(player_id)
-        expected_round_points = (5.0 * history.win_rate) + history.draw_rate if history is not None else fallback_round_points
+        expected_round_points = (
+            (5.0 * history.win_rate) + history.draw_rate if history is not None else fallback_round_points
+        )
         expected_round_points = max(0.0, min(5.0, expected_round_points))
         projected_final_points.append(current_points + (rounds_remaining * expected_round_points))
     projected_final_points.sort(reverse=True)
     expected_cut_line_points = (
-        projected_final_points[cut_rank_index] if projected_final_points and context.top_cut > 0 else float(cut_line_points)
+        projected_final_points[cut_rank_index]
+        if projected_final_points and context.top_cut > 0
+        else float(cut_line_points)
     )
     month = context_top_month(context)
     quarter = (month - 1) // 3 + 1
@@ -335,9 +351,7 @@ def build_round_snapshot(
     estimated_omw_by_player = {
         player_id: opponent_match_win_percentage(state, player_id) for player_id in state.players
     }
-    tiebreak_seed_by_player = {
-        player_id: state.players[player_id].tiebreak_seed for player_id in state.players
-    }
+    tiebreak_seed_by_player = {player_id: state.players[player_id].tiebreak_seed for player_id in state.players}
     same_points_omw_percentile_by_player: dict[str, float] = {}
     players_by_points: dict[int, list[str]] = {}
     for player_id, points in points_by_player.items():
@@ -416,9 +430,7 @@ def build_draw_feature_row(
     ]
     topdeck_elo_mean = small_mean([float(rating) for rating in topdeck_ratings])
     topdeck_elo_std = small_std([float(rating) for rating in topdeck_ratings])
-    topdeck_elo_spread = (
-        float(max(topdeck_ratings) - min(topdeck_ratings)) if len(topdeck_ratings) >= 2 else 0.0
-    )
+    topdeck_elo_spread = float(max(topdeck_ratings) - min(topdeck_ratings)) if len(topdeck_ratings) >= 2 else 0.0
     topdeck_elo_missing_count = len(player_ids) - len(topdeck_ratings)
     topdeck_elo_minus_internal_mean = topdeck_elo_mean - small_mean(ratings) if topdeck_ratings else 0.0
     commander_color_sets = [
@@ -469,30 +481,51 @@ def build_draw_feature_row(
     points_to_current_cut = [float(points - round_snapshot.cut_line_points) for points in pod_points]
     points_to_cut = [float(points - round_snapshot.expected_cut_line_points) for points in pod_points]
     max_future_points = round_snapshot.max_future_points
-    count_locked_for_current_cut = sum(1 for points in pod_points if points > round_snapshot.cut_line_points + max_future_points)
-    count_dead_for_current_cut = sum(1 for points in pod_points if points + max_future_points < round_snapshot.cut_line_points)
+    count_locked_for_current_cut = sum(
+        1 for points in pod_points if points > round_snapshot.cut_line_points + max_future_points
+    )
+    count_dead_for_current_cut = sum(
+        1 for points in pod_points if points + max_future_points < round_snapshot.cut_line_points
+    )
     count_draw_safe_for_current_cut = sum(1 for points in pod_points if points + 1 >= round_snapshot.cut_line_points)
     count_must_win_for_current_cut = sum(
-        1 for points in pod_points if (points + 1 < round_snapshot.cut_line_points and points + 5 >= round_snapshot.cut_line_points)
+        1
+        for points in pod_points
+        if (points + 1 < round_snapshot.cut_line_points and points + 5 >= round_snapshot.cut_line_points)
     )
-    all_players_draw_safe_for_current_cut = 1 if pod_points and count_draw_safe_for_current_cut == len(pod_points) else 0
-    count_locked_for_cut = sum(1 for points in pod_points if points > round_snapshot.expected_cut_line_points + max_future_points)
-    count_dead_for_cut = sum(1 for points in pod_points if points + max_future_points < round_snapshot.expected_cut_line_points)
+    all_players_draw_safe_for_current_cut = (
+        1 if pod_points and count_draw_safe_for_current_cut == len(pod_points) else 0
+    )
+    count_locked_for_cut = sum(
+        1 for points in pod_points if points > round_snapshot.expected_cut_line_points + max_future_points
+    )
+    count_dead_for_cut = sum(
+        1 for points in pod_points if points + max_future_points < round_snapshot.expected_cut_line_points
+    )
     count_live_for_cut = len(pod_points) - count_locked_for_cut - count_dead_for_cut
     count_draw_safe_for_cut = sum(1 for points in pod_points if points + 1 >= round_snapshot.expected_cut_line_points)
     count_must_win_for_cut = sum(
         1
         for points in pod_points
-        if (points + 1 < round_snapshot.expected_cut_line_points and points + 5 >= round_snapshot.expected_cut_line_points)
+        if (
+            points + 1 < round_snapshot.expected_cut_line_points
+            and points + 5 >= round_snapshot.expected_cut_line_points
+        )
     )
     all_players_draw_safe = 1 if pod_points and count_draw_safe_for_cut == len(pod_points) else 0
-    count_currently_in_cut = sum(1 for rank in pod_current_ranks if rank <= context.top_cut) if context.top_cut > 0 else 0
+    count_currently_in_cut = (
+        sum(1 for rank in pod_current_ranks if rank <= context.top_cut) if context.top_cut > 0 else 0
+    )
     count_currently_outside_cut = len(pod_current_ranks) - count_currently_in_cut
     count_players_currently_safe = count_locked_for_cut
     count_players_currently_dead = count_dead_for_cut
     all_players_live = 1 if player_ids and count_live_for_cut == len(player_ids) else 0
-    count_draw_secures_cut = sum(1 for rank in pod_draw_secure_ranks if rank <= context.top_cut) if context.top_cut > 0 else 0
-    count_win_secures_cut = sum(1 for rank in pod_win_secure_ranks if rank <= context.top_cut) if context.top_cut > 0 else 0
+    count_draw_secures_cut = (
+        sum(1 for rank in pod_draw_secure_ranks if rank <= context.top_cut) if context.top_cut > 0 else 0
+    )
+    count_win_secures_cut = (
+        sum(1 for rank in pod_win_secure_ranks if rank <= context.top_cut) if context.top_cut > 0 else 0
+    )
     count_must_win_to_stay_live = (
         sum(
             1
@@ -517,11 +550,23 @@ def build_draw_feature_row(
         else 0
     )
     some_locked_some_must_win = 1 if count_locked_for_cut > 0 and count_must_win_to_stay_live > 0 else 0
-    rank_minus_cut = [float(rank - context.top_cut) for rank in pod_current_ranks] if context.top_cut > 0 else [0.0 for _ in pod_current_ranks]
-    draw_secure_rank_delta = [float(current - draw_rank) for current, draw_rank in zip(pod_current_ranks, pod_draw_secure_ranks, strict=True)]
-    win_secure_rank_delta = [float(current - win_rank) for current, win_rank in zip(pod_current_ranks, pod_win_secure_ranks, strict=True)]
-    count_bottom_quartile_omw_in_same_points_group = sum(1 for value in pod_same_points_omw_percentiles if value <= 0.25)
-    count_players_near_cut_band = sum(1 for rank in pod_current_ranks if context.top_cut > 0 and abs(rank - context.top_cut) <= 4)
+    rank_minus_cut = (
+        [float(rank - context.top_cut) for rank in pod_current_ranks]
+        if context.top_cut > 0
+        else [0.0 for _ in pod_current_ranks]
+    )
+    draw_secure_rank_delta = [
+        float(current - draw_rank) for current, draw_rank in zip(pod_current_ranks, pod_draw_secure_ranks, strict=True)
+    ]
+    win_secure_rank_delta = [
+        float(current - win_rank) for current, win_rank in zip(pod_current_ranks, pod_win_secure_ranks, strict=True)
+    ]
+    count_bottom_quartile_omw_in_same_points_group = sum(
+        1 for value in pod_same_points_omw_percentiles if value <= 0.25
+    )
+    count_players_near_cut_band = sum(
+        1 for rank in pod_current_ranks if context.top_cut > 0 and abs(rank - context.top_cut) <= 4
+    )
     is_last_swiss_round = 1 if round_snapshot.rounds_remaining == 0 else 0
     is_penultimate_swiss_round = 1 if round_snapshot.rounds_remaining == 1 else 0
     bubble_margin = round_snapshot.bubble_margin
@@ -533,11 +578,18 @@ def build_draw_feature_row(
     decisive_rates = [history.decisive_rate if history else 0.0 for history in player_histories]
     prior_games = [float(history.games_played if history else 0) for history in player_histories]
     smoothed_draw_rates = [
-        smoothed_rate((history.draw_rate * history.games_played) if history else 0.0, history.games_played if history else 0.0, feature_context.global_recent_draw_rate_90d, 50.0)
+        smoothed_rate(
+            (history.draw_rate * history.games_played) if history else 0.0,
+            history.games_played if history else 0.0,
+            feature_context.global_recent_draw_rate_90d,
+            50.0,
+        )
         for history in player_histories
     ]
     count_high_draw_players = sum(1 for rate in draw_rates if rate >= 0.25)
-    count_high_win_low_draw_players = sum(1 for win_rate, draw_rate in zip(win_rates, draw_rates, strict=True) if win_rate >= 0.35 and draw_rate <= 0.10)
+    count_high_win_low_draw_players = sum(
+        1 for win_rate, draw_rate in zip(win_rates, draw_rates, strict=True) if win_rate >= 0.35 and draw_rate <= 0.10
+    )
     draw_rate_range_above_threshold = 1 if draw_rates and (max(draw_rates) - min(draw_rates)) >= 0.15 else 0
 
     tournament_pair_counts = []
@@ -559,20 +611,27 @@ def build_draw_feature_row(
         (draw_rank <= context.top_cut) == (win_rank <= context.top_cut) if context.top_cut > 0 else True
         for draw_rank, win_rank in zip(pod_draw_secure_ranks, pod_win_secure_ranks, strict=True)
     ]
-    loss_eliminates = [
-        points + max_future_points < round_snapshot.expected_cut_line_points
-        for points in pod_points
-    ]
-    draw_preserves_cut_rank = [
-        current_rank <= context.top_cut and draw_rank <= context.top_cut
-        for current_rank, draw_rank in zip(pod_current_ranks, pod_draw_secure_ranks, strict=True)
-    ] if context.top_cut > 0 else []
-    win_changes_cut_status = [
-        (current_rank <= context.top_cut) != (win_rank <= context.top_cut)
-        for current_rank, win_rank in zip(pod_current_ranks, pod_win_secure_ranks, strict=True)
-    ] if context.top_cut > 0 else []
+    loss_eliminates = [points + max_future_points < round_snapshot.expected_cut_line_points for points in pod_points]
+    draw_preserves_cut_rank = (
+        [
+            current_rank <= context.top_cut and draw_rank <= context.top_cut
+            for current_rank, draw_rank in zip(pod_current_ranks, pod_draw_secure_ranks, strict=True)
+        ]
+        if context.top_cut > 0
+        else []
+    )
+    win_changes_cut_status = (
+        [
+            (current_rank <= context.top_cut) != (win_rank <= context.top_cut)
+            for current_rank, win_rank in zip(pod_current_ranks, pod_win_secure_ranks, strict=True)
+        ]
+        if context.top_cut > 0
+        else []
+    )
     adjusted_ratings = [
-        effective_player_rating(state.players[player_id], pod.seats_by_player.get(player_id) if pod.seats_by_player else None)
+        effective_player_rating(
+            state.players[player_id], pod.seats_by_player.get(player_id) if pod.seats_by_player else None
+        )
         for player_id in player_ids
     ]
     equity_values = np.asarray([rating_equity(rating) for rating in adjusted_ratings], dtype=float)
@@ -592,11 +651,12 @@ def build_draw_feature_row(
     bye_rank = topdeck_bye_rank(context.top_cut)
     bye_fraction = (bye_rank / round_snapshot.field_size) if bye_rank else 0.0
     sorted_point_values = sorted(round_snapshot.points_by_player.values(), reverse=True)
-    bye_rank_index = min(max((bye_rank or 1) - 1, 0), max(len(sorted_point_values) - 1, 0)) if sorted_point_values else 0
+    bye_rank_index = (
+        min(max((bye_rank or 1) - 1, 0), max(len(sorted_point_values) - 1, 0)) if sorted_point_values else 0
+    )
     bye_line_points = sorted_point_values[bye_rank_index] if bye_rank and sorted_point_values else 0
     projected_bye_points = [
-        points + (round_snapshot.rounds_remaining * 1.25)
-        for points in round_snapshot.points_by_player.values()
+        points + (round_snapshot.rounds_remaining * 1.25) for points in round_snapshot.points_by_player.values()
     ]
     projected_bye_points.sort(reverse=True)
     expected_bye_line_points = projected_bye_points[bye_rank_index] if bye_rank and projected_bye_points else 0.0
@@ -615,7 +675,9 @@ def build_draw_feature_row(
         if context.top_cut > 0 and draw_rank > context.top_cut and win_rank <= context.top_cut
     )
     count_players_win_only_live_for_bye = count_must_win_for_bye
-    all_players_draw_lock_cut = 1 if context.top_cut > 0 and pod_draw_secure_ranks and max_draw_secure_rank <= context.top_cut else 0
+    all_players_draw_lock_cut = (
+        1 if context.top_cut > 0 and pod_draw_secure_ranks and max_draw_secure_rank <= context.top_cut else 0
+    )
     all_players_draw_lock_bye = 1 if bye_rank and pod_draw_secure_ranks and max_draw_secure_rank <= bye_rank else 0
     min_draw_rank_margin_to_cut = (
         min(float(context.top_cut - rank) for rank in pod_draw_secure_ranks)
@@ -623,9 +685,7 @@ def build_draw_feature_row(
         else 0.0
     )
     min_draw_rank_margin_to_bye = (
-        min(float(bye_rank - rank) for rank in pod_draw_secure_ranks)
-        if bye_rank and pod_draw_secure_ranks
-        else 0.0
+        min(float(bye_rank - rank) for rank in pod_draw_secure_ranks) if bye_rank and pod_draw_secure_ranks else 0.0
     )
     count_players_draw_makes_cut = sum(
         1
@@ -640,22 +700,34 @@ def build_draw_feature_row(
     draw_hurts_any_player_cut_status = (
         1
         if context.top_cut > 0
-        and any(current_rank <= context.top_cut and draw_rank > context.top_cut for current_rank, draw_rank in zip(pod_current_ranks, pod_draw_secure_ranks, strict=True))
+        and any(
+            current_rank <= context.top_cut and draw_rank > context.top_cut
+            for current_rank, draw_rank in zip(pod_current_ranks, pod_draw_secure_ranks, strict=True)
+        )
         else 0
     )
     draw_hurts_any_player_bye_status = (
         1
         if bye_rank
-        and any(current_rank <= bye_rank and draw_rank > bye_rank for current_rank, draw_rank in zip(pod_current_ranks, pod_draw_secure_ranks, strict=True))
+        and any(
+            current_rank <= bye_rank and draw_rank > bye_rank
+            for current_rank, draw_rank in zip(pod_current_ranks, pod_draw_secure_ranks, strict=True)
+        )
         else 0
     )
     draw_hurts_any_player_status = 1 if draw_hurts_any_player_cut_status or draw_hurts_any_player_bye_status else 0
     all_players_above_cut_after_draw = all_players_draw_lock_cut
     all_players_above_bye_after_draw = all_players_draw_lock_bye
-    all_players_above_cut_after_loss = 1 if context.top_cut > 0 and pod_loss_ranks and max(pod_loss_ranks) <= context.top_cut else 0
+    all_players_above_cut_after_loss = (
+        1 if context.top_cut > 0 and pod_loss_ranks and max(pod_loss_ranks) <= context.top_cut else 0
+    )
     all_players_above_bye_after_loss = 1 if bye_rank and pod_loss_ranks and max(pod_loss_ranks) <= bye_rank else 0
-    pod_has_asymmetric_cut_incentive = 1 if context.top_cut > 0 and count_draw_secures_cut > 0 and count_draw_secures_cut < len(player_ids) else 0
-    pod_has_asymmetric_bye_incentive = 1 if bye_rank and count_draw_secures_bye > 0 and count_draw_secures_bye < len(player_ids) else 0
+    pod_has_asymmetric_cut_incentive = (
+        1 if context.top_cut > 0 and count_draw_secures_cut > 0 and count_draw_secures_cut < len(player_ids) else 0
+    )
+    pod_has_asymmetric_bye_incentive = (
+        1 if bye_rank and count_draw_secures_bye > 0 and count_draw_secures_bye < len(player_ids) else 0
+    )
     pod_has_asymmetric_incentive = 1 if pod_has_asymmetric_cut_incentive or pod_has_asymmetric_bye_incentive else 0
     draw_cut_status = [rank <= context.top_cut if context.top_cut > 0 else False for rank in pod_draw_secure_ranks]
     win_cut_status = [rank <= context.top_cut if context.top_cut > 0 else False for rank in pod_win_secure_ranks]
@@ -663,7 +735,9 @@ def build_draw_feature_row(
     win_bye_status = [rank <= bye_rank if bye_rank else False for rank in pod_win_secure_ranks]
     player_draw_as_good_as_win = [
         (draw_cut == win_cut) and (draw_bye == win_bye)
-        for draw_cut, win_cut, draw_bye, win_bye in zip(draw_cut_status, win_cut_status, draw_bye_status, win_bye_status, strict=True)
+        for draw_cut, win_cut, draw_bye, win_bye in zip(
+            draw_cut_status, win_cut_status, draw_bye_status, win_bye_status, strict=True
+        )
     ]
     draw_vs_win_status_same_count = sum(1 for value in player_draw_as_good_as_win if value)
     pairwise_mutual_draw_benefit_count = 0
@@ -814,8 +888,17 @@ def build_draw_feature_row(
             float(points_range_within_pod),
             float(min_points_in_pod),
             float(max_points_in_pod),
-            float(1 if pod_points and all(points >= round_snapshot.expected_cut_line_points for points in pod_points) else 0),
-            float(1 if pod_points and all(abs(points - round_snapshot.expected_cut_line_points) <= 1 for points in pod_points) else 0),
+            float(
+                1
+                if pod_points and all(points >= round_snapshot.expected_cut_line_points for points in pod_points)
+                else 0
+            ),
+            float(
+                1
+                if pod_points
+                and all(abs(points - round_snapshot.expected_cut_line_points) <= 1 for points in pod_points)
+                else 0
+            ),
             round_snapshot.cut_fraction if is_last_swiss_round else 0.0,
             round_snapshot.cut_fraction if is_penultimate_swiss_round else 0.0,
             float(round_number * (round_snapshot.size_bucket + 1)),
@@ -842,8 +925,16 @@ def build_draw_feature_row(
             float(min_draw_secure_rank),
             float(max_draw_secure_rank),
             float(max_draw_secure_rank - min_draw_secure_rank),
-            float(1 if context.top_cut > 0 and pod_draw_secure_ranks and max_draw_secure_rank <= context.top_cut + 4 else 0),
-            float(1 if context.top_cut > 0 and pod_draw_secure_ranks and max_draw_secure_rank <= context.top_cut + 8 else 0),
+            float(
+                1
+                if context.top_cut > 0 and pod_draw_secure_ranks and max_draw_secure_rank <= context.top_cut + 4
+                else 0
+            ),
+            float(
+                1
+                if context.top_cut > 0 and pod_draw_secure_ranks and max_draw_secure_rank <= context.top_cut + 8
+                else 0
+            ),
             float(bye_fraction),
             float(bye_line_points),
             float(expected_bye_line_points),
@@ -934,7 +1025,7 @@ def normalize_probability_tuple(probabilities: list[float], size: int) -> tuple[
         values.extend([0.0] * (size - len(values)))
     total = sum(values)
     if total <= 0:
-        return tuple([1.0 / size] * size) if size > 0 else tuple()
+        return tuple([1.0 / size] * size) if size > 0 else ()
     return tuple(value / total for value in values)
 
 
@@ -966,7 +1057,9 @@ def build_candidate_winner_feature_row(
     pod_size = len(player_ids)
     seats = pod.seats_by_player or {}
     seat_values = [seats.get(candidate_id) for candidate_id in player_ids]
-    use_seat_bonus = pod_size == 4 and all(seat is not None for seat in seat_values) and sorted(seat_values) == [1, 2, 3, 4]
+    use_seat_bonus = (
+        pod_size == 4 and all(seat is not None for seat in seat_values) and sorted(seat_values) == [1, 2, 3, 4]
+    )
 
     effective_elos: dict[str, float] = {}
     for candidate_id in player_ids:
@@ -1042,14 +1135,13 @@ def predict_candidate_winner_probabilities(
         if round_snapshot is None:
             round_snapshot = build_round_snapshot(state, context, round_number)
             round_snapshots[round_number] = round_snapshot
-        elo_shares = {
-            player_id: probability
-            for player_id, probability in zip(
+        elo_shares = dict(
+            zip(
                 pod.player_ids,
                 elo_probabilities.get((pod.round_index, pod.table_number), ()),
                 strict=False,
             )
-        }
+        )
         for player_id in pod.player_ids:
             rows.append(build_candidate_winner_feature_row(pod, state, context, round_snapshot, player_id, elo_shares))
             row_refs.append((pod, player_id))
@@ -1112,9 +1204,7 @@ def predict_draw_probabilities(
     output: dict[tuple[int, int], float] = {}
     for pod, probability in zip(pods, probabilities, strict=False):
         is_top_cut_pod = draw_model.target == "pod_outcome" and pod.round_index >= state.spec.swiss_rounds
-        output[(pod.round_index, pod.table_number)] = (
-            0.0 if is_top_cut_pod else float(max(0.0, min(1.0, probability)))
-        )
+        output[(pod.round_index, pod.table_number)] = 0.0 if is_top_cut_pod else float(max(0.0, min(1.0, probability)))
     return output
 
 
@@ -1183,14 +1273,22 @@ def predict_draw_probability(
     draw_model: LoadedDrawModel,
 ) -> float:
     round_snapshot = build_round_snapshot(state, context, pod.round_index + 1)
-    return predict_draw_probabilities([pod], state, context, draw_model, round_snapshot)[(pod.round_index, pod.table_number)]
+    return predict_draw_probabilities([pod], state, context, draw_model, round_snapshot)[
+        (pod.round_index, pod.table_number)
+    ]
 
 
 def predict_decisive_win_probs(pod: Pod, state: TournamentState) -> dict[str, float]:
     effective_ratings: dict[str, float] = {}
     for player_id in pod.player_ids:
-        seat = pod.seats_by_player.get(player_id) if pod.seats_by_player else None
-        effective_ratings[player_id] = effective_player_rating(state.players[player_id], seat)
+        seat = (
+            pod.seats_by_player.get(player_id)
+            if len(pod.player_ids) == 4 and sorted(pod.seats_by_player.values()) == [1, 2, 3, 4]
+            else None
+        )
+        effective_ratings[player_id] = effective_player_rating(
+            state.players[player_id], seat, top_cut=is_top_cut(pod.round_name)
+        )
     equities = {player_id: rating_equity(rating) for player_id, rating in effective_ratings.items()}
     total = sum(equities.values()) or 1.0
     return {player_id: equity / total for player_id, equity in equities.items()}
@@ -1209,8 +1307,14 @@ def predict_decisive_win_probabilities(
     for pod in pods:
         adjusted_ratings = []
         for player_id in pod.player_ids:
-            seat = pod.seats_by_player.get(player_id) if pod.seats_by_player else None
-            adjusted_ratings.append(effective_player_rating(state.players[player_id], seat))
+            seat = (
+                pod.seats_by_player.get(player_id)
+                if len(pod.player_ids) == 4 and sorted(pod.seats_by_player.values()) == [1, 2, 3, 4]
+                else None
+            )
+            adjusted_ratings.append(
+                effective_player_rating(state.players[player_id], seat, top_cut=is_top_cut(pod.round_name))
+            )
         equity_values = np.asarray([rating_equity(rating) for rating in adjusted_ratings], dtype=float)
         total = float(equity_values.sum()) or 1.0
         probabilities[(pod.round_index, pod.table_number)] = tuple((equity_values / total).tolist())

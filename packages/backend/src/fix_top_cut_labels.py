@@ -7,8 +7,8 @@ import json
 import os
 from collections import defaultdict
 
-from ingest import SupabaseClient, load_local_env
-from run_historical_tournament_sim import fetch_all, in_filter
+from ingest import load_local_env
+from supabase_client import fetch_all, get_supabase_client
 
 
 def batched(values: list[str], batch_size: int) -> list[list[str]]:
@@ -17,15 +17,13 @@ def batched(values: list[str], batch_size: int) -> list[list[str]]:
 
 def main() -> None:
     load_local_env()
-    client = SupabaseClient(url=os.environ["SUPABASE_URL"], service_key=os.environ["SUPABASE_SERVICE_KEY"])
+    client = get_supabase_client(url=os.environ["SUPABASE_URL"], key=os.environ["SUPABASE_SERVICE_KEY"])
 
     tournaments = fetch_all(
         client,
         "tournaments",
-        {
-            "select": "id,top_cut,player_count",
-            "top_cut": "gt.0",
-        },
+        columns="id,top_cut,player_count",
+        filters=[("top_cut", "gt", 0)],
     )
 
     top_cut_groups: dict[int, list[str]] = defaultdict(list)
@@ -47,44 +45,28 @@ def main() -> None:
     operations = 0
     for top_cut, tournament_ids in sorted(top_cut_groups.items()):
         for chunk in batched(tournament_ids, 100):
-            filters = {"tournament_id": f"in.{in_filter(chunk)}"}
-            client.update(
-                "tournament_entries",
-                {"made_top_cut": True},
-                filters={**filters, "final_standing": f"lte.{top_cut}"},
-                max_retries=8,
-            )
-            client.update(
-                "tournament_entries",
-                {"made_top_cut": False},
-                filters={**filters, "final_standing": f"gt.{top_cut}"},
-                max_retries=8,
-            )
+            client.table("tournament_entries").update({"made_top_cut": True}).in_("tournament_id", chunk).lte(
+                "final_standing", top_cut
+            ).execute()
+            client.table("tournament_entries").update({"made_top_cut": False}).in_("tournament_id", chunk).gt(
+                "final_standing", top_cut
+            ).execute()
             operations += 2
 
     for threshold, tournament_ids in ((4, small_tournament_ids), (16, large_tournament_ids)):
         for chunk in batched(tournament_ids, 100):
-            filters = {"tournament_id": f"in.{in_filter(chunk)}"}
-            client.update(
-                "tournament_entries",
-                {"made_top_16": True},
-                filters={**filters, "final_standing": f"lte.{threshold}"},
-                max_retries=8,
-            )
-            client.update(
-                "tournament_entries",
-                {"made_top_16": False},
-                filters={**filters, "final_standing": f"gt.{threshold}"},
-                max_retries=8,
-            )
+            client.table("tournament_entries").update({"made_top_16": True}).in_("tournament_id", chunk).lte(
+                "final_standing", threshold
+            ).execute()
+            client.table("tournament_entries").update({"made_top_16": False}).in_("tournament_id", chunk).gt(
+                "final_standing", threshold
+            ).execute()
             operations += 2
 
     entries = fetch_all(
         client,
         "tournament_entries",
-        {
-            "select": "tournament_id,final_standing,made_top_cut,made_top_16,tournaments!inner(top_cut,player_count)",
-        },
+        columns="tournament_id,final_standing,made_top_cut,made_top_16,tournaments!inner(top_cut,player_count)",
     )
     mismatch_top_cut = 0
     mismatch_top_16 = 0

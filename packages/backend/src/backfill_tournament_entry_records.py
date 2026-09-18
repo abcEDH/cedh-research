@@ -8,8 +8,9 @@ import os
 from collections import Counter, defaultdict
 from typing import Any
 
-from ingest import DataIngester, SupabaseClient, TopDeckClient, load_local_env
-from run_historical_tournament_sim import fetch_all, in_filter
+from ingest import DataIngester, TopDeckClient, load_local_env
+from supabase import Client
+from supabase_client import fetch_all, get_supabase_client, upsert_batched
 
 
 def parse_int(value: Any) -> int:
@@ -20,7 +21,7 @@ def parse_int(value: Any) -> int:
 
 
 def fetch_target_tournaments(
-    client: SupabaseClient,
+    client: Client,
     *,
     tournament_id: str | None,
     min_player_count: int,
@@ -29,47 +30,41 @@ def fetch_target_tournaments(
         return fetch_all(
             client,
             "tournaments",
-            {
-                "select": "id,name,player_count,top_cut,swiss_rounds,start_date",
-                "id": f"eq.{tournament_id}",
-            },
+            columns="id,name,player_count,top_cut,swiss_rounds,start_date",
+            filters=[("id", "eq", tournament_id)],
         )
     return fetch_all(
         client,
         "tournaments",
-        {
-            "select": "id,name,player_count,top_cut,swiss_rounds,start_date",
-            "player_count": f"gte.{min_player_count}",
-            "order": "start_date.desc",
-        },
+        columns="id,name,player_count,top_cut,swiss_rounds,start_date",
+        filters=[("player_count", "gte", min_player_count)],
+        order=("start_date", True),
     )
 
 
-def fetch_zero_record_entries(client: SupabaseClient) -> list[dict[str, Any]]:
+ZERO_RECORD_FILTERS = [
+    ("wins", "eq", 0),
+    ("losses", "eq", 0),
+    ("draws", "eq", 0),
+    ("byes", "eq", 0),
+]
+
+
+def fetch_zero_record_entries(client: Client) -> list[dict[str, Any]]:
     return fetch_all(
         client,
         "tournament_entries",
-        {
-            "select": "id,tournament_id,player_id,commander_id,points,wins,losses,draws,byes",
-            "wins": "eq.0",
-            "losses": "eq.0",
-            "draws": "eq.0",
-            "byes": "eq.0",
-        },
+        columns="id,tournament_id,player_id,commander_id,points,wins,losses,draws,byes",
+        filters=ZERO_RECORD_FILTERS,
     )
 
 
-def fetch_zero_record_tournaments(client: SupabaseClient) -> list[dict[str, Any]]:
+def fetch_zero_record_tournaments(client: Client) -> list[dict[str, Any]]:
     entries = fetch_all(
         client,
         "tournament_entries",
-        {
-            "select": "tournament_id,tournaments(id,topdeck_tid,name,start_date,player_count)",
-            "wins": "eq.0",
-            "losses": "eq.0",
-            "draws": "eq.0",
-            "byes": "eq.0",
-        },
+        columns="tournament_id,tournaments(id,topdeck_tid,name,start_date,player_count)",
+        filters=ZERO_RECORD_FILTERS,
     )
     tournaments: dict[str, dict[str, Any]] = {}
     zero_entry_counts: Counter[str] = Counter()
@@ -100,16 +95,14 @@ def fetch_zero_record_tournaments(client: SupabaseClient) -> list[dict[str, Any]
     )
 
 
-def participant_counts_by_entry(client: SupabaseClient, entry_ids: list[str]) -> dict[str, Counter[str]]:
+def participant_counts_by_entry(client: Client, entry_ids: list[str]) -> dict[str, Counter[str]]:
     counts: dict[str, Counter[str]] = defaultdict(Counter)
     for batch in (entry_ids[index : index + 80] for index in range(0, len(entry_ids), 80)):
         rows = fetch_all(
             client,
             "game_participants",
-            {
-                "select": "entry_id,result",
-                "entry_id": f"in.{in_filter(batch)}",
-            },
+            columns="entry_id,result",
+            filters=[("entry_id", "in", batch)],
         )
         for row in rows:
             entry_id = row.get("entry_id")
@@ -142,16 +135,14 @@ def count_api_tables(tournament: dict[str, Any]) -> dict[str, int]:
     }
 
 
-def existing_game_counts_by_tournament(client: SupabaseClient, tournament_ids: list[str]) -> Counter[str]:
+def existing_game_counts_by_tournament(client: Client, tournament_ids: list[str]) -> Counter[str]:
     counts: Counter[str] = Counter()
     for batch in (tournament_ids[index : index + 80] for index in range(0, len(tournament_ids), 80)):
         rows = fetch_all(
             client,
             "games",
-            {
-                "select": "tournament_id",
-                "tournament_id": f"in.{in_filter(batch)}",
-            },
+            columns="tournament_id",
+            filters=[("tournament_id", "in", batch)],
         )
         for row in rows:
             tournament_id = row.get("tournament_id")
@@ -161,7 +152,7 @@ def existing_game_counts_by_tournament(client: SupabaseClient, tournament_ids: l
 
 
 def refresh_topdeck_zero_record_tournaments(
-    client: SupabaseClient,
+    client: Client,
     topdeck: TopDeckClient,
     *,
     apply: bool,
@@ -269,19 +260,14 @@ def refresh_topdeck_zero_record_tournaments(
     }
 
 
-def update_entry_counts(client: SupabaseClient, updates: list[dict[str, Any]]) -> None:
+def update_entry_counts(client: Client, updates: list[dict[str, Any]]) -> None:
     for start in range(0, len(updates), 200):
         chunk = updates[start : start + 200]
-        client.upsert(
-            "tournament_entries",
-            chunk,
-            on_conflict="id",
-            max_retries=5,
-        )
+        upsert_batched(client, "tournament_entries", chunk, on_conflict="id")
 
 
 def backfill_tournament(
-    client: SupabaseClient,
+    client: Client,
     tournament: dict[str, Any],
     *,
     apply: bool,
@@ -291,10 +277,8 @@ def backfill_tournament(
     entries = fetch_all(
         client,
         "tournament_entries",
-        {
-            "select": "id,tournament_id,player_id,commander_id,points,wins,losses,draws,byes",
-            "tournament_id": f"eq.{tournament_id}",
-        },
+        columns="id,tournament_id,player_id,commander_id,points,wins,losses,draws,byes",
+        filters=[("tournament_id", "eq", tournament_id)],
     )
     entry_ids = [str(row["id"]) for row in entries if row.get("id")]
     observed_by_entry = participant_counts_by_entry(client, entry_ids)
@@ -346,7 +330,7 @@ def backfill_tournament(
     }
 
 
-def backfill_zero_entries_global(client: SupabaseClient, *, apply: bool) -> dict[str, Any]:
+def backfill_zero_entries_global(client: Client, *, apply: bool) -> dict[str, Any]:
     entries = fetch_zero_record_entries(client)
     entry_ids = [str(row["id"]) for row in entries if row.get("id")]
     observed_by_entry = participant_counts_by_entry(client, entry_ids)
@@ -398,7 +382,10 @@ def main() -> None:
     parser.add_argument(
         "--refresh-topdeck-zero-record-tournaments",
         action="store_true",
-        help="Fetch zero-record tournaments from TopDeck, reingest games/game_participants when tables are available, then backfill entry records.",
+        help=(
+            "Fetch zero-record tournaments from TopDeck, reingest games/game_participants "
+            "when tables are available, then backfill entry records."
+        ),
     )
     parser.add_argument(
         "--limit",
@@ -419,7 +406,7 @@ def main() -> None:
     args = parser.parse_args()
 
     load_local_env()
-    client = SupabaseClient(url=os.environ["SUPABASE_URL"], service_key=os.environ["SUPABASE_SERVICE_KEY"])
+    client = get_supabase_client(url=os.environ["SUPABASE_URL"], key=os.environ["SUPABASE_SERVICE_KEY"])
     if args.refresh_topdeck_zero_record_tournaments:
         topdeck_api_key = os.environ.get("TOPDECK_API_KEY")
         if not topdeck_api_key:

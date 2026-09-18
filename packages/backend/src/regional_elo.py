@@ -10,17 +10,18 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-import time
+import traceback
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
-UTC = timezone.utc
+from datetime import UTC, date, datetime, timedelta
+from time import monotonic
 from typing import Any
 
 import requests
 
 from ingest import SupabaseClient
+from supabase_client import DirectPostgresClient
 
 K_FACTOR = 48
 DEFAULT_RATING = 1500.0
@@ -36,6 +37,10 @@ COMMANDER_FALLBACK_LOOKBACK_MONTHS = 12
 COMMANDER_MIN_PRIMARY_ENTRIES = 2
 COMMANDER_RECENCY_HALF_LIFE_DAYS = 24
 ACTIVE_PLAYER_LOOKBACK_MONTHS = 6
+# Business rule: players with no tournaments in the last 6 months are excluded
+# from the public rankings (rank / topdeck_elo_rank), regardless of historical
+# games played or rating. See docs/decisions/0016-rank-activity-window-and-topdeck-snapshot-pruning.md.
+RANK_ACTIVITY_WINDOW_DAYS = 183
 REGION_COUNTRY_BY_STATE = {
     "AGDER": "NORWAY",
     "ALABAMA": "UNITED STATES",
@@ -260,47 +265,35 @@ def create_empty_ratings_row(
     }
 
 
-def process_results(
-    participant_records: Iterable[dict[str, Any]],
+def _process_one_game(
+    standings: list[tuple[float, int, dict[str, Any]]],
+    game_id: str = "",
+    tournament_id: str = "",
+    game_date: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Process participant records into ratings updates."""
-    game_events: list[dict[str, Any]] = []
-
-    standings: list[tuple[float, int, dict[str, Any]]] = []
-    for p in participant_records:
-        entry_id = p.get("entry_id") or ""
-        standing: dict[str, Any] = {
-            "id": entry_id,
-            "wins": p.get("wins", 0) or 0,
-            "draws": p.get("draws", 0) or 0,
-            "losses": p.get("losses", 0) or 0,
-        }
-        rating = p.get("rating", DEFAULT_RATING) or DEFAULT_RATING
-        seat = p.get("seat_position") or 0
-        standings.append((rating, seat, standing))
-
+    """Produce pairwise Elo events for the players in one game."""
     if len(standings) < 2:
         return []
 
-    # Sort by rating descending, then seat ascending to break ties
+    # Sort by rating descending, seat ascending to break ties
     standings.sort(key=lambda x: (x[0], -x[1]), reverse=True)
 
-    # Process each seat vs higher-rated seats (players who should be favored)
+    opponent_count = len(standings) - 1
+    events: list[dict[str, Any]] = []
     for rating, seat, standing in standings:
-        entry_id = standing["id"]
+        player_id = standing["id"]
+        entry_id = standing.get("entry_id", player_id)
         is_winner = standing["wins"] >= 1
         is_draw = standing["draws"] >= 1
 
-        # Find higher/equal rated opponents
         for opp_rating, opp_seat, opp_standing in standings:
             if opp_rating > rating or (opp_rating == rating and opp_seat < seat):
-                opp_entry_id = opp_standing["id"]
-                opp_is_winner = opp_standing["wins"] >= 1
+                opp_player_id = opp_standing["id"]
+                opp_entry_id = opp_standing.get("entry_id", opp_player_id)
 
-                # Determine game outcome from perspective of current player
-                if is_winner and not opp_is_winner:
+                if is_winner and not opp_standing["wins"] >= 1:
                     outcome = "win"
-                elif opp_is_winner and not is_winner:
+                elif opp_standing["wins"] >= 1 and not is_winner:
                     outcome = "loss"
                 elif is_draw:
                     outcome = "draw"
@@ -308,13 +301,66 @@ def process_results(
                     outcome = "unknown"
 
                 if outcome in ("win", "loss", "draw"):
-                    game_events.append(
+                    events.append(
                         {
+                            "player_id": player_id,
+                            "opp_player_id": opp_player_id,
                             "entry_id": entry_id,
                             "opp_entry_id": opp_entry_id,
                             "outcome": outcome,
+                            "is_draw": is_draw,
+                            "game_id": game_id,
+                            "tournament_id": tournament_id,
+                            "game_date": game_date,
+                            "opponent_count": opponent_count,
                         }
                     )
+    return events
+
+
+def process_results(
+    participant_records: Iterable[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Process participant records into pairwise Elo events, grouped by game."""
+    # Group rows by game_id so we only compare players who actually played together.
+    # Without grouping, process_results would produce O(n²) pairs across all 300k+
+    # rows — ~57 billion comparisons instead of ~500k.
+    games: dict[str, list[tuple[float, int, dict[str, Any]]]] = {}
+    game_meta: dict[str, dict[str, Any]] = {}
+    ungrouped: list[tuple[float, int, dict[str, Any]]] = []
+
+    for p in participant_records:
+        player_id = p.get("player_id") or p.get("entry_id") or ""
+        entry_id = p.get("entry_id") or player_id
+        standing: dict[str, Any] = {
+            "id": player_id,
+            "entry_id": entry_id,
+            "wins": 1 if p.get("result") == "win" else 0,
+            "draws": 1 if p.get("result") == "draw" else 0,
+            "losses": 1 if p.get("result") == "loss" else 0,
+        }
+        rating = p.get("rating", DEFAULT_RATING) or DEFAULT_RATING
+        seat = p.get("seat_position") or 0
+        game_id = p.get("game_id") or ""
+
+        if game_id:
+            games.setdefault(game_id, []).append((rating, seat, standing))
+            if game_id not in game_meta:
+                game_meta[game_id] = {
+                    "tournament_id": p.get("tournament_id") or "",
+                    "game_date": p.get("start_date"),
+                }
+        else:
+            ungrouped.append((rating, seat, standing))
+
+    game_events: list[dict[str, Any]] = []
+    for gid, standings in games.items():
+        meta = game_meta.get(gid, {})
+        game_events.extend(_process_one_game(standings, game_id=gid, **meta))
+
+    # Fallback: rows without game_id get processed as one group (legacy behaviour).
+    if ungrouped:
+        game_events.extend(_process_one_game(ungrouped))
 
     return game_events
 
@@ -322,56 +368,169 @@ def process_results(
 def update_ratings_with_games(
     player_ratings: dict[tuple[str, str, str], dict[str, Any]],
     game_events: Iterable[dict[str, Any]],
-) -> None:
-    """Update ratings based on game results."""
+) -> list[dict[str, Any]]:
+    """Update ratings based on game results and return game event rows for DB write.
+
+    Groups events by game_id to capture per-game rating_before / rating_after so the
+    returned rows can be upserted into global_elo_game_events (one row per player per game).
+    """
+    # Build a reverse lookup once so each event is O(1) instead of O(n).
+    pid_to_key: dict[str, tuple[str, str, str]] = {v["player_id"]: k for k, v in player_ratings.items()}
+
+    # Group all events by game_id to process one game at a time.
+    events_by_game: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    no_game_id: list[dict[str, Any]] = []
     for event in game_events:
-        entry_id = event["entry_id"]
-        opp_entry_id = event["opp_entry_id"]
-        outcome = event["outcome"]
+        gid = event.get("game_id") or ""
+        if gid:
+            events_by_game[gid].append(event)
+        else:
+            no_game_id.append(event)
 
-        if outcome == "unknown":
-            continue
+    db_event_rows: list[dict[str, Any]] = []
 
-        key = None
-        opp_key = None
-        for k, v in player_ratings.items():
-            if v["player_id"] == entry_id:
-                key = k
-            if v["player_id"] == opp_entry_id:
-                opp_key = k
-            if key and opp_key:
-                break
+    def _apply_game(events: list[dict[str, Any]], emit_db_rows: bool) -> None:
+        # All players whose rating_before we need to snapshot.
+        players_in_game: set[str] = set()
+        for e in events:
+            if e["outcome"] != "unknown":
+                players_in_game.add(e["player_id"])
+                players_in_game.add(e["opp_player_id"])
 
-        if not key or not opp_key:
-            continue
+        # Capture pre-game ratings.
+        rating_before: dict[str, float] = {}
+        for pid in players_in_game:
+            key = pid_to_key.get(pid)
+            if key:
+                rating_before[pid] = float(player_ratings[key]["rating"])
 
-        player_row = player_ratings[key]
-        opp_row = player_ratings[opp_key]
+        # Apply pairwise events sequentially.
+        for event in events:
+            player_id = event["player_id"]
+            opp_player_id = event["opp_player_id"]
+            outcome = event["outcome"]
 
-        if outcome == "win":
-            new_player, new_opp = update_elo(player_row["rating"], opp_row["rating"])
-            player_row["wins"] += 1
-            player_row["win_streak"] += 1
-            player_row["loss_streak"] = 0
-            opp_row["losses"] += 1
-            opp_row["win_streak"] = 0
-            opp_row["loss_streak"] += 1
-        elif outcome == "loss":
-            new_opp, new_player = update_elo(opp_row["rating"], player_row["rating"])
-            player_row["losses"] += 1
-            player_row["loss_streak"] += 1
-            player_row["win_streak"] = 0
-            opp_row["wins"] += 1
-            opp_row["win_streak"] += 1
-            opp_row["loss_streak"] = 0
-        else:  # draw
-            player_row["draws"] += 1
-            opp_row["draws"] += 1
+            if outcome == "unknown":
+                continue
 
-        player_row["rating"] = new_player
-        opp_row["rating"] = new_opp
-        player_row["games_played"] += 1
-        opp_row["games_played"] += 1
+            key = pid_to_key.get(player_id)
+            opp_key = pid_to_key.get(opp_player_id)
+            if not key or not opp_key:
+                continue
+
+            player_row = player_ratings[key]
+            opp_row = player_ratings[opp_key]
+
+            if outcome == "win":
+                new_player, new_opp = update_elo(player_row["rating"], opp_row["rating"])
+                player_row["wins"] += 1
+                player_row["win_streak"] += 1
+                player_row["loss_streak"] = 0
+                opp_row["losses"] += 1
+                opp_row["win_streak"] = 0
+                opp_row["loss_streak"] += 1
+            elif outcome == "loss":
+                new_opp, new_player = update_elo(opp_row["rating"], player_row["rating"])
+                player_row["losses"] += 1
+                player_row["loss_streak"] += 1
+                player_row["win_streak"] = 0
+                opp_row["wins"] += 1
+                opp_row["win_streak"] += 1
+                opp_row["loss_streak"] = 0
+            else:  # draw
+                new_player = player_row["rating"]
+                new_opp = opp_row["rating"]
+                player_row["draws"] += 1
+                opp_row["draws"] += 1
+
+            player_row["rating"] = new_player
+            opp_row["rating"] = new_opp
+            player_row["games_played"] += 1
+            opp_row["games_played"] += 1
+
+        if not emit_db_rows:
+            return
+
+        # Emit one DB row per player per game.
+        # Use first event for game-level metadata; per-player outcome from their events.
+        first = events[0] if events else None
+        if not first:
+            return
+        game_id = first["game_id"]
+        tournament_id = first.get("tournament_id") or ""
+        game_date = first.get("game_date")
+        opponent_count = first.get("opponent_count") or (len(players_in_game) - 1)
+
+        # Collect per-player outcome from the events (win > draw > loss).
+        player_outcomes: dict[str, str] = {}
+        for e in events:
+            pid = e["player_id"]
+            if e["outcome"] in ("win",):
+                player_outcomes[pid] = "win"
+            elif e["outcome"] == "draw" and player_outcomes.get(pid) != "win":
+                player_outcomes[pid] = "draw"
+            elif e["outcome"] == "loss" and pid not in player_outcomes:
+                player_outcomes[pid] = "loss"
+
+        # Collect entry_id per player (first occurrence wins).
+        # Both player_id and opp_player_id need entry_ids — the top-rated player in a
+        # game only ever appears as opp_player_id and would otherwise fall back to pid.
+        player_entry_ids: dict[str, str] = {}
+        for e in events:
+            pid = e["player_id"]
+            if pid not in player_entry_ids:
+                player_entry_ids[pid] = e.get("entry_id") or pid
+            opp_pid = e["opp_player_id"]
+            if opp_pid not in player_entry_ids:
+                player_entry_ids[opp_pid] = e.get("opp_entry_id") or opp_pid
+
+        # region_type/region_key from the first matched key.
+        sample_key = next((pid_to_key[p] for p in players_in_game if p in pid_to_key), None)
+        region_type = sample_key[0] if sample_key else GLOBAL_REGION_TYPE
+        region_key = sample_key[1] if sample_key else GLOBAL_REGION_KEY
+
+        for pid in players_in_game:
+            key = pid_to_key.get(pid)
+            if not key or pid not in rating_before:
+                continue
+            before = rating_before[pid]
+            after = float(player_ratings[key]["rating"])
+            result = player_outcomes.get(pid, "loss")
+            actual = 1.0 if result == "win" else (0.5 if result == "draw" else 0.0)
+            # Expected score = sum of pairwise win probabilities vs each opponent
+            expected = sum(
+                elo_probability(before, rating_before[opp])
+                for opp in players_in_game
+                if opp != pid and opp in rating_before
+            )
+            db_event_rows.append(
+                {
+                    "region_type": region_type,
+                    "region_key": region_key,
+                    "game_id": game_id,
+                    "tournament_id": tournament_id,
+                    "player_id": pid,
+                    "entry_id": player_entry_ids.get(pid, pid),
+                    "game_date": game_date,
+                    "game_result": result,
+                    "is_draw": result == "draw",
+                    "opponent_count": opponent_count,
+                    "expected_score": round(expected, 6),
+                    "actual_score": round(actual, 6),
+                    "rating_before": round(before, 6),
+                    "rating_delta": round(after - before, 6),
+                    "rating_after": round(after, 6),
+                }
+            )
+
+    for gid, events in events_by_game.items():
+        _apply_game(events, emit_db_rows=bool(gid))
+
+    # Legacy/fallback: rows without game_id — apply but don't emit DB rows (missing required columns).
+    if no_game_id:
+        _apply_game(no_game_id, emit_db_rows=False)
+
+    return db_event_rows
 
 
 def claim_job(client: SupabaseClient, job_id: str, github_run_id: int) -> bool:
@@ -395,6 +554,8 @@ def claim_job(client: SupabaseClient, job_id: str, github_run_id: int) -> bool:
 
 def update_job_heartbeat(client: SupabaseClient, job_id: str) -> None:
     """Best-effort heartbeat so stale-job detection knows we are alive."""
+    if not job_id:
+        return
     try:
         client.update(
             MAINTENANCE_JOBS_TABLE,
@@ -464,17 +625,26 @@ def fetch_all(
 
 
 def fetch_participants_for_leaderboard(
-    client: SupabaseClient, lookback_months: int = ACTIVE_PLAYER_LOOKBACK_MONTHS
+    client: SupabaseClient,
+    lookback_months: int = ACTIVE_PLAYER_LOOKBACK_MONTHS,
+    direct: DirectPostgresClient | None = None,
 ) -> list[dict[str, Any]]:
     cutoff = get_past_months_cutoff(lookback_months)
+    if direct is not None:
+        return direct.select(
+            "global_elo_game_results",
+            {
+                "start_date": f"gte.{cutoff}",
+                "result": "neq.bye",
+            },
+        )
     return fetch_all(
         client,
-        "game_participants",
+        "global_elo_game_results",
         {
-            "select": "entry_id,player_id,tournament_id,seat_position,wins,draws,losses",
-            "tournament_id.start_date": f"gte.{cutoff}",
-            "entries.tournament_id": "not.is.null",
-            "entries.player_id": "not.is.null",
+            "select": "game_id,entry_id,player_id,tournament_id,seat_position,result",
+            "start_date": f"gte.{cutoff}",
+            "result": "neq.bye",
         },
     )
 
@@ -485,35 +655,140 @@ def fetch_commander_participants(
     cutoff = get_past_months_cutoff(lookback_months)
     return fetch_all(
         client,
-        "game_participants",
+        "global_elo_game_results",
         {
-            "select": "entry_id,player_id,tournament_id,seat_position,wins,draws,losses",
-            "tournament_id.start_date": "gte." + str(cutoff),
-            "entries.tournament_id": "not.is.null",
-            "entries.player_id": "not.is.null",
+            "select": "game_id,entry_id,player_id,tournament_id,seat_position,result",
+            "start_date": "gte." + str(cutoff),
+            "result": "neq.bye",
         },
     )
 
 
-def fetch_distinct_entry_ids(client: SupabaseClient, lookback_months: int = ACTIVE_PLAYER_LOOKBACK_MONTHS) -> set[str]:
+def fetch_distinct_entry_ids(
+    client: SupabaseClient,
+    lookback_months: int = ACTIVE_PLAYER_LOOKBACK_MONTHS,
+    direct: DirectPostgresClient | None = None,
+) -> set[str]:
     cutoff = get_past_months_cutoff(lookback_months)
+    if direct is not None:
+        rows = direct.select(
+            "global_elo_game_results",
+            {"start_date": f"gte.{cutoff}"},
+        )
+        return {r["player_id"] for r in rows}
     rows = fetch_all(
         client,
-        "game_participants",
+        "global_elo_game_results",
         {
-            "select": "entry_id",
-            "tournament_id.start_date": f"gte.{cutoff}",
-            "entries.tournament_id": "not.is.null",
-            "entries.player_id": "not.is.null",
+            "select": "player_id",
+            "start_date": f"gte.{cutoff}",
         },
     )
-    return {r["entry_id"] for r in rows}
+    return {r["player_id"] for r in rows}
+
+
+def _rpc_fetch_all(
+    client: SupabaseClient,
+    function_name: str,
+    payload: dict[str, Any] | None = None,
+    limit: int = 1000,
+) -> list[dict[str, Any]]:
+    """Paginate through a PostgREST RPC that accepts p_limit / p_offset."""
+    rows: list[dict[str, Any]] = []
+    offset = 0
+    endpoint = f"{client.url}/rest/v1/rpc/{function_name}"
+    while True:
+        page_payload = {**(payload or {}), "p_limit": limit, "p_offset": offset}
+        response = requests.post(endpoint, json=page_payload, headers=client.headers, timeout=600)
+        if response.status_code >= 400:
+            raise RuntimeError(f"RPC {function_name} failed: {response.status_code} {response.text}")
+        page = response.json()
+        if not page:
+            break
+        rows.extend(page)
+        if len(page) < limit:
+            break
+        offset += limit
+        print(f"Fetched {len(rows):,} rows from {function_name}", flush=True)
+    return rows
+
+
+def fetch_elo_watermark(client: SupabaseClient) -> str | None:
+    """Return the max game_date in global_elo_game_events, or None if the table is empty."""
+    rows = client.select(
+        "global_elo_game_events",
+        {
+            "select": "game_date",
+            "region_type": "eq.global",
+            "order": "game_date.desc",
+            "limit": "1",
+        },
+    )
+    return rows[0]["game_date"] if rows else None
+
+
+def load_ratings_from_snapshot(
+    client: SupabaseClient,
+    watermark: str,
+) -> dict[tuple[str, str, str], dict[str, Any]]:
+    """Load per-player Elo ratings as they stood just before *watermark* using the snapshot RPC."""
+    rows = _rpc_fetch_all(
+        client,
+        "get_global_elo_snapshot_before",
+        {"cutoff": watermark},
+    )
+    ratings: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for row in rows:
+        player_id = row.get("player_id")
+        if not player_id:
+            continue
+        key: tuple[str, str, str] = (GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY, str(player_id))
+        ratings[key] = {
+            "player_id": str(player_id),
+            "region_type": GLOBAL_REGION_TYPE,
+            "region_key": GLOBAL_REGION_KEY,
+            "rating": float(row.get("rating") or DEFAULT_RATING),
+            "games_played": int(row.get("games_played") or 0),
+            "wins": int(row.get("wins") or 0),
+            "draws": int(row.get("draws") or 0),
+            "losses": int(row.get("losses") or 0),
+            "win_streak": 0,
+            "loss_streak": 0,
+        }
+    return ratings
+
+
+def fetch_participants_since(
+    client: SupabaseClient,
+    since: str,
+    direct: DirectPostgresClient | None = None,
+) -> list[dict[str, Any]]:
+    """Fetch game participants for games played on or after *since* (ISO date/datetime string)."""
+    if direct is not None:
+        return direct.select(
+            "global_elo_game_results",
+            {
+                "start_date": f"gte.{since}",
+                "result": "neq.bye",
+            },
+        )
+    return fetch_all(
+        client,
+        "global_elo_game_results",
+        {
+            "select": "game_id,entry_id,player_id,tournament_id,start_date,seat_position,result,is_draw",
+            "start_date": f"gte.{since}",
+            "result": "neq.bye",
+        },
+    )
 
 
 def fetch_distinct_commander_ids(
     client: SupabaseClient, lookback_months: int = COMMANDER_PRIMARY_LOOKBACK_MONTHS
 ) -> set[str]:
     cutoff = get_past_months_cutoff(lookback_months)
+    # Uses PostgREST FK dot-filter: tournament_id is a FK to tournaments.start_date.
+    # Tracked in issue #193 for verification before this function is activated.
     rows = fetch_all(
         client,
         "tournament_entries",
@@ -547,27 +822,77 @@ def build_player_profiles(
     return [r for r in player_rows if r.get("player_id") in recent_set]
 
 
+UNKNOWN_COMMANDER_NAME = "Unknown Commander"
+
+
+def build_primary_commanders(client: SupabaseClient) -> dict[str, tuple[str, float]]:
+    """Return {player_id: (commander_name, known_pct)} for players where known_pct >= 0.5.
+
+    Queries tournament_entries joined to commanders, groups by player_id +
+    commander_name, picks the most-played known commander per player, and
+    computes known_pct = known_entries / total_entries.  Players whose
+    known_pct falls below 0.5 are omitted from the result.
+    """
+    # Fetch all entries with their joined commander name
+    rows = fetch_all(
+        client,
+        "tournament_entries",
+        {"select": "player_id,commander_id,commanders(name)"},
+    )
+
+    # Tally per-player counts
+    total_by_player: dict[str, int] = defaultdict(int)
+    known_by_player: dict[str, int] = defaultdict(int)
+    commander_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+
+    for row in rows:
+        pid = row.get("player_id")
+        if not pid:
+            continue
+        total_by_player[pid] += 1
+        commander_data = row.get("commanders") or {}
+        name = commander_data.get("name") if isinstance(commander_data, dict) else None
+        if name and name != UNKNOWN_COMMANDER_NAME:
+            known_by_player[pid] += 1
+            commander_counts[pid][name] += 1
+
+    result: dict[str, tuple[str, float]] = {}
+    for pid, known_count in known_by_player.items():
+        total = total_by_player[pid]
+        known_pct = known_count / total if total > 0 else 0.0
+        if known_pct < 0.5:
+            continue
+        # Pick the most-played known commander; break ties alphabetically
+        primary = max(commander_counts[pid].items(), key=lambda kv: (kv[1], kv[0]))[0]
+        result[pid] = (primary, round(known_pct, 4))
+
+    return result
+
+
 def detect_active_players(
     client: SupabaseClient, lookback_months: int = ACTIVE_PLAYER_LOOKBACK_MONTHS
 ) -> list[dict[str, Any]]:
-    """Identify players with recent activity."""
+    """Identify players with recent activity.
+
+    Dedup happens in Postgres via the get_active_global_elo_player_ids RPC
+    (SELECT DISTINCT) rather than paging every matching game-result row through
+    PostgREST — the latter used deep OFFSET scans that tripped statement_timeout.
+    """
     cutoff = get_past_months_cutoff(lookback_months)
-    rows = fetch_all(
+    # The RPC's DISTINCT join is computed per request, so use a large page size
+    # to fetch the (small, ~tens-of-thousands) active set in one call instead of
+    # re-running the join per page. _rpc_fetch_all still pages if it ever grows
+    # past the limit; PostgREST applies no max-rows cap on this project.
+    rows = _rpc_fetch_all(
         client,
-        "game_participants",
-        {
-            "select": "player_id",
-            "tournament_id.start_date": f"gte.{cutoff}",
-            "entries.tournament_id": "not.is.null",
-            "entries.player_id": "not.is.null",
-        },
+        "get_active_global_elo_player_ids",
+        {"cutoff": str(cutoff)},
+        limit=50000,
     )
-    seen: set[str] = set()
     active: list[dict[str, Any]] = []
     for r in rows:
-        pid = r["player_id"]
-        if pid and pid not in seen:
-            seen.add(pid)
+        pid = r.get("player_id")
+        if pid:
             active.append({"player_id": pid})
     return active
 
@@ -584,9 +909,13 @@ def compute_commander_recency_weight(
 
 MATERIALIZED_VIEW_REFRESH_FUNCTIONS = [
     "refresh_commander_trends",
-    "refresh_card_frequencies",
-    "refresh_card_performance",
+    "refresh_regional_elo_data_validity",
 ]
+
+# Read timeout for MV refresh RPCs. Slightly above the 30min server-side
+# statement_timeout those functions set, so the server's own limit (a clean
+# 57014) fires before the client read timeout.
+REFRESH_RPC_TIMEOUT_SECONDS = 1860
 
 ACTIVE_LEADERBOARD_TABLE = "global_elo_active_leaderboard"
 ACTIVE_LEADERBOARD_BATCH_SIZE = 1000
@@ -594,21 +923,44 @@ ACTIVE_LEADERBOARD_BATCH_SIZE = 1000
 
 def assign_topdeck_elo_ranks(
     rows: list[dict[str, Any]],
+    reference_date: date | None = None,
 ) -> None:
     """Assign topdeck_elo_rank within each (region_type, region_key) partition.
 
-    Rows are sorted by topdeck_elo DESC with NULLs last; rows whose
-    topdeck_elo is None receive rank = None. Ties are broken stably by
-    rating DESC, then player_name ASC for deterministic ordering. Mutates
-    rows in place by setting the ``topdeck_elo_rank`` field.
+    Eligible rows -- those with a non-null topdeck_elo AND at least one
+    games-backed record in this app AND recent activity within
+    ``RANK_ACTIVITY_WINDOW_DAYS`` (see ``_is_topdeck_rank_eligible``) -- are
+    sorted by topdeck_elo DESC, ties broken stably by rating DESC, then player_name
+    ASC for deterministic ordering. All other rows receive rank = None,
+    including rows with a non-null topdeck_elo but zero recorded games, and
+    rows whose most recent recorded game is older than the activity window.
+
+    topdeck_elo is imported independently from TopDeck.gg's own published
+    Elo snapshot (see ``import_topdeck_player_elos.py``) and is keyed only by
+    a player's external topdeck_id, so it can be populated for a player who
+    has never actually recorded a game in this app's data. Without the
+    games-played gate, that external rating -- which reflects no real
+    competitive standing here -- could rank a zero-game player ahead of (or
+    at rank 1 above) players with real, games-backed rankings, which is the
+    same class of bug fixed for the ``rank`` field in
+    ``build_active_leaderboard_rows`` (#252). Mutates rows in place by
+    setting the ``topdeck_elo_rank`` field.
+
+    ``reference_date`` is the date the activity window is measured against;
+    it defaults to today (UTC) and is only overridden in tests.
     """
     partitions: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
         partitions[(row.get("region_type", ""), row.get("region_key", ""))].append(row)
 
     for partition_rows in partitions.values():
-        ranked = [r for r in partition_rows if r.get("topdeck_elo") is not None]
-        unranked = [r for r in partition_rows if r.get("topdeck_elo") is None]
+        ranked = []
+        unranked = []
+        for r in partition_rows:
+            if _is_topdeck_rank_eligible(r, reference_date):
+                ranked.append(r)
+            else:
+                unranked.append(r)
         ranked.sort(
             key=lambda r: (
                 -float(r.get("topdeck_elo") or 0),
@@ -676,12 +1028,18 @@ def build_active_leaderboard_rows(
     topdeck_elo_by_topdeck_id: Mapping[str, float],
     state_stats_by_player: Mapping[str, Mapping[str, Any]],
     updated_at: str,
+    canonical_counts_by_player: Mapping[str, Mapping[str, Any]] | None = None,
+    reference_date: date | None = None,
 ) -> list[dict[str, Any]]:
     """Materialise active leaderboard rows for global, country, and state slices.
 
     Mirrors the shape produced by the regional_elo_leaderboard view but is
     persisted to the leaderboard table so PostgREST can serve the data
     without joining to topdeck_player_elos at request time.
+
+    ``reference_date`` anchors the "no tournaments in the last 6 months"
+    activity gate (``RANK_ACTIVITY_WINDOW_DAYS``, see ``_is_rank_eligible``);
+    it defaults to today (UTC) and is only overridden in tests.
     """
     leaderboard_rows: list[dict[str, Any]] = []
     for rating_row in ratings_rows:
@@ -697,19 +1055,35 @@ def build_active_leaderboard_rows(
         if not player:
             continue
 
-        rating = _coerce_float(rating_row.get("rating")) or DEFAULT_RATING
-        games_played = int(rating_row.get("games_played") or 0)
-        wins = int(rating_row.get("wins") or 0)
-        draws = int(rating_row.get("draws") or 0)
-        losses = int(rating_row.get("losses") or 0)
+        rating = _coerce_float(rating_row.get("rating"))
+        if rating is None:
+            rating = DEFAULT_RATING
+        canonical = (canonical_counts_by_player or {}).get(player_id)
+        state_stats = state_stats_by_player.get(player_id) or {}
+        if canonical is not None:
+            games_played = int(canonical.get("games_played") or 0)
+            wins = int(canonical.get("wins") or 0)
+            draws = int(canonical.get("draws") or 0)
+            losses = int(canonical.get("losses") or 0)
+            # Prefer the canonical global last_game_date over the primary-state
+            # one below: a player's most recent game is often played while
+            # traveling outside their primary state, so gating eligibility on
+            # the primary-state-only date would wrongly mark active players as
+            # inactive. Falls back to the primary-state date only when no
+            # canonical row exists at all (see the `else` branch).
+            last_game_date = canonical.get("last_game_date") or state_stats.get("last_game_date")
+        else:
+            games_played = int(rating_row.get("games_played") or 0)
+            wins = int(rating_row.get("wins") or 0)
+            draws = int(rating_row.get("draws") or 0)
+            losses = int(rating_row.get("losses") or 0)
+            last_game_date = state_stats.get("last_game_date")
         topdeck_id = player.get("topdeck_id")
         topdeck_elo = topdeck_elo_by_topdeck_id.get(str(topdeck_id)) if topdeck_id else None
 
-        state_stats = state_stats_by_player.get(player_id) or {}
         primary_country_key = state_stats.get("country_key") or ""
         primary_region_key = state_stats.get("region_key") or ""
         activity_score = _coerce_float(state_stats.get("activity_score"))
-        last_game_date = state_stats.get("last_game_date")
 
         base_row: dict[str, Any] = {
             "player_id": player_id,
@@ -766,19 +1140,123 @@ def build_active_leaderboard_rows(
         partitions[(row["region_type"], row["region_key"])].append(row)
 
     for partition_rows in partitions.values():
-        partition_rows.sort(
-            key=lambda r: (
-                -float(r.get("rating") or 0),
-                -float(r.get("activity_score") or 0),
-                -int(r.get("games_played") or 0),
-                str(r.get("player_name") or ""),
-            )
-        )
-        for index, row in enumerate(partition_rows, start=1):
-            row["rank"] = index
+        # Players with zero games sit at DEFAULT_RATING (an anchor/mean value,
+        # not a real competitive signal) because create_empty_ratings_row seeds
+        # every tracked player at that value before any games are processed.
+        # Real ratings can legitimately drift below that anchor (or below zero)
+        # for players who have actually played, so ranking purely on the numeric
+        # rating value lets a zero-game player's sentinel rating outrank -- and
+        # even land at rank 1 ahead of -- players with real, hard-earned
+        # ratings. Only players with at least one recorded game AND recent
+        # activity (within RANK_ACTIVITY_WINDOW_DAYS of reference_date) are
+        # eligible for a rating-based rank at all; everyone else gets
+        # rank = None rather than a fallback ordinal. Several apps/web read
+        # paths fall back to `rank` whenever `topdeck_elo_rank` is null, so a
+        # non-null fallback rank would let an inactive/zero-game player show
+        # up with what looks like a real rank badge again (Codex P2 review
+        # finding on PR #263).
+        eligible_rows = [r for r in partition_rows if _is_rank_eligible(r, reference_date)]
+        ineligible_rows = [r for r in partition_rows if not _is_rank_eligible(r, reference_date)]
 
-    assign_topdeck_elo_ranks(leaderboard_rows)
+        eligible_rows.sort(key=_leaderboard_rank_sort_key)
+
+        for index, row in enumerate(eligible_rows, start=1):
+            row["rank"] = index
+        for row in ineligible_rows:
+            row["rank"] = None
+
+    assign_topdeck_elo_ranks(leaderboard_rows, reference_date)
     return leaderboard_rows
+
+
+def _parse_last_game_date(value: Any) -> date | None:
+    """Parse a `last_game_date` value that may arrive as a `date`, a
+    `datetime`, an ISO date/datetime string, or `None` -- the exact shape
+    depends on whether the row was built in Python or round-tripped through a
+    PostgREST JSON response. Returns None if the value is missing, empty, or
+    unparseable so callers can treat it as "no known activity" rather than
+    raising.
+    """
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value[:10])
+        except ValueError:
+            return None
+    return None
+
+
+def _is_recently_active(last_game_date: Any, reference_date: date | None = None) -> bool:
+    """Return True if `last_game_date` is within RANK_ACTIVITY_WINDOW_DAYS
+    (183 days) of `reference_date` (defaults to today, UTC).
+
+    Implements the "players with no tournaments in the last 6 months are
+    excluded from the rankings" business rule. A missing or unparseable
+    `last_game_date` is treated as ineligible rather than defaulting to
+    active, since we have no evidence of recent play.
+    """
+    parsed = _parse_last_game_date(last_game_date)
+    if parsed is None:
+        return False
+    if reference_date is None:
+        reference_date = utc_now().date()
+    return (reference_date - parsed).days <= RANK_ACTIVITY_WINDOW_DAYS
+
+
+def _is_rank_eligible(row: Mapping[str, Any], reference_date: date | None = None) -> bool:
+    """Return True if *row* has a real, games-backed rating AND recent activity.
+
+    Zero-game players are seeded with the DEFAULT_RATING anchor rather than a
+    genuine computed rating, so they must never be eligible to outrank (or, in
+    the worst case, become rank 1 ahead of) a player with a real rating -
+    including a legitimately negative one.
+
+    Additionally, a player whose most recent recorded game (`last_game_date`)
+    is older than RANK_ACTIVITY_WINDOW_DAYS (183 days, ~6 months) relative to
+    `reference_date` is excluded from ranking regardless of games played or
+    rating -- the "no tournaments in the last 6 months" business rule.
+    """
+    games_played = row.get("games_played")
+    try:
+        if int(games_played or 0) <= 0:
+            return False
+    except (TypeError, ValueError):
+        return False
+    return _is_recently_active(row.get("last_game_date"), reference_date)
+
+
+def _is_topdeck_rank_eligible(row: Mapping[str, Any], reference_date: date | None = None) -> bool:
+    """Return True if *row* is eligible for a topdeck_elo_rank.
+
+    Composes the shared games-backed + recent-activity gate
+    (``_is_rank_eligible``) with the topdeck_elo-specific requirement that
+    the row actually has an imported topdeck_elo value. Kept separate from
+    ``_is_rank_eligible`` itself because that helper is also used for the
+    unrelated, purely rating-based ``rank`` field in
+    ``build_active_leaderboard_rows``, which must stay eligible for players
+    who have no topdeck_elo at all.
+    """
+    return row.get("topdeck_elo") is not None and _is_rank_eligible(row, reference_date)
+
+
+def _leaderboard_rank_sort_key(r: Mapping[str, Any]) -> tuple[float, float, int, str]:
+    """Sort key for rating rank: highest rating first, ties broken by activity,
+    then games played, then name. A missing rating sorts last rather than
+    being coerced to 0 (which could beat a real negative rating); missing
+    activity_score/games_played fall back to 0, the correct "no activity"
+    floor for those fields."""
+    rating = r.get("rating")
+    activity_score = r.get("activity_score")
+    games_played = r.get("games_played")
+    return (
+        -float(rating) if rating is not None else float("inf"),
+        -float(activity_score) if activity_score is not None else 0.0,
+        -int(games_played) if games_played is not None else 0,
+        str(r.get("player_name") or ""),
+    )
 
 
 def fetch_player_index(client: SupabaseClient) -> dict[str, dict[str, Any]]:
@@ -832,6 +1310,58 @@ def fetch_primary_state_stats(client: SupabaseClient) -> dict[str, dict[str, Any
     return by_player
 
 
+def fetch_canonical_event_counts(client: SupabaseClient) -> dict[str, dict[str, Any]]:
+    """Return per-player canonical game counts and last_game_date from the
+    leaderboard view.
+
+    The RPC aggregates from global_elo_game_events, which is the ground-truth
+    source. It has the same semantics as the global branch of the leaderboard
+    view, but avoids recomputing the wider regional view for every page.
+    This bypasses the stale accumulator columns in global_elo_ratings that
+    drift when full recomputes run multiple times.
+
+    ``last_game_date`` here is the player's true global last game date, unlike
+    the primary-state-only date from ``fetch_primary_state_stats`` -- it must
+    be used for activity-eligibility checks so a player who last played while
+    traveling outside their primary state isn't wrongly marked inactive.
+
+    Must be called after game events for the current run have been upserted.
+    """
+    rows: list[dict[str, Any]] = []
+    after_player_id: str | None = None
+    while True:
+        page = (
+            client.rpc(
+                "get_global_elo_canonical_counts",
+                {
+                    "p_after_player_id": after_player_id,
+                    "p_limit": 1000,
+                },
+            )
+            or []
+        )
+        if not page:
+            break
+        rows.extend(page)
+        if len(page) < 1000:
+            break
+        next_player_id = page[-1].get("player_id")
+        if not next_player_id or next_player_id == after_player_id:
+            raise RuntimeError("Canonical event-count RPC returned no pagination progress")
+        after_player_id = str(next_player_id)
+    return {
+        row["player_id"]: {
+            "games_played": int(row.get("games_played") or 0),
+            "wins": int(row.get("wins") or 0),
+            "losses": int(row.get("losses") or 0),
+            "draws": int(row.get("draws") or 0),
+            "last_game_date": row.get("last_game_date"),
+        }
+        for row in rows
+        if row.get("player_id")
+    }
+
+
 def delete_stale_active_leaderboard_rows(client: SupabaseClient, run_marker: str) -> None:
     """Delete leaderboard rows that the current run did not refresh."""
     try:
@@ -865,13 +1395,28 @@ def upsert_active_leaderboard_rows(
         )
 
 
-def refresh_materialized_views(client: SupabaseClient) -> int:
-    """Refresh downstream materialized views. Returns count of successful refreshes."""
+def refresh_materialized_views(client: SupabaseClient, direct: DirectPostgresClient | None = None) -> int:
+    """Refresh downstream materialized views. Returns count of successful refreshes.
+
+    The card-frequency and card-performance materialized views are intentionally
+    not refreshed by the Elo pipeline. They are legacy /commanders surfaces and
+    their refreshes are too expensive for the daily maintenance path.
+
+    When a direct Postgres connection is available, call the remaining refresh
+    functions through it to bypass the gateway. Fall back to a long-timeout REST
+    POST when no direct connection is configured.
+    """
     success_count = 0
     for fn_name in MATERIALIZED_VIEW_REFRESH_FUNCTIONS:
         try:
             print(f"Refreshing materialized views via {fn_name}()...")
-            client.rpc(fn_name)
+            if direct is not None:
+                direct.call_function(fn_name)
+            else:
+                endpoint = f"{client.url}/rest/v1/rpc/{fn_name}"
+                response = requests.post(endpoint, json={}, headers=client.headers, timeout=REFRESH_RPC_TIMEOUT_SECONDS)
+                if response.status_code >= 400:
+                    raise RuntimeError(f"{response.status_code} {response.text}")
             success_count += 1
             print(f"  {fn_name}() completed.")
         except Exception as exc:
@@ -916,6 +1461,16 @@ def main() -> None:
         sys.exit(1)
 
     client = SupabaseClient(supabase_url, supabase_key)
+    db_url = os.environ.get("SUPABASE_DB_URL")
+    direct: DirectPostgresClient | None = None
+    if db_url:
+        try:
+            candidate = DirectPostgresClient(db_url)
+            candidate.connect()
+            direct = candidate
+            print("DirectPostgres connection established")
+        except Exception as e:
+            print(f"DirectPostgres unavailable ({e}); falling back to REST")
     job_id = args.job_id
     github_run_id = int(os.environ.get("GITHUB_RUN_ID", 0))
 
@@ -932,8 +1487,6 @@ def main() -> None:
             print("--apply not specified; using dry-run mode")
             print("Use --apply to write changes, --job-id to track as maintenance job")
 
-    start = time.time()
-
     if dry_run:
         smoke_days = args.smoke_days
         cutoff = get_past_days_cutoff(smoke_days)
@@ -943,156 +1496,51 @@ def main() -> None:
             fail_job(client, job_id, "Dry-run mode")
         sys.exit(0)
 
-    print("Fetching participants for leaderboard...")
-    update_job_heartbeat(client, job_id)
-    participant_rows = fetch_participants_for_leaderboard(client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS)
-    update_job_heartbeat(client, job_id)
-    print(f"Found {len(participant_rows)} participant rows")
+    # Incremental or cold-start: choose participant fetch strategy based on watermark.
+    # One canonical full-history replay owns internal ratings. A parameter change
+    # invalidates incremental snapshots, and backfilled events can predate them.
+    from internal_elo_maintenance import run as run_internal_elo
 
-    print("Fetching distinct entries for global ratings...")
-    entry_ids = fetch_distinct_entry_ids(client, lookback_months=ACTIVE_PLAYER_LOOKBACK_MONTHS)
-    print(f"Found {len(entry_ids)} distinct entries")
-
-    # Build ratings dict
-    player_ratings: dict[tuple[str, str, str], dict[str, Any]] = {}
-    for entry_id in entry_ids:
-        key = (GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY, entry_id)
-        player_ratings[key] = create_empty_ratings_row(entry_id, GLOBAL_REGION_TYPE, GLOBAL_REGION_KEY)
-
-    update_job_heartbeat(client, job_id)
-
-    # Process results and update ratings
-    print("Processing results for global ratings...")
-    game_events = process_results(participant_rows)
-    update_ratings_with_games(player_ratings, game_events)
-
-    update_job_heartbeat(client, job_id)
-
-    # Apply to database
-    print("Upserting global Elo ratings...")
-    ratings_to_upsert = list(player_ratings.values())
-    if ratings_to_upsert:
-        client.upsert(
-            "global_elo_ratings",
-            ratings_to_upsert,
-            on_conflict="player_id,region_type,region_key",
-        )
-
-    update_job_heartbeat(client, job_id)
-
-    # Compute leaderboard - persist global, country, and state slices so
-    # /regional-elo can serve sorted reads (including TopDeck Elo) without a
-    # second query against topdeck_player_elos.
-    print("Computing leaderboard...")
-    print("Loading player directory...")
-    player_index = fetch_player_index(client)
-    print(f"Loaded {len(player_index)} player rows")
-
-    print("Loading TopDeck Elo snapshot...")
-    topdeck_elo_by_topdeck_id = fetch_topdeck_elo_by_topdeck_id(client)
-    print(f"Loaded {len(topdeck_elo_by_topdeck_id)} TopDeck Elo entries")
-
-    print("Loading primary-state activity stats...")
-    state_stats_by_player = fetch_primary_state_stats(client)
-    print(f"Loaded {len(state_stats_by_player)} primary-state stat rows")
-
-    leaderboard_run_marker = utc_now().isoformat()
-    all_leaderboard_rows = build_active_leaderboard_rows(
-        ratings_to_upsert,
-        player_index,
-        topdeck_elo_by_topdeck_id,
-        state_stats_by_player,
-        leaderboard_run_marker,
-    )
-
-    if all_leaderboard_rows:
-        print(f"Upserting {len(all_leaderboard_rows)} active leaderboard rows (global + country + state)...")
-        upsert_active_leaderboard_rows(client, all_leaderboard_rows)
-    delete_stale_active_leaderboard_rows(client, leaderboard_run_marker)
-
-    update_job_heartbeat(client, job_id)
-
-    # Build player profiles
-    print("Building player profiles...")
-    profiles = build_player_profiles(ratings_to_upsert)
-    if profiles:
-        client.upsert(
-            "global_elo_player_profile_summaries",
-            profiles,
-            on_conflict="player_id",
-        )
-
-    update_job_heartbeat(client, job_id)
-
-    # Detect active players
-    print("Detecting active players...")
-    active = detect_active_players(client)
-    for a in active:
-        a["last_active"] = str(utc_now().date())
-
-    if active:
-        client.upsert(
-            "global_elo_state_activity",
-            active,
-            on_conflict="player_id",
-        )
-
-    update_job_heartbeat(client, job_id)
-
-    # Record game events
-    print("Recording game events...")
-    event_rows = [
-        {
-            "entry_id": e["entry_id"],
-            "opp_entry_id": e["opp_entry_id"],
-            "outcome": e["outcome"],
-        }
-        for e in game_events
-    ]
-    if event_rows:
-        client.upsert(
-            "global_elo_game_events",
-            event_rows,
-            on_conflict="",
-        )
-
-    update_job_heartbeat(client, job_id)
-
-    # Refresh downstream materialized views
-    print("Refreshing materialized views...")
-    mv_count = refresh_materialized_views(client)
-    print(f"Refreshed {mv_count}/{len(MATERIALIZED_VIEW_REFRESH_FUNCTIONS)} materialized views.")
-
-    update_job_heartbeat(client, job_id)
-
-    duration = time.time() - start
-
-    metrics = JobMetrics(
-        ratings_count=len(ratings_to_upsert),
-        state_activity_count=len(active),
-        game_events_count=len(event_rows),
-        leaderboard_count=len(all_leaderboard_rows),
-        profile_count=len(profiles),
-        commander_profile_count=0,
-        duration_seconds=duration,
-    )
-
-    print(f"Done in {duration:.1f}s. Ratings: {metrics.ratings_count}")
+    started = monotonic()
+    result = run_internal_elo(apply=True, heartbeat=lambda: update_job_heartbeat(client, job_id))
+    refresh_materialized_views(client, direct=direct)
     if job_id:
+        counts = result["counts"]
         complete_job(
             client,
             job_id,
             {
-                "ratings_count": metrics.ratings_count,
-                "state_activity_count": metrics.state_activity_count,
-                "game_events_count": metrics.game_events_count,
-                "leaderboard_count": metrics.leaderboard_count,
-                "profile_count": metrics.profile_count,
-                "commander_profile_count": metrics.commander_profile_count,
-                "duration_seconds": metrics.duration_seconds,
+                "ratings_count": counts["global_elo_ratings"],
+                "state_activity_count": counts["global_elo_state_activity"],
+                "game_events_count": counts["global_elo_game_events"],
+                "leaderboard_count": counts["global_elo_active_leaderboard"],
+                "profile_count": counts["global_elo_player_profile_summaries"],
+                "duration_seconds": monotonic() - started,
             },
         )
+    return
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as exc:
+        traceback.print_exc()
+        # Best-effort: mark the job as failed in the DB so the queue doesn't
+        # leave it stuck in 'running' until the stale-cleanup cron fires.
+        job_id_arg = None
+        try:
+            for _i, _arg in enumerate(sys.argv):
+                if _arg == "--job-id" and _i + 1 < len(sys.argv):
+                    job_id_arg = sys.argv[_i + 1]
+                    break
+            if job_id_arg:
+                _url = os.environ.get("SUPABASE_URL", "")
+                _key = os.environ.get("SUPABASE_SERVICE_KEY", "")
+                if _url and _key:
+                    _client = SupabaseClient(_url, _key)
+                    fail_job(_client, job_id_arg, str(exc))
+        except Exception as report_exc:
+            # Best-effort reporting failed; don't mask the original traceback.
+            sys.stderr.write(f"[warn] fail_job reporting failed: {report_exc}\n")
+        sys.exit(1)

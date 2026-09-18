@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from run_historical_tournament_sim import fetch_pre_tournament_elos, parse_database_datetime
 
@@ -9,11 +10,9 @@ class FakeSupabaseClient:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, str]]] = []
 
-    def select(self, table: str, filters: dict[str, str] | None = None, max_retries: int = 8):
-        params = filters or {}
+    def fetch(self, client, table, *, columns, filters, order=None):
+        params = {column: value for column, _operator, value in filters}
         self.calls.append((table, dict(params)))
-        if params.get("offset") != "0":
-            return []
         if table == "global_elo_ratings":
             return [
                 {
@@ -37,7 +36,14 @@ class FakeSupabaseClient:
                 {
                     "player_id": "historical",
                     "game_date": "2026-06-19T18:00:00+00:00",
+                    "rating_after": 1800.0,
+                    "games": {"round_number": 1, "table_number": 1},
+                },
+                {
+                    "player_id": "historical",
+                    "game_date": "2026-06-19T18:00:00+00:00",
                     "rating_after": 2000.0,
+                    "games": {"round_number": 2, "table_number": 1},
                 },
             ]
         return []
@@ -52,17 +58,18 @@ class HistoricalTournamentSimTest(unittest.TestCase):
     def test_fetch_pre_tournament_elos_prefers_finalized_rating_before_start(self):
         client = FakeSupabaseClient()
 
-        ratings = fetch_pre_tournament_elos(
-            client,
-            ["finalized", "historical"],
-            "2026-06-27T09:00:00-07:00",
-        )
+        with patch("run_historical_tournament_sim.fetch_all", side_effect=client.fetch):
+            ratings = fetch_pre_tournament_elos(
+                client,
+                ["finalized", "historical"],
+                "2026-06-27T09:00:00-07:00",
+            )
 
         self.assertEqual(ratings["finalized"], 2151.627)
         self.assertEqual(ratings["historical"], 2000.0)
         event_calls = [params for table, params in client.calls if table == "global_elo_game_events"]
         self.assertEqual(len(event_calls), 1)
-        self.assertNotIn('"finalized"', event_calls[0]["player_id"])
+        self.assertEqual(event_calls[0]['player_id'], ['historical'])
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ from collections import defaultdict
 from statistics import mean
 from typing import Any
 
-from ingest import SupabaseClient, load_local_env
+from ingest import load_local_env
 from run_historical_tournament_from_round_sim import build_round_structures, fetch_round_rows, fetch_seat_map
 from run_historical_tournament_sim import (
     DEFAULT_DRAW_MODEL_PATH,
@@ -20,32 +20,33 @@ from run_historical_tournament_sim import (
 )
 from sim_engine import apply_pod_result, initialize_state, run_monte_carlo_from_state
 from sim_models import load_draw_model_artifact
+from supabase import Client
+from supabase_client import get_supabase_client
 
 
 def fetch_candidate_tournaments(
-    client: SupabaseClient,
+    client: Client,
     *,
     limit: int,
     min_player_count: int,
     start_date_from: str | None,
     start_date_to: str | None,
 ) -> list[dict[str, Any]]:
-    params = {
-        "select": "id,name,start_date,player_count,top_cut",
-        "top_cut": "gt.0",
-        "player_count": f"gte.{min_player_count}",
-        "order": "start_date.desc",
-        "limit": str(limit),
-    }
+    query = (
+        client.table("tournaments")
+        .select("id,name,start_date,player_count,top_cut")
+        .gt("top_cut", 0)
+        .gte("player_count", min_player_count)
+    )
     if start_date_from:
-        params["start_date"] = f"gte.{start_date_from}"
+        query = query.gte("start_date", start_date_from)
     if start_date_to:
-        params["start_date"] = f"lt.{start_date_to}"
-    return client.select("tournaments", params, max_retries=8)
+        query = query.lt("start_date", start_date_to)
+    return query.order("start_date", desc=True).limit(limit).execute().data
 
 
 def build_state_after_completed_rounds(
-    client: SupabaseClient,
+    client: Client,
     tournament_id: str,
     completed_rounds: int,
 ):
@@ -96,14 +97,13 @@ def brier_score(probabilities: dict[str, float], actual_positive_ids: set[str], 
 
 def top_cut_overlap(probabilities: dict[str, float], actual_top_cut_ids: set[str], cut_size: int) -> int:
     predicted = {
-        player_id
-        for player_id, _ in sorted(probabilities.items(), key=lambda item: item[1], reverse=True)[:cut_size]
+        player_id for player_id, _ in sorted(probabilities.items(), key=lambda item: item[1], reverse=True)[:cut_size]
     }
     return len(predicted & actual_top_cut_ids)
 
 
 def evaluate_checkpoint(
-    client: SupabaseClient,
+    client: Client,
     draw_model,
     *,
     tournament_id: str,
@@ -147,7 +147,10 @@ def evaluate_checkpoint(
     }
     common_rounds = sorted(set(actual_round_draw_rates) & set(simulated_round_draw_rates))
     round_draw_rate_mae = (
-        mean(abs(actual_round_draw_rates[round_number] - simulated_round_draw_rates[round_number]) for round_number in common_rounds)
+        mean(
+            abs(actual_round_draw_rates[round_number] - simulated_round_draw_rates[round_number])
+            for round_number in common_rounds
+        )
         if common_rounds
         else None
     )
@@ -214,7 +217,7 @@ def main() -> None:
     args = parser.parse_args()
 
     load_local_env()
-    client = SupabaseClient(url=os.environ["SUPABASE_URL"], service_key=os.environ["SUPABASE_SERVICE_KEY"])
+    client = get_supabase_client(url=os.environ["SUPABASE_URL"], key=os.environ["SUPABASE_SERVICE_KEY"])
     draw_model = load_draw_model_artifact(args.draw_model_path)
 
     if args.tournament_ids:
@@ -238,9 +241,7 @@ def main() -> None:
             continue
 
         valid_checkpoints = sorted(
-            checkpoint
-            for checkpoint in args.checkpoint_rounds
-            if 0 <= checkpoint < spec.swiss_rounds
+            checkpoint for checkpoint in args.checkpoint_rounds if 0 <= checkpoint < spec.swiss_rounds
         )
         for checkpoint in valid_checkpoints:
             case_seed = args.seed + len(results) * 10_000 + checkpoint

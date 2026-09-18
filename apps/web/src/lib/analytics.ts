@@ -8,13 +8,24 @@
 
 import posthog from 'posthog-js'
 
+export const ANALYTICS_EVENTS = {
+  commanderViewed: 'commander_viewed',
+  commanderSearched: 'commander_searched',
+  commanderTrendsViewed: 'commander_trends_viewed',
+  regionalEloViewed: 'regional_elo_viewed',
+  playerProfileViewed: 'player_profile_viewed',
+  tournamentLikelihoodViewed: 'tournament_likelihood_viewed',
+  tournamentAnalysisGenerated: 'tournament_analysis_generated',
+  matchupExported: 'matchup_exported',
+} as const
+
 // =============================================================================
 // Page/Section Events
 // =============================================================================
 
 export const trackPageView = (path: string, properties?: Record<string, unknown>) => {
   posthog.capture('$pageview', {
-    path,
+    $pathname: path,
     ...properties,
   })
 }
@@ -87,6 +98,13 @@ export const trackTournamentAnalysis = (tournamentId: string, commanderId: strin
   posthog.capture('tournament_analysis_generated', {
     tournament_id: tournamentId,
     commander_id: commanderId,
+  })
+}
+
+export const trackMatchupExport = (dataType: 'detailed' | 'summary', tier: string) => {
+  posthog.capture(ANALYTICS_EVENTS.matchupExported, {
+    data_type: dataType,
+    elo_tier: tier,
   })
 }
 

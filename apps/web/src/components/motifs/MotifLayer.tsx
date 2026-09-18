@@ -38,8 +38,10 @@ export function MotifLayer({
         unoptimized
       />
 
+      {/* Large decorative blobs are hidden below md: — they cost real paint
+          time on phones for a barely visible effect. */}
       {variant === "A" && (
-        <div className="absolute -top-40 -left-40 h-[1100px] w-[1100px] opacity-[0.18] mix-blend-screen">
+        <div className="absolute -top-40 -left-40 hidden h-[1100px] w-[1100px] opacity-[0.18] mix-blend-screen md:block">
           <Image
             src="/motifs/canopy-corner.svg"
             fill
@@ -50,7 +52,7 @@ export function MotifLayer({
       )}
 
       {variant === "B" && (
-        <div className="absolute top-28 left-[-22%] h-[1500px] w-[1500px] opacity-[0.18] mix-blend-screen">
+        <div className="absolute top-28 left-[-22%] hidden h-[1500px] w-[1500px] opacity-[0.18] mix-blend-screen md:block">
           <Image
             src="/motifs/transit-arc.svg"
             fill
@@ -61,7 +63,7 @@ export function MotifLayer({
       )}
 
       {variant === "C" && (
-        <div className="absolute top-[-20%] left-[2%] h-[1400px] w-[1400px] opacity-[0.28] mix-blend-screen">
+        <div className="absolute top-[-20%] left-[2%] hidden h-[1400px] w-[1400px] opacity-[0.28] mix-blend-screen md:block">
           <Image
             src="/motifs/spirit-core.svg"
             fill

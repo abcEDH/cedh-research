@@ -1,1 +1,3 @@
 .vercel
+# Visual-review screenshots from e2e/screenshots.spec.ts
+/screenshots/

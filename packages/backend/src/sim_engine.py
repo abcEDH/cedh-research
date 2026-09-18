@@ -33,6 +33,7 @@ from sim_types import (
     TournamentState,
 )
 
+
 def clone_feature_context(
     feature_context: FeatureContext | None,
     *,
@@ -255,9 +256,7 @@ def apply_points_drop_if_due(state: TournamentState, completed_round_number: int
 
     current_eligible = state.eligible_player_ids if state.eligible_player_ids is not None else set(state.standings)
     next_eligible = {
-        player_id
-        for player_id in current_eligible
-        if state.standings[player_id].points >= drop_min_points
+        player_id for player_id in current_eligible if state.standings[player_id].points >= drop_min_points
     }
     changed = state.eligible_player_ids != next_eligible
     state.eligible_player_ids = next_eligible
@@ -435,8 +434,7 @@ def exact_top_cut_probabilities(
         round_index += 1
 
     return dict(winner_probabilities), {
-        cut_size: dict(player_probabilities)
-        for cut_size, player_probabilities in advancement_probabilities.items()
+        cut_size: dict(player_probabilities) for cut_size, player_probabilities in advancement_probabilities.items()
     }
 
 
@@ -462,8 +460,7 @@ def resolve_bracket_probabilities(
         )
         winner_probabilities = {winner_id: 1.0} if winner_id else {}
         advancement_probabilities = {
-            cut_size: {player_id: 1.0 for player_id in player_ids}
-            for cut_size, player_ids in advancement_by_size.items()
+            cut_size: dict.fromkeys(player_ids, 1.0) for cut_size, player_ids in advancement_by_size.items()
         }
         return winner_probabilities, advancement_probabilities
 
@@ -488,7 +485,7 @@ def resolve_bracket_probabilities(
         if not pods:
             if auto_advancers:
                 split_probability = 1.0 / len(auto_advancers)
-                winner_probabilities = {player_id: split_probability for player_id in auto_advancers}
+                winner_probabilities = dict.fromkeys(auto_advancers, split_probability)
                 return winner_probabilities, {
                     cut_size: dict(player_probabilities)
                     for cut_size, player_probabilities in advancement_probabilities.items()
@@ -537,8 +534,7 @@ def resolve_bracket_probabilities(
 
     winner_probabilities = {remaining[0]: 1.0} if remaining else {}
     return winner_probabilities, {
-        cut_size: dict(player_probabilities)
-        for cut_size, player_probabilities in advancement_probabilities.items()
+        cut_size: dict(player_probabilities) for cut_size, player_probabilities in advancement_probabilities.items()
     }
 
 
@@ -810,7 +806,7 @@ def run_monte_carlo(
     batch_size = math.ceil(simulations / batch_count)
     batch_specs: list[tuple[int, int]] = []
     assigned = 0
-    for batch_index in range(batch_count):
+    for _batch_index in range(batch_count):
         this_batch = min(batch_size, simulations - assigned)
         if this_batch <= 0:
             break

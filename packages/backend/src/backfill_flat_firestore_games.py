@@ -17,11 +17,13 @@ import requests
 from ingest import (
     SUPABASE_REST_BASE,
     TOPDECK_FIRESTORE_PROJECT,
-    SupabaseClient,
     build_game_key,
     decode_firestore_value,
     load_local_env,
 )
+from supabase import Client
+from supabase_client import fetch_all as _shared_fetch_all
+from supabase_client import get_supabase_client, upsert_batched
 
 SUPABASE_PAGE_SIZE = 1000
 DEFAULT_FIRESTORE_WORKERS = 24
@@ -40,30 +42,18 @@ def chunks(values: list[Any], size: int) -> list[list[Any]]:
 
 
 def fetch_all(
-    client: SupabaseClient,
+    client: Client,
     table: str,
-    params: dict[str, str],
+    columns: str = "*",
+    filters: list[tuple[str, str, Any]] | None = None,
+    order: tuple[str, bool] | None = None,
     page_size: int = SUPABASE_PAGE_SIZE,
 ) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    offset = 0
-    while True:
-        page = client.select(
-            table,
-            {
-                **params,
-                "limit": str(page_size),
-                "offset": str(offset),
-            },
-        )
-        rows.extend(page)
-        if len(page) < page_size:
-            return rows
-        offset += page_size
+    return _shared_fetch_all(client, table, columns=columns, filters=filters, order=order, page_size=page_size)
 
 
 def fetch_rows_by_ids(
-    client: SupabaseClient,
+    client: Client,
     table: str,
     column: str,
     values: list[str],
@@ -77,10 +67,8 @@ def fetch_rows_by_ids(
             fetch_all(
                 client,
                 table,
-                {
-                    "select": select,
-                    column: f"in.({','.join(value_chunk)})",
-                },
+                columns=select,
+                filters=[(column, "in", value_chunk)],
             )
         )
     return rows
@@ -170,27 +158,27 @@ def extract_flat_pods(data: dict[str, Any]) -> list[dict[str, Any]]:
     return pods
 
 
-def fetch_tournaments(client: SupabaseClient, only_leagues: bool) -> list[dict[str, Any]]:
-    params = {
-        "select": "id,topdeck_tid,name,start_date",
-        "topdeck_tid": "not.is.null",
-        "order": "start_date.desc",
-    }
+def fetch_tournaments(client: Client, only_leagues: bool) -> list[dict[str, Any]]:
+    filters: list[tuple[str, str, Any]] = [("topdeck_tid", "not_is", "null")]
     if only_leagues:
-        params["name"] = "ilike.*league*"
-    return fetch_all(client, "tournaments", params)
+        filters.append(("name", "ilike", "*league*"))
+    return fetch_all(
+        client,
+        "tournaments",
+        columns="id,topdeck_tid,name,start_date",
+        filters=filters,
+        order=("start_date", True),
+    )
 
 
-def fetch_numeric_game_counts(client: SupabaseClient, tournament_ids: list[str]) -> dict[str, dict[str, int]]:
+def fetch_numeric_game_counts(client: Client, tournament_ids: list[str]) -> dict[str, dict[str, int]]:
     counts = {tournament_id: {"total": 0, "numeric": 0} for tournament_id in tournament_ids}
     for tournament_id_chunk in chunks(tournament_ids, 75):
         rows = fetch_all(
             client,
             "games",
-            {
-                "select": "tournament_id,round_number",
-                "tournament_id": f"in.({','.join(tournament_id_chunk)})",
-            },
+            columns="tournament_id,round_number",
+            filters=[("tournament_id", "in", tournament_id_chunk)],
         )
         for row in rows:
             tournament_id = row.get("tournament_id")
@@ -224,7 +212,7 @@ def scan_tournament(tournament: dict[str, Any]) -> dict[str, Any]:
 
 
 def scan_for_issues(
-    client: SupabaseClient,
+    client: Client,
     only_leagues: bool,
     workers: int,
 ) -> list[dict[str, Any]]:
@@ -253,14 +241,12 @@ def scan_for_issues(
     return results
 
 
-def fetch_entry_map(client: SupabaseClient, tournament_id: str) -> dict[str, dict[str, str]]:
+def fetch_entry_map(client: Client, tournament_id: str) -> dict[str, dict[str, str]]:
     rows = fetch_all(
         client,
         "tournament_entries",
-        {
-            "select": "id,player_id,players(topdeck_id)",
-            "tournament_id": f"eq.{tournament_id}",
-        },
+        columns="id,player_id,players(topdeck_id)",
+        filters=[("tournament_id", "eq", tournament_id)],
     )
     entry_by_topdeck_id: dict[str, dict[str, str]] = {}
     for row in rows:
@@ -274,15 +260,15 @@ def fetch_entry_map(client: SupabaseClient, tournament_id: str) -> dict[str, dic
     return entry_by_topdeck_id
 
 
-def get_unknown_commander_id(client: SupabaseClient) -> str:
-    rows = client.upsert(
+def get_unknown_commander_id(client: Client) -> str:
+    rows = upsert_batched(
+        client,
         "commanders",
         {
             "name": "Unknown Commander",
             "commander_names": ["Unknown Commander"],
         },
         on_conflict="name",
-        max_retries=8,
     )
     if not rows:
         raise RuntimeError("Unable to upsert Unknown Commander")
@@ -290,16 +276,12 @@ def get_unknown_commander_id(client: SupabaseClient) -> str:
 
 
 def ensure_tournament_entries(
-    client: SupabaseClient,
+    client: Client,
     tournament_id: str,
     pods: list[dict[str, Any]],
 ) -> dict[str, dict[str, str]]:
     entry_by_topdeck_id = fetch_entry_map(client, tournament_id)
-    pod_topdeck_ids = {
-        topdeck_id
-        for pod in pods
-        for topdeck_id in pod["player_topdeck_ids"]
-    }
+    pod_topdeck_ids = {topdeck_id for pod in pods for topdeck_id in pod["player_topdeck_ids"]}
     missing_topdeck_ids = sorted(pod_topdeck_ids - set(entry_by_topdeck_id))
     if not missing_topdeck_ids:
         return entry_by_topdeck_id
@@ -312,26 +294,17 @@ def ensure_tournament_entries(
         select="id,topdeck_id,name",
     )
     player_id_by_topdeck_id = {
-        str(row["topdeck_id"]): row["id"]
-        for row in existing_players
-        if row.get("topdeck_id") and row.get("id")
+        str(row["topdeck_id"]): row["id"] for row in existing_players if row.get("topdeck_id") and row.get("id")
     }
 
-    new_player_ids = [
-        topdeck_id
-        for topdeck_id in missing_topdeck_ids
-        if topdeck_id not in player_id_by_topdeck_id
-    ]
+    new_player_ids = [topdeck_id for topdeck_id in missing_topdeck_ids if topdeck_id not in player_id_by_topdeck_id]
     if new_player_ids:
-        new_players = client.upsert(
+        new_players = upsert_batched(
+            client,
             "players",
-            [
-                {"topdeck_id": topdeck_id, "name": "Unknown"}
-                for topdeck_id in new_player_ids
-            ],
+            [{"topdeck_id": topdeck_id, "name": "Unknown"} for topdeck_id in new_player_ids],
             on_conflict="topdeck_id",
-            max_retries=8,
-        ) or []
+        )
         for row in new_players:
             if row.get("topdeck_id") and row.get("id"):
                 player_id_by_topdeck_id[str(row["topdeck_id"])] = row["id"]
@@ -350,18 +323,13 @@ def ensure_tournament_entries(
         if topdeck_id in player_id_by_topdeck_id
     ]
     for entry_chunk in chunks(missing_entries, 500):
-        client.upsert(
-            "tournament_entries",
-            entry_chunk,
-            on_conflict="tournament_id,player_id",
-            max_retries=8,
-        )
+        upsert_batched(client, "tournament_entries", entry_chunk, on_conflict="tournament_id,player_id")
 
     return fetch_entry_map(client, tournament_id)
 
 
 def upsert_games_and_participants(
-    client: SupabaseClient,
+    client: Client,
     tournament: dict[str, Any],
     pods: list[dict[str, Any]],
 ) -> dict[str, int]:
@@ -371,10 +339,7 @@ def upsert_games_and_participants(
     games: list[dict[str, Any]] = []
     skipped_pods = 0
     for pod in pods:
-        participant_entries = [
-            entry_by_topdeck_id.get(topdeck_id)
-            for topdeck_id in pod["player_topdeck_ids"]
-        ]
+        participant_entries = [entry_by_topdeck_id.get(topdeck_id) for topdeck_id in pod["player_topdeck_ids"]]
         if any(entry is None for entry in participant_entries):
             skipped_pods += 1
             continue
@@ -412,7 +377,7 @@ def upsert_games_and_participants(
     game_id_by_key: dict[str, str] = {}
     for game_chunk in chunks(games, GAME_UPSERT_CHUNK_SIZE):
         payload = [{key: value for key, value in row.items() if key != "_pod"} for row in game_chunk]
-        rows = client.upsert("games", payload, on_conflict="game_key", max_retries=8) or []
+        rows = upsert_batched(client, "games", payload, on_conflict="game_key")
         for row in rows:
             if row.get("game_key") and row.get("id"):
                 game_id_by_key[row["game_key"]] = row["id"]
@@ -439,12 +404,7 @@ def upsert_games_and_participants(
             )
 
     for participant_chunk in chunks(participants, PARTICIPANT_UPSERT_CHUNK_SIZE):
-        client.upsert(
-            "game_participants",
-            participant_chunk,
-            on_conflict="game_id,entry_id",
-            max_retries=8,
-        )
+        upsert_batched(client, "game_participants", participant_chunk, on_conflict="game_id,entry_id")
 
     return {
         "games": len(games),
@@ -453,7 +413,7 @@ def upsert_games_and_participants(
     }
 
 
-def backfill_issue(client: SupabaseClient, issue: dict[str, Any]) -> dict[str, Any]:
+def backfill_issue(client: Client, issue: dict[str, Any]) -> dict[str, Any]:
     data = fetch_firestore_document(issue["topdeck_tid"])
     if not data:
         return {**issue, "backfilled_games": 0, "backfilled_participants": 0, "skipped_pods": 0}
@@ -492,11 +452,15 @@ def main() -> None:
     if not url or not key:
         raise SystemExit("SUPABASE_URL and SUPABASE_SERVICE_KEY are required")
 
-    client = SupabaseClient(url, key)
-    issues = load_issues(args.issues_in) if args.issues_in else scan_for_issues(
-        client,
-        only_leagues=args.only_leagues,
-        workers=args.workers,
+    client = get_supabase_client(url, key)
+    issues = (
+        load_issues(args.issues_in)
+        if args.issues_in
+        else scan_for_issues(
+            client,
+            only_leagues=args.only_leagues,
+            workers=args.workers,
+        )
     )
     if args.limit > 0:
         issues = issues[: args.limit]

@@ -11,7 +11,6 @@ from unittest.mock import Mock, patch
 
 import numpy as np
 
-import ingest
 import run_topdeck_ongoing_tournament_sim as ongoing
 import sim_engine
 from sim_engine import initialize_state
@@ -74,6 +73,7 @@ class OngoingTournamentSimParityTest(unittest.TestCase):
         tournament = {
             "id": "test-event",
             "name": "Test Event",
+            "is_league": False,
             "startDate": "2026-01-01T00:00:00+00:00",
             "standings": [{"id": "td1", "name": "Player 1", "standing": 1}],
             "rounds": [],
@@ -99,7 +99,7 @@ class OngoingTournamentSimParityTest(unittest.TestCase):
                 "--no-prepared-state-cache",
             ]),
             patch.object(ongoing, "TopDeckClient", return_value=topdeck_client),
-            patch.object(ingest, "SupabaseClient", return_value=Mock()),
+            patch("supabase_client.get_supabase_client", return_value=Mock()),
             patch.object(ongoing, "fetch_existing_players", return_value={"td1": {"id": "p1", "name": "Player 1"}}),
             patch.object(ongoing, "build_feature_context", return_value=feature_context) as build_feature_context,
             patch.object(ongoing, "build_base_state", return_value=(state, 0, None, {"rounds": []})),
@@ -115,6 +115,7 @@ class OngoingTournamentSimParityTest(unittest.TestCase):
         tournament = {
             "id": "test-event",
             "name": "Test Event",
+            "is_league": False,
             "startDate": "2026-01-01T00:00:00+00:00",
             "standings": [
                 {"id": f"td{index}", "name": f"Player {index}", "standing": index}
@@ -165,6 +166,7 @@ class OngoingTournamentSimParityTest(unittest.TestCase):
         tournament = {
             "id": "test-event",
             "name": "Test Event",
+            "is_league": False,
             "startDate": "2026-01-01T00:00:00+00:00",
             "standings": [
                 {"id": f"td{index}", "name": f"Player {index}", "standing": index}

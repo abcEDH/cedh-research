@@ -8,13 +8,7 @@ on:
       - ".github/workflows/ci-backend.yml"
       - ".github/workflows/ci-backend-maintenance.yml"
 
-concurrency:
-  group: backend-pr-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
-
 env:
-  SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-  SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
@@ -22,10 +16,17 @@ jobs:
     name: Backend quality and unit tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+
+      - name: Set fallback secrets
+        run: |
+          {
+            echo "SUPABASE_URL=${{ secrets.SUPABASE_URL || 'https://placeholder.supabase.co' }}"
+            echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY || 'placeholder' }}"
+          } >> "$GITHUB_ENV"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
           enable-cache: true
@@ -34,7 +35,7 @@ jobs:
         run: uv sync --frozen --project packages/backend
 
       - name: Install Supabase CLI
-        uses: supabase/setup-cli@v1
+        uses: supabase/setup-cli@v3
         with:
           version: latest
 
@@ -73,11 +74,19 @@ jobs:
   backend-validation:
     name: Backend validation and consistency checks
     runs-on: ubuntu-latest
+    if: github.actor != 'dependabot[bot]'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+
+      - name: Set fallback secrets
+        run: |
+          {
+            echo "SUPABASE_URL=${{ secrets.SUPABASE_URL || 'https://placeholder.supabase.co' }}"
+            echo "SUPABASE_SERVICE_KEY=${{ secrets.SUPABASE_SERVICE_KEY || 'placeholder' }}"
+          } >> "$GITHUB_ENV"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
           enable-cache: true

@@ -8,7 +8,7 @@ import json
 import pickle
 import time
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +19,6 @@ from evaluate_candidate_winner_model import (
 )
 from evaluate_pod_outcome_vs_draw_elo import is_valid_outcome_row, load_cached_rows, row_date, row_value
 from train_draw_model import DEFAULT_CACHE_PATH
-
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 REPORTS_DIR = Path(__file__).resolve().parents[1] / "reports" / "winner-model" / "v1"
@@ -71,7 +70,7 @@ def main() -> None:
     artifact = {
         "target": "candidate_winner",
         "artifact_version": 1,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "model_type": "hist_gradient_boosting",
         "features": list(CANDIDATE_FEATURES),
         "model": model,

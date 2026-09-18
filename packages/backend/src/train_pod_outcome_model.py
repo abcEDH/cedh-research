@@ -31,11 +31,11 @@ from sim_types import (
 )
 from train_draw_model import (
     DEFAULT_CACHE_PATH,
-    DrawPodRow,
     RESULTS_SELECT,
     SEATS_SELECT,
     TOPDECK_ELOS_SELECT,
     TOURNAMENTS_SELECT,
+    DrawPodRow,
     build_rich_pod_cache,
     fetch_all,
     load_pods,
@@ -263,7 +263,9 @@ def append_top_cut_rows(client: SupabaseClient, pods: list[DrawPodRow]) -> list[
         for row in seat_rows
         if row.get("game_id") and row.get("entry_id") and row.get("seat_position") is not None
     }
-    tournament_ids = sorted({str(rows[0].get("tournament_id")) for rows in by_game.values() if rows[0].get("tournament_id")})
+    tournament_ids = sorted(
+        {str(rows[0].get("tournament_id")) for rows in by_game.values() if rows[0].get("tournament_id")}
+    )
     tournament_rows: list[dict[str, Any]] = []
     commander_rows: list[dict[str, Any]] = []
     for chunk in chunked(tournament_ids, 200):
@@ -327,20 +329,39 @@ def append_top_cut_rows(client: SupabaseClient, pods: list[DrawPodRow]) -> list[
         tournament_size = int(meta.get("player_count") or len(player_ids))
         top_cut = int(meta.get("top_cut") or 0)
         cut_fraction = min(1.0, top_cut / max(1, tournament_size)) if top_cut > 0 else 0.0
-        cut_size_bucket = 0 if top_cut <= 0 else 1 if top_cut <= 4 else 2 if top_cut <= 8 else 3 if top_cut <= 16 else 4 if top_cut <= 32 else 5
+        cut_size_bucket = (
+            0
+            if top_cut <= 0
+            else 1
+            if top_cut <= 4
+            else 2
+            if top_cut <= 8
+            else 3
+            if top_cut <= 16
+            else 4
+            if top_cut <= 32
+            else 5
+        )
         size_bucket = 0 if tournament_size < 32 else 1 if tournament_size < 64 else 2 if tournament_size < 128 else 3
         game_date = parse_datetime_value(rows[0]["start_date"])
         round_number = max_swiss_round_by_tournament.get(tournament_id, 0) + 1
-        topdeck_ratings = [topdeck_elo_by_player_id[player_id] for player_id in player_ids if player_id in topdeck_elo_by_player_id]
-        commander_color_sets = [commander_colors_by_entry.get((tournament_id, player_id), ()) for player_id in player_ids]
+        topdeck_ratings = [
+            topdeck_elo_by_player_id[player_id] for player_id in player_ids if player_id in topdeck_elo_by_player_id
+        ]
+        commander_color_sets = [
+            commander_colors_by_entry.get((tournament_id, player_id), ()) for player_id in player_ids
+        ]
         commander_color_counts = [len(colors) for colors in commander_color_sets]
         unique_commander_colors = {color for colors in commander_color_sets for color in colors}
         seat_positions = [
-            seat_by_pair.get((game_id, str(row.get("entry_id")))) if row.get("entry_id") else None
-            for row in rows
+            seat_by_pair.get((game_id, str(row.get("entry_id")))) if row.get("entry_id") else None for row in rows
         ]
         highest_idx = max(range(len(float_ratings)), key=lambda index: float_ratings[index])
-        second_idx = sorted(range(len(float_ratings)), key=lambda index: float_ratings[index], reverse=True)[1] if len(float_ratings) > 1 else highest_idx
+        second_idx = (
+            sorted(range(len(float_ratings)), key=lambda index: float_ratings[index], reverse=True)[1]
+            if len(float_ratings) > 1
+            else highest_idx
+        )
         seat_highest = seat_positions[highest_idx] if seat_positions[highest_idx] is not None else -1
         seat_second = seat_positions[second_idx] if seat_positions[second_idx] is not None else -1
         payload = empty_pod_row_payload()
@@ -373,7 +394,9 @@ def append_top_cut_rows(client: SupabaseClient, pods: list[DrawPodRow]) -> list[
                 "seat_highest": seat_highest,
                 "seat_second": seat_second,
                 "seat_data_missing": 1 if all(seat is None for seat in seat_positions) else 0,
-                "topdeck_elo_spread": float(max(topdeck_ratings) - min(topdeck_ratings)) if len(topdeck_ratings) >= 2 else 0.0,
+                "topdeck_elo_spread": float(max(topdeck_ratings) - min(topdeck_ratings))
+                if len(topdeck_ratings) >= 2
+                else 0.0,
                 "topdeck_elo_mean": float(sum(topdeck_ratings) / len(topdeck_ratings)) if topdeck_ratings else 0.0,
                 "topdeck_elo_std": float(np.std(np.asarray(topdeck_ratings, dtype=float))) if topdeck_ratings else 0.0,
                 "topdeck_elo_missing_count": len(player_ids) - len(topdeck_ratings),
@@ -382,14 +405,18 @@ def append_top_cut_rows(client: SupabaseClient, pods: list[DrawPodRow]) -> list[
                 "count_black_commanders": sum(1 for colors in commander_color_sets if "B" in colors),
                 "count_red_commanders": sum(1 for colors in commander_color_sets if "R" in colors),
                 "count_green_commanders": sum(1 for colors in commander_color_sets if "G" in colors),
-                "avg_commander_color_count": float(sum(commander_color_counts) / len(commander_color_counts)) if commander_color_counts else 0.0,
+                "avg_commander_color_count": float(sum(commander_color_counts) / len(commander_color_counts))
+                if commander_color_counts
+                else 0.0,
                 "max_commander_color_count": max(commander_color_counts) if commander_color_counts else 0,
                 "unique_commander_color_count": len(unique_commander_colors),
                 "commander_color_data_missing_count": sum(1 for colors in commander_color_sets if not colors),
             }
         )
         payload.update(rating_features(float_ratings))
-        payload["topdeck_elo_minus_internal_mean"] = payload["topdeck_elo_mean"] - payload["mean_elo"] if topdeck_ratings else 0.0
+        payload["topdeck_elo_minus_internal_mean"] = (
+            payload["topdeck_elo_mean"] - payload["mean_elo"] if topdeck_ratings else 0.0
+        )
         appended.append(DrawPodRow(**payload))
 
     print(f"Appended {len(appended):,} top-cut pod rows.", flush=True)
@@ -406,9 +433,7 @@ def score_multiclass(y_true: np.ndarray, probabilities: np.ndarray) -> dict[str,
     draw_log_loss, draw_brier = score_probs((labels == 0).astype(int), draw_probability)
     decisive_mask = labels != 0
     winner_log_loss = (
-        float(np.mean(-np.log(clipped[decisive_mask, labels[decisive_mask]])))
-        if np.any(decisive_mask)
-        else 0.0
+        float(np.mean(-np.log(clipped[decisive_mask, labels[decisive_mask]]))) if np.any(decisive_mask) else 0.0
     )
     return {
         "log_loss": log_loss,
@@ -441,7 +466,9 @@ def main() -> None:
     parser.add_argument(
         "--include-topdeck-elo-features",
         action="store_true",
-        help="Include displayed TopDeck Elo features. Off by default; internal Elo remains the normal predictive input.",
+        help=(
+            "Include displayed TopDeck Elo features. Off by default; internal Elo remains the normal predictive input."
+        ),
     )
     args = parser.parse_args()
 
@@ -548,7 +575,12 @@ def main() -> None:
         },
         "class_counts": {
             str(class_label): int(count)
-            for class_label, count in zip(*np.unique(np.asarray([0 if row.is_draw else int(row.winner_index) + 1 for row in rows]), return_counts=True), strict=True)
+            for class_label, count in zip(
+                *np.unique(
+                    np.asarray([0 if row.is_draw else int(row.winner_index) + 1 for row in rows]), return_counts=True
+                ),
+                strict=True,
+            )
         },
         "holdout": holdout,
     }

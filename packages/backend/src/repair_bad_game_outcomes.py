@@ -12,7 +12,9 @@ from typing import Any
 
 import requests
 
-from ingest import DataIngester, SupabaseClient, TopDeckClient
+from ingest import DataIngester, TopDeckClient
+from supabase import Client
+from supabase_client import get_supabase_client
 
 
 def load_env() -> None:
@@ -33,18 +35,22 @@ def require_env(name: str) -> str:
     return value
 
 
-class SupabaseRepairClient(SupabaseClient):
-    def delete_tournament_games(self, tournament_id: str) -> int:
-        endpoint = f"{self.url}/rest/v1/games"
-        response = requests.delete(
-            endpoint,
-            headers=self.headers,
-            params={"tournament_id": f"eq.{tournament_id}", "select": "id"},
-            timeout=60,
-        )
-        response.raise_for_status()
-        deleted = response.json()
-        return len(deleted) if isinstance(deleted, list) else 0
+def delete_tournament_games(client: Client, tournament_id: str) -> int:
+    """Delete every `games` row for one tournament, returning the count removed.
+
+    Uses the fluent builder's `.delete()` (composition over the raw `Client`)
+    rather than the old `SupabaseRepairClient(SupabaseClient)` subclass --
+    `DataIngester` now expects a plain `Client`, and subclassing the removed
+    wrapper is no longer possible.
+    """
+    result = (
+        client.table("games")
+        .delete(returning="representation")
+        .eq("tournament_id", tournament_id)
+        .execute()
+    )
+    deleted = result.data
+    return len(deleted) if isinstance(deleted, list) else 0
 
 
 def fetch_affected_tournaments(
@@ -179,7 +185,7 @@ def main() -> int:
         return 0
 
     topdeck = TopDeckClient(topdeck_key)
-    supabase = SupabaseRepairClient(supabase_url, supabase_key)
+    supabase = get_supabase_client(supabase_url, supabase_key)
     ingester = DataIngester(topdeck, supabase)
 
     repaired = 0
@@ -203,13 +209,11 @@ def main() -> int:
 
             if not tournament.get("startDate") or not tournament.get("rounds"):
                 skipped += 1
-                print(
-                    "  skipped=true reason=topdeck_payload_missing_start_date_or_rounds"
-                )
+                print("  skipped=true reason=topdeck_payload_missing_start_date_or_rounds")
                 continue
 
             if args.delete_first:
-                deleted = supabase.delete_tournament_games(tournament_id)
+                deleted = delete_tournament_games(supabase, tournament_id)
                 print(f"  deleted_games={deleted}")
 
             result = ingester.process_tournament(tournament)

@@ -13,7 +13,6 @@ import argparse
 import json
 import math
 import os
-import pickle
 import time
 from collections import defaultdict
 from dataclasses import dataclass
@@ -24,19 +23,17 @@ from typing import Any
 import numpy as np
 from sklearn.ensemble import HistGradientBoostingClassifier
 
-from ingest import SupabaseClient, load_local_env
-from rebuild_global_elo_tables import DEFAULT_RATING, SEAT_ELO_BONUS
-from sim_models import CANDIDATE_WINNER_FEATURES
-from train_draw_model import DEFAULT_CACHE_PATH
-
 from evaluate_pod_outcome_vs_draw_elo import (
     EPSILON,
     apply_round_elo_updates,
+    build_elo_history,
     decisive_win_shares,
     fetch_participant_inputs,
+    fit_draw_model,
     is_valid_outcome_row,
     load_cached_rows,
     old_baseline_probabilities,
+    predict_draw_probability,
     rating_before_start,
     round_group_key,
     round_sort_key,
@@ -44,12 +41,14 @@ from evaluate_pod_outcome_vs_draw_elo import (
     row_value,
     select_features,
     split_by_tournament,
-    make_x as make_pod_x,
-    fit_draw_model,
-    predict_draw_probability,
-    build_elo_history,
 )
-
+from evaluate_pod_outcome_vs_draw_elo import (
+    make_x as make_pod_x,
+)
+from ingest import SupabaseClient, load_local_env
+from rebuild_global_elo_tables import DEFAULT_RATING, SEAT_ELO_BONUS
+from sim_models import CANDIDATE_WINNER_FEATURES
+from train_draw_model import DEFAULT_CACHE_PATH
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 DEFAULT_REPORT_PATH = DATA_DIR / "candidate_winner_model_eval.json"
@@ -91,12 +90,16 @@ def maybe_limit_train_tournaments(train_rows: list[Any], limit: int | None) -> l
         if current is None or date < current:
             first_date_by_tournament[tournament_id] = date
     selected = set(
-        sorted(first_date_by_tournament, key=lambda tournament_id: (first_date_by_tournament[tournament_id], tournament_id))[-limit:]
+        sorted(
+            first_date_by_tournament, key=lambda tournament_id: (first_date_by_tournament[tournament_id], tournament_id)
+        )[-limit:]
     )
     return [row for row in train_rows if str(row_value(row, "tournament_id", "") or "") in selected]
 
 
-def group_result_rows(result_rows: list[dict[str, Any]]) -> tuple[
+def group_result_rows(
+    result_rows: list[dict[str, Any]],
+) -> tuple[
     dict[str, dict[str, list[dict[str, Any]]]],
     dict[str, str],
     dict[str, set[str]],
@@ -150,7 +153,9 @@ def candidate_feature_tuple(
     effective_elos: dict[str, float] = {}
     for other_id in player_ids:
         other_raw_seat = seats.get(other_id)
-        other_bonus = SEAT_ELO_BONUS.get((other_raw_seat or 0) + 1, 0.0) if use_seat_bonus and other_raw_seat is not None else 0.0
+        other_bonus = (
+            SEAT_ELO_BONUS.get((other_raw_seat or 0) + 1, 0.0) if use_seat_bonus and other_raw_seat is not None else 0.0
+        )
         effective_elos[other_id] = float(ratings.get(other_id, DEFAULT_RATING)) + other_bonus
     sorted_elos = sorted(effective_elos.values(), reverse=True)
     pod_size = len(player_ids)
@@ -221,7 +226,10 @@ def build_candidate_examples(rows: list[Any], participant_inputs: dict[str, Any]
                 if cache_row is None:
                     continue
                 has_draw = any(str(row.get("result") or "").lower() == "draw" for row in game_rows)
-                winner_id = next((str(row.get("player_id")) for row in game_rows if str(row.get("result") or "").lower() == "win"), None)
+                winner_id = next(
+                    (str(row.get("player_id")) for row in game_rows if str(row.get("result") or "").lower() == "win"),
+                    None,
+                )
                 if has_draw or not winner_id:
                     continue
                 elo_shares = decisive_win_shares(game_rows, ratings, seats_by_entry)
@@ -269,7 +277,9 @@ def fit_candidate_model(examples: list[CandidateExample]) -> HistGradientBoostin
     return model
 
 
-def candidate_scores_by_game(model: HistGradientBoostingClassifier, examples: list[CandidateExample]) -> dict[str, dict[str, float]]:
+def candidate_scores_by_game(
+    model: HistGradientBoostingClassifier, examples: list[CandidateExample]
+) -> dict[str, dict[str, float]]:
     if not examples:
         return {}
     x_matrix = make_candidate_x(examples)
@@ -285,7 +295,7 @@ def candidate_scores_by_game(model: HistGradientBoostingClassifier, examples: li
         total = sum(player_scores.values())
         if total <= 0:
             size = max(1, len(player_scores))
-            normalized[game_id] = {player_id: 1.0 / size for player_id in player_scores}
+            normalized[game_id] = dict.fromkeys(player_scores, 1.0 / size)
         else:
             normalized[game_id] = {player_id: score / total for player_id, score in player_scores.items()}
     return normalized
@@ -449,16 +459,26 @@ def main() -> None:
     parser.add_argument("--validation-fraction", type=float, default=0.15)
     parser.add_argument("--limit-train-tournaments", type=int)
     parser.add_argument("--limit-test-tournaments", type=int)
-    parser.add_argument("--blend-weights", type=parse_blend_weights, default=parse_blend_weights("0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1"))
+    parser.add_argument(
+        "--blend-weights",
+        type=parse_blend_weights,
+        default=parse_blend_weights("0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1"),
+    )
     args = parser.parse_args()
 
     started = time.perf_counter()
     load_local_env()
-    rows = [row for row in load_cached_rows(Path(args.cache_path)) if is_valid_outcome_row(row) and row_value(row, "tournament_id")]
+    rows = [
+        row
+        for row in load_cached_rows(Path(args.cache_path))
+        if is_valid_outcome_row(row) and row_value(row, "tournament_id")
+    ]
     train_rows, test_rows, split_metadata = split_by_tournament(rows, args.test_fraction)
     train_rows = maybe_limit_train_tournaments(train_rows, args.limit_train_tournaments)
     test_rows = maybe_limit_train_tournaments(test_rows, args.limit_test_tournaments)
-    candidate_train_rows, validation_rows, validation_metadata = split_by_tournament(train_rows, args.validation_fraction)
+    candidate_train_rows, validation_rows, validation_metadata = split_by_tournament(
+        train_rows, args.validation_fraction
+    )
     all_needed_rows = candidate_train_rows + validation_rows + train_rows + test_rows
     print(
         f"Rows: train_inner={len(candidate_train_rows):,}, validation={len(validation_rows):,}, "
@@ -481,7 +501,9 @@ def main() -> None:
     validation_candidate_model = fit_candidate_model(validation_candidate_examples)
     validation_x = make_pod_x(validation_rows, pod_features)
     validation_draw_probabilities = predict_draw_probability(validation_draw_model, validation_x).tolist()
-    validation_old_probability_by_game = old_baseline_probabilities(validation_rows, validation_draw_probabilities, participant_inputs)
+    validation_old_probability_by_game = old_baseline_probabilities(
+        validation_rows, validation_draw_probabilities, participant_inputs
+    )
     validation_eval_examples = build_candidate_examples(validation_rows, participant_inputs)
     validation_candidate_shares = candidate_scores_by_game(validation_candidate_model, validation_eval_examples)
     validation_elo_shares = elo_share_by_game(validation_eval_examples)
@@ -520,7 +542,9 @@ def main() -> None:
     )
 
     validation_blend_losses = {
-        f"{weight:.2f}": log_loss([prediction.blend_probabilities[f"{weight:.2f}"] for prediction in validation_predictions])
+        f"{weight:.2f}": log_loss(
+            [prediction.blend_probabilities[f"{weight:.2f}"] for prediction in validation_predictions]
+        )
         for weight in args.blend_weights
     }
     test_blend_losses = {

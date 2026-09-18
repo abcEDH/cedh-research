@@ -22,6 +22,21 @@ class BackendMaintenanceWorkflowTests(unittest.TestCase):
         workflow = WORKFLOW_PATH.read_text()
         self.assertNotIn("ingest.py", workflow)
 
+    def test_elo_recompute_job_has_timeout(self) -> None:
+        """Prevents the runner getting silently killed after ~1h with no error log.
+
+        The game_events upsert (1M+ rows) was timing out the runner. Adding
+        timeout-minutes ensures GHA emits a clear failure instead of a vague
+        'shutdown signal' message.
+        """
+        workflow = WORKFLOW_PATH.read_text()
+        self.assertIn("timeout-minutes:", workflow)
+
+    def test_elo_recompute_does_not_include_game_events_by_default(self) -> None:
+        """Daily cron must NOT pass --include-game-events; that upsert blocks the runner."""
+        workflow = WORKFLOW_PATH.read_text()
+        self.assertNotIn("--include-game-events", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()

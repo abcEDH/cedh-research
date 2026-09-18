@@ -33,7 +33,9 @@ VIEW_SPECS: list[tuple[str, int]] = [
     ("commander_stats", 10),
     ("card_frequencies_global", 100),
     ("card_frequencies_by_commander", 100),
-    ("trap_cards_report", 1),
+    # A trap classification is data-dependent; an empty report is valid when
+    # no cards meet the underperformance threshold.
+    ("trap_cards_report", 0),
     ("spice_cards_report", 1),
     ("commander_meta_monthly", 5),
     ("commander_momentum", 1),
@@ -688,31 +690,6 @@ def benchmark_specs() -> list[BenchmarkSpec]:
                 "avg_win_rate",
                 "top_16s",
             ),
-        ),
-        BenchmarkSpec(
-            name="survival_summary",
-            request_builder=lambda supabase_url, fixture: BenchmarkRequest(
-                "GET",
-                _rest_url(supabase_url, "survival_summary"),
-                params=_select_params(
-                    "commander_name,total_entries,tournaments,total_games,overall_win_rate,avg_percentile,top_cut_rate,tournament_win_rate,recent_entries,recent_win_rate",
-                    limit=25,
-                    order="total_entries.desc",
-                ),
-            ),
-            expected_columns=(
-                "commander_name",
-                "total_entries",
-                "tournaments",
-                "total_games",
-                "overall_win_rate",
-                "avg_percentile",
-                "top_cut_rate",
-                "tournament_win_rate",
-                "recent_entries",
-                "recent_win_rate",
-            ),
-            smoke=False,
         ),
     ]
 

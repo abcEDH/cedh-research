@@ -30,6 +30,14 @@ def make_state(player_count: int = 8):
 
 
 class SimPairingsTest(unittest.TestCase):
+    def test_five_remaining_players_have_one_full_pod_and_one_bye(self):
+        state = make_state(8)
+        state.eligible_player_ids = {f"p{i}" for i in range(1, 6)}
+        pods = pair_swiss_round(state, 2, random.Random(1))
+        self.assertEqual([len(p.player_ids) for p in pods], [4, 1])
+        self.assertEqual({pid for p in pods for pid in p.player_ids}, state.eligible_player_ids)
+
+
     def test_eligible_players_limit_pairings_and_top_cut(self):
         state = make_state()
         state.eligible_player_ids = {"p1", "p2", "p3", "p4"}

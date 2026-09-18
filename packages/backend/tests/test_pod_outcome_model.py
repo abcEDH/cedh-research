@@ -10,6 +10,7 @@ from sim_models import (
     CANDIDATE_WINNER_FEATURES,
     LoadedCandidateWinnerModel,
     LoadedDrawModel,
+    load_draw_model_artifact,
     build_round_snapshot,
     predict_decisive_win_probabilities,
     predict_pod_outcome_probabilities,
@@ -39,6 +40,20 @@ class SeatWinnerModel:
 
 
 class PodOutcomeModelTest(unittest.TestCase):
+    def test_shipped_hybrid_artifact_loads_and_uses_internal_elo(self):
+        model = load_draw_model_artifact()
+        self.assertFalse(any("topdeck_elo" in feature for feature in model.features))
+        self.assertEqual((model.target, model.draw_class, model.winner_source), ("pod_outcome", 0, "external"))
+        players = [SimPlayer(str(i), str(i), 1500.0 + i * 100) for i in range(4)]
+        state = initialize_state(TournamentSpec("test", "Test", datetime(2026, 9, 18), 1, 4, 4), players)
+        pod = Pod(0, 1, [p.player_id for p in players], "Round 1", {str(i): i + 1 for i in range(4)})
+        from sim_engine import build_tournament_context
+        context = build_tournament_context(state.spec)
+        draws, wins = predict_pod_outcome_probabilities([pod], state, context, model, build_round_snapshot(state, context, 1))
+        self.assertTrue(0.0 <= draws[(0, 1)] <= 1.0)
+        np.testing.assert_allclose(wins[(0, 1)], predict_decisive_win_probabilities([pod], state)[(0, 1)])
+
+
     def test_pod_outcome_artifact_returns_draw_and_conditional_win_probabilities(self) -> None:
         players = [
             SimPlayer(player_id=f"p{index}", name=f"Player {index}", elo=1500.0, tiebreak_seed=index)

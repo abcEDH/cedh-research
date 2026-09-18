@@ -61,16 +61,24 @@ export const CommanderStatsSchema = z.object({
   commander_name: z.string(),
   archetype: z.string().nullable(),
   color_identity: z.array(z.string()).nullable(),
+  // total_entries/tournaments_played/top_16_count/top_cut_count are COUNT()
+  // aggregates in the commander_stats view, which return 0 (never NULL) even
+  // when a commander has zero tournament_entries rows.
   total_entries: z.number().int().nonnegative(),
   tournaments_played: z.number().int().nonnegative(),
-  total_wins: z.number().int().nonnegative(),
-  total_losses: z.number().int().nonnegative(),
-  total_draws: z.number().int().nonnegative(),
-  avg_win_rate: z.number(),
+  // total_wins/total_losses/total_draws/avg_win_rate/conversion_rate_top_16/
+  // conversion_rate_top_cut are SUM()/AVG() aggregates computed over a LEFT
+  // JOIN to tournament_entries. SUM/AVG of an empty group is legitimately
+  // NULL in Postgres, which happens for any commander with zero recorded
+  // entries — so these fields must be nullable to match real view output.
+  total_wins: z.number().int().nonnegative().nullable(),
+  total_losses: z.number().int().nonnegative().nullable(),
+  total_draws: z.number().int().nonnegative().nullable(),
+  avg_win_rate: z.number().nullable(),
   top_16_count: z.number().int().nonnegative(),
-  conversion_rate_top_16: z.number(),
+  conversion_rate_top_16: z.number().nullable(),
   top_cut_count: z.number().int().nonnegative(),
-  conversion_rate_top_cut: z.number(),
+  conversion_rate_top_cut: z.number().nullable(),
 });
 
 export type CommanderStats = z.infer<typeof CommanderStatsSchema>;

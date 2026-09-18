@@ -101,6 +101,9 @@ def _topdeck_pod_sizes(player_count: int, pod_size: int) -> list[int]:
     if pod_size != 4:
         return [min(pod_size, player_count - index) for index in range(0, player_count, pod_size)]
 
+    if player_count == 5:
+        return [4, 1]
+
     full_pods, remainder = divmod(player_count, pod_size)
     if remainder == 0:
         return [4] * full_pods
@@ -134,7 +137,9 @@ def _optimize_pods_for_repeats(state: TournamentState, pods: list[list[str]]) ->
                         swapped_right = right_pod[:]
                         swapped_left[i] = right_player
                         swapped_right[j] = left_player
-                        candidate_penalty = _pod_repeat_penalty(state, swapped_left) + _pod_repeat_penalty(state, swapped_right)
+                        candidate_penalty = _pod_repeat_penalty(state, swapped_left) + _pod_repeat_penalty(
+                            state, swapped_right
+                        )
                         if candidate_penalty < best_penalty:
                             best_penalty = candidate_penalty
                             best_swap = (i, j)
@@ -167,7 +172,7 @@ def _pods_from_brackets(
     if (
         repeat_avoidance_max_pods is not None
         and repeat_avoidance_max_pods > 0
-        and len(pod_groups) <= repeat_avoidance_max_pods
+        and len(pod_groups) <= min(32, repeat_avoidance_max_pods)
     ):
         return _optimize_pods_for_repeats(state, pod_groups)
     return pod_groups
@@ -239,8 +244,7 @@ def pair_topdeck_bracket(players: list[str], round_index: int) -> tuple[list[str
 
     if len(players) == 64:
         pod_groups = [
-            [players[index], players[31 - index], players[32 + index], players[63 - index]]
-            for index in range(16)
+            [players[index], players[31 - index], players[32 + index], players[63 - index]] for index in range(16)
         ]
     elif len(players) == 40:
         auto_advancers = players[:8]

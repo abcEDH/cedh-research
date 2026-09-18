@@ -1,0 +1,4 @@
+This placeholder exists only so `apps/multigame` is a valid path on `main` for
+Vercel's "Root Directory" project-creation check. The real app lives on the
+`claude/riftbound-gundam-expansion-4cboq8` branch (PR #247) and will replace
+this file when that PR merges. Safe to delete once #247 is merged.

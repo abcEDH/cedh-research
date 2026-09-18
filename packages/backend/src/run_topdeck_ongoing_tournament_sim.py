@@ -12,8 +12,8 @@ import pickle
 import random
 import re
 import time
-from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from collections import Counter, defaultdict
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -31,8 +31,8 @@ from sim_engine import (
     _merge_summaries,
     _run_state_monte_carlo_batch,
     apply_bye,
-    apply_points_drop_if_due,
     apply_pod_result,
+    apply_points_drop_if_due,
     build_tournament_context,
     clone_state,
     initialize_state,
@@ -43,7 +43,6 @@ from sim_models import (
     DEFAULT_DRAW_MODEL_PATH,
     ELO_BASE,
     ELO_DIVISOR,
-    SEAT_ELO_BONUS,
     LoadedCandidateWinnerModel,
     LoadedDrawModel,
     build_round_snapshot,
@@ -59,9 +58,7 @@ from tournament_sim_runner import (
 )
 
 DEFAULT_PREPARED_STATE_CACHE_DIR = Path(".cache/tournament-sim")
-PREPARED_STATE_CACHE_VERSION = 8
-K_FACTOR_DECISIVE = 64
-K_FACTOR_DRAW = 26
+PREPARED_STATE_CACHE_VERSION = 9
 STREAM_INITIAL_EMIT_SIMULATIONS = 5
 STREAM_EMIT_SIMULATION_INTERVAL = 5
 
@@ -154,13 +151,11 @@ def infer_structure(
 
     if swiss_rounds is None:
         raise RuntimeError(
-            "Unable to infer total swiss rounds from the TopDeck payload/event page. "
-            "Pass --swiss-rounds explicitly."
+            "Unable to infer total swiss rounds from the TopDeck payload/event page. Pass --swiss-rounds explicitly."
         )
     if top_cut is None:
         raise RuntimeError(
-            "Unable to infer top cut size from the TopDeck payload/event page. "
-            "Pass --top-cut explicitly."
+            "Unable to infer top cut size from the TopDeck payload/event page. Pass --top-cut explicitly."
         )
     return swiss_rounds, top_cut
 
@@ -247,20 +242,8 @@ def standings_tiebreak_seed_map(tournament: dict[str, Any]) -> dict[str, int]:
     return seeds
 
 
-def in_filter(values: list[str]) -> str:
-    escaped = [value.replace('"', '\\"') for value in values]
-    return "(" + ",".join(f'"{value}"' for value in escaped) + ")"
-
-
 def fetch_existing_players(client, topdeck_ids: list[str]) -> dict[str, dict[str, str]]:
-    rows = client.select(
-        "players",
-        {
-            "select": "id,topdeck_id,name",
-            "topdeck_id": f"in.{in_filter(topdeck_ids)}",
-        },
-        max_retries=8,
-    )
+    rows = client.table("players").select("id,topdeck_id,name").in_("topdeck_id", topdeck_ids).execute().data
     return {
         str(row["topdeck_id"]): {
             "id": str(row["id"]),
@@ -296,9 +279,7 @@ def build_pods_for_round(
     for table in round_data.get("tables") or []:
         players = table.get("players") or []
         player_ids = [
-            id_map[str(player.get("id"))]
-            for player in players
-            if player.get("id") and str(player.get("id")) in id_map
+            id_map[str(player.get("id"))] for player in players if player.get("id") and str(player.get("id")) in id_map
         ]
         if table_is_bye(table):
             fallback_table_number = table_number_offset + len(pods) + 1
@@ -367,22 +348,31 @@ def build_result_for_table(pod: Pod, table: dict[str, Any], id_map: dict[str, st
         player_ids=pod.player_ids,
         is_draw=draw,
         winner_id=normalized_winner_id,
-        win_probabilities=tuple(),
+        win_probabilities=(),
         draw_probability=0.0,
     )
 
 
 def update_elos_for_result(state, pod: Pod, result: PodResult) -> None:
+    from internal_elo import is_top_cut, learning_rate, seat_offsets
+
     player_ids = list(result.player_ids)
     if len(player_ids) < 2:
         return
-    k_factor = K_FACTOR_DRAW if result.is_draw else K_FACTOR_DECISIVE
+    top_cut = is_top_cut(pod.round_name)
+    if top_cut and result.is_draw:
+        winners = [pid for pid in player_ids if pod.seats_by_player.get(pid) == 1]
+        if len(winners) != 1:
+            raise ValueError("Top-cut draw requires a unique seat 1")
+        result.is_draw = False
+        result.winner_id = winners[0]
+    k_factor = learning_rate(top_cut=top_cut, draw=result.is_draw, league=state.spec.is_league)
     use_seat_bonus = len(player_ids) == 4 and sorted(pod.seats_by_player.values()) == [1, 2, 3, 4]
     effective_ratings: dict[str, float] = {}
     for player_id in player_ids:
         rating = float(state.players[player_id].elo)
         if use_seat_bonus:
-            rating += SEAT_ELO_BONUS.get(pod.seats_by_player.get(player_id), 0.0)
+            rating += seat_offsets(top_cut).get(pod.seats_by_player.get(player_id), 0.0)
         effective_ratings[player_id] = rating
     total_equity = sum(math.pow(ELO_BASE, effective_ratings[player_id] / ELO_DIVISOR) for player_id in player_ids)
     if total_equity <= 0:
@@ -421,8 +411,7 @@ def split_rounds(
                 round_number,
                 dict(
                     Counter(
-                        str(table.get("status") or "").strip()
-                        or ("Completed" if table_completed(table) else "Active")
+                        str(table.get("status") or "").strip() or ("Completed" if table_completed(table) else "Active")
                         for table in tables
                     )
                 ),
@@ -475,16 +464,12 @@ def build_base_state(
     player_names = collect_players(tournament)
     if excluded_topdeck_ids:
         player_names = {
-            topdeck_id: name
-            for topdeck_id, name in player_names.items()
-            if topdeck_id not in excluded_topdeck_ids
+            topdeck_id: name for topdeck_id, name in player_names.items() if topdeck_id not in excluded_topdeck_ids
         }
     tiebreak_seeds = standings_tiebreak_seed_map(tournament)
     if excluded_topdeck_ids:
         tiebreak_seeds = {
-            topdeck_id: seed
-            for topdeck_id, seed in tiebreak_seeds.items()
-            if topdeck_id not in excluded_topdeck_ids
+            topdeck_id: seed for topdeck_id, seed in tiebreak_seeds.items() if topdeck_id not in excluded_topdeck_ids
         }
     topdeck_ids = sorted(player_names)
     start_date = parse_start_date(tournament.get("startDate"))
@@ -514,6 +499,16 @@ def build_base_state(
         )
         for topdeck_id in topdeck_ids
     ]
+    if "is_league" not in tournament:
+        league_rows = (
+            client.table("tournaments")
+            .select("is_league")
+            .eq("topdeck_tid", str(tournament.get("id") or tournament.get("TID")))
+            .limit(1)
+            .execute()
+            .data
+        )
+        tournament["is_league"] = bool(league_rows and league_rows[0].get("is_league"))
     spec = TournamentSpec(
         tournament_id=str(tournament.get("id") or tournament.get("TID")),
         name=str(tournament.get("name") or tournament.get("id") or "TopDeck Event"),
@@ -521,6 +516,7 @@ def build_base_state(
         swiss_rounds=swiss_rounds,
         top_cut=top_cut,
         player_count=len(players),
+        is_league=bool(tournament.get("is_league", False)),
         repeat_avoidance_max_pods=repeat_avoidance_max_pods,
         state=((tournament.get("eventData") or {}).get("state")),
         country=((tournament.get("eventData") or {}).get("country")),
@@ -562,11 +558,7 @@ def build_base_state(
                     "player_id": player_id,
                     "name": state.players[player_id].name,
                     "seat": pod.seats_by_player.get(player_id),
-                    "result": "draw"
-                    if result.is_draw
-                    else "win"
-                    if player_id == result.winner_id
-                    else "loss",
+                    "result": "draw" if result.is_draw else "win" if player_id == result.winner_id else "loss",
                 }
                 for player_id in pod.player_ids
             ],
@@ -686,28 +678,15 @@ def run_live_monte_carlo(
 
     return {
         "win_probability": {
-            player_id: probability / simulations
-            for player_id, probability in win_probability_totals.items()
+            player_id: probability / simulations for player_id, probability in win_probability_totals.items()
         },
-        "top_cut_probability": {
-            player_id: count / simulations
-            for player_id, count in top_cut_counts.items()
-        },
+        "top_cut_probability": {player_id: count / simulations for player_id, count in top_cut_counts.items()},
         "advancement_probability": {
-            cut_size: {
-                player_id: probability / simulations
-                for player_id, probability in player_probabilities.items()
-            }
+            cut_size: {player_id: probability / simulations for player_id, probability in player_probabilities.items()}
             for cut_size, player_probabilities in advancement_totals.items()
         },
-        "expected_points": {
-            player_id: total / simulations
-            for player_id, total in expected_points.items()
-        },
-        "expected_finish": {
-            player_id: total / simulations
-            for player_id, total in expected_finish.items()
-        },
+        "expected_points": {player_id: total / simulations for player_id, total in expected_points.items()},
+        "expected_finish": {player_id: total / simulations for player_id, total in expected_finish.items()},
         "point_requirements": {
             "top_cut": [
                 {"points": points, "probability": count / simulations, "count": count}
@@ -762,7 +741,7 @@ def run_live_monte_carlo_stream(
     for pod in locked_round_pods or []:
         pod_key = (pod.round_index, pod.table_number)
         draw_probability = (locked_round_draw_probabilities or {}).get(pod_key, 0.0)
-        decisive_win_probabilities = (locked_round_win_probabilities or {}).get(pod_key, tuple())
+        decisive_win_probabilities = (locked_round_win_probabilities or {}).get(pod_key, ())
         active_pods.append(
             {
                 "round_number": pod.round_index + 1,
@@ -889,7 +868,9 @@ def run_live_monte_carlo_stream(
                 )
             )
             summary = _merge_summaries(accumulated)
-            print(json.dumps(snapshot(summary, force_complete=time_budget_exhausted()), separators=(",", ":")), flush=True)
+            print(
+                json.dumps(snapshot(summary, force_complete=time_budget_exhausted()), separators=(",", ":")), flush=True
+            )
             if time_budget_exhausted():
                 break
         return
@@ -947,7 +928,9 @@ def run_live_monte_carlo_stream(
                     for pending in futures:
                         pending.cancel()
                     if time_budget_exhausted() and final_summary is not None and not final_snapshot_emitted:
-                        print(json.dumps(snapshot(final_summary, force_complete=True), separators=(",", ":")), flush=True)
+                        print(
+                            json.dumps(snapshot(final_summary, force_complete=True), separators=(",", ":")), flush=True
+                        )
                     return
                 submit_next_batch()
                 break
@@ -981,7 +964,10 @@ def main() -> None:
         "--repeat-avoidance-max-pods",
         type=int,
         default=32,
-        help="Run repeat-opponent swap optimization only when generated Swiss pod count is at or below this value. Use 0 to disable.",
+        help=(
+            "Run repeat-opponent swap optimization only when generated Swiss pod count is at "
+            "or below this value. Use 0 to disable."
+        ),
     )
     parser.add_argument(
         "--sample-top-cut",
@@ -1021,7 +1007,9 @@ def main() -> None:
     load_local_env()
     topdeck = TopDeckClient(os.environ["TOPDECK_API_KEY"])
     tournament = topdeck.get_tournament(args.event_id)
-    event_html = "" if args.swiss_rounds is not None and args.top_cut is not None else fetch_event_page_html(args.event_id)
+    event_html = (
+        "" if args.swiss_rounds is not None and args.top_cut is not None else fetch_event_page_html(args.event_id)
+    )
     swiss_rounds, top_cut = infer_structure(
         tournament,
         event_html,
@@ -1031,7 +1019,7 @@ def main() -> None:
 
     player_names = collect_players(tournament)
     topdeck_ids = sorted(player_names)
-    from ingest import SupabaseClient  # local import to keep script entry focused
+    from supabase_client import get_supabase_client  # local import to keep script entry focused
 
     state_fingerprint = tournament_state_fingerprint(
         tournament,
@@ -1050,13 +1038,16 @@ def main() -> None:
         live_metadata = cached_state["live_metadata"]
     else:
         start_date = parse_start_date(tournament.get("startDate"))
-        client = SupabaseClient(url=os.environ["SUPABASE_URL"], service_key=os.environ["SUPABASE_SERVICE_KEY"])
+        client = get_supabase_client(url=os.environ["SUPABASE_URL"], key=os.environ["SUPABASE_SERVICE_KEY"])
         existing_players = fetch_existing_players(client, topdeck_ids)
         player_records = {
-            topdeck_id: existing_players.get(topdeck_id) or {"id": f"topdeck:{topdeck_id}", "name": player_names[topdeck_id]}
+            topdeck_id: existing_players.get(topdeck_id)
+            or {"id": f"topdeck:{topdeck_id}", "name": player_names[topdeck_id]}
             for topdeck_id in topdeck_ids
         }
-        known_player_ids = [record["id"] for record in player_records.values() if not record["id"].startswith("topdeck:")]
+        known_player_ids = [
+            record["id"] for record in player_records.values() if not record["id"].startswith("topdeck:")
+        ]
         feature_context = (
             build_feature_context(client, known_player_ids, start_date.isoformat())
             if known_player_ids
@@ -1159,7 +1150,7 @@ def main() -> None:
         )
         summary["winner_method"] = "exact_top_cut"
     historical_point_requirements = fetch_historical_point_requirement_baseline(
-        client or SupabaseClient(url=os.environ["SUPABASE_URL"], service_key=os.environ["SUPABASE_SERVICE_KEY"]),
+        client or get_supabase_client(url=os.environ["SUPABASE_URL"], key=os.environ["SUPABASE_SERVICE_KEY"]),
         active_player_count=eligible_player_count(state),
         top_cut=state.spec.top_cut,
         swiss_rounds=state.spec.swiss_rounds,

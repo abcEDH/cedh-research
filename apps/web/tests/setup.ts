@@ -19,7 +19,10 @@ const requiredEnvVars = [
 ];
 
 for (const envVar of requiredEnvVars) {
-  if (!process.env[envVar]) {
+  const value = process.env[envVar];
+  if (!value) {
     console.warn(`Warning: ${envVar} is not set. Contract tests may fail.`);
+  } else if (value.includes("placeholder")) {
+    console.warn(`Warning: ${envVar} is set to a placeholder value. Contract tests will be skipped.`);
   }
 }

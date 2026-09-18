@@ -96,7 +96,39 @@ def upsert_elo_rows(
     rows: list[dict[str, Any]],
     players_by_topdeck_id: dict[str, dict[str, Any]],
     source_url: str,
-) -> None:
+) -> int:
+    """Upsert the fetched TopDeck Elo snapshot and prune rows that fell off it.
+
+    This is a replace-snapshot import: any row in `topdeck_player_elos` whose
+    `topdeck_id` is not present in the newly fetched `rows` is deleted in the
+    same transaction as the upsert. TopDeck's published leaderboard drops
+    players (e.g. banned cheaters) without notice, and previously a stale row
+    for a delisted player would survive indefinitely, letting a defunct
+    topdeck_elo/ranking snapshot linger and misrank real, active players on
+    the homepage (see PR #263 / issue #252).
+
+    As a safety guard, if `rows` is empty (e.g. a transient fetch/parse
+    problem upstream) this aborts without deleting anything, since an empty
+    snapshot is far more likely to indicate a fetch failure than a genuine
+    leaderboard wipe.
+
+    Pruning here only removes the raw snapshot row; the public leaderboard
+    actually reads the denormalized `global_elo_active_leaderboard` table,
+    which is rebuilt separately (and much less often) by regional_elo.py. Left
+    alone, a delisted player's already-materialized topdeck_elo/
+    topdeck_elo_rank would keep displaying there until that full rebuild next
+    runs. So in the same transaction as the prune, this also nulls those two
+    columns for every pruned topdeck_id directly (Codex P1 review finding on
+    PR #263). This doesn't re-tighten other players' topdeck_elo_rank gaps
+    left behind (that still needs a full rebuild) but it does immediately
+    clear the stale/phantom rank itself.
+
+    Returns the number of rows pruned.
+    """
+    if not rows:
+        print("TopDeck Elo snapshot is empty; skipping upsert and prune to avoid data loss.")
+        return 0
+
     fetched_at = datetime.now(timezone.utc)
     db_rows = [
         (
@@ -113,6 +145,7 @@ def upsert_elo_rows(
         )
         for row in rows
     ]
+    snapshot_topdeck_ids = [row["topdeck_id"] for row in rows]
 
     with conn.cursor() as cursor:
         psycopg2.extras.execute_values(
@@ -138,7 +171,31 @@ def upsert_elo_rows(
             db_rows,
             page_size=1000,
         )
+
+        cursor.execute(
+            """
+            DELETE FROM topdeck_player_elos
+            WHERE NOT (topdeck_id = ANY(%s))
+            RETURNING topdeck_id
+            """,
+            (snapshot_topdeck_ids,),
+        )
+        pruned_topdeck_ids = [row[0] for row in cursor.fetchall()]
+
+        if pruned_topdeck_ids:
+            cursor.execute(
+                """
+                UPDATE global_elo_active_leaderboard
+                SET topdeck_elo = NULL, topdeck_elo_rank = NULL, updated_at = now()
+                WHERE topdeck_id = ANY(%s)
+                """,
+                (pruned_topdeck_ids,),
+            )
+
     conn.commit()
+    pruned_count = len(pruned_topdeck_ids)
+    print(f"Pruned {pruned_count} stale topdeck_player_elos row(s) not present in the latest snapshot.")
+    return pruned_count
 
 
 def repair_players_from_elo(
@@ -214,7 +271,7 @@ def main() -> None:
             apply_schema(conn, migration_path)
 
         players_by_topdeck_id = fetch_players_by_topdeck_id(conn, topdeck_ids)
-        upsert_elo_rows(conn, rows, players_by_topdeck_id, args.url)
+        pruned_count = upsert_elo_rows(conn, rows, players_by_topdeck_id, args.url)
         repaired_count = 0
         if not args.no_player_repair:
             repaired_count = repair_players_from_elo(conn, rows, players_by_topdeck_id)
@@ -224,7 +281,7 @@ def main() -> None:
     print(
         "Imported "
         f"{len(rows)} TopDeck Elo rows; matched {len(players_by_topdeck_id)} existing players; "
-        f"repaired {repaired_count} player rows."
+        f"pruned {pruned_count} stale rows; repaired {repaired_count} player rows."
     )
 
 

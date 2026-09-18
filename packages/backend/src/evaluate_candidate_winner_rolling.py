@@ -10,13 +10,11 @@ import pickle
 import time
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import numpy as np
-
-from train_draw_model import DEFAULT_CACHE_PATH
 
 from evaluate_candidate_winner_model import (
     CandidateExample,
@@ -30,13 +28,15 @@ from evaluate_pod_outcome_vs_draw_elo import (
     EPSILON,
     is_valid_outcome_row,
     load_cached_rows,
-    make_x as make_pod_x,
     predict_draw_probability,
     row_date,
     row_value,
     select_features,
 )
-
+from evaluate_pod_outcome_vs_draw_elo import (
+    make_x as make_pod_x,
+)
+from train_draw_model import DEFAULT_CACHE_PATH
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 DEFAULT_PARTICIPANT_CACHE_PATH = DATA_DIR / "candidate_winner_eval_participants.pkl"
@@ -65,9 +65,7 @@ def month_sort_key(value: str) -> tuple[int, int]:
 
 def load_participant_payload(path: Path) -> dict[str, Any]:
     if not path.exists():
-        raise FileNotFoundError(
-            f"Missing participant cache: {path}. Run evaluate_candidate_winner_model.py first."
-        )
+        raise FileNotFoundError(f"Missing participant cache: {path}. Run evaluate_candidate_winner_model.py first.")
     with path.open("rb") as handle:
         payload = pickle.load(handle)
     if "payload" in payload:
@@ -76,7 +74,9 @@ def load_participant_payload(path: Path) -> dict[str, Any]:
 
 
 def log_loss(probabilities: list[float]) -> float:
-    return float(np.mean([-math.log(max(EPSILON, min(1.0, value))) for value in probabilities])) if probabilities else 0.0
+    return (
+        float(np.mean([-math.log(max(EPSILON, min(1.0, value))) for value in probabilities])) if probabilities else 0.0
+    )
 
 
 def summarize_scored_rows(rows: list[ScoredRow]) -> dict[str, Any]:
@@ -137,14 +137,10 @@ def score_fold(
     train_game_ids = {str(row_value(row, "game_id", "") or "") for row in train_rows}
     test_game_ids = {str(row_value(row, "game_id", "") or "") for row in test_rows}
     train_candidate_examples = [
-        example
-        for game_id in train_game_ids
-        for example in candidate_examples_by_game.get(game_id, ())
+        example for game_id in train_game_ids for example in candidate_examples_by_game.get(game_id, ())
     ]
     test_candidate_examples = [
-        example
-        for game_id in test_game_ids
-        for example in candidate_examples_by_game.get(game_id, ())
+        example for game_id in test_game_ids for example in candidate_examples_by_game.get(game_id, ())
     ]
     if not train_candidate_examples or not test_rows:
         return [], {
@@ -224,15 +220,21 @@ def main() -> None:
     candidate_months = [
         value
         for value in months
-        if len([row for month in months if month_sort_key(month) < month_sort_key(value) for row in rows_by_month[month]])
+        if len(
+            [row for month in months if month_sort_key(month) < month_sort_key(value) for row in rows_by_month[month]]
+        )
         >= args.min_train_rows
     ]
     if args.start_month:
-        candidate_months = [month for month in candidate_months if month_sort_key(month) >= month_sort_key(args.start_month)]
+        candidate_months = [
+            month for month in candidate_months if month_sort_key(month) >= month_sort_key(args.start_month)
+        ]
     elif args.last_months and args.last_months > 0:
         candidate_months = candidate_months[-args.last_months :]
     if args.end_month:
-        candidate_months = [month for month in candidate_months if month_sort_key(month) <= month_sort_key(args.end_month)]
+        candidate_months = [
+            month for month in candidate_months if month_sort_key(month) <= month_sort_key(args.end_month)
+        ]
     if not candidate_months:
         raise RuntimeError("No months selected for rolling evaluation")
 
@@ -248,7 +250,8 @@ def main() -> None:
         ]
         test_rows = rows_by_month[test_month]
         print(
-            f"[{index}/{len(candidate_months)}] {test_month}: train_rows={len(train_rows):,} test_rows={len(test_rows):,}",
+            f"[{index}/{len(candidate_months)}] {test_month}: "
+            f"train_rows={len(train_rows):,} test_rows={len(test_rows):,}",
             flush=True,
         )
         scored_rows, metadata = score_fold(
@@ -281,7 +284,7 @@ def main() -> None:
             )
 
     report = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "runtime_seconds": time.perf_counter() - started,
         "cache_path": str(args.cache_path),
         "participant_cache_path": str(args.participant_cache_path),

@@ -1,6 +1,7 @@
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+import { RegionalLeaderboardTable } from "@/app/regional-elo/regional-leaderboard-table";
 
 type TableData = Record<string, Array<Record<string, unknown>>>;
 
@@ -44,6 +45,12 @@ const tableData: TableData = {
       latest_tournament_date: "2026-04-25",
       latest_tournament_topdeck_tid: "event-1",
     },
+  ],
+  global_elo_game_results: [
+    { game_id: "eligible-1", topdeck_id: "player-1-topdeck", result: "win", ranking_eligible: true, all_eligible: true },
+    { game_id: "eligible-2", topdeck_id: "player-1-topdeck", result: "loss", ranking_eligible: true, all_eligible: true },
+    { game_id: "eligible-3", topdeck_id: "player-1-topdeck", result: "draw", ranking_eligible: true, all_eligible: true },
+    { game_id: "ineligible-1", topdeck_id: "player-1-topdeck", result: "win", ranking_eligible: false, all_eligible: true },
   ],
 };
 
@@ -145,8 +152,63 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/lib/supabase", () => ({
   supabase: {
     from: (table: string) => new MockQuery(table),
+    rpc: (name: string, args: { p_topdeck_ids: string[]; p_tier: "ranking" | "all" }) => {
+      if (name !== "get_elo_display_stats") {
+        return Promise.resolve({ data: null, error: { message: `Unexpected RPC: ${name}` } });
+      }
+
+      const statsByTopdeckId = new Map<
+        string,
+        { topdeck_id: string; games_played: number; wins: number; draws: number; losses: number }
+      >();
+      for (const row of tableData.global_elo_game_results) {
+        const topdeckId = row.topdeck_id as string;
+        const isEligible = args.p_tier === "ranking" ? row.ranking_eligible : row.all_eligible;
+        if (!isEligible || !args.p_topdeck_ids.includes(topdeckId)) continue;
+
+        const stats = statsByTopdeckId.get(topdeckId) ?? {
+          topdeck_id: topdeckId,
+          games_played: 0,
+          wins: 0,
+          draws: 0,
+          losses: 0,
+        };
+        if (row.result === "win") stats.wins += 1;
+        else if (row.result === "draw") stats.draws += 1;
+        else if (row.result === "loss") stats.losses += 1;
+        else continue;
+        stats.games_played += 1;
+        statsByTopdeckId.set(topdeckId, stats);
+      }
+
+      return Promise.resolve({ data: Array.from(statsByTopdeckId.values()), error: null });
+    },
   },
 }));
+
+type ReactElementLike = { type: unknown; props?: { children?: unknown } };
+
+function isReactElementLike(value: unknown): value is ReactElementLike {
+  return typeof value === "object" && value !== null && "type" in value;
+}
+
+// Walks a React element tree (without rendering it) collecting every element whose `type`
+// matches `target`. Used to inspect the exact props a client component receives, since that's
+// what gets serialized into the page's payload — see issue #253.
+function findElementsOfType(node: unknown, target: unknown, found: ReactElementLike[] = []) {
+  if (node === null || node === undefined || typeof node === "boolean") return found;
+  if (Array.isArray(node)) {
+    for (const child of node) findElementsOfType(child, target, found);
+    return found;
+  }
+  if (isReactElementLike(node)) {
+    if (node.type === target) found.push(node);
+    if (node.props && "children" in node.props) {
+      findElementsOfType(node.props.children, target, found);
+    }
+  }
+  return found;
+}
 
 describe("RegionalEloPage", () => {
   it("renders commander and latest tournament data when the enriched profile rows are present", async () => {
@@ -162,6 +224,20 @@ describe("RegionalEloPage", () => {
     expect(html).toMatch(/LEVEL SEVEN(?:'|&#x27;)S WEEKLY CEDH EVENT/);
     expect(html).not.toContain("No commander data");
     expect(html).not.toContain("No tournament data");
+    expect(html).toMatch(/Games<\/th>[\s\S]*?>3<\/td>/);
+    expect(html).toContain("Show 30+ player games only");
+  });
+
+  it("uses all leaderboard counters when the filter is explicitly disabled", async () => {
+    const pageModule = await import("@/app/regional-elo/page");
+    const element = await pageModule.default({
+      searchParams: { scope: "global", eloOnly: "false" },
+    });
+
+    const html = renderToStaticMarkup(element);
+
+    expect(html).toMatch(/Games<\/th>[\s\S]*?>4<\/td>/);
+    expect(html).toContain('aria-checked="false"');
   });
 
   it("renders 'No commander data' and 'No tournament data' when enriched profile rows are missing", async () => {
@@ -183,5 +259,78 @@ describe("RegionalEloPage", () => {
     } finally {
       tableData.player_commander_profiles = originalProfiles;
     }
+  });
+
+  it("never passes the internal `rating` field to the client leaderboard table", async () => {
+    const pageModule = await import("@/app/regional-elo/page");
+    const element = await pageModule.default({
+      searchParams: { scope: "global" },
+    });
+
+    const tableElements = findElementsOfType(element, RegionalLeaderboardTable);
+    expect(tableElements.length).toBeGreaterThan(0);
+
+    for (const tableElement of tableElements) {
+      const { leaderboard } = tableElement.props as { leaderboard: Array<Record<string, unknown>> };
+      expect(leaderboard.length).toBeGreaterThan(0);
+      for (const row of leaderboard) {
+        expect(row).not.toHaveProperty("rating");
+      }
+    }
+  });
+
+  it("strips `rating` when normalizing a Supabase row into a client-safe leaderboard row", async () => {
+    const pageModule = await import("@/app/regional-elo/page");
+    const clientRow = pageModule.toClientLeaderboardRow({
+      region_type: "global",
+      region_key: "ALL",
+      player_id: "player-1",
+      player_name: "Test Player",
+      topdeck_id: "player-1-topdeck",
+      rating: 1734.864,
+      games_played: 1,
+      wins: 1,
+      draws: 0,
+      losses: 0,
+      last_game_date: null,
+      rank: 1,
+      topdeck_elo: 2000,
+      topdeck_elo_rank: 1,
+    });
+
+    expect(clientRow).not.toHaveProperty("rating");
+    expect(clientRow.player_name).toBe("Test Player");
+  });
+
+  it("strips a legacy `hidden_rating` field left over from a stale pre-deploy cache entry", async () => {
+    const pageModule = await import("@/app/regional-elo/page");
+    // Simulate a `regional-elo-leaderboard-v4` cache entry written by the old
+    // `normalizeLeaderboardRows`, which used to copy `rating` onto `hidden_rating`. TypeScript's
+    // static `LeaderboardRow` type no longer has this field, but a runtime cache hit could still
+    // carry it until the cache naturally expires — `toClientLeaderboardRow` must defend against
+    // that regardless of the declared type.
+    const staleRowFromCache = {
+      region_type: "global",
+      region_key: "ALL",
+      player_id: "player-1",
+      player_name: "Test Player",
+      topdeck_id: "player-1-topdeck",
+      rating: 1734.864,
+      hidden_rating: 1734.864,
+      games_played: 1,
+      wins: 1,
+      draws: 0,
+      losses: 0,
+      last_game_date: null,
+      rank: 1,
+      topdeck_elo: 2000,
+      topdeck_elo_rank: 1,
+    } as Parameters<typeof pageModule.toClientLeaderboardRow>[0];
+
+    const clientRow = pageModule.toClientLeaderboardRow(staleRowFromCache);
+
+    expect(clientRow).not.toHaveProperty("rating");
+    expect(clientRow).not.toHaveProperty("hidden_rating");
+    expect(clientRow.player_name).toBe("Test Player");
   });
 });

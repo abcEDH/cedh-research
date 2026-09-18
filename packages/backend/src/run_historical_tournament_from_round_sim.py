@@ -9,35 +9,33 @@ import os
 from collections import defaultdict
 from typing import Any
 
-from ingest import SupabaseClient, load_local_env
+from ingest import load_local_env
 from run_historical_tournament_sim import (
     DEFAULT_DRAW_MODEL_PATH,
     build_spec_and_players,
     derive_top_cut_player_ids,
-    fetch_all,
     fetch_active_player_count_from_games,
     fetch_historical_point_requirement_baseline,
-    in_filter,
 )
 from sim_engine import apply_pod_result, initialize_state
 from sim_models import load_draw_model_artifact
 from sim_types import Pod, PodResult
+from supabase import Client
+from supabase_client import fetch_all, get_supabase_client
 from tournament_sim_runner import build_common_output, run_simulation_from_state
 
 
-def fetch_round_rows(client: SupabaseClient, tournament_id: str) -> list[dict[str, Any]]:
+def fetch_round_rows(client: Client, tournament_id: str) -> list[dict[str, Any]]:
     return fetch_all(
         client,
         "global_elo_game_results",
-        {
-            "select": "game_id,player_id,entry_id,round_number,table_number,result",
-            "tournament_id": f"eq.{tournament_id}",
-            "order": "round_number.asc,table_number.asc,game_id.asc",
-        },
+        columns="game_id,player_id,entry_id,round_number,table_number,result",
+        filters=[("tournament_id", "eq", tournament_id)],
+        order=[("round_number", False), ("table_number", False), ("game_id", False)],
     )
 
 
-def fetch_seat_map(client: SupabaseClient, game_ids: list[str]) -> dict[tuple[str, str], int]:
+def fetch_seat_map(client: Client, game_ids: list[str]) -> dict[tuple[str, str], int]:
     rows: list[dict[str, Any]] = []
     for start in range(0, len(game_ids), 100):
         chunk = game_ids[start : start + 100]
@@ -45,10 +43,8 @@ def fetch_seat_map(client: SupabaseClient, game_ids: list[str]) -> dict[tuple[st
             fetch_all(
                 client,
                 "game_participants",
-                {
-                    "select": "game_id,entry_id,seat_position",
-                    "game_id": f"in.{in_filter(chunk)}",
-                },
+                columns="game_id,entry_id,seat_position",
+                filters=[("game_id", "in", chunk)],
             )
         )
     return {
@@ -98,7 +94,7 @@ def build_round_structures(
                 player_ids=player_ids,
                 is_draw=is_draw,
                 winner_id=None if is_draw else (winner_ids[0] if winner_ids else None),
-                win_probabilities=tuple(),
+                win_probabilities=(),
                 draw_probability=0.0,
             )
             pods.append(pod)
@@ -124,7 +120,7 @@ def main() -> None:
     args = parser.parse_args()
 
     load_local_env()
-    client = SupabaseClient(url=os.environ["SUPABASE_URL"], service_key=os.environ["SUPABASE_SERVICE_KEY"])
+    client = get_supabase_client(url=os.environ["SUPABASE_URL"], key=os.environ["SUPABASE_SERVICE_KEY"])
     spec, players, entries, feature_context = build_spec_and_players(
         client,
         args.tournament_id,

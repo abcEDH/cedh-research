@@ -1,0 +1,116 @@
+import { unstable_cache } from "next/cache";
+import { supabase } from "@/lib/supabase";
+
+export type EloDisplayStats = {
+  games_played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+};
+
+export type EloDisplayTier = "ranking" | "all";
+type EloDisplayStatsRecord = Record<string, EloDisplayStats>;
+
+function emptyStats(): EloDisplayStats {
+  return { games_played: 0, wins: 0, draws: 0, losses: 0 };
+}
+
+/**
+ * Return display-only aggregates for ranking-eligible games.
+ *
+ * The Elo/rank values remain sourced from the leaderboard snapshot. This read
+ * only changes the counters shown beside those values. The database function
+ * starts from the displayed player IDs, rather than paging the much wider
+ * game-results view through PostgREST.
+ */
+async function fetchEloDisplayStatsInner(
+  topdeckIds: string[],
+  tier: EloDisplayTier = "ranking"
+): Promise<EloDisplayStatsRecord> {
+  const uniqueTopdeckIds = Array.from(new Set(topdeckIds.filter(Boolean)));
+  const statsByTopdeckId: EloDisplayStatsRecord = {};
+
+  for (const topdeckId of uniqueTopdeckIds) {
+    statsByTopdeckId[topdeckId] = emptyStats();
+  }
+
+  const { data, error } = await supabase.rpc("get_elo_display_stats", {
+    p_topdeck_ids: uniqueTopdeckIds,
+    p_tier: tier,
+  });
+
+  if (error) {
+    throw new Error(`Elo display stats RPC failed: ${error.message}`);
+  }
+
+  for (const row of (data ?? []) as Array<{
+    topdeck_id: string | null;
+    games_played: number | null;
+    wins: number | null;
+    draws: number | null;
+    losses: number | null;
+  }>) {
+    if (!row.topdeck_id || !statsByTopdeckId[row.topdeck_id]) continue;
+    statsByTopdeckId[row.topdeck_id] = {
+      games_played: row.games_played ?? 0,
+      wins: row.wins ?? 0,
+      draws: row.draws ?? 0,
+      losses: row.losses ?? 0,
+    };
+  }
+
+  return statsByTopdeckId;
+}
+
+const getCachedEloDisplayStatsInner = unstable_cache(
+  fetchEloDisplayStatsInner,
+  // v3 clears zero-valued fallback entries created before RPC failures were
+  // moved outside the cached callback.
+  ["elo-display-stats-v3"],
+  { revalidate: 60 * 60 * 24 }
+);
+
+/**
+ * Cached wrapper over the inner query. Sorts + deduplicates player IDs so the
+ * cache key is stable regardless of caller order, and round-trips through a
+ * plain object because `unstable_cache` serialises to JSON (killing the Map).
+ */
+export async function fetchEloDisplayStats(
+  topdeckIds: string[],
+  tier: EloDisplayTier = "ranking"
+): Promise<Map<string, EloDisplayStats>> {
+  const stableIds = Array.from(new Set(topdeckIds.filter(Boolean))).sort();
+  try {
+    const cached = await getCachedEloDisplayStatsInner(stableIds, tier);
+    return new Map(Object.entries(cached));
+  } catch (error) {
+    console.error("Elo display stats RPC failed; retaining leaderboard counters:", error);
+    // Keep the persisted counters returned by global_elo_active_leaderboard.
+    // This sits outside unstable_cache so a failed RPC is never cached.
+    return new Map();
+  }
+}
+
+export type EloDisplayRow = {
+  topdeck_id: string | null;
+  games_played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+};
+
+/** Overlay fresh display counters while preserving the persisted row snapshot on failure. */
+export async function overlayEloDisplayStats<T extends EloDisplayRow>(
+  rows: readonly T[],
+  tier: EloDisplayTier = "ranking"
+): Promise<T[]> {
+  const stats = await fetchEloDisplayStats(
+    rows.flatMap((row) => (row.topdeck_id ? [row.topdeck_id] : [])),
+    tier
+  );
+
+  return rows.map((row) => {
+    const freshStats = row.topdeck_id ? stats.get(row.topdeck_id) : undefined;
+    return freshStats ? { ...row, ...freshStats } : { ...row };
+  });
+}

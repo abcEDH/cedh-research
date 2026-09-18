@@ -461,21 +461,11 @@ export default async function TournamentLikelihoodPage({
     <div className="min-h-screen">
       <main className="container mx-auto px-4 pb-24 pt-10">
         <header className="flex flex-col gap-6 border-b border-border/60 pb-8">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <p className="knd-chip">Tournament Prep</p>
-              <h1 className="mt-4 text-3xl font-semibold text-foreground md:text-4xl">
-                Pre-Tournament Meta Scouting
-              </h1>
-            </div>
-            <nav className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-              <Link className="transition hover:text-foreground" href="/">
-                Home
-              </Link>
-              <Link className="transition hover:text-foreground" href="/regional-elo">
-                Global Elo
-              </Link>
-            </nav>
+          <div>
+            <p className="knd-chip">Tournament Prep</p>
+            <h1 className="mt-4 text-3xl font-semibold text-foreground md:text-4xl">
+              Pre-Tournament Meta Scouting
+            </h1>
           </div>
           <p className="max-w-4xl text-base text-muted-foreground">
             Paste any TopDeck tournament link or slug to profile the attendees by their recent

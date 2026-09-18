@@ -26,8 +26,8 @@ from typing import Any
 import numpy as np
 from sklearn.ensemble import HistGradientBoostingClassifier
 
+from elo_time import utc_datetime
 from ingest import SupabaseClient, load_local_env
-from sim_models import load_draw_model_artifact
 from rebuild_global_elo_tables import (
     DEFAULT_RATING,
     ELO_BASE,
@@ -36,11 +36,10 @@ from rebuild_global_elo_tables import (
     K_FACTOR_DRAW,
     SEAT_ELO_BONUS,
     bracket_round_sort_value,
-    parse_datetime_utc,
 )
+from sim_models import load_draw_model_artifact
 from train_draw_model import DEFAULT_CACHE_PATH, parse_datetime_value, score_probs
 from train_pod_outcome_model import feature_value, select_outcome_features
-
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 REPORTS_DIR = Path(__file__).resolve().parents[1] / "reports"
@@ -130,7 +129,9 @@ def split_by_tournament(rows: list[Any], test_fraction: float) -> tuple[list[Any
         current = first_date_by_tournament.get(tournament_id)
         if current is None or date < current:
             first_date_by_tournament[tournament_id] = date
-    tournaments = sorted(first_date_by_tournament, key=lambda tournament_id: (first_date_by_tournament[tournament_id], tournament_id))
+    tournaments = sorted(
+        first_date_by_tournament, key=lambda tournament_id: (first_date_by_tournament[tournament_id], tournament_id)
+    )
     if len(tournaments) < 2:
         raise RuntimeError("Need at least two tournaments with ids to create a chronological split")
     test_count = max(1, int(round(len(tournaments) * test_fraction)))
@@ -146,7 +147,9 @@ def split_by_tournament(rows: list[Any], test_fraction: float) -> tuple[list[Any
         },
         "date_range": {
             "train_start": first_date_by_tournament[tournaments[0]].isoformat(),
-            "train_end": first_date_by_tournament[tournaments[-test_count - 1]].isoformat() if len(tournaments) > test_count else None,
+            "train_end": first_date_by_tournament[tournaments[-test_count - 1]].isoformat()
+            if len(tournaments) > test_count
+            else None,
             "test_start": first_date_by_tournament[tournaments[-test_count]].isoformat(),
             "test_end": first_date_by_tournament[tournaments[-1]].isoformat(),
         },
@@ -167,7 +170,9 @@ def maybe_limit_test_tournaments(test_rows: list[Any], limit: int | None) -> lis
         if current is None or date < current:
             first_date_by_tournament[tournament_id] = date
     selected = set(
-        sorted(first_date_by_tournament, key=lambda tournament_id: (first_date_by_tournament[tournament_id], tournament_id))[-limit:]
+        sorted(
+            first_date_by_tournament, key=lambda tournament_id: (first_date_by_tournament[tournament_id], tournament_id)
+        )[-limit:]
     )
     return [row for row in test_rows if str(row_value(row, "tournament_id", "") or "") in selected]
 
@@ -293,10 +298,7 @@ def predict_outcome_probabilities(
     rows: list[Any],
     x_matrix: np.ndarray,
 ) -> list[float]:
-    return [
-        details.actual_probability
-        for details in predict_outcome_probability_details(model, rows, x_matrix)
-    ]
+    return [details.actual_probability for details in predict_outcome_probability_details(model, rows, x_matrix)]
 
 
 def fetch_all(
@@ -364,7 +366,10 @@ def fetch_participant_inputs(
                 client,
                 "global_elo_game_results",
                 {
-                    "select": "game_id,tournament_id,start_date,entry_id,player_id,result,is_draw,round_number,round_name,table_number",
+                    "select": (
+                        "game_id,tournament_id,start_date,entry_id,player_id,result,is_draw,"
+                        "round_number,round_name,table_number"
+                    ),
                     "game_id": f"in.{in_filter(chunk)}",
                     "result": "neq.bye",
                 },
@@ -393,7 +398,11 @@ def fetch_participant_inputs(
         start_date = str(row.get("start_date") or "")
         if tournament_id and player_id:
             player_ids_by_tournament[tournament_id].add(player_id)
-        if tournament_id and start_date and (tournament_id not in tournament_start or start_date < tournament_start[tournament_id]):
+        if (
+            tournament_id
+            and start_date
+            and (tournament_id not in tournament_start or start_date < tournament_start[tournament_id])
+        ):
             tournament_start[tournament_id] = start_date
     all_player_ids = sorted({player_id for player_ids in player_ids_by_tournament.values() for player_id in player_ids})
     latest_start = max(tournament_start.values()) if tournament_start else datetime.utcnow().isoformat()
@@ -453,7 +462,9 @@ def round_group_key(rows: list[dict[str, Any]]) -> tuple[int, int, str]:
     return sort_key[:3]
 
 
-def seat_by_player_for_game(game_rows: list[dict[str, Any]], seats_by_entry: dict[tuple[str, str], int]) -> dict[str, int]:
+def seat_by_player_for_game(
+    game_rows: list[dict[str, Any]], seats_by_entry: dict[tuple[str, str], int]
+) -> dict[str, int]:
     seats: dict[str, int] = {}
     for row in game_rows:
         player_id = str(row.get("player_id") or "")
@@ -471,7 +482,9 @@ def rating_equity(rating: float) -> float:
     return math.pow(ELO_BASE, rating / ELO_DIVISOR)
 
 
-def decisive_win_shares(game_rows: list[dict[str, Any]], ratings: dict[str, float], seats_by_entry: dict[tuple[str, str], int]) -> dict[str, float]:
+def decisive_win_shares(
+    game_rows: list[dict[str, Any]], ratings: dict[str, float], seats_by_entry: dict[tuple[str, str], int]
+) -> dict[str, float]:
     player_ids = [str(row.get("player_id") or "") for row in game_rows if row.get("player_id")]
     seats_by_player = seat_by_player_for_game(game_rows, seats_by_entry)
     use_seat_bonus = len(player_ids) == 4 and sorted(seats_by_player.values()) == [0, 1, 2, 3]
@@ -497,17 +510,32 @@ def apply_round_elo_updates(
             continue
         has_draw = any(str(row.get("result") or "").lower() == "draw" for row in game_rows)
         draw_count = sum(1 for row in game_rows if str(row.get("result") or "").lower() == "draw")
-        winner_id = next((str(row.get("player_id")) for row in game_rows if str(row.get("result") or "").lower() == "win"), None)
+        winner_id = next(
+            (str(row.get("player_id")) for row in game_rows if str(row.get("result") or "").lower() == "win"), None
+        )
         shares = decisive_win_shares(game_rows, ratings, seats_by_entry)
         k_factor = K_FACTOR_DRAW if has_draw else K_FACTOR_DECISIVE
         for player_id in player_ids:
             if has_draw and draw_count:
-                actual = 1.0 / draw_count if any(str(row.get("player_id")) == player_id and str(row.get("result") or "").lower() == "draw" for row in game_rows) else 0.0
+                actual = (
+                    1.0 / draw_count
+                    if any(
+                        str(row.get("player_id")) == player_id and str(row.get("result") or "").lower() == "draw"
+                        for row in game_rows
+                    )
+                    else 0.0
+                )
             else:
                 actual = 1.0 if player_id == winner_id else 0.0
             deltas[player_id] += k_factor * (actual - shares.get(player_id, 0.0))
     for player_id, delta in deltas.items():
         ratings[player_id] = round(float(ratings.get(player_id, DEFAULT_RATING)) + delta, 6)
+
+
+def parse_datetime_utc(value: str) -> datetime | None:
+    if not value:
+        return None
+    return utc_datetime(value)
 
 
 def build_elo_history(elo_event_rows: list[dict[str, Any]]) -> dict[str, tuple[list[datetime], list[float]]]:
@@ -526,7 +554,9 @@ def build_elo_history(elo_event_rows: list[dict[str, Any]]) -> dict[str, tuple[l
     return history
 
 
-def rating_before_start(player_id: str, start_date: str, elo_history: dict[str, tuple[list[datetime], list[float]]]) -> float:
+def rating_before_start(
+    player_id: str, start_date: str, elo_history: dict[str, tuple[list[datetime], list[float]]]
+) -> float:
     parsed_start = parse_datetime_utc(start_date)
     if parsed_start is None:
         return DEFAULT_RATING
@@ -581,12 +611,19 @@ def old_baseline_probability_details(
                 game_id = str(game_rows[0].get("game_id") or "")
                 is_swiss = game_rows[0].get("round_number") is not None
                 has_draw = any(str(row.get("result") or "").lower() == "draw" for row in game_rows)
-                winner_id = next((str(row.get("player_id")) for row in game_rows if str(row.get("result") or "").lower() == "win"), None)
+                winner_id = next(
+                    (str(row.get("player_id")) for row in game_rows if str(row.get("result") or "").lower() == "win"),
+                    None,
+                )
                 if has_draw:
-                    probabilities[game_id] = max(0.0, min(1.0, draw_probability_by_game.get(game_id, 0.0))) if is_swiss else 0.0
+                    probabilities[game_id] = (
+                        max(0.0, min(1.0, draw_probability_by_game.get(game_id, 0.0))) if is_swiss else 0.0
+                    )
                 elif winner_id:
                     shares = decisive_win_shares(game_rows, ratings, seats_by_entry)
-                    decisive_probability = 1.0 - max(0.0, min(1.0, draw_probability_by_game.get(game_id, 0.0))) if is_swiss else 1.0
+                    decisive_probability = (
+                        1.0 - max(0.0, min(1.0, draw_probability_by_game.get(game_id, 0.0))) if is_swiss else 1.0
+                    )
                     conditional_winner_probability = shares.get(winner_id, 0.0)
                     conditional_winner_probabilities[game_id] = conditional_winner_probability
                     probabilities[game_id] = decisive_probability * conditional_winner_probability
@@ -847,7 +884,9 @@ def main() -> None:
     report_path = Path(args.report_path)
     participant_cache_path = Path(args.participant_cache_path) if args.participant_cache_path else None
 
-    rows = [row for row in load_cached_rows(cache_path) if is_valid_outcome_row(row) and row_value(row, "tournament_id")]
+    rows = [
+        row for row in load_cached_rows(cache_path) if is_valid_outcome_row(row) and row_value(row, "tournament_id")
+    ]
     print(f"Valid outcome rows with tournament ids: {len(rows):,}", flush=True)
     train_rows, test_rows, split_metadata = split_by_tournament(rows, args.test_fraction)
     test_rows = maybe_limit_test_tournaments(test_rows, args.limit_test_tournaments)
@@ -903,9 +942,7 @@ def main() -> None:
     draw_artifact_reports: dict[str, Any] = {}
     if not args.skip_draw_artifact_comparison:
         draw_artifact_paths = (
-            [Path(path) for path in args.draw_artifacts]
-            if args.draw_artifacts
-            else list(DEFAULT_DRAW_ARTIFACT_PATHS)
+            [Path(path) for path in args.draw_artifacts] if args.draw_artifacts else list(DEFAULT_DRAW_ARTIFACT_PATHS)
         )
         for artifact_path in draw_artifact_paths:
             label = artifact_label(artifact_path)
@@ -957,7 +994,9 @@ def main() -> None:
         "new_pod_outcome_draw_swiss": metrics["draw"]["new_pod_outcome"].get("swiss", {}),
         "fresh_draw_model_swiss": metrics["draw"]["fresh_train_split_draw_model"].get("swiss", {}),
         "conditional_winner_all": metrics["conditional_winner"]["round_updated_elo_vs_new_pod_outcome"].get("all", {}),
-        "full_outcome_all": metrics["full_outcome"]["fresh_draw_model_plus_round_updated_elo_vs_new_pod_outcome"].get("all", {}),
+        "full_outcome_all": metrics["full_outcome"]["fresh_draw_model_plus_round_updated_elo_vs_new_pod_outcome"].get(
+            "all", {}
+        ),
         "artifact_draw_swiss": {
             label: value.get("draw_metrics", {}).get("swiss", {})
             for label, value in draw_artifact_reports.items()
