@@ -1,0 +1,121 @@
+{
+  "policy": "Use manually authored community discussions, primers, and deck titles. Search both orders; do not treat automatically sorted commander headers or search-result counts as evidence. Preserve existing choices when usage is mixed. Record insufficient evidence instead of treating alphabetical order as community consensus.",
+  "reviews": [
+    {
+      "commander_names": [
+        "Tymna the Weaver",
+        "Kraum, Ludevic's Opus"
+      ],
+      "status": "confirmed",
+      "reviewed_at": "2026-09-18",
+      "notes": "Retains the existing order. The primer title and player discussion support Tymna/Kraum; reverse usage also exists, so this is not claimed to be universal consensus.",
+      "sources": [
+        {
+          "url": "https://learncedh.com/decklists/tymna-kraum",
+          "kind": "primer",
+          "observed_order": "Tymna / Kraum"
+        },
+        {
+          "url": "https://www.reddit.com/r/CompetitiveEDH/comments/13ro063",
+          "kind": "player_discussion",
+          "observed_order": "Tymna / Kraum"
+        },
+        {
+          "url": "https://edhrec.com/articles/building-blue-farm-for-cedh-with-kraum-and-tymna",
+          "kind": "article",
+          "observed_order": "Kraum / Tymna",
+          "supports_selected_order": false
+        }
+      ]
+    },
+    {
+      "commander_names": [
+        "Krark, the Thumbless",
+        "Sakashima of a Thousand Faces"
+      ],
+      "status": "confirmed",
+      "reviewed_at": "2026-09-18",
+      "notes": "Retains the existing order. Independently authored primer and player discussion titles use Krark/Sakashima.",
+      "sources": [
+        {
+          "url": "https://commandersherald.com/an-introduction-to-krark-and-sakashima-in-cedh/",
+          "kind": "primer",
+          "observed_order": "Krark / Sakashima"
+        },
+        {
+          "url": "https://www.reddit.com/r/CompetitiveEDH/comments/1ulia6h/krarksakashima_fallen_out_of_favor/",
+          "kind": "player_discussion",
+          "observed_order": "Krark / Sakashima"
+        }
+      ]
+    },
+    {
+      "commander_names": [
+        "Tymna the Weaver",
+        "Thrasios, Triton Hero"
+      ],
+      "status": "confirmed",
+      "reviewed_at": "2026-09-18",
+      "notes": "Retains the saved order. Human-authored sources support this usage; reverse usage is not treated as a reason to overturn the existing choice.",
+      "sources": [
+        {
+          "url": "https://commandersherald.com/tymna-thrasios-midrange-a-post-ban-primer/",
+          "kind": "primer",
+          "observed_order": "Tymna / Thrasios"
+        },
+        {
+          "url": "https://www.reddit.com/r/CompetitiveEDH/comments/1hknlel",
+          "kind": "player_discussion",
+          "observed_order": "Tymna / Thrasios"
+        }
+      ]
+    },
+    {
+      "commander_names": [
+        "Malcolm, Keen-Eyed Navigator",
+        "Kediss, Emberclaw Familiar"
+      ],
+      "status": "confirmed",
+      "reviewed_at": "2026-09-18",
+      "notes": "Retains the saved order. Human-authored sources support this usage; reverse usage is not treated as a reason to overturn the existing choice.",
+      "sources": [
+        {
+          "url": "https://www.reddit.com/r/CompetitiveEDH/comments/1fj6u64",
+          "kind": "player_discussion",
+          "observed_order": "Malcolm / Kediss"
+        },
+        {
+          "url": "https://www.reddit.com/r/CompetitiveEDH/comments/1gvosqe",
+          "kind": "player_discussion",
+          "observed_order": "Malcolm / Kediss"
+        },
+        {
+          "url": "https://www.reddit.com/r/CompetitiveEDH/comments/jqdrxk",
+          "kind": "player_discussion",
+          "observed_order": "Kediss / Malcolm"
+        }
+      ]
+    },
+    {
+      "commander_names": [
+        "Rograkh, Son of Rohgahh",
+        "Ishai, Ojutai Dragonspeaker"
+      ],
+      "status": "confirmed",
+      "reviewed_at": "2026-09-18",
+      "notes": "Retains the saved order. Human-authored sources support this usage; reverse usage is not treated as a reason to overturn the existing choice.",
+      "sources": [
+        {
+          "url": "https://edhrec.com/articles/building-a-rogishai-rograkh-and-ishai-cedh-deck",
+          "kind": "article",
+          "observed_order": "Rograkh / Ishai"
+        },
+        {
+          "url": "https://www.youtube.com/watch?v=j3WuMfvGOwY",
+          "kind": "creator_video",
+          "observed_order": "Rograkh / Ishai"
+        }
+      ]
+    }
+  ]
+}

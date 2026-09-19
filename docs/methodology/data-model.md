@@ -211,3 +211,12 @@ the latest commander. `prediction_share` and `model_share` both expose the
 normalized blended probability; `weighted_share` retains the unblended value.
 Only the top three rows are persisted, so their shares can sum to less than one
 when more commanders qualify. The active commander score is its blended share.
+
+## Canonical location and commander names
+
+See [ADR 0015](../decisions/0015-canonical-region-and-commander-names.md).
+The cleanup adds `region_name_aliases`, `commander_name_aliases`, and
+`commander_pair_display_order`. Exact country-aware location aliases persist full
+region names. Reviewed event corrections retain source-address guards. Commander
+aliases share canonical identities, front faces, and saved pair display order.
+Run `consolidate_names.py` for transactional source repair and derived refresh.

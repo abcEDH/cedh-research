@@ -1,3 +1,4 @@
+import { canonicalRegionKey } from "@/lib/region-name-normalization";
 import { unstable_cache } from "next/cache";
 import { supabase } from "@/lib/supabase";
 import { withTiming } from "@/lib/performance";
@@ -298,7 +299,7 @@ export async function loadRegionalEloData(
     )?.region_key ||
     stateRegionsForCountry.find(
       (region) =>
-        region.region_key.toUpperCase() === requestedRegion.toUpperCase(),
+        region.region_key.toUpperCase() === canonicalRegionKey(requestedRegion, selectedCountry),
     )?.region_key;
   const activeRegionType =
     selectedScope === "global"
