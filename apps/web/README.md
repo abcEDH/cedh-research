@@ -37,7 +37,7 @@ GitHub: https://github.com/victoremnm/cedh-research
 ## Live tournament scouting
 
 `/tournament-likelihood` reads standings and rounds from TopDeck on every page
-refresh. Visible tabs refresh every 60 seconds, with a manual refresh button.
+load or manual refresh. The page does not poll or refresh when a tab regains focus.
 Historical commander forecasts remain cached for 15 minutes, keyed by attendee
 IDs, event start time, and whether the event has started.
 
