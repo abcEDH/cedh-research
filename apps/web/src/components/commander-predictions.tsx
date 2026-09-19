@@ -14,23 +14,23 @@ export function CommanderPredictions({ profile }: { profile: PlayerCommanderProf
   return (
     <div className="mb-4 rounded-md border border-border/60 p-3 text-xs text-muted-foreground">
       <div className="grid gap-3 md:grid-cols-3">
-        <div>
+        <div className="min-w-0">
           <div className="uppercase tracking-[0.16em]">Predicted Active</div>
           <div className="mt-1 font-medium text-foreground">{active ?? "Unknown"}</div>
           {activeShare != null ? <div className="mt-1">{percent(activeShare)} modeled share</div> : null}
         </div>
-        <div>
+        <div className="min-w-0">
           <div className="uppercase tracking-[0.16em]">Latest Commander</div>
           <div className="mt-1 font-medium text-foreground">{latest ?? "Unknown"}</div>
           {profile?.latest_commander_date ? <div className="mt-1">{new Date(profile.latest_commander_date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" })}</div> : null}
         </div>
-        <div>
+        <div className="min-w-0">
           <div className="uppercase tracking-[0.16em]">Top Predictions</div>
           <div className="mt-1 space-y-1">
             {rows.length ? rows.map((row) => (
               <div key={row.commander} className="flex justify-between gap-3">
                 <span className="min-w-0 truncate text-foreground">{row.commander}</span>
-                <span className="font-mono">{row.share == null ? "—" : percent(row.share)}</span>
+                <span className="shrink-0 font-mono">{row.share == null ? "—" : percent(row.share)}</span>
               </div>
             )) : "Unknown"}
           </div>
