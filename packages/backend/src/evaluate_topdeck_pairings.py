@@ -102,10 +102,11 @@ def pod_record_profile(state: TournamentState, pod: Pod) -> tuple[tuple[int, int
                     state.standings[player_id].points,
                     state.standings[player_id].wins,
                     state.standings[player_id].draws,
-                    -state.standings[player_id].losses,
+                    state.standings[player_id].losses,
                 )
                 for player_id in pod.player_ids
             ),
+            key=lambda record: (*record[:3], -record[3]),
             reverse=True,
         )
     )
@@ -134,8 +135,8 @@ def expected_record_profiles(state: TournamentState) -> list[tuple[tuple[int, in
     for player_id, standing in state.standings.items():
         if eligible is not None and player_id not in eligible:
             continue
-        records.append((standing.points, standing.wins, standing.draws, -standing.losses))
-    records.sort(reverse=True)
+        records.append((standing.points, standing.wins, standing.draws, standing.losses))
+    records.sort(key=lambda record: (*record[:3], -record[3]), reverse=True)
     profiles: list[tuple[tuple[int, int, int, int], ...]] = []
     start = 0
     for size in _topdeck_pod_sizes(len(records), state.spec.pod_size):
