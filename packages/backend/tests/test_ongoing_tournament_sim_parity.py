@@ -12,6 +12,7 @@ from unittest.mock import Mock, patch
 import numpy as np
 
 import run_topdeck_ongoing_tournament_sim as ongoing
+import ongoing_tournament_state as posted_state
 import sim_engine
 from sim_engine import initialize_state
 from sim_models import LoadedDrawModel
@@ -145,7 +146,7 @@ class OngoingTournamentSimParityTest(unittest.TestCase):
             global_recent_draw_rate_90d=0.13,
         )
 
-        with patch.object(ongoing, "fetch_pre_tournament_elos", return_value={}):
+        with patch.object(posted_state, "fetch_pre_tournament_elos", return_value={}):
             state, _active_round_index, _active_round_pods, _metadata = ongoing.build_base_state(
                 Mock(),
                 tournament,
@@ -202,8 +203,8 @@ class OngoingTournamentSimParityTest(unittest.TestCase):
         }
 
         with (
-            patch.object(ongoing, "fetch_pre_tournament_elos", return_value={}),
-            patch.object(ongoing, "fetch_topdeck_elos_for_topdeck_ids", return_value={}),
+            patch.object(posted_state, "fetch_pre_tournament_elos", return_value={}),
+            patch.object(posted_state, "fetch_topdeck_elos_for_topdeck_ids", return_value={}),
         ):
             state, active_round_index, active_round_pods, metadata = ongoing.build_base_state(
                 Mock(),
