@@ -271,10 +271,20 @@ export default async function TournamentLikelihoodPage({
         {tournament && !errorMessage && (
           <>
             <Card className="knd-panel mt-6">
-              <CardHeader>
+              <CardHeader className="flex flex-wrap items-center justify-between gap-3">
                 <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
                   Tournament Snapshot
                 </CardTitle>
+                {tournamentHref && (
+                  <a
+                    href={tournamentHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex min-h-11 items-center rounded-md border border-border/70 px-4 py-2 text-sm text-foreground hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+                  >
+                    Open TopDeck bracket
+                  </a>
+                )}
               </CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <div className="rounded-md border border-border/60 bg-muted/20 p-4">
