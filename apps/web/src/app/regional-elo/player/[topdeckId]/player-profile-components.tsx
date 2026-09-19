@@ -203,7 +203,9 @@ export const fetchCachedCountryRank = unstable_cache(
 async function fetchPlayerCommanderProfile(topdeckId: string): Promise<PlayerCommanderProfileRow | null> {
   const { data: profileRow, error: profileError } = await supabase
     .from("player_commander_profiles")
-    .select("active_commander, latest_decklist_url, latest_tournament_name, latest_tournament_date, latest_tournament_topdeck_tid")
+    .select(
+      "active_commander, active_commander_prediction_score, latest_commander, latest_commander_date, commander_predictions"
+    )
     .eq("topdeck_id", topdeckId)
     .maybeSingle();
 
@@ -213,7 +215,7 @@ async function fetchPlayerCommanderProfile(topdeckId: string): Promise<PlayerCom
 
 export const fetchCachedPlayerCommanderProfile = unstable_cache(
   async (topdeckId: string) => fetchPlayerCommanderProfile(topdeckId),
-  ["regional-player-commander-profile-v1-canonical-names"],
+  ["regional-player-commander-profile-v2-canonical-names"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -498,14 +500,14 @@ export async function PlayerProfileGrid({
       })[0]?.region_key ?? null;
 
   const homeRegion =
-    profileSummary?.home_region_key ??
     globalEloRank?.primary_region_key ??
+    profileSummary?.home_region_key ??
     regionalRanks[0]?.region_key ??
     derivedHomeRegion;
 
   const homeCountry =
-    profileSummary?.home_country_key ??
     globalEloRank?.primary_country_key ??
+    profileSummary?.home_country_key ??
     (homeRegion ? inferCountryForRegion(homeRegion) : null) ??
     (regionalRankRows[0]?.country_key ?? null);
 
