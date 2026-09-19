@@ -129,8 +129,8 @@ The diff against `main` is concentrated in these areas:
   - rounds remaining
   - tournament size buckets
 - Current branch finding:
-  - v10 remains the recommended production draw model because it has the best same-dataset draw holdout log loss and better winner-log-loss results in tournament backtests.
-  - v11b is useful as an experimental candidate because it improves cut-line distribution metrics, but it is not recommended as the default model yet.
+  - v4 hybrid is the recommended production draw model: it uses the v4 pod-outcome draw class for `P(draw)` and hidden/internal Elo for decisive winner shares.
+  - v10/v11b remain useful historical benchmarks, but they are not recommended as the default model.
 
 ## Historical Backtesting And Live Outlook Tooling
 
@@ -151,7 +151,7 @@ The diff against `main` is concentrated in these areas:
 
 ## Recent Backtest Results
 
-The latest checked comparison ran v10, v11, and v11b on the same historical tournament slices with 500 simulations per model/event.
+An earlier checked comparison ran v10, v11, and v11b on the same historical tournament slices with 500 simulations per model/event.
 
 For 20 historical tournaments with at least 100 active players:
 - Total runtime: 2,326 seconds

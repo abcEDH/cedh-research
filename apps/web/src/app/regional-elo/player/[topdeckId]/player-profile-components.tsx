@@ -113,7 +113,7 @@ async function fetchActiveRankRow(
 
 export const fetchCachedGlobalEloRank = unstable_cache(
   async (playerId: string) => fetchActiveRankRow("global", "ALL", playerId),
-  ["regional-player-global-rank-v4"],
+  ["regional-player-global-rank-v4-canonical-names"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -143,7 +143,7 @@ async function fetchRegionalRanks(playerId: string): Promise<LeaderboardRankRow[
 
 export const fetchCachedRegionalRanks = unstable_cache(
   async (playerId: string) => fetchRegionalRanks(playerId),
-  ["regional-player-regional-ranks-v3"],
+  ["regional-player-regional-ranks-v3-canonical-names"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -158,7 +158,7 @@ export const fetchCachedPlayerProfileSummary = unstable_cache(
     if (error) return null;
     return data as PlayerProfileSummaryRow | null;
   },
-  ["regional-player-profile-summary-v4"],
+  ["regional-player-profile-summary-v4-canonical-names"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -190,13 +190,13 @@ export const fetchCachedGlobalSnapshot = unstable_cache(
 
 export const fetchCachedRegionalRank = unstable_cache(
   async (playerId: string, regionKey: string) => fetchActiveRankRow("state", regionKey, playerId),
-  ["regional-player-local-rank-v4"],
+  ["regional-player-local-rank-v4-canonical-names"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
 export const fetchCachedCountryRank = unstable_cache(
   async (playerId: string, countryKey: string) => fetchCountryRank(playerId, countryKey),
-  ["regional-player-country-rank-v4"],
+  ["regional-player-country-rank-v4-canonical-names"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -213,7 +213,7 @@ async function fetchPlayerCommanderProfile(topdeckId: string): Promise<PlayerCom
 
 export const fetchCachedPlayerCommanderProfile = unstable_cache(
   async (topdeckId: string) => fetchPlayerCommanderProfile(topdeckId),
-  ["regional-player-commander-profile-v1"],
+  ["regional-player-commander-profile-v1-canonical-names"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -266,7 +266,7 @@ export const fetchCachedPlayerAchievements = unstable_cache(
     const rows = await fetchPlayerTournamentEntries(playerId);
     return buildPlayerAchievements(rows, topdeckId);
   },
-  ["regional-player-achievements-v3"],
+  ["regional-player-achievements-v3-canonical-names"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -296,7 +296,7 @@ export const fetchCachedPlayerCommanderUsageRows = unstable_cache(
     const rows = await fetchPlayerTournamentEntries(playerId);
     return buildPlayerCommanderUsageRows(rows, topdeckId, playerName);
   },
-  ["regional-player-commander-usage-v3"],
+  ["regional-player-commander-usage-v3-canonical-names"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -414,7 +414,7 @@ async function fetchPlayerEventLogs(playerId: string, regionFilter: string): Pro
 
 export const fetchCachedPlayerEventLogs = unstable_cache(
   async (playerId: string, regionFilter: string) => fetchPlayerEventLogs(playerId, regionFilter),
-  ["regional-player-event-logs-v3"],
+  ["regional-player-event-logs-v3-canonical-names"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 

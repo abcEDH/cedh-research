@@ -21,6 +21,7 @@ from typing import Any
 
 from dateutil import parser as date_parser
 
+from name_normalization import canonical_region_name
 from supabase import Client
 from supabase_client import (
     SUPABASE_REST_BASE,
@@ -37,6 +38,7 @@ from topdeck_client import (
     decode_firestore_value,
     is_placeholder_player_name,
 )
+from tournament_location_corrections import corrected_location
 
 # Explicit re-exports — these names are imported from sub-modules so that
 # existing scripts which do `from ingest import X` continue to work unchanged.
@@ -189,28 +191,12 @@ def clean_commander_card_name(name: str) -> str:
 
 
 COMMANDER_NAME_ALIASES: dict[str, str] = {
-    # "Secret Lair x Stranger Things" character-name -> Innistrad-commander
-    # mappings. An earlier pass on PR #265's Codex review incorrectly
-    # concluded these were fabricated, having checked only the Scryfall
-    # `flavor_name` field. Re-verified: this Secret Lair drop actually
-    # records its rebrand via `printed_name` (normally a foreign-language
-    # localization field, but reused here for an English-language rebrand
-    # while keeping `lang: "en"`) -- e.g. Sophina, Spearsage Deserter's
-    # `sld` printing has `printed_name: "Chief Jim Hopper"`, no
-    # `flavor_name` at all. All 8 confirmed real via oracle_id printing
-    # lookups. `commander_oracle_identity.py`'s `alternate_display_names()`
-    # now checks both fields, so the generated
-    # `commander_oracle_aliases.json` also covers these -- this hardcoded
-    # dict is kept anyway as a guaranteed, generation-independent fallback.
-    "Chief Jim Hopper": "Sophina, Spearsage Deserter",
-    "Dustin, Gadget Genius": "Hargilde, Kindly Runechanter",
-    "Eleven, the Mage": "Cecily, Haunted Mage",
-    "Lucas, the Sharpshooter": "Bjorna, Nightfall Alchemist",
-    "Max, the Daredevil": "Elmar, Ulvenwald Informant",
-    "Mike, the Dungeon Master": "Othelm, Sigardian Outcast",
-    "Mind Flayer, the Shadow": "Arvinox, the Mind Flail",
-    "Will the Wise": "Wernog, Rider's Chaplain",
+    row["alias"]: row["canonical_name"]
+    for row in json.loads((Path(__file__).resolve().parents[1] / "data" / "commander_name_aliases.json").read_text())
 }
+
+
+COMMANDER_NAME_ALIASES["Kavaero, Mind−Bitten"] = COMMANDER_NAME_ALIASES["Kavaero, Mind-Bitten"]
 
 
 @lru_cache(maxsize=1)
@@ -375,150 +361,8 @@ def normalize_region_name(
     country: str | None = None,
     venue: str | None = None,
 ) -> str | None:
-    """Normalize state/region name for consistent regional Elo grouping.
-
-    Args:
-        state: Raw state/province name from TopDeck
-        city: City name
-        country: Country name
-        venue: Venue name
-
-    Returns:
-        Normalized state name or None
-    """
-    if not state:
-        return None
-
-    normalized = state.upper().strip()
-
-    # Known state abbreviations and alternate spellings
-    state_normalizations = {
-        "ALBERTA": "AB",
-        "ANDALUCÍA": "ANDALUSIA",
-        "ANDALUCIA": "ANDALUSIA",
-        "ARAGÓN": "ARAGON",
-        "ARAGON": "ARAGON",
-        "AUCKLAND": "AUCKLAND",
-        "BADA WURTTEMBERG": "BADEN-WURTTEMBERG",
-        "BADA-WURTTEMBERG": "BADEN-WURTTEMBERG",
-        "BADEN-WURTTEMBERG": "BADEN-WURTTEMBERG",
-        "BADEN-WÜRTTEMBERG": "BADEN-WURTTEMBERG",
-        "BAVARIA": "BAYERN",
-        "BAYERN": "BAYERN",
-        "BERLIN": "BERLIN",
-        "BOGOTA": "BOGOTA",
-        "BOGOTÁ": "BOGOTA",
-        "BRITISH COLUMBIA": "BC",
-        "BRITISH COLUMBIA, CANADA": "BC",
-        "CITY OF": "",
-        "CONNECTICUT": "CT",
-        "D.C.": "DC",
-        "D.C": "DC",
-        "D.C., US": "DC",
-        "DISTRICT OF COLUMBIA": "DC",
-        "ENGLAND": "ENGLAND",
-        "FLEVOLAND": "FLEVOLAND",
-        "FLORIDA": "FL",
-        "GELDERLAND": "GELDERLAND",
-        "GEORGIA": "GA",
-        "GIRALTAR": "GIBRALTAR",
-        "GÜELL": "GIRONA",
-        "HAUTE GARONNE": "HAUTE-GARONNE",
-        "HAUTE-GARONNE": "HAUTE-GARONNE",
-        "ILLINOIS": "IL",
-        "INDIANA": "IN",
-        "KANSAS": "KS",
-        "KENTUCKY": "KY",
-        "LIMBURG": "LIMBURG",
-        "LOUISIANA": "LA",
-        "MARYLAND": "MD",
-        "MASSACHUSETTS": "MA",
-        "MICHIGAN": "MI",
-        "MINNESOTA": "MN",
-        "MISSOURI": "MO",
-        "MORAVIAN-SILESIAN REGION": "MORAVIAN-SILESIAN",
-        "NEBRASKA": "NE",
-        "NEVADA": "NV",
-        "NEW BRUNSWICK": "NB",
-        "NEW JERSEY": "NJ",
-        "NEW SOUTH WALES": "NSW",
-        "NEW YORK": "NY",
-        "NEW ZEALAND": "NZ",
-        "NORTH CAROLINA": "NC",
-        "NORTH RHINE-WESTPHALIA": "NORTH RHINE-WESTPHALIA",
-        "NORTH RHINE-WESTPHALIA, GERMANY": "NORTH RHINE-WESTPHALIA",
-        "NORTHERN TERRITORY": "NT",
-        "NORTHWEST TERRITORIES": "NT",
-        "NOTthing": "NOTTINGHAM",
-        "NOTTINGHAMSHIRE": "NOTTINGHAM",
-        "NOTTM": "NOTTINGHAM",
-        "NOUVEAU BRUNSWICK": "NB",
-        "ONTARIO": "ON",
-        "OREGON": "OR",
-        "PENNSYLVANIA": "PA",
-        "PÉRDUES": "PORDIMON",
-        "PRAGUE": "PRAGUE",
-        "PRAGUE CITY": "PRAGUE",
-        "PROVINCE OF": "",
-        "QUEBEC": "QC",
-        "QUEENSLAND": "QLD",
-        "RÉPUBLIQUE TCHÈQUE": "CZ",
-        "REGION OF": "",
-        "RHONE": "RHONE",
-        "SAARLAND": "SAARLAND",
-        "SASKATCHEWAN": "SK",
-        "SCOTLAND": "SCT",
-        "SHIKOKU": "SHIKOKU",
-        "SICILY": "SICILY",
-        "SICH": "SICILY",
-        "SINGAPORE": "SG",
-        "SOUTH AUSTRALIA": "SA",
-        "SOUTH CAROLINA": "SC",
-        "SOUTH ENGLAND": "SOUTH ENGLAND",
-        "SPAIN": "SPAIN",
-        "STATE OF": "",
-        "SWEDEN": "SWEDEN",
-        "TERritory OF": "",
-        "TEXAS": "TX",
-        "THE NETHERLANDS": "NETHERLANDS",
-        "THE NETHERLANDS, NL": "NETHERLANDS",
-        "THURINGIA": "THURINGIA",
-        "TOkyo": "TOKYO",
-        "Tasmania": "TAS",
-        "UNDEFINED": None,
-        "UNIFIED TERRITORIES": "NT",
-        "UNITED KINGDOM": "UK",
-        "UTRECHT": "UTRECHT",
-        "UTRECHT, NETHERLANDS": "UTRECHT",
-        "UTTAR PRADESH": "UP",
-        "VALENCIANA": "VALENCIA",
-        "VICTORIA": "VIC",
-        "VIRGINIA": "VA",
-        "WASHINGTON": "WA",
-        "WEST AUSTRALIA": "WA",
-        "WEST MIDLANDS": "WEST MIDLANDS",
-        "WEST VIRGINIA": "WV",
-        "WISCONSIN": "WI",
-        "WYOMING": "WY",
-        "YUKON": "YT",
-    }
-
-    # Direct match
-    if normalized in state_normalizations:
-        result = state_normalizations[normalized]
-        if result is None or result == "":
-            return None
-        return result
-
-    # Partial match for composite names
-    for key, value in state_normalizations.items():
-        if key in normalized or normalized in key:
-            if value is None or value == "":
-                return None
-            return value
-
-    # Return as-is if no normalization needed
-    return normalized
+    """Resolve exact, country-aware aliases to full region names."""
+    return canonical_region_name(state, country)
 
 
 def extract_commanders(decklist: str) -> list[str]:
@@ -678,6 +522,9 @@ class DataIngester:
         if len(canonical_names) != 2:
             return canonical_name, canonical_names
         pair_key = tuple(sorted(canonical_names))
+        saved_order = load_legal_commander_pair_order_map().get(pair_key) or PARTNER_ORDER_OVERRIDES.get(pair_key)
+        if saved_order:
+            return " / ".join(saved_order), list(saved_order)
         existing_order = self._get_existing_partner_order_map().get(pair_key)
         if existing_order and list(existing_order) != canonical_names:
             return " / ".join(existing_order), list(existing_order)
@@ -900,6 +747,7 @@ class DataIngester:
                 "longitude": event_data.get("lng"),
                 "header_image_url": event_data.get("headerImage"),
             }
+            location_data = corrected_location(tid, location_data)
             tournament_data.update({key: value for key, value in location_data.items() if value is not None})
         if tier is not None:
             tournament_data["tier"] = tier
