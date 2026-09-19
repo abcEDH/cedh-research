@@ -24,6 +24,7 @@ These ADRs were extracted retroactively on 2026-05-03 from git history, merged P
 | [0014](0014-retire-dead-surfaces-wholesale.md) | Retire Dead Surfaces Wholesale | Accepted | repo-wide | `CONTRIBUTING.md`, PR #51, `docs/supported-surfaces.md` |
 | [0016](0016-rank-activity-window-and-topdeck-snapshot-pruning.md) | Rank Activity Window and TopDeck Snapshot Pruning | Accepted | `packages/backend/` | PR #263, issue #252 |
 
+| [0022](0022-hybrid-draw-model.md) | Hybrid draw model with internal Elo winner probabilities | Accepted | `packages/backend/` | PR #295 |
 | [0023](0023-league-aware-ingestion.md) | League-aware ingestion and commander forecasts | Accepted | `packages/backend/` | PR #296 |
 | 0015 | [Canonical region and commander names](0015-canonical-region-and-commander-names.md) | Accepted |
 
