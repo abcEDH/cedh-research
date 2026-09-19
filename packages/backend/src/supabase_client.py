@@ -343,29 +343,29 @@ class DirectPostgresClient:
 
         columns = list(data[0].keys())
         cols_str = ", ".join(columns)
-
+        values = [tuple(row.get(column) for column in columns) for row in data]
+        conflict_clause = ""
         if on_conflict:
             conflict_cols = on_conflict.replace(" ", "").split(",")
-            update_cols = [c for c in columns if c not in conflict_cols]
-            update_str = ", ".join([f"{c} = EXCLUDED.{c}" for c in update_cols])
-            conflict_clause = f"ON CONFLICT ({on_conflict}) DO UPDATE SET {update_str}"
-        else:
-            conflict_clause = ""
-
-        sql = f"""
-            INSERT INTO {table} ({cols_str})
-            VALUES %s
-            {conflict_clause}
-            RETURNING *
-        """
-
+            update_cols = [column for column in columns if column not in conflict_cols]
+            if update_cols:
+                updates = ", ".join(f"{column} = EXCLUDED.{column}" for column in update_cols)
+                conflict_clause = f"ON CONFLICT ({on_conflict}) DO UPDATE SET {updates}"
+            else:
+                conflict_clause = f"ON CONFLICT ({on_conflict}) DO NOTHING"
+        sql = f"INSERT INTO {table} ({cols_str}) VALUES %s {conflict_clause} RETURNING *"
         self.connect()
-        with self._conn.cursor() as cursor:
-            psycopg2.extras.execute_values(cursor, sql, [tuple(d.values()) for d in data], page_size=1000)
+        try:
+            with self._conn.cursor() as cursor:
+                # fetch=True collects RETURNING rows from every execute_values page.
+                results = psycopg2.extras.execute_values(cursor, sql, values, page_size=1000, fetch=True)
+                col_names = [desc[0] for desc in cursor.description]
+                output = [dict(zip(col_names, row, strict=False)) for row in results]
             self._conn.commit()
-            results = cursor.fetchall()
-            col_names = [desc[0] for desc in cursor.description]
-            return [dict(zip(col_names, row, strict=False)) for row in results]
+            return output
+        except Exception:
+            self._conn.rollback()
+            raise
 
     def select(self, table: str, filters: dict[str, str] | None = None) -> list[dict[str, Any]]:
         self.connect()
