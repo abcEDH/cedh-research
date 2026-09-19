@@ -1,3 +1,16 @@
+# [1.33.0](https://github.com/abcEDH/cedh-research/compare/v1.32.3...v1.33.0) (2026-09-19)
+
+
+### Bug Fixes
+
+* map canonical Elo results to maintenance job metrics ([#364](https://github.com/abcEDH/cedh-research/issues/364)) ([f5b67df](https://github.com/abcEDH/cedh-research/commit/f5b67df40d0686f53b74c81a82258fade68b5e35))
+* preserve league backfills and normalize commander forecasts ([ca01556](https://github.com/abcEDH/cedh-research/commit/ca015567f595ac209b974f26315a5568364ac814))
+
+
+### Features
+
+* deploy validated internal Elo and atomic maintenance ([#363](https://github.com/abcEDH/cedh-research/issues/363)) ([98b1d02](https://github.com/abcEDH/cedh-research/commit/98b1d0217bc2d38d449905e0087e6c9c8447b6c6))
+
 ## [1.32.3](https://github.com/abcEDH/cedh-research/compare/v1.32.2...v1.32.3) (2026-09-17)
 
 
