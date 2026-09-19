@@ -27,7 +27,7 @@ def normalize_topdeck_tournament_payload(
 
     if isinstance(tournament.get("data"), dict):
         normalized = dict(tournament["data"])
-        for key in ("standings", "rounds", "eventData"):
+        for key in ("standings", "rounds", "eventData", "isLeague"):
             if key in tournament and key not in normalized:
                 normalized[key] = tournament[key]
     else:
@@ -535,6 +535,8 @@ class TopDeckClient:
         if should_use_firestore_tournament_fallback(tournament) or not tournament.get("rounds"):
             firestore_tournament = self.get_firestore_tournament(tid, tournament)
             if firestore_tournament:
+                if isinstance(tournament.get("isLeague"), bool):
+                    firestore_tournament["isLeague"] = tournament["isLeague"]
                 return firestore_tournament
         elif flat_firestore_tournament := self.get_firestore_flat_tournament(tid, tournament):
             return merge_firestore_flat_league_rounds(tournament, flat_firestore_tournament) or tournament

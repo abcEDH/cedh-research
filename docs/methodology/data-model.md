@@ -116,7 +116,7 @@ erDiagram
 
 ### Tournaments
 
-- `tournaments`: TopDeck.gg events (location, dates, player_count, rounds, top_cut).
+- `tournaments`: TopDeck.gg events (location, dates, player_count, rounds, top_cut, `is_league`).
 
 ### Players
 
@@ -193,3 +193,21 @@ The Next.js app reads from Supabase views for most pages to keep the anon role s
 - Meta prep: `player_commander_entries`
 
 If a view is missing, the corresponding page will show empty state messaging.
+
+### League backfill and commander prediction shares
+
+Recent ingestion searches 45 days, includes leagues, and applies no minimum
+player count by default. This covers typical monthly leagues plus a short
+finals period, but does not guarantee coverage of finals played months later.
+Refresh known older events with `--tournament-id` or a `--tids-file` manifest.
+A follow-up to track and refresh unfinished leagues independently of their
+start dates remains necessary before calling this an exhaustive late-final sweep.
+
+An explicit boolean `isLeague` survives the API/Firestore fallback. Missing or
+null flags do not overwrite an existing tournament classification.
+
+Commander forecasts blend 75% of normalized recency weight with 25% assigned to
+the latest commander. `prediction_share` and `model_share` both expose the
+normalized blended probability; `weighted_share` retains the unblended value.
+Only the top three rows are persisted, so their shares can sum to less than one
+when more commanders qualify. The active commander score is its blended share.
