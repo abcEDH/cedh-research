@@ -37,7 +37,7 @@ GitHub: https://github.com/victoremnm/cedh-research
 ## Live tournament scouting
 
 `/tournament-likelihood` reads standings and rounds from TopDeck on every page
-load or manual refresh. The page does not poll or refresh when a tab regains focus.
+load or browser reload. The page does not poll or refresh when a tab regains focus.
 Historical commander forecasts remain cached for 15 minutes, keyed by attendee
 IDs, event start time, and whether the event has started.
 
@@ -46,7 +46,7 @@ The web server needs `TOPDECK_API_KEY` in its **server runtime environment**
 `NEXT_PUBLIC_` or put it in the frontend `.env.local`; supply it through the
 server process environment for local development. Without the key, public
 attendee scouting still works, but live standings are explicitly unavailable.
-API errors are displayed and retried on refresh rather than replaced with fake
+API errors are displayed; reloading retries the request rather than showing fake
 zero results. Submitted decks can remain private during the event; in that case
 current standings are paired with clearly labeled historical deck forecasts.
 

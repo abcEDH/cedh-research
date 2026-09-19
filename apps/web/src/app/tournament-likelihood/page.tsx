@@ -8,7 +8,6 @@ import { FieldShareList } from "./field-share-list";
 import { TournamentAnalysisTables } from "./tournament-analysis-tables";
 import { getTournamentAnalysis, fetchBestEloRows } from "./tournament-analysis";
 import type { TournamentStanding, EloRow } from "./tournament-analysis";
-import { TournamentRefresh } from "./tournament-refresh";
 
 export const dynamic = "force-dynamic";
 const DEFAULT_LOOKBACK_MONTHS = COMMANDER_PRIMARY_LOOKBACK_MONTHS;
@@ -261,7 +260,11 @@ export default async function TournamentLikelihoodPage({
           </div>
         )}
 
-        {slug && <TournamentRefresh updatedAt={updatedAt} failed={Boolean(errorMessage)} />}
+        {updatedAt && !errorMessage && (
+          <p className="mt-6 text-sm text-muted-foreground">
+            Checked <time dateTime={updatedAt}>{new Date(updatedAt).toLocaleTimeString("en-GB", { timeZone: "UTC" })} UTC</time>.
+          </p>
+        )}
         {tournament && !standingsAvailable && !errorMessage && (
           <p role="status" className="mt-4 text-sm text-muted-foreground">
             Live standings are unavailable. Showing attendees and deck forecasts only. Check the event on TopDeck for current results.
