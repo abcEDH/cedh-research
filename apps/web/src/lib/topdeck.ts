@@ -1,5 +1,7 @@
 import "server-only";
 
+import { extractTopDeckTournamentUrl } from "@/lib/topdeck-input";
+
 export type TopDeckLeaderboardEntry = {
   name: string;
   username?: string | null;
@@ -143,7 +145,7 @@ function normalizeStandingRates<T extends TopDeckTournamentResponse>(response: T
 }
 
 export function extractTournamentSlug(input: string): string {
-  const value = input.trim();
+  const value = extractTopDeckTournamentUrl(input) ?? input.trim();
   if (!value) return "";
   if (!value.includes("/") && !value.includes(".")) return value;
 

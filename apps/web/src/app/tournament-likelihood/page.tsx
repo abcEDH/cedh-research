@@ -4,6 +4,8 @@ import { COMMANDER_FALLBACK_LOOKBACK_MONTHS, COMMANDER_PRIMARY_LOOKBACK_MONTHS, 
 import type { MetaShareRow, PlayerCommanderProfile } from "@/lib/meta-prep";
 import { extractTournamentSlug } from "@/lib/topdeck";
 import Link from "next/link";
+import { TournamentLinkInput } from "./tournament-link-input";
+import { extractTopDeckTournamentUrl } from "@/lib/topdeck-input";
 import { FieldShareList } from "./field-share-list";
 import { TournamentAnalysisTables } from "./tournament-analysis-tables";
 import { getTournamentAnalysis, fetchBestEloRows } from "./tournament-analysis";
@@ -64,7 +66,8 @@ export default async function TournamentLikelihoodPage({
     | { tournament?: string };
 }) {
   const resolvedSearchParams = await Promise.resolve(searchParams);
-  const tournamentInput = readStringParam(resolvedSearchParams, "tournament").trim();
+  const rawTournamentInput = readStringParam(resolvedSearchParams, "tournament").trim();
+  const tournamentInput = extractTopDeckTournamentUrl(rawTournamentInput) ?? rawTournamentInput;
   const slug = extractTournamentSlug(tournamentInput);
   const lookbackMonths = DEFAULT_LOOKBACK_MONTHS;
 
@@ -196,7 +199,7 @@ export default async function TournamentLikelihoodPage({
             <form className="grid gap-4 lg:grid-cols-[1fr_auto]" method="get">
               <label className="flex flex-col gap-2 text-sm text-muted-foreground">
                 TopDeck tournament link or slug
-                <input
+                <TournamentLinkInput
                   className="knd-input"
                   defaultValue={tournamentInput}
                   name="tournament"
