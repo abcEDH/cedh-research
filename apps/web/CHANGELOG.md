@@ -1,3 +1,11 @@
+## [1.33.2](https://github.com/abcEDH/cedh-research/compare/v1.33.1...v1.33.2) (2026-09-19)
+
+
+### Bug Fixes
+
+* keep commander prediction shares inside mobile cards ([570aeb6](https://github.com/abcEDH/cedh-research/commit/570aeb644bb8072a694c069ec1a63c9aad8bd253))
+* show normalized commander forecasts on player profiles ([0c0a6b6](https://github.com/abcEDH/cedh-research/commit/0c0a6b6053a635d29b699e6cd5eeec4c8874ebd7))
+
 ## [1.33.1](https://github.com/abcEDH/cedh-research/compare/v1.33.0...v1.33.1) (2026-09-19)
 
 
