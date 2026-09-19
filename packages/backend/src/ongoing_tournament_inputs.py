@@ -65,16 +65,13 @@ def infer_structure(
     top_cut_override: int | None,
 ) -> tuple[int, int]:
     event_data = tournament.get("eventData") or {}
-    swiss_rounds = (
-        swiss_rounds_override
-        or extract_numeric_value(tournament, "swissNum", "swissRounds", "numRounds")
-        or extract_numeric_value(event_data, "swissNum", "swissRounds", "numRounds")
-    )
-    top_cut = (
-        top_cut_override
-        or extract_numeric_value(tournament, "topCut")
-        or extract_numeric_value(event_data, "topCut", "cutTo")
-    )
+    swiss_rounds = swiss_rounds_override
+    top_cut = top_cut_override
+    for source in (tournament, event_data):
+        if swiss_rounds is None:
+            swiss_rounds = extract_numeric_value(source, "swissNum", "swissRounds", "numRounds")
+        if top_cut is None:
+            top_cut = extract_numeric_value(source, "topCut", "cutTo")
 
     if swiss_rounds is None:
         swiss_patterns = [

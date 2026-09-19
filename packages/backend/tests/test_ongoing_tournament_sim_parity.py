@@ -70,7 +70,7 @@ def assert_probability_rows_close(test_case, actual, expected, probability_key: 
 
 class OngoingTournamentSimParityTest(unittest.TestCase):
     def test_stream_main_builds_feature_context(self):
-        state = make_state(4)
+        state = make_state(104)
         tournament = {
             "id": "test-event",
             "name": "Test Event",
@@ -111,6 +111,7 @@ class OngoingTournamentSimParityTest(unittest.TestCase):
 
         build_feature_context.assert_called_once()
         self.assertIs(run_stream.call_args.args[0], state)
+        self.assertEqual(run_stream.call_args.kwargs["top_limit"], 104)
 
     def test_build_base_state_preserves_historical_feature_priors_when_applying_posted_results(self):
         tournament = {
