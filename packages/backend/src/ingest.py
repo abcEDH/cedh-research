@@ -649,12 +649,19 @@ class DataIngester:
         self,
         topdeck: TopDeckClient,
         supabase: Client,
+        write_client: DirectPostgresClient | None = None,
     ):
         self.topdeck = topdeck
         self.supabase = supabase
+        self.write_client = write_client
         self.commander_cache: dict[str, str] = {}  # name -> id
         self.player_cache: dict[str, str] = {}  # topdeck_id -> id
         self._existing_partner_order_map: dict[tuple[str, str], tuple[str, str]] | None = None
+
+    def _upsert(self, table, data, on_conflict=None):
+        if self.write_client is not None:
+            return self.write_client.upsert(table, data, on_conflict=on_conflict)
+        return upsert_batched(self.supabase, table, data, on_conflict=on_conflict)
 
     def _get_existing_partner_order_map(self) -> dict[tuple[str, str], tuple[str, str]]:
         """Lazily fetch and cache the DB's established partner-pair orderings."""
@@ -695,7 +702,7 @@ class DataIngester:
             "name": name,
             "commander_names": canonical_names,
         }
-        result = self.supabase.table("commanders").upsert(data, on_conflict="name").execute().data
+        result = self._upsert("commanders", data, on_conflict="name")
         if result:
             self.commander_cache[name] = result[0]["id"]
             return result[0]["id"]
@@ -717,7 +724,7 @@ class DataIngester:
 
         # Create new
         data = {"topdeck_id": topdeck_id, "name": name}
-        result = self.supabase.table("players").upsert(data, on_conflict="topdeck_id").execute().data
+        result = self._upsert("players", data, on_conflict="topdeck_id")
         if result:
             self.player_cache[topdeck_id] = result[0]["id"]
             return result[0]["id"]
@@ -753,7 +760,7 @@ class DataIngester:
             for canonical_name, canonical_names in rows_by_canonical_name.items()
         ]
 
-        result = upsert_batched(self.supabase, "commanders", data, on_conflict="name")
+        result = self._upsert("commanders", data, on_conflict="name")
         if not result:
             logger.error("Failed to batch upsert commanders")
             return {}
@@ -786,7 +793,7 @@ class DataIngester:
 
         data = [{"topdeck_id": tid, "name": name} for tid, name in player_data.items()]
 
-        result = upsert_batched(self.supabase, "players", data, on_conflict="topdeck_id")
+        result = self._upsert("players", data, on_conflict="topdeck_id")
         if not result:
             logger.error("Failed to batch upsert players")
             return {}
@@ -810,9 +817,7 @@ class DataIngester:
 
         result: list[dict[str, Any]] = []
         for db_entries in entries_by_keys.values():
-            upserted = upsert_batched(
-                self.supabase, "tournament_entries", db_entries, on_conflict="tournament_id,player_id"
-            )
+            upserted = self._upsert("tournament_entries", db_entries, on_conflict="tournament_id,player_id")
             if upserted:
                 result.extend(upserted)
 
@@ -879,21 +884,29 @@ class DataIngester:
             "average_elo": (int(tournament.get("averageElo")) if tournament.get("averageElo") else None),
             "median_elo": (int(tournament.get("medianElo")) if tournament.get("medianElo") else None),
             "top_elo": (int(tournament.get("topElo")) if tournament.get("topElo") else None),
-            "city": event_data.get("city"),
-            "state": normalize_region_name(
-                event_data.get("state"),
-                city=event_data.get("city"),
-                country=event_data.get("country"),
-                venue=event_data.get("location"),
-            ),
-            "venue": event_data.get("location"),
-            "latitude": event_data.get("lat"),
-            "longitude": event_data.get("lng"),
-            "header_image_url": event_data.get("headerImage"),
-            "tier": tier,
         }
+        if event_data:
+            location_data = {
+                "city": event_data.get("city"),
+                "state": normalize_region_name(
+                    event_data.get("state"),
+                    city=event_data.get("city"),
+                    country=event_data.get("country"),
+                    venue=event_data.get("location"),
+                ),
+                "country": event_data.get("country"),
+                "venue": event_data.get("location"),
+                "latitude": event_data.get("lat"),
+                "longitude": event_data.get("lng"),
+                "header_image_url": event_data.get("headerImage"),
+            }
+            tournament_data.update({key: value for key, value in location_data.items() if value is not None})
+        if tier is not None:
+            tournament_data["tier"] = tier
+        if isinstance(tournament.get("isLeague"), bool):
+            tournament_data["is_league"] = tournament["isLeague"]
 
-        result = self.supabase.table("tournaments").upsert(tournament_data, on_conflict="topdeck_tid").execute().data
+        result = self._upsert("tournaments", tournament_data, on_conflict="topdeck_tid")
         if not result:
             logger.error(f"Failed to upsert tournament: {tid}")
             return None
@@ -1144,9 +1157,7 @@ class DataIngester:
                     }
 
                     try:
-                        game_result = (
-                            self.supabase.table("games").upsert(game_record, on_conflict="game_key").execute().data
-                        )
+                        game_result = self._upsert("games", game_record, on_conflict="game_key")
                         if game_result:
                             games_processed += 1
                             participant_records: list[dict[str, Any]] = []
@@ -1167,11 +1178,9 @@ class DataIngester:
                                     "points_earned": 1 if is_draw else 5 if is_winner else 0,
                                 }
                                 participant_records.append(participant_record)
+                            participant_records = dedupe_game_participants(participant_records)
                             if participant_records:
-                                self.supabase.table("game_participants").upsert(
-                                    participant_records,
-                                    on_conflict="game_id,entry_id",
-                                ).execute()
+                                self._upsert("game_participants", participant_records, on_conflict="game_id,entry_id")
                     except Exception as e:
                         logger.warning(f"Failed to upsert game {game_key}: {e}")
                     continue
@@ -1210,9 +1219,7 @@ class DataIngester:
 
                     # Upsert game
                     try:
-                        game_result = (
-                            self.supabase.table("games").upsert(game_record, on_conflict="game_key").execute().data
-                        )
+                        game_result = self._upsert("games", game_record, on_conflict="game_key")
                         if game_result:
                             games_processed += 1
                             participant_records: list[dict[str, Any]] = []
@@ -1235,11 +1242,9 @@ class DataIngester:
                                     "points_earned": 1 if is_draw else 5 if is_winner else 0,
                                 }
                                 participant_records.append(participant_record)
+                            participant_records = dedupe_game_participants(participant_records)
                             if participant_records:
-                                self.supabase.table("game_participants").upsert(
-                                    participant_records,
-                                    on_conflict="game_id,entry_id",
-                                ).execute()
+                                self._upsert("game_participants", participant_records, on_conflict="game_id,entry_id")
                     except Exception as e:
                         logger.warning(f"Failed to upsert game {game_key}: {e}")
 
@@ -1289,6 +1294,20 @@ def build_game_key(
             str(is_bracket).lower(),
         ]
     )
+
+
+def dedupe_game_participants(
+    participant_records: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Avoid duplicate constrained values in a single game_participants upsert."""
+    deduped: dict[tuple[Any, Any], dict[str, Any]] = {}
+    for record in participant_records:
+        game_id = record.get("game_id")
+        entry_id = record.get("entry_id")
+        if not game_id or not entry_id:
+            continue
+        deduped[(game_id, entry_id)] = record
+    return list(deduped.values())
 
 
 def is_draw_winner_id(winner_id: Any) -> bool:
@@ -1565,8 +1584,17 @@ def update_backfill_run_progress(
 def build_arg_parser() -> argparse.ArgumentParser:
     """Return the argument parser for the ingestion CLI."""
     parser = argparse.ArgumentParser(description="cEDH Analytics Data Ingestion")
-    parser.add_argument("--tournament-id", type=str, help="TopDeck tournament ID (slug) to ingest")
-    parser.add_argument("--days", type=int, default=7, help="Number of recent days to search for tournaments")
+    parser.add_argument(
+        "--tournament-id",
+        type=str,
+        help="TopDeck tournament ID (slug) to ingest",
+    )
+    parser.add_argument(
+        "--days",
+        type=int,
+        default=45,
+        help="Number of recent days to search for tournaments",
+    )
     parser.add_argument(
         "--stop-on-error",
         action="store_true",
@@ -1614,7 +1642,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--leagues",
         "--league",
         dest="leagues",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help="Include leagues=true in the TopDeck tournament search payload",
     )
     parser.add_argument("--direct", action="store_true", help="Use direct Postgres connection for faster ingestion")
@@ -1646,9 +1675,14 @@ def main():
     topdeck = TopDeckClient(topdeck_api_key)
     supabase = get_supabase_client(supabase_url, supabase_key)
     db_client = None
+    if args.direct:
+        db_url = os.environ.get("SUPABASE_DB_URL")
+        if not db_url:
+            raise SystemExit("SUPABASE_DB_URL is required when --direct is set")
+        db_client = DirectPostgresClient(db_url)
 
     # Initialize ingester
-    ingester = DataIngester(topdeck, supabase)
+    ingester = DataIngester(topdeck, supabase, write_client=db_client)
 
     # Job lifecycle management
     job_id = getattr(args, "job_id", "") or ""
@@ -1668,26 +1702,24 @@ def main():
 
     try:
         _run_ingestion(args, topdeck, supabase, ingester, job_id)
+
+        duration = round(time.time() - start_time, 2)
+        if job_id:
+            complete_ingestion_job(
+                supabase,
+                job_id,
+                {
+                    "duration_seconds": duration,
+                },
+            )
     except Exception as exc:
         if job_id:
             fail_ingestion_job(supabase, job_id, str(exc))
         raise
-
-    duration = round(time.time() - start_time, 2)
-    if job_id:
-        complete_ingestion_job(
-            supabase,
-            job_id,
-            {
-                "duration_seconds": duration,
-            },
-        )
-
-    # Cleanup direct Postgres connection
-    db_client = None
-    if args.direct and db_client:
-        db_client.close()
-        logger.info("Closed direct Postgres connection")
+    finally:
+        if db_client:
+            db_client.close()
+            logger.info("Closed direct Postgres connection")
 
     logger.info("Ingestion complete")
 
@@ -2169,8 +2201,11 @@ def _run_ingestion(args, topdeck, supabase, ingester, job_id):
     else:
         # Search and ingest recent tournaments
         start_date = (datetime.now() - timedelta(days=args.days)).date().isoformat()
-        end_date = datetime.now().date().isoformat()
-        logger.info(f"Searching for tournaments from {start_date} through {end_date} ({args.days} days)")
+        display_end_date = datetime.now().date()
+        end_date = (display_end_date + timedelta(days=1)).isoformat()
+        logger.info(
+            f"Searching for tournaments from {start_date} through {display_end_date.isoformat()} ({args.days} days)"
+        )
         tournaments = topdeck.search_tournaments(start_date=start_date, end_date=end_date, leagues=args.leagues)
         logger.info(f"Found {len(tournaments)} tournaments to process")
 
@@ -2207,8 +2242,12 @@ def _run_ingestion(args, topdeck, supabase, ingester, job_id):
                     "medianElo",
                     "topElo",
                     "eventData",
+                    "isLeague",
                 ):
-                    if key not in tournament and key in t:
+                    if key == "eventData":
+                        if not tournament.get("eventData") and t.get("eventData"):
+                            tournament[key] = t[key]
+                    elif key not in tournament and key in t:
                         tournament[key] = t[key]
             if ingester:
                 try:
