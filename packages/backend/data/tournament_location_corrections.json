@@ -1548,5 +1548,20 @@
     "country": "Germany",
     "reason": "Reviewed saved venue address together with the original region abbreviation and city.",
     "sources": []
+  },
+  {
+    "topdeck_tid": "mtm-series-iv",
+    "event_name": "MTM - Series IV - German Nationals 2027 - EU Qualifier",
+    "original_state": "SL",
+    "original_country": null,
+    "city": "Dillingen/Saar",
+    "venue": null,
+    "state": "Saarland",
+    "country": "Germany",
+    "reason": "TopDeck event page identifies Dillingen/Saar, Deutschland and Marktstraße 13, 66763 Dillingen/Saar; the official municipality directory places Dillingen/Saar in Saarland. Saved venue is missing, so retain the event ID, city and original source guards.",
+    "sources": [
+      "https://topdeck.gg/event/mtm-series-iv",
+      "https://www.statistikportal.de/de/gemeindeverzeichnis/10044111"
+    ]
   }
 ]

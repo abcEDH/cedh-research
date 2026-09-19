@@ -117,3 +117,12 @@ validated database cleanup, merge/deploy the compatible code, then restore
 ingestion dispatch. The frontend cache keys change with this release so the new
 deployment reads the corrected regional summaries. Do not resume old ingestion
 between database commit and code deployment.
+
+### Post-release location review
+
+The September 19 ingestion audit identified one additional event, `mtm-series-iv`,
+with `SL` and no country. Its TopDeck event page identifies Dillingen/Saar, Germany;
+the official municipality directory confirms Saarland. The reviewed correction
+catalog now contains 130 events. This is an event-specific correction, not a
+global interpretation of `SL` without country context. Source links and the
+original city, missing venue, state, and country are retained in the catalog.
