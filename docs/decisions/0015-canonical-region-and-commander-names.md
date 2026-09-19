@@ -108,3 +108,12 @@ The legality generator supports Scryfall's compressed JSONL bulk format as well
 as the older JSON format. It checks commander eligibility in addition to format
 legality, and requires the exact Time Lord/Doctor creature types for Doctor's
 companion pairings.
+
+### Coordinated release window
+
+If deploying the frontend and ingestion from the same main-branch merge, pause
+ingestion dispatch first and ensure no ingestion job is still running. Apply the
+validated database cleanup, merge/deploy the compatible code, then restore
+ingestion dispatch. The frontend cache keys change with this release so the new
+deployment reads the corrected regional summaries. Do not resume old ingestion
+between database commit and code deployment.

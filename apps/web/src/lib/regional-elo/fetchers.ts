@@ -228,7 +228,7 @@ async function fetchLatestCommanders(
 
 const getCachedRegionRows = unstable_cache(
   () => withTiming("regional-elo:regions", fetchRegionRows),
-  ["regional-elo-regions-v5"],
+  ["regional-elo-regions-v6-canonical-names"],
   { revalidate: REGIONAL_ELO_CACHE_REVALIDATE_SECONDS },
 );
 const getCachedLeaderboardRows = unstable_cache(
@@ -242,7 +242,7 @@ const getCachedLeaderboardRows = unstable_cache(
     withTiming("regional-elo:leaderboard", () =>
       fetchLeaderboardRows(regionType, regionKey, page, pageSize, searchQuery),
     ),
-  ["regional-elo-leaderboard-v6"],
+  ["regional-elo-leaderboard-v7-canonical-names"],
   { revalidate: REGIONAL_ELO_CACHE_REVALIDATE_SECONDS },
 );
 const getCachedLatestCommanders = unstable_cache(
@@ -250,7 +250,7 @@ const getCachedLatestCommanders = unstable_cache(
     withTiming("regional-elo:latest-commanders", async () =>
       Object.fromEntries((await fetchLatestCommanders(players)).entries()),
     ),
-  ["regional-elo-latest-commanders-v4"],
+  ["regional-elo-latest-commanders-v5-canonical-names"],
   { revalidate: REGIONAL_ELO_CACHE_REVALIDATE_SECONDS },
 );
 
