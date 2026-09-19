@@ -403,14 +403,14 @@ export default async function Home({
                     {leaderboardPlayers.length > 0 ? (
                       leaderboardPlayers.map((player) => {
                         return (
-                          <TableRow key={player.player_id} className="relative border-border/60">
+                          <TableRow key={player.player_id} className="border-border/60">
                             <TableCell className="py-3 px-1 font-mono text-[10px] text-muted-foreground">
+                              {player.rank}
+                            </TableCell>
+                            <TableCell className="relative overflow-hidden py-3 px-2">
                               {isKnownCommanderName(player.active_commander) ? (
                                 <CommanderRowBackdrop name={player.active_commander} />
                               ) : null}
-                              {player.rank}
-                            </TableCell>
-                            <TableCell className="py-3 px-2">
                               <Link
                                 href={`/regional-elo/player/${player.topdeck_id}${eloOnly ? "?eloOnly=true" : ""}`}
                                 className="font-medium text-foreground hover:text-primary text-xs sm:text-sm"
