@@ -93,7 +93,7 @@ const tableData: TableData = {
       losses: 1,
       last_game_date: "2026-04-03",
       home_country_key: "UNITED STATES",
-      home_region_key: "CALIFORNIA",
+      home_region_key: "WASHINGTON",
       state_assignments: [
         {
           country_key: "UNITED STATES",
@@ -101,6 +101,14 @@ const tableData: TableData = {
           games_played: 3,
           wins: 1,
           draws: 1,
+          losses: 1,
+        },
+        {
+          country_key: "UNITED STATES",
+          region_key: "WASHINGTON",
+          games_played: 1,
+          wins: 0,
+          draws: 0,
           losses: 1,
         },
       ],

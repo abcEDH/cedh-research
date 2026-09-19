@@ -1,3 +1,4 @@
+import { CommanderPredictions } from "@/components/commander-predictions";
 import { Suspense } from "react";
 import Link from "next/link";
 import type { Metadata } from "next";
@@ -164,13 +165,7 @@ export type PlayerAchievementRow = {
   recordGames: number;
 };
 
-export type PlayerCommanderProfileRow = {
-  active_commander: string | null;
-  latest_decklist_url: string | null;
-  latest_tournament_name: string | null;
-  latest_tournament_date: string | null;
-  latest_tournament_topdeck_tid: string | null;
-};
+export type { PlayerCommanderProfileRow } from "@/lib/commander-predictions";
 
 export type PlayerEventLogRow = {
   game_id: string;
@@ -453,7 +448,6 @@ export async function PlayerProfileBody({
     fetchCachedPlayerAchievements(player.id, topdeckId),
   ]);
 
-  const activeCommander = commanderProfile?.active_commander ?? null;
 
   const allPlayerLogs: PlayerGameLog[] =
     rawPlayerLogs ?? (await fetchCachedRawPlayerLogPage(player.id)).logs;
@@ -543,7 +537,7 @@ export async function PlayerProfileBody({
         if (b.games_played !== a.games_played) return b.games_played - a.games_played;
         return a.region_key.localeCompare(b.region_key);
       })[0]?.region_key ?? null;
-  const homeRegion = profileSummary?.home_region_key ?? globalEloRank?.primary_region_key ?? regionalRanks[0]?.region_key ?? derivedHomeRegion;
+  const homeRegion = globalEloRank?.primary_region_key ?? profileSummary?.home_region_key ?? regionalRanks[0]?.region_key ?? derivedHomeRegion;
   const stateAssignmentRows = Array.from(assignmentRowsByRegion.values()).sort((a: StateAssignmentRow, b: StateAssignmentRow) => {
     const aCountry = a.country_key ?? "UNKNOWN";
     const bCountry = b.country_key ?? "UNKNOWN";
@@ -605,6 +599,10 @@ export async function PlayerProfileBody({
     if (b.games !== a.games) return b.games - a.games;
     return a.commander.localeCompare(b.commander);
   });
+  const activeCommander =
+    isKnownCommanderName(commanderProfile?.active_commander)
+      ? commanderProfile?.active_commander ?? null
+      : null;
   const latestDecklistByCommander = new Map<string, { date: string; url: string }>();
   const latestTournamentByCommander = new Map<
     string,
@@ -625,28 +623,6 @@ export async function PlayerProfileBody({
         date: row.start_date,
         name: tournamentName,
         url: buildTopdeckTournamentUrl(row.tournament_topdeck_tid),
-      });
-    }
-  }
-  if (activeCommander) {
-    if (
-      commanderProfile?.latest_decklist_url &&
-      commanderProfile.latest_tournament_date &&
-      !latestDecklistByCommander.has(activeCommander)
-    ) {
-      latestDecklistByCommander.set(activeCommander, {
-        date: commanderProfile.latest_tournament_date,
-        url: commanderProfile.latest_decklist_url,
-      });
-    }
-    if (
-      commanderProfile?.latest_tournament_date &&
-      !latestTournamentByCommander.has(activeCommander)
-    ) {
-      latestTournamentByCommander.set(activeCommander, {
-        date: commanderProfile.latest_tournament_date,
-        name: commanderProfile.latest_tournament_name || "Unknown tournament",
-        url: buildTopdeckTournamentUrl(commanderProfile.latest_tournament_topdeck_tid),
       });
     }
   }
@@ -719,6 +695,7 @@ export async function PlayerProfileBody({
               </p>
             </CardHeader>
             <CardContent>
+              <CommanderPredictions profile={commanderProfile} />
               <div className="overflow-auto">
                 <table className="w-full text-sm">
                   <thead className="text-left text-xs uppercase tracking-[0.2em] text-muted-foreground">
@@ -1156,7 +1133,7 @@ export async function PlayerProfileBody({
                             <span className="text-foreground line-clamp-2 max-w-[140px] sm:max-w-none">{row.tournamentName}</span>
                           )}
                         </td>
-                        <td className="px-2 py-3 text-muted-foreground hidden sm:table-cell">
+                        <td className="px-2 py-3 text-muted-foreground">
                           {formatShortDate(row.startDate)}
                         </td>
                         <td className="px-2 py-3 text-muted-foreground">

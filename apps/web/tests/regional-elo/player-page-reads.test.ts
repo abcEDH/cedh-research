@@ -28,8 +28,11 @@ describe("regional player read path", () => {
     expect(source).toContain("const displayedTopdeckElo");
     expect(source).toContain('.from("global_elo_active_leaderboard")');
     expect(source).toContain('.from("global_elo_player_profile_summaries")');
-    expect(source).toContain("fetchCachedPlayerCommanderProfile");
+    expect(source).toContain('.from("player_commander_profiles")');
+    expect(source).toContain("active_commander, active_commander_prediction_score");
+    expect(source).toContain("latest_commander, latest_commander_date, commander_predictions");
     expect(source).not.toContain("fetchActiveDisplayedRank");
+    expect(source).not.toContain("latest_tournament_date");
     expect(source).not.toContain('.from("topdeck_player_elos")');
     expect(source).not.toContain('.from("global_elo_leaderboard")');
     expect(source).not.toContain('.from("regional_elo_leaderboard")');
