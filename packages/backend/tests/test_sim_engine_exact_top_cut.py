@@ -1,7 +1,9 @@
+import random
 from datetime import datetime
 import unittest
+from unittest.mock import Mock
 
-from sim_engine import exact_top_cut_probabilities
+from sim_engine import exact_top_cut_probabilities, resolve_bracket_probabilities
 from sim_models import predict_decisive_win_probabilities
 from sim_pairings import pair_topdeck_bracket
 from sim_types import SimPlayer, StandingRow, TournamentSpec, TournamentState
@@ -66,6 +68,29 @@ class ExactTopCutTests(unittest.TestCase):
             probabilities = quarterfinal_probabilities[(pod.round_index, pod.table_number)]
             for player_id, probability in zip(pod.player_ids, probabilities, strict=True):
                 self.assertAlmostEqual(advancement[4][player_id], probability)
+
+    def test_top40_records_exact_top16_play_in_probabilities(self):
+        player_ids, state = build_state(40, 40)
+        winners, advancement = resolve_bracket_probabilities(
+            player_ids,
+            state,
+            random.Random(1),
+            Mock(),
+            Mock(),
+        )
+        auto_advancers, pods = pair_topdeck_bracket(player_ids, state.spec.swiss_rounds)
+        play_in_probabilities = predict_decisive_win_probabilities(pods, state)
+
+        self.assertAlmostEqual(sum(winners.values()), 1.0)
+        self.assertAlmostEqual(sum(advancement[40].values()), 40.0)
+        self.assertAlmostEqual(sum(advancement[16].values()), 16.0)
+        self.assertAlmostEqual(sum(advancement[4].values()), 4.0)
+        for player_id in auto_advancers:
+            self.assertAlmostEqual(advancement[16][player_id], 1.0)
+        for pod in pods:
+            probabilities = play_in_probabilities[(pod.round_index, pod.table_number)]
+            for player_id, probability in zip(pod.player_ids, probabilities, strict=True):
+                self.assertAlmostEqual(advancement[16][player_id], probability)
 
 
 if __name__ == "__main__":

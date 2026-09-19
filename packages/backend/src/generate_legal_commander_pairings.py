@@ -4,32 +4,33 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import itertools
 import json
 import re
 import time
 from collections import Counter, defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 import requests
 
-from ingest import normalize_commander_name
+from ingest import (
+    PARTNER_ORDER_OVERRIDES,
+    load_legal_commander_pair_order_map,
+    normalize_commander_name,
+)
 
 SCRYFALL_BULK_DATA_URL = "https://api.scryfall.com/bulk-data"
 SCRYFALL_SEARCH_URL = "https://api.scryfall.com/cards/search"
-ORACLE_BULK_TYPE = "oracle_cards"
-
-# Scryfall rejects requests carrying an HTTP library's default User-Agent
-# (e.g. plain "python-requests/x.y.z") with a 400 "generic_user_agent" error
-# and asks API consumers to identify themselves. Every Scryfall request in
-# this module must send these headers.
 SCRYFALL_HEADERS = {
     "User-Agent": "cedh-research/1.0 (+https://github.com/abcEDH/cedh-research)",
     "Accept": "application/json",
 }
+ORACLE_BULK_TYPE = "oracle_cards"
 
 PARTNER_WITH_PREFIX = "partner with "
 PARTNER_DESIGNATOR_PATTERN = re.compile(r"^partner(?:\s*[—-]\s*|\s+)(.+)$", re.IGNORECASE)
@@ -109,7 +110,11 @@ def extract_partner_traits(oracle_text: str) -> dict[str, Any]:
         if lower == "choose a background" or lower.startswith("choose a background ("):
             traits["has_choose_a_background"] = True
             continue
-        if lower in {"doctor's companion", "doctor’s companion"} or lower.startswith("doctor's companion (") or lower.startswith("doctor’s companion ("):
+        if (
+            lower in {"doctor's companion", "doctor’s companion"}
+            or lower.startswith("doctor's companion (")
+            or lower.startswith("doctor’s companion (")
+        ):
             traits["has_doctors_companion"] = True
             continue
     return traits
@@ -121,11 +126,22 @@ def build_commander_card(card: dict[str, Any]) -> CommanderCard:
     oracle_text = front_face_value(card, "oracle_text")
     traits = extract_partner_traits(oracle_text)
     legalities = card.get("legalities") or {}
-    is_commander_legal = legalities.get("commander") == "legal"
-    is_legendary_background = (
-        is_commander_legal and "Legendary" in type_line and "Background" in type_line
+    # Format legality alone does not make a creature a legal commander (for
+    # example Chakram Retriever/Slinger have partner with but are nonlegendary).
+    eligible = (
+        ("Legendary" in type_line and "Creature" in type_line)
+        or ("can be your commander" in oracle_text.casefold())
+        or ("Legendary" in type_line and "Background" in type_line)
     )
-    is_time_lord_doctor = is_commander_legal and "Time Lord" in type_line and "Doctor" in type_line
+    is_commander_legal = legalities.get("commander") == "legal" and eligible
+    is_legendary_background = is_commander_legal and "Legendary" in type_line and "Background" in type_line
+    creature_types = set(re.findall(r"Time Lord|\S+", type_line.split("—", 1)[-1].strip()))
+    is_time_lord_doctor = (
+        is_commander_legal
+        and "Legendary" in type_line
+        and "Creature" in type_line
+        and creature_types == {"Time Lord", "Doctor"}
+    )
     color_identity = tuple(sorted(card.get("color_identity") or ()))
     return CommanderCard(
         name=name,
@@ -148,23 +164,24 @@ def build_commander_card(card: dict[str, Any]) -> CommanderCard:
 
 
 def fetch_bulk_cards(bulk_type: str, timeout: float) -> list[dict[str, Any]]:
-    """Fetch a Scryfall bulk-data card list of the given ``bulk_type``.
-
-    Shared by any script that needs raw Scryfall card payloads — e.g.
-    ``oracle_cards`` (one row per oracle_id, used here for legal pairing rules)
-    or ``default_cards`` (one row per printing, used by
-    ``commander_oracle_identity.py`` for Universes Beyond alternate-name/
-    oracle_id identity resolution).
-    """
-    bulk_response = requests.get(SCRYFALL_BULK_DATA_URL, headers=SCRYFALL_HEADERS, timeout=timeout)
+    headers = {"User-Agent": "tedh.gg legal commander pairing catalog", "Accept": "application/json"}
+    bulk_response = requests.get(SCRYFALL_BULK_DATA_URL, headers=headers, timeout=timeout)
     bulk_response.raise_for_status()
     bulk_payload = bulk_response.json()
     bulk_items = bulk_payload.get("data") or []
-    bulk_item = next((item for item in bulk_items if item.get("type") == bulk_type), None)
-    if not bulk_item or not bulk_item.get("download_uri"):
-        raise RuntimeError(f"Unable to locate Scryfall {bulk_type} bulk download")
-    cards_response = requests.get(bulk_item["download_uri"], headers=SCRYFALL_HEADERS, timeout=timeout)
+    oracle_item = next((item for item in bulk_items if item.get("type") == bulk_type), None)
+    if not oracle_item:
+        raise RuntimeError("Unable to locate Scryfall oracle_cards bulk download")
+    download_uri = oracle_item.get("jsonl_download_uri") or oracle_item.get("download_uri")
+    if not download_uri:
+        raise RuntimeError("Scryfall oracle_cards metadata has no download URI")
+    cards_response = requests.get(download_uri, headers=headers, timeout=timeout)
     cards_response.raise_for_status()
+    if oracle_item.get("jsonl_download_uri"):
+        payload = cards_response.content
+        if payload.startswith(b"\x1f\x8b"):
+            payload = gzip.decompress(payload)
+        return [json.loads(line) for line in payload.splitlines() if line.strip()]
     return cards_response.json()
 
 
@@ -235,6 +252,34 @@ def _get_with_rate_limit_retry(
     raise RuntimeError("unreachable")  # pragma: no cover
 
 
+@lru_cache(maxsize=1)
+def load_previous_order_sources() -> dict[tuple[str, str], str]:
+    path = Path(__file__).resolve().parents[1] / "data" / "legal_commander_pairings.json"
+    return {
+        tuple(sorted(pair["commander_names"])): pair.get("order_source", "preserved")
+        for pair in json.loads(path.read_text())["legal_pairs"]
+    }
+
+
+@lru_cache(maxsize=1)
+def load_order_reviews() -> dict[tuple[str, str], dict[str, Any]]:
+    path = Path(__file__).resolve().parents[1] / "data" / "partner_order_reviews.json"
+    reviews = json.loads(path.read_text())["reviews"]
+    result = {}
+    for review in reviews:
+        names = review["commander_names"]
+        if len(names) != 2 or len(set(names)) != 2:
+            raise ValueError("A partner-order review must identify two distinct cards")
+        if review["status"] == "confirmed":
+            if not review.get("sources"):
+                raise ValueError("Confirmed community order requires evidence links")
+            key = tuple(sorted(names))
+            if key in result:
+                raise ValueError(f"Duplicate community-order review: {key}")
+            result[key] = review
+    return result
+
+
 def add_pair(
     pair_map: dict[tuple[str, str], dict[str, Any]],
     left: CommanderCard,
@@ -247,8 +292,20 @@ def add_pair(
         return
     sorted_names = tuple(sorted((left.name, right.name)))
     entry = pair_map.get(sorted_names)
+    review = load_order_reviews().get(sorted_names)
     candidate = {
-        "project_name": normalize_commander_name(list(sorted_names)),
+        "project_name": " / ".join(review["commander_names"])
+        if review
+        else normalize_commander_name(list(sorted_names)),
+        "order_source": (
+            "community_review"
+            if review
+            else load_previous_order_sources().get(sorted_names, "preserved")
+            if sorted_names in load_legal_commander_pair_order_map()
+            else "explicit_override"
+            if sorted_names in PARTNER_ORDER_OVERRIDES
+            else "alphabetical_pending_review"
+        ),
         "sorted_name": " / ".join(sorted_names),
         "commander_names": list(sorted_names),
         "rule": rule,
@@ -256,6 +313,8 @@ def add_pair(
         "color_identity": "".join(sorted(set(left.color_identity) | set(right.color_identity))),
         "scryfall_ids": [left.scryfall_id, right.scryfall_id],
     }
+    if review:
+        candidate["order_evidence"] = review
     if entry is None:
         pair_map[sorted_names] = candidate
         return
@@ -314,7 +373,7 @@ def write_output(
     pairs = sorted(pair_map.values(), key=lambda row: (row["project_name"], row["rule"]))
     counts_by_rule = Counter(pair["rule"] for pair in pairs)
     payload = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "source": {
             "provider": "Scryfall",
             "dataset": ORACLE_BULK_TYPE,

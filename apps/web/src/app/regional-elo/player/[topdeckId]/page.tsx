@@ -1,4 +1,5 @@
 import { CommanderPredictions } from "@/components/commander-predictions";
+import { canonicalRegionKey } from "@/lib/region-name-normalization";
 import { Suspense } from "react";
 import Link from "next/link";
 import type { Metadata } from "next";
@@ -346,7 +347,7 @@ async function PlayerProfileBodyWrapper({
 
   const resolvedSearchParams = await Promise.resolve(searchParams);
   const requestedRegion = decodeURIComponent(readRegionParam(resolvedSearchParams)).trim().toUpperCase();
-  const regionFilter = requestedRegion === "ALL" ? "" : requestedRegion;
+  const regionFilter = requestedRegion === "ALL" ? "" : canonicalRegionKey(requestedRegion);
   const eloOnly = readStringParam(resolvedSearchParams, "eloOnly") === "true";
   const [playerLogPage, lifetimeSummary] = await Promise.all([
     fetchCachedRawPlayerLogPage(player.id),
@@ -414,7 +415,7 @@ export async function PlayerProfileBody({
 }) {
   const resolvedSearchParams = await Promise.resolve(searchParams);
   const requestedRegion = decodeURIComponent(readRegionParam(resolvedSearchParams)).trim().toUpperCase();
-  const regionFilter = requestedRegion === "ALL" ? "" : requestedRegion;
+  const regionFilter = requestedRegion === "ALL" ? "" : canonicalRegionKey(requestedRegion);
   const requestedAchievementsPage = readPositiveIntParam(resolvedSearchParams, "achievementsPage");
   const achievementTournamentSearch = readStringParam(resolvedSearchParams, "achievementTournament");
   const achievementCommanderSearch = readStringParam(resolvedSearchParams, "achievementCommander");

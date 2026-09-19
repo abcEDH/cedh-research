@@ -93,7 +93,7 @@ export async function fetchRawPlayerLogPage(playerId: string): Promise<PlayerGam
 export const fetchCachedRawPlayerLogPage = unstable_cache(
   async (playerId: string) =>
     withTiming("regional-player:raw-history", () => fetchRawPlayerLogPage(playerId)),
-  ["regional-player-raw-history-v2"],
+  ["regional-player-raw-history-v2-canonical-names"],
   { revalidate: PLAYER_LOG_CACHE_REVALIDATE_SECONDS }
 );
 
