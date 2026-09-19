@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { fetchTournamentBySlug } from "@/lib/topdeck";
+import {
+  defaultTournamentStructureForPlayerCount,
+  fetchTournamentBySlug,
+  inferTournamentStructureFromText,
+} from "@/lib/topdeck";
 
 function createJsonResponse(payload: unknown, status = 200) {
   return {
@@ -74,5 +78,72 @@ describe("fetchTournamentBySlug", () => {
     expect(result.standings[0].winRate).toBe(0.75);
     expect(result.standings[0].opponentWinRate).toBe(0.5);
     expect(globalThis.setTimeout).toHaveBeenCalledWith(expect.any(Function), 60000);
+  });
+});
+
+describe("inferTournamentStructureFromText", () => {
+  it("reads six swiss rounds and cut to Top 40 from event page text", () => {
+    const result = inferTournamentStructureFromText(`
+      <main>
+        <p>Competitive cEDH event</p>
+        <p>6 Rounds of Swiss</p>
+        <p>Cut to Top 40</p>
+      </main>
+    `);
+
+    expect(result).toEqual({
+      swissRounds: 6,
+      topCut: 40,
+      source: "event_page",
+    });
+  });
+
+  it("handles compact top-cut text and alternate swiss labels", () => {
+    const result = inferTournamentStructureFromText("Swiss: 7 Rounds followed by Top16 Cut");
+
+    expect(result?.swissRounds).toBe(7);
+    expect(result?.topCut).toBe(16);
+  });
+
+  it("reads the Quest event-page structure wording", () => {
+    const result = inferTournamentStructureFromText(`
+      <b>6 Swiss</b> Rounds (incl. Break)
+      After Day 1 (6 Rounds of Swiss), <b>Top 40 will be invited back for Day 2</b>
+      <span>What's a Top 40 Cut?</span>
+    `);
+
+    expect(result?.swissRounds).toBe(6);
+    expect(result?.topCut).toBe(40);
+  });
+
+  it("returns null when the event page has no usable structure", () => {
+    expect(inferTournamentStructureFromText("<p>Registration is open.</p>")).toBeNull();
+  });
+});
+
+describe("defaultTournamentStructureForPlayerCount", () => {
+  it.each([
+    [16, 2, 0],
+    [17, 3, 4],
+    [34, 3, 4],
+    [35, 4, 10],
+    [64, 4, 10],
+    [65, 5, 16],
+    [128, 5, 16],
+    [129, 6, 16],
+    [208, 6, 16],
+    [209, 7, 16],
+    [304, 7, 16],
+    [305, 8, 16],
+    [540, 8, 16],
+    [541, 9, 16],
+    [960, 9, 16],
+    [961, 10, 16],
+  ])("uses TopDeck addendum fallback for %i players", (players, swissRounds, topCut) => {
+    expect(defaultTournamentStructureForPlayerCount(players)).toEqual({
+      swissRounds,
+      topCut,
+      source: "fallback",
+    });
   });
 });

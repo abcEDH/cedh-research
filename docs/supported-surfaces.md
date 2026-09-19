@@ -14,6 +14,7 @@ Planned removals should be called out explicitly, but they must not be labeled a
 - `/regional-elo`
 - `/regional-elo/player/[topdeckId]`
 - `/tournament-likelihood`
+- `/tournament-likelihood/simulate`
 - `/trap-spice`
 - `/cards`
 - `/turn-order`
