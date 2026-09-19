@@ -1,84 +1,17 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/lib/supabase";
-import {
-  attachLatestDecklistUrls,
-  buildProfiles,
-  COMMANDER_FALLBACK_LOOKBACK_MONTHS,
-  COMMANDER_PRIMARY_LOOKBACK_MONTHS,
-  getCommanderDecklistRows,
-  getCommanderUsageRows,
-  lookbackStartDate,
-  selectCommanderForecastRows,
-} from "@/lib/meta-prep";
+import { COMMANDER_FALLBACK_LOOKBACK_MONTHS, COMMANDER_PRIMARY_LOOKBACK_MONTHS, lookbackStartDate } from "@/lib/meta-prep";
 import type { MetaShareRow, PlayerCommanderProfile } from "@/lib/meta-prep";
-import { extractTournamentSlug, fetchTournamentBySlug } from "@/lib/topdeck";
+import { extractTournamentSlug } from "@/lib/topdeck";
 import Link from "next/link";
-import { unstable_cache } from "next/cache";
 import { FieldShareList } from "./field-share-list";
 import { TournamentAnalysisTables } from "./tournament-analysis-tables";
+import { getTournamentAnalysis, fetchBestEloRows } from "./tournament-analysis";
+import type { TournamentStanding, EloRow } from "./tournament-analysis";
+import { TournamentRefresh } from "./tournament-refresh";
 
 export const dynamic = "force-dynamic";
 const DEFAULT_LOOKBACK_MONTHS = COMMANDER_PRIMARY_LOOKBACK_MONTHS;
-
-type TournamentStanding = {
-  name: string;
-  id: string;
-  username?: string | null;
-  standing: number;
-  points: number;
-  winRate: number;
-  opponentWinRate: number;
-  wins: number;
-  draws: number;
-  losses: number;
-  actualDeckCommander: string | null;
-  actualDecklistUrl: string | null;
-};
-
-type EloRow = {
-  topdeck_id: string | null;
-  player_name: string;
-  rating: number | null;
-  hidden_rating?: number;
-  topdeck_elo?: number | null;
-  games_played: number;
-  region_key: string;
-};
-
-type RegionalLeaderboardQueryRow = {
-  topdeck_id: string | null;
-  player_name: string;
-  rating: number;
-  topdeck_elo: number | null;
-  games_played: number;
-  primary_region_key: string | null;
-  region_key: string;
-  rank: number;
-};
-
-type PrecomputedCommanderPrediction = {
-  commander: string;
-  entries: number;
-  prediction_score: number;
-  prediction_share: number;
-  latest_date: string | null;
-  latest_decklist_url: string | null;
-};
-
-type PrecomputedCommanderProfileRow = {
-  topdeck_id: string | null;
-  player_name: string | null;
-  total_entries: number;
-  commander_predictions: PrecomputedCommanderPrediction[] | null;
-};
-
-function chunkArray<T>(values: T[], chunkSize = 250) {
-  const chunks: T[][] = [];
-  for (let index = 0; index < values.length; index += chunkSize) {
-    chunks.push(values.slice(index, index + chunkSize));
-  }
-  return chunks;
-}
 
 function buildTopdeckTournamentUrl(slug: string) {
   return slug ? `https://topdeck.gg/bracket/${slug}` : null;
@@ -124,228 +57,6 @@ function hasTournamentStarted(startDate: string | number | null | undefined) {
   return timestamp !== null && Date.now() >= timestamp;
 }
 
-async function fetchBestEloRows(topdeckIds: string[]): Promise<EloRow[]> {
-  if (topdeckIds.length === 0) return [];
-
-  // Query global_elo_active_leaderboard for player ratings
-  // The rating column contains our calculated Elo for each player
-  // The topdeck_elo column contains the official TopDeck Elo
-  const { data, error } = await supabase
-    .from("global_elo_active_leaderboard")
-    .select("topdeck_id, player_name, rating, topdeck_elo, games_played, primary_region_key, region_key, rank")
-    .in("topdeck_id", topdeckIds)
-    .eq("region_type", "global")
-    .eq("region_key", "ALL");
-
-  if (error) {
-    throw new Error(`Error fetching Elo rows: ${error.message}`);
-  }
-
-  const rowsByTopdeckId = new Map(
-    ((data ?? []) as RegionalLeaderboardQueryRow[])
-      .filter((row) => row.topdeck_id)
-      .map((row) => [row.topdeck_id as string, row])
-  );
-
-  return Array.from(new Set(topdeckIds))
-    .map((topdeckId) => {
-      const row = rowsByTopdeckId.get(topdeckId);
-      return {
-        topdeck_id: topdeckId,
-        player_name: row?.player_name ?? "",
-        rating: row?.rating ?? null,
-        hidden_rating: undefined,
-        topdeck_elo: row?.topdeck_elo ?? null,
-        games_played: row?.games_played ?? 0,
-        region_key: row?.primary_region_key ?? row?.region_key ?? "",
-      };
-    })
-    .sort((a, b) => (b.rating ?? -Infinity) - (a.rating ?? -Infinity));
-}
-
-async function fetchLatestPlayerNames(topdeckIds: string[]): Promise<Map<string, string>> {
-  const names = new Map<string, string>();
-  const uniqueTopdeckIds = Array.from(new Set(topdeckIds.filter(Boolean)));
-  for (const topdeckIdChunk of chunkArray(uniqueTopdeckIds)) {
-    const { data, error } = await supabase
-      .from("players")
-      .select("topdeck_id, name")
-      .in("topdeck_id", topdeckIdChunk);
-
-    if (error) {
-      continue;
-    }
-
-    for (const row of (data ?? []) as Array<{ topdeck_id: string | null; name: string | null }>) {
-      if (row.topdeck_id && row.name) {
-        names.set(row.topdeck_id, row.name);
-      }
-    }
-  }
-  return names;
-}
-
-function applyLatestPlayerNamesToProfiles(
-  profiles: { players: PlayerCommanderProfile[]; metaShare: MetaShareRow[] },
-  latestPlayerNames: Map<string, string>
-) {
-  return {
-    ...profiles,
-    players: profiles.players.map((profile) => ({
-      ...profile,
-      playerName: latestPlayerNames.get(profile.topdeckId) ?? profile.playerName,
-    })),
-  };
-}
-
-async function fetchPrecomputedProfiles(
-  topdeckIds: string[]
-): Promise<{ players: PlayerCommanderProfile[]; metaShare: MetaShareRow[] } | null> {
-  if (topdeckIds.length === 0) return { players: [], metaShare: [] };
-
-  const { data, error } = await supabase
-    .from("player_commander_profiles")
-    .select("topdeck_id, player_name, total_entries, commander_predictions")
-    .in("topdeck_id", topdeckIds);
-
-  if (error) {
-    return null;
-  }
-
-  const rowsByTopdeckId = new Map(
-    ((data ?? []) as PrecomputedCommanderProfileRow[])
-      .filter((row) => row.topdeck_id)
-      .map((row) => [row.topdeck_id as string, row])
-  );
-  if (rowsByTopdeckId.size === 0) return null;
-
-  const metaTotals = new Map<string, number>();
-  const players = topdeckIds.map((topdeckId) => {
-    const row = rowsByTopdeckId.get(topdeckId);
-    const commanders = (row?.commander_predictions ?? []).slice(0, 3).map((commander) => {
-      metaTotals.set(
-        commander.commander,
-        (metaTotals.get(commander.commander) ?? 0) + commander.prediction_share
-      );
-      return {
-        commander: commander.commander,
-        entries: commander.entries,
-        share: commander.prediction_share,
-        weightedShare: commander.prediction_share,
-        predictionShare: commander.prediction_share,
-        predictionScore: commander.prediction_score,
-        latestDate: commander.latest_date,
-        latestDecklistUrl: commander.latest_decklist_url,
-        latestTopdeckDecklistUrl: null,
-      };
-    });
-
-    return {
-      topdeckId,
-      playerName: row?.player_name ?? "Unknown",
-      totalEntries: row?.total_entries ?? 0,
-      commanders,
-    };
-  });
-  const totalMeta = Array.from(metaTotals.values()).reduce((sum, value) => sum + value, 0);
-  const metaShare = Array.from(metaTotals.entries())
-    .map(([commander, entries]) => ({
-      commander,
-      entries,
-      share: totalMeta ? entries / totalMeta : 0,
-    }))
-    .sort((a, b) => b.entries - a.entries)
-    .slice(0, 15);
-
-  return { players, metaShare };
-}
-
-type TournamentAnalysis = {
-  tournament: {
-    name: string;
-    game: string;
-    format: string;
-    startDate: string | number;
-  };
-  standings: TournamentStanding[];
-  profiles: { players: PlayerCommanderProfile[]; metaShare: MetaShareRow[] };
-  hasRounds: boolean;
-};
-
-const getCachedTournamentAnalysis = unstable_cache(
-  async (slug: string, lookbackMonths: number): Promise<TournamentAnalysis> => {
-    const response = await fetchTournamentBySlug(slug);
-    const standings = (response.standings ?? []) as TournamentStanding[];
-    const topdeckIds = standings.map((row) => row.id).filter(Boolean);
-    const startTimestamp = readStartTimestamp(response.data.startDate);
-    const now = Date.now();
-    const anchorToStartDate = Boolean(startTimestamp && now >= startTimestamp);
-    const anchorTimestamp = anchorToStartDate && startTimestamp ? startTimestamp : now;
-    const referenceDate = new Date(anchorTimestamp);
-    const lookbackStart = lookbackStartDate(lookbackMonths, referenceDate);
-    const fallbackLookbackStart = lookbackStartDate(COMMANDER_FALLBACK_LOOKBACK_MONTHS, referenceDate);
-    const lookbackEnd = anchorToStartDate ? referenceDate.toISOString().slice(0, 10) : undefined;
-    const [precomputedProfiles, decklistRows, latestPlayerNames] = await Promise.all([
-      anchorToStartDate ? Promise.resolve(null) : fetchPrecomputedProfiles(topdeckIds),
-      getCommanderDecklistRows(topdeckIds, lookbackEnd),
-      fetchLatestPlayerNames(topdeckIds),
-    ]);
-    const latestStandings = standings.map((standing) => ({
-      ...standing,
-      name: latestPlayerNames.get(standing.id) ?? standing.name,
-    }));
-    if (precomputedProfiles) {
-      return {
-        tournament: response.data,
-        standings: latestStandings,
-        profiles: applyLatestPlayerNamesToProfiles(
-          attachLatestDecklistUrls(precomputedProfiles, decklistRows),
-          latestPlayerNames
-        ),
-        hasRounds: (response.rounds ?? []).length > 0,
-      };
-    }
-    const primaryUsageRows = await getCommanderUsageRows(topdeckIds, lookbackStart, lookbackEnd);
-    const twelveMonthEntryCounts = new Map<string, number>();
-    for (const row of primaryUsageRows) {
-      if (!row.topdeck_id || !row.commander_name) continue;
-      twelveMonthEntryCounts.set(row.topdeck_id, (twelveMonthEntryCounts.get(row.topdeck_id) ?? 0) + 1);
-    }
-    const sparseTopdeckIds = topdeckIds.filter((topdeckId) => (twelveMonthEntryCounts.get(topdeckId) ?? 0) < 2);
-    const fallbackUsageRows = sparseTopdeckIds.length
-      ? await getCommanderUsageRows(sparseTopdeckIds, fallbackLookbackStart, lookbackStart)
-      : [];
-    for (const row of fallbackUsageRows) {
-      if (!row.topdeck_id || !row.commander_name) continue;
-      twelveMonthEntryCounts.set(row.topdeck_id, (twelveMonthEntryCounts.get(row.topdeck_id) ?? 0) + 1);
-    }
-    const noTwelveMonthHistoryTopdeckIds = topdeckIds.filter(
-      (topdeckId) => (twelveMonthEntryCounts.get(topdeckId) ?? 0) === 0
-    );
-    const lastKnownFallbackRows = noTwelveMonthHistoryTopdeckIds.length
-      ? await getCommanderUsageRows(noTwelveMonthHistoryTopdeckIds, "1900-01-01", fallbackLookbackStart)
-      : [];
-    const usageRows = selectCommanderForecastRows(
-      topdeckIds,
-      [...primaryUsageRows, ...fallbackUsageRows, ...lastKnownFallbackRows],
-      referenceDate
-    );
-    const profiles = buildProfiles(topdeckIds, usageRows, 3, referenceDate.toISOString());
-
-    return {
-      tournament: response.data,
-      standings: latestStandings,
-      profiles: applyLatestPlayerNamesToProfiles(
-        attachLatestDecklistUrls(profiles, decklistRows),
-        latestPlayerNames
-      ),
-      hasRounds: (response.rounds ?? []).length > 0,
-    };
-  },
-  ["tournament-likelihood-analysis-v26"],
-  { revalidate: 60 * 15 }
-);
-
 export default async function TournamentLikelihoodPage({
   searchParams,
 }: {
@@ -373,6 +84,8 @@ export default async function TournamentLikelihoodPage({
   };
   let eloRows: EloRow[] = [];
   let hasRounds = false;
+  let standingsAvailable = false;
+  let updatedAt: string | null = null;
   let errorMessage: string | null = null;
 
   const { data: suggestedTournaments } = await supabase
@@ -385,7 +98,7 @@ export default async function TournamentLikelihoodPage({
 
   if (slug) {
     try {
-      const analysis = await getCachedTournamentAnalysis(slug, lookbackMonths);
+      const analysis = await getTournamentAnalysis(slug, lookbackMonths);
       tournament = analysis.tournament;
       standings = analysis.standings;
       profiles = analysis.profiles;
@@ -395,6 +108,8 @@ export default async function TournamentLikelihoodPage({
         player_name: row.topdeck_id ? latestStandingNameById.get(row.topdeck_id) ?? row.player_name : row.player_name,
       }));
       hasRounds = analysis.hasRounds;
+      standingsAvailable = analysis.standingsAvailable;
+      updatedAt = analysis.updatedAt;
     } catch (error) {
       errorMessage = (error as Error).message;
     }
@@ -402,7 +117,7 @@ export default async function TournamentLikelihoodPage({
 
   const playersWithData = profiles.players.filter((player) => player.totalEntries > 0).length;
   const tournamentHasStarted = tournament ? hasTournamentStarted(tournament.startDate) : false;
-  const hasTournamentResults = tournamentHasStarted && hasRounds;
+  const hasTournamentResults = standingsAvailable && hasRounds;
   const lookbackStartTimestamp = tournamentHasStarted && tournament
     ? readStartTimestamp(tournament.startDate)
     : null;
@@ -441,7 +156,8 @@ export default async function TournamentLikelihoodPage({
     }))
     .sort((a, b) => b.expectedPlayers - a.expectedPlayers);
 
-  const fieldShareRows = hasTournamentResults ? actualMetaRows : weightedMetaRows;
+  const showActualDecks = hasTournamentResults && actualMetaRows.length > 0;
+  const fieldShareRows = showActualDecks ? actualMetaRows : weightedMetaRows;
   const topCommander = fieldShareRows[0];
   const topFiveCombinedShare = fieldShareRows
     .slice(0, 5)
@@ -545,6 +261,17 @@ export default async function TournamentLikelihoodPage({
           </div>
         )}
 
+        {slug && <TournamentRefresh updatedAt={updatedAt} failed={Boolean(errorMessage)} />}
+        {tournament && !standingsAvailable && !errorMessage && (
+          <p role="status" className="mt-4 text-sm text-muted-foreground">
+            Live standings are unavailable. Showing attendees and deck forecasts only. Check the event on TopDeck for current results.
+          </p>
+        )}
+        {hasTournamentResults && !showActualDecks && !errorMessage && (
+          <p className="mt-4 text-sm text-muted-foreground">
+            Standings are current, but submitted commanders are not available. Deck choices below remain forecasts.
+          </p>
+        )}
         {tournament && !errorMessage && (
           <>
             <Card className="knd-panel mt-6">
@@ -572,7 +299,7 @@ export default async function TournamentLikelihoodPage({
                 <div className="rounded-md border border-border/60 bg-muted/20 p-4">
                   <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Attendees</p>
                   <p className="mt-2 text-lg font-semibold text-foreground">{standings.length}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">Players found from tournament standings</p>
+                  <p className="mt-1 text-sm text-muted-foreground">Players found on TopDeck</p>
                 </div>
                 <div className="rounded-md border border-border/60 bg-muted/20 p-4">
                   <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Coverage</p>
@@ -585,14 +312,14 @@ export default async function TournamentLikelihoodPage({
                 </div>
                 <div className="rounded-md border border-border/60 bg-muted/20 p-4">
                   <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">
-                    {hasTournamentResults ? "Most Played Deck" : "Most Likely Deck"}
+                    {showActualDecks ? "Most Played Deck" : "Most Likely Deck"}
                   </p>
                   <p className="mt-2 text-lg font-semibold text-foreground">
                     {topCommander ? `${topCommander.commander} (${formatPercent(topCommander.fieldShare)})` : "No consensus yet"}
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
                     Top 5 commanders represent {formatPercent(topFiveCombinedShare)} of{" "}
-                    {hasTournamentResults ? "submitted decklists" : "known field history"}
+                    {showActualDecks ? "the full field" : "known field history"}
                   </p>
                 </div>
               </CardContent>
@@ -601,25 +328,26 @@ export default async function TournamentLikelihoodPage({
             <Card className="knd-panel mt-6">
               <CardHeader>
                 <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
-                  {hasTournamentResults ? "Field Share" : "Expected Field Share (Player-Weighted)"}
+                  {showActualDecks ? "Field Share" : "Expected Field Share (Player-Weighted)"}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="mb-4 text-sm text-muted-foreground">
-                  {hasTournamentResults ? (
+                  {showActualDecks ? (
                     "Actual submitted commander choices from this tournament."
                   ) : (
                     "This estimate weights each player by how concentrated their recent commander usage is."
                   )}
                 </div>
-                <FieldShareList rows={fieldShareRows} hasTournamentResults={hasTournamentResults} />
+                <FieldShareList rows={fieldShareRows} hasTournamentResults={showActualDecks} />
               </CardContent>
             </Card>
 
             <TournamentAnalysisTables
+              key={`${slug}-${hasTournamentResults}`}
               eloAttendees={allTopEloAttendees}
-              showActualDecks={hasTournamentResults}
-              showTournamentRecord={tournamentHasStarted}
+              showActualDecks={showActualDecks}
+              showTournamentRecord={hasTournamentResults}
               profiles={profiles.players}
               standings={standings}
             />
