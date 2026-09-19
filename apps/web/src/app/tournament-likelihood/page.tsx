@@ -84,7 +84,6 @@ export default async function TournamentLikelihoodPage({
   let eloRows: EloRow[] = [];
   let hasRounds = false;
   let standingsAvailable = false;
-  let updatedAt: string | null = null;
   let errorMessage: string | null = null;
 
   const { data: suggestedTournaments } = await supabase
@@ -108,7 +107,6 @@ export default async function TournamentLikelihoodPage({
       }));
       hasRounds = analysis.hasRounds;
       standingsAvailable = analysis.standingsAvailable;
-      updatedAt = analysis.updatedAt;
     } catch (error) {
       errorMessage = (error as Error).message;
     }
@@ -260,11 +258,6 @@ export default async function TournamentLikelihoodPage({
           </div>
         )}
 
-        {updatedAt && !errorMessage && (
-          <p className="mt-6 text-sm text-muted-foreground">
-            Checked <time dateTime={updatedAt}>{new Date(updatedAt).toLocaleTimeString("en-GB", { timeZone: "UTC" })} UTC</time>.
-          </p>
-        )}
         {tournament && !standingsAvailable && !errorMessage && (
           <p role="status" className="mt-4 text-sm text-muted-foreground">
             Live standings are unavailable. Showing attendees and deck forecasts only. Check the event on TopDeck for current results.

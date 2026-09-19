@@ -291,6 +291,5 @@ export async function getTournamentAnalysis(slug: string, lookbackMonths: number
     profiles: forecast.profiles,
     hasRounds: response.rounds.length > 0,
     standingsAvailable: response.standingsAvailable,
-    updatedAt: new Date().toISOString(),
   };
 }
