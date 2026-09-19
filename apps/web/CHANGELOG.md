@@ -1,3 +1,10 @@
+## [1.33.1](https://github.com/abcEDH/cedh-research/compare/v1.33.0...v1.33.1) (2026-09-19)
+
+
+### Bug Fixes
+
+* refresh player caches after canonical name cleanup ([#366](https://github.com/abcEDH/cedh-research/issues/366)) ([9eafe81](https://github.com/abcEDH/cedh-research/commit/9eafe810d39cc3dd9ca8b84f1ee1e60368713f06))
+
 # [1.33.0](https://github.com/abcEDH/cedh-research/compare/v1.32.3...v1.33.0) (2026-09-19)
 
 
