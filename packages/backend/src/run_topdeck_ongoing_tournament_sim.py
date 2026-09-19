@@ -280,7 +280,7 @@ def main() -> None:
                 "points_drop_applied": live_metadata.get("points_drop_applied"),
             },
             workers=args.workers,
-            top_limit=100,
+            top_limit=len(state.players),
             stream_duration_seconds=args.stream_duration_seconds,
         )
         return
