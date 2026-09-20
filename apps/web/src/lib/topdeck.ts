@@ -38,6 +38,7 @@ type TopDeckProfileStatsResponse = {
 };
 
 type TopDeckTournamentResponse = {
+  standingsAvailable: boolean;
   data: {
     name: string;
     game: string;
@@ -218,7 +219,7 @@ function withTournamentRecords(response: TopDeckTournamentResponse): TopDeckTour
 
   for (const round of response.rounds ?? []) {
     for (const table of round.tables ?? []) {
-      if (table.status && table.status !== "Completed") continue;
+      if (table.status !== "Completed") continue;
       const playerIds = (table.players ?? [])
         .map((player) => player.id)
         .filter((id): id is string => Boolean(id));
@@ -226,7 +227,7 @@ function withTournamentRecords(response: TopDeckTournamentResponse): TopDeckTour
 
       for (const playerId of playerIds) {
         const record = records.get(playerId) ?? { wins: 0, draws: 0, losses: 0 };
-        if (!table.winner_id) {
+        if (!table.winner_id || table.winner_id === "Draw" || table.winner_id === "_DRAW_") {
           record.draws += 1;
         } else if (table.winner_id === playerId) {
           record.wins += 1;
@@ -323,7 +324,7 @@ export async function fetchTournamentBySlug(slug: string): Promise<TopDeckTourna
   if (apiKey) {
     const res = await fetchTopdeckWithRetry(`https://topdeck.gg/api/v2/tournaments/${slug}`.trim(), apiKey);
     return withActualDecklists(
-      withTournamentRecords(normalizeStandingRates((await res.json()) as TopDeckTournamentResponse)),
+      withTournamentRecords(normalizeStandingRates({ ...(await res.json()), standingsAvailable: true } as TopDeckTournamentResponse)),
       slug
     );
   }
@@ -350,6 +351,7 @@ export async function fetchTournamentBySlug(slug: string): Promise<TopDeckTourna
   }>);
 
   return withActualDecklists(withTournamentRecords({
+    standingsAvailable: false,
     data: {
       name: title || slug,
       game: "Magic: The Gathering",
