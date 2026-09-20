@@ -15,6 +15,7 @@ from typing import Any
 import requests
 from postgrest.exceptions import APIError
 
+import internal_elo
 from elo_time import exclude_future_games
 from ingest import load_local_env
 from internal_elo import (
@@ -41,8 +42,8 @@ except ImportError:
 K_FACTOR_DECISIVE = SWISS_WIN_K
 K_FACTOR_DRAW = SWISS_DRAW_K
 DEFAULT_RATING = 1500.0
-ELO_BASE = 2
-ELO_DIVISOR = 200
+ELO_BASE = internal_elo.ELO_BASE
+ELO_DIVISOR = internal_elo.ELO_DIVISOR
 GLOBAL_REGION_TYPE = "global"
 GLOBAL_REGION_KEY = "ALL"
 ELO_TIER_FILTERS = {
@@ -334,7 +335,7 @@ def score_for_result(result: str | None) -> float | None:
 
 
 def rating_equity(rating: float) -> float:
-    return pow(ELO_BASE, rating / ELO_DIVISOR)
+    return internal_elo.rating_equity(rating)
 
 
 def empty_rating(player_id: str) -> dict[str, Any]:

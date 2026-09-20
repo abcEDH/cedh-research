@@ -12,6 +12,8 @@ from typing import Any
 
 import requests
 
+import internal_elo
+
 DEFAULT_PREPARED_STATE_CACHE_DIR = Path(".cache/tournament-sim")
 PREPARED_STATE_CACHE_VERSION = 9
 
@@ -138,6 +140,7 @@ def tournament_state_fingerprint(
 ) -> str:
     payload = {
         "cache_version": PREPARED_STATE_CACHE_VERSION,
+        "internal_elo_parameters": internal_elo.parameter_fingerprint(),
         "id": tournament.get("id") or tournament.get("TID"),
         "startDate": tournament.get("startDate"),
         "swiss_rounds": swiss_rounds,

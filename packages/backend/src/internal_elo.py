@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from collections import defaultdict
 from typing import Any
@@ -83,3 +85,23 @@ def resolve_topcut_draws(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
         else row
         for row in results
     ]
+
+
+def rating_equity(rating: float) -> float:
+    return pow(ELO_BASE, rating / ELO_DIVISOR)
+
+
+def parameter_fingerprint() -> str:
+    """Invalidate derived simulation state on value changes, even without a version bump."""
+    payload = {
+        "model_version": MODEL_VERSION,
+        "base": ELO_BASE,
+        "divisor": ELO_DIVISOR,
+        "league_multiplier": LEAGUE_MULTIPLIER,
+        "swiss_win_k": SWISS_WIN_K,
+        "swiss_draw_k": SWISS_DRAW_K,
+        "topcut_win_k": TOPCUT_WIN_K,
+        "swiss_seats": SWISS_SEAT_OFFSETS,
+        "topcut_seats": TOPCUT_SEAT_OFFSETS,
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()

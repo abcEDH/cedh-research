@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import math
 import random
 from collections import Counter, defaultdict
 from typing import Any
 
+import internal_elo
 from ingest import is_draw_winner_id
 from ongoing_tournament_inputs import (
     collect_players,
@@ -23,10 +23,7 @@ from sim_engine import (
     apply_pod_result,
     initialize_state,
 )
-from sim_models import (
-    ELO_BASE,
-    ELO_DIVISOR,
-)
+from sim_models import pod_effective_ratings, pod_is_top_cut
 from sim_types import Pod, PodResult, SimPlayer, TournamentSpec
 
 
@@ -116,12 +113,12 @@ def build_result_for_table(pod: Pod, table: dict[str, Any], id_map: dict[str, st
 
 
 def update_elos_for_result(state, pod: Pod, result: PodResult) -> None:
-    from internal_elo import is_top_cut, learning_rate, seat_offsets
+    from internal_elo import learning_rate
 
     player_ids = list(result.player_ids)
     if len(player_ids) < 2:
         return
-    top_cut = is_top_cut(pod.round_name)
+    top_cut = pod_is_top_cut(pod, state)
     if top_cut and result.is_draw:
         winners = [pid for pid in player_ids if pod.seats_by_player.get(pid) == 1]
         if len(winners) != 1:
@@ -129,18 +126,12 @@ def update_elos_for_result(state, pod: Pod, result: PodResult) -> None:
         result.is_draw = False
         result.winner_id = winners[0]
     k_factor = learning_rate(top_cut=top_cut, draw=result.is_draw, league=state.spec.is_league)
-    use_seat_bonus = len(player_ids) == 4 and sorted(pod.seats_by_player.values()) == [1, 2, 3, 4]
-    effective_ratings: dict[str, float] = {}
-    for player_id in player_ids:
-        rating = float(state.players[player_id].elo)
-        if use_seat_bonus:
-            rating += seat_offsets(top_cut).get(pod.seats_by_player.get(player_id), 0.0)
-        effective_ratings[player_id] = rating
-    total_equity = sum(math.pow(ELO_BASE, effective_ratings[player_id] / ELO_DIVISOR) for player_id in player_ids)
+    effective_ratings = dict(zip(pod.player_ids, pod_effective_ratings(pod, state), strict=True))
+    total_equity = sum(internal_elo.rating_equity(effective_ratings[player_id]) for player_id in player_ids)
     if total_equity <= 0:
         return
     for player_id in player_ids:
-        expected = math.pow(ELO_BASE, effective_ratings[player_id] / ELO_DIVISOR) / total_equity
+        expected = internal_elo.rating_equity(effective_ratings[player_id]) / total_equity
         actual = (1.0 / len(player_ids)) if result.is_draw else (1.0 if player_id == result.winner_id else 0.0)
         state.players[player_id].elo = round(float(state.players[player_id].elo) + (k_factor * (actual - expected)), 6)
 
