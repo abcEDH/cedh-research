@@ -720,8 +720,8 @@ export async function PlayerProfileBody({
                           : latestTournamentByCommander.get(row.commander) ?? null;
                       const commanderLabel = row.commander === "Unknown Commander" ? "Unknown" : row.commander;
                       return (
-                        <tr key={row.commander} className="relative border-t border-border/60">
-                          <td className="px-2 py-3">
+                        <tr key={row.commander} className="border-t border-border/60">
+                          <td className="relative overflow-hidden px-2 py-3">
                             {row.commander !== "Unknown Commander" ? (
                               <CommanderRowBackdrop name={row.commander} />
                             ) : null}
