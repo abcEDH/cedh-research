@@ -22,7 +22,10 @@ for thread_env_var in (
 
 import numpy as np  # noqa: E402
 
-from internal_elo import SWISS_SEAT_OFFSETS, is_top_cut, seat_offsets  # noqa: E402
+import internal_elo  # noqa: E402
+from internal_elo import ELO_BASE as ELO_BASE  # noqa: E402
+from internal_elo import ELO_DIVISOR as ELO_DIVISOR  # noqa: E402
+from internal_elo import SWISS_SEAT_OFFSETS, seat_offsets  # noqa: E402
 from model_artifacts import load_model_artifact  # noqa: E402
 from sim_pairings import opponent_match_win_percentage, topdeck_bye_rank  # noqa: E402
 from sim_types import (  # noqa: E402
@@ -34,8 +37,6 @@ from sim_types import (  # noqa: E402
     TournamentState,
 )
 
-ELO_BASE = 2.0
-ELO_DIVISOR = 200.0
 DEFAULT_DRAW_MODEL_PATH = (
     Path(__file__).resolve().parents[1]
     / "models"
@@ -231,14 +232,28 @@ def load_candidate_winner_model_artifact(path: Path | str) -> LoadedCandidateWin
 
 
 def rating_equity(rating: float) -> float:
-    return pow(ELO_BASE, rating / ELO_DIVISOR)
+    return internal_elo.rating_equity(rating)
 
 
 def effective_player_rating(player, seat: int | None = None, *, top_cut: bool = False) -> float:
     rating = float(player.elo)
-    if seat in SEAT_ELO_BONUS:
-        rating += seat_offsets(top_cut)[seat]
+    rating += seat_offsets(top_cut).get(seat, 0.0)
     return rating
+
+
+def pod_is_top_cut(pod: Pod, state: TournamentState) -> bool:
+    return internal_elo.is_top_cut(pod.round_name) or pod.round_index >= state.spec.swiss_rounds
+
+
+def pod_effective_ratings(pod: Pod, state: TournamentState) -> list[float]:
+    """Apply published stage offsets only to complete four-player seat maps."""
+    seats = [pod.seats_by_player.get(pid) for pid in pod.player_ids]
+    complete_seats = len(seats) == 4 and set(seats) == {1, 2, 3, 4}
+    top_cut = pod_is_top_cut(pod, state)
+    return [
+        effective_player_rating(state.players[pid], seat if complete_seats else None, top_cut=top_cut)
+        for pid, seat in zip(pod.player_ids, seats, strict=True)
+    ]
 
 
 def _points_percentiles(points_by_player: dict[str, int]) -> dict[str, float]:
@@ -628,12 +643,7 @@ def build_draw_feature_row(
         if context.top_cut > 0
         else []
     )
-    adjusted_ratings = [
-        effective_player_rating(
-            state.players[player_id], pod.seats_by_player.get(player_id) if pod.seats_by_player else None
-        )
-        for player_id in player_ids
-    ]
+    adjusted_ratings = pod_effective_ratings(pod, state)
     equity_values = np.asarray([rating_equity(rating) for rating in adjusted_ratings], dtype=float)
     total_equity = float(equity_values.sum()) or 1.0
     decisive_probabilities = equity_values / total_equity if len(equity_values) else np.asarray([], dtype=float)
@@ -1039,10 +1049,10 @@ def _model_class_labels(model: Any, stored_classes: tuple[int, ...], class_count
     return list(range(class_count))
 
 
-def _candidate_seat_bonus(seat: int | None, *, use_seat_bonus: bool) -> float:
+def _candidate_seat_bonus(seat: int | None, *, use_seat_bonus: bool, top_cut: bool = False) -> float:
     if seat is None or not use_seat_bonus:
         return 0.0
-    return float(SEAT_ELO_BONUS.get(seat, 0.0))
+    return float(seat_offsets(top_cut).get(seat, 0.0))
 
 
 def build_candidate_winner_feature_row(
@@ -1067,11 +1077,14 @@ def build_candidate_winner_feature_row(
         effective_elos[candidate_id] = float(state.players[candidate_id].elo) + _candidate_seat_bonus(
             seat,
             use_seat_bonus=use_seat_bonus,
+            top_cut=pod_is_top_cut(pod, state),
         )
 
     raw_seat = seats.get(player_id)
     candidate_elo = float(state.players[player_id].elo)
-    candidate_seat_bonus = _candidate_seat_bonus(raw_seat, use_seat_bonus=use_seat_bonus)
+    candidate_seat_bonus = _candidate_seat_bonus(
+        raw_seat, use_seat_bonus=use_seat_bonus, top_cut=pod_is_top_cut(pod, state)
+    )
     candidate_effective_elo = candidate_elo + candidate_seat_bonus
     sorted_elos = sorted(effective_elos.values(), reverse=True)
     candidate_rank = 1 + sum(1 for value in effective_elos.values() if value > candidate_effective_elo)
@@ -1279,16 +1292,7 @@ def predict_draw_probability(
 
 
 def predict_decisive_win_probs(pod: Pod, state: TournamentState) -> dict[str, float]:
-    effective_ratings: dict[str, float] = {}
-    for player_id in pod.player_ids:
-        seat = (
-            pod.seats_by_player.get(player_id)
-            if len(pod.player_ids) == 4 and sorted(pod.seats_by_player.values()) == [1, 2, 3, 4]
-            else None
-        )
-        effective_ratings[player_id] = effective_player_rating(
-            state.players[player_id], seat, top_cut=is_top_cut(pod.round_name)
-        )
+    effective_ratings = dict(zip(pod.player_ids, pod_effective_ratings(pod, state), strict=True))
     equities = {player_id: rating_equity(rating) for player_id, rating in effective_ratings.items()}
     total = sum(equities.values()) or 1.0
     return {player_id: equity / total for player_id, equity in equities.items()}
@@ -1305,16 +1309,7 @@ def predict_decisive_win_probabilities(
 
     probabilities: dict[tuple[int, int], tuple[float, ...]] = {}
     for pod in pods:
-        adjusted_ratings = []
-        for player_id in pod.player_ids:
-            seat = (
-                pod.seats_by_player.get(player_id)
-                if len(pod.player_ids) == 4 and sorted(pod.seats_by_player.values()) == [1, 2, 3, 4]
-                else None
-            )
-            adjusted_ratings.append(
-                effective_player_rating(state.players[player_id], seat, top_cut=is_top_cut(pod.round_name))
-            )
+        adjusted_ratings = pod_effective_ratings(pod, state)
         equity_values = np.asarray([rating_equity(rating) for rating in adjusted_ratings], dtype=float)
         total = float(equity_values.sum()) or 1.0
         probabilities[(pod.round_index, pod.table_number)] = tuple((equity_values / total).tolist())

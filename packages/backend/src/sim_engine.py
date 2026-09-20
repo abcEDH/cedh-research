@@ -10,9 +10,8 @@ from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from itertools import product
 
+import internal_elo
 from sim_models import (
-    ELO_BASE,
-    ELO_DIVISOR,
     LoadedCandidateWinnerModel,
     LoadedDrawModel,
     build_round_snapshot,
@@ -155,7 +154,7 @@ def sample_index(probabilities: tuple[float, ...], rng: random.Random) -> int:
 
 
 def _rating_equity(rating: float) -> float:
-    return pow(ELO_BASE, rating / ELO_DIVISOR)
+    return internal_elo.rating_equity(rating)
 
 
 def simulate_pod(

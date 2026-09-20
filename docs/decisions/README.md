@@ -28,6 +28,8 @@ These ADRs were extracted retroactively on 2026-05-03 from git history, merged P
 | [0023](0023-league-aware-ingestion.md) | League-aware ingestion and commander forecasts | Accepted | `packages/backend/` | PR #296 |
 | 0015 | [Canonical region and commander names](0015-canonical-region-and-commander-names.md) | Accepted |
 
+| [0024](0024-shared-internal-elo-parameters.md) | Shared internal Elo parameters | Accepted | `packages/backend/` | `internal_elo.py`, regression tests |
+
 ## How decisions cluster
 
 - [0021 — Versioned internal Elo and atomic maintenance](0021-tuned-internal-elo.md): accepted; shared prediction parameters, full-history replay, and model-version publication.

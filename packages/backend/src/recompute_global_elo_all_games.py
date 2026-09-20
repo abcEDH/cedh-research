@@ -10,27 +10,23 @@ from typing import Any
 
 from postgrest.exceptions import APIError
 
+import internal_elo
 from ingest import load_local_env
 from supabase import Client
 from supabase_client import fetch_all, get_supabase_client, upsert_batched
 
-K_FACTOR_DECISIVE = 64
-K_FACTOR_DRAW = 26
+K_FACTOR_DECISIVE = internal_elo.SWISS_WIN_K
+K_FACTOR_DRAW = internal_elo.SWISS_DRAW_K
 DEFAULT_RATING = 1500.0
-ELO_BASE = 2
-ELO_DIVISOR = 200
+ELO_BASE = internal_elo.ELO_BASE
+ELO_DIVISOR = internal_elo.ELO_DIVISOR
 GLOBAL_REGION_TYPE = "global"
 GLOBAL_REGION_KEY = "ALL"
-SEAT_ELO_BONUS = {
-    1: 0.0,
-    2: -52.0,
-    3: -96.0,
-    4: -145.0,
-}
+SEAT_ELO_BONUS = internal_elo.SWISS_SEAT_OFFSETS
 
 
 def rating_equity(rating: float) -> float:
-    return pow(ELO_BASE, rating / ELO_DIVISOR)
+    return internal_elo.rating_equity(rating)
 
 
 def _api_error_is_missing_topdeck_column(exc: APIError, column_name: str) -> bool:
@@ -131,7 +127,10 @@ def apply_game(
             increments[player_id]["losses"] = 1
 
     has_draw = any(str(row.get("result") or "") == "draw" for row in valid)
-    k_factor = K_FACTOR_DRAW if has_draw else K_FACTOR_DECISIVE
+    top_cut = internal_elo.is_top_cut(valid[0].get("round_name"), valid[0].get("round_number"))
+    k_factor = internal_elo.learning_rate(
+        top_cut=top_cut, draw=has_draw, league=bool(valid[0].get("is_league"))
+    )
     before_ratings = {row["player_id"]: float(ratings[row["player_id"]]["rating"]) for row in valid}
     use_seat_bonus = len(valid) == 4 and sorted(
         row.get("seat_position") for row in valid if isinstance(row.get("seat_position"), int)
@@ -143,7 +142,7 @@ def apply_game(
         if use_seat_bonus:
             seat_position = row.get("seat_position")
             if isinstance(seat_position, int):
-                expected_rating += SEAT_ELO_BONUS.get(seat_position + 1, 0.0)
+                expected_rating += internal_elo.seat_offsets(top_cut).get(seat_position + 1, 0.0)
         expected_ratings[player_id] = expected_rating
     total_equity = sum(rating_equity(expected_ratings[row["player_id"]]) for row in valid)
 
