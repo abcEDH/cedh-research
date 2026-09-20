@@ -1,3 +1,19 @@
+# [1.34.0](https://github.com/abcEDH/cedh-research/compare/v1.33.3...v1.34.0) (2026-09-20)
+
+
+### Bug Fixes
+
+* **web:** extract tournament URLs from mobile TopDeck shares ([7517fe0](https://github.com/abcEDH/cedh-research/commit/7517fe07ce57d484aaea1fef7a0825d20f6dc2bd))
+* **web:** refresh scouting only on load or manual request ([1c9d11a](https://github.com/abcEDH/cedh-research/commit/1c9d11a5abe568773ac11f3ccc9089be545c9026))
+* **web:** refresh scouting standings independently of forecasts ([c30a3e7](https://github.com/abcEDH/cedh-research/commit/c30a3e71aae9e16991917308ad43a36f45a37871))
+* **web:** remove scouting checked timestamp ([981cd4d](https://github.com/abcEDH/cedh-research/commit/981cd4d02b430a12f02c895e34e86b60ef783d96))
+* **web:** use browser reload for scouting updates ([9c392ee](https://github.com/abcEDH/cedh-research/commit/9c392ee350c1c4248791bc50f3a6422f5fcc7f2d))
+
+
+### Features
+
+* **web:** add scouting tournament bracket button ([0d2a5ae](https://github.com/abcEDH/cedh-research/commit/0d2a5ae7a6f48b902edb19d607e6300a669fd596))
+
 ## [1.33.3](https://github.com/abcEDH/cedh-research/compare/v1.33.2...v1.33.3) (2026-09-20)
 
 
