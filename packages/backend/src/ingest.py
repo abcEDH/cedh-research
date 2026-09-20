@@ -77,7 +77,7 @@ def is_future_start_date(ts: datetime) -> bool:
 
 
 # Ensure logs directory exists
-_log_dir = Path(__file__).parent.parent.parent / "logs"
+_log_dir = Path(os.environ.get("CEDH_LOG_DIR", str(Path(__file__).parent.parent.parent / "logs")))
 _log_dir.mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(

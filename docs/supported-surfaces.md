@@ -21,6 +21,11 @@ Planned removals should be called out explicitly, but they must not be labeled a
 - `/methodology/data-model`
 - `/methodology/elo`
 
+## Private experiments
+
+- Separate Python simulator preview: `/health` and authenticated `POST /simulate`.
+  This is not a public tedh.gg route. See [the trial runbook](simulator-vercel-trial.md).
+
 ## Planned Retirement
 
 - `/cards`

@@ -72,7 +72,8 @@ def infer_structure(
     )
     top_cut = (
         top_cut_override
-        or extract_numeric_value(tournament, "topCut")
+        if top_cut_override is not None
+        else extract_numeric_value(tournament, "topCut")
         or extract_numeric_value(event_data, "topCut", "cutTo")
     )
 

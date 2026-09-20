@@ -1,0 +1,15 @@
+.venv/
+.env*
+.pytest_cache/
+.ruff_cache/
+tests/
+data/*
+!data/region_aliases.json
+!data/tournament_location_corrections.json
+supabase/
+__pycache__/
+requirements.txt
+!data/commander_name_aliases.json
+!data/commander_oracle_aliases.json
+!data/legal_commander_pairings.json
+!data/partner_order_reviews.json
