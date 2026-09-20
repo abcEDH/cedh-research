@@ -1,3 +1,15 @@
+## [1.33.3](https://github.com/abcEDH/cedh-research/compare/v1.33.2...v1.33.3) (2026-09-20)
+
+
+### Bug Fixes
+
+* integrate hybrid draw model and defer web endpoint ([14a369a](https://github.com/abcEDH/cedh-research/commit/14a369a2162f522ac6e9648e6a492a6e996b87d8))
+* resolve MTM Series IV location to Saarland ([#367](https://github.com/abcEDH/cedh-research/issues/367)) ([b547eb8](https://github.com/abcEDH/cedh-research/commit/b547eb89cd86a3ea2ad3b0a265976d1e454053be))
+* retain positive loss counts in pairing diagnostic output ([199303b](https://github.com/abcEDH/cedh-research/commit/199303be8dc14cbf3732ad41d202ba3abe0fe5be))
+* validate commander models with chronological historical features ([8ced890](https://github.com/abcEDH/cedh-research/commit/8ced890ea57f116ce7b6d2107e96068eaca5edf3))
+* validate historical pairing cohorts and duplicate tables ([cee2853](https://github.com/abcEDH/cedh-research/commit/cee2853582493b211c236815e0b4b393b5c1fe60))
+* **web:** contain commander row artwork in Safari ([#368](https://github.com/abcEDH/cedh-research/issues/368)) ([30bfea5](https://github.com/abcEDH/cedh-research/commit/30bfea56c212afc9a1c33e6b02e85d1dd4e9b150))
+
 ## [1.33.2](https://github.com/abcEDH/cedh-research/compare/v1.33.1...v1.33.2) (2026-09-19)
 
 
