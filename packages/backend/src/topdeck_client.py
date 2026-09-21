@@ -346,7 +346,7 @@ def flat_firestore_league_to_topdeck_payload(
         round_key: int | str = (
             round_number
             if not has_round_segment or stage_number == 1
-            else f"Top {len(stage_player_ids[stage_number])}"
+            else f"Top {len(stage_player_ids[stage_number])} Round {round_number}"
         )
 
         if winner_entry == "_DRAW_":
