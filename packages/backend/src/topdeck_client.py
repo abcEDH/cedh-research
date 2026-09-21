@@ -236,7 +236,7 @@ def flat_firestore_league_to_topdeck_payload(
     base_tournament: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """Convert TopDeck's flat league bracket document to v2-like data."""
-    table_rows: list[tuple[int, int, int, dict[str, Any]]] = []
+    table_rows: list[tuple[int, int, int, bool, dict[str, Any]]] = []
     entry_to_player_id: dict[int, str] = {}
 
     for key, value in data.items():
@@ -244,7 +244,9 @@ def flat_firestore_league_to_topdeck_payload(
         if table_match and isinstance(value, dict):
             stage_number = int(table_match.group(1))
             round_number = int(table_match.group(2) or stage_number)
-            table_rows.append((stage_number, round_number, int(table_match.group(3)), value))
+            table_rows.append(
+                (stage_number, round_number, int(table_match.group(3)), table_match.group(2) is not None, value)
+            )
             continue
 
         entry_match = re.fullmatch(r"E(\d+):P\d+", key)
@@ -298,7 +300,7 @@ def flat_firestore_league_to_topdeck_payload(
     standings.sort(key=lambda row: row.get("rank") or 999999)
 
     rounds_by_number: dict[int | str, list[dict[str, Any]]] = {}
-    for stage_number, round_number, table_number, table_data in sorted(table_rows):
+    for stage_number, round_number, table_number, has_round_segment, table_data in sorted(table_rows):
         if table_data.get("Mute"):
             continue
 
@@ -341,7 +343,9 @@ def flat_firestore_league_to_topdeck_payload(
         # the stage in bracket round names so repeated R1/T1 keys do not
         # collide during game ingestion.
         round_key: int | str = (
-            round_number if stage_number == 1 else f"S{stage_number}:R{round_number}"
+            round_number
+            if not has_round_segment or stage_number == 1
+            else f"S{stage_number}:R{round_number}"
         )
         rounds_by_number.setdefault(round_key, []).append(
             {

@@ -46,6 +46,21 @@ class DerivedStandingResultsTests(unittest.TestCase):
 
         self.assertEqual(derive_standing_results(rounds), {})
 
+    def test_ignores_active_tables_even_when_a_winner_is_present(self) -> None:
+        rounds = [
+            {
+                "tables": [
+                    {
+                        "players": [{"id": "a"}, {"id": "b"}],
+                        "winner_id": "a",
+                        "status": "Active",
+                    },
+                ]
+            }
+        ]
+
+        self.assertEqual(derive_standing_results(rounds), {})
+
 
 if __name__ == "__main__":
     unittest.main()

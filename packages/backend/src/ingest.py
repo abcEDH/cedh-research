@@ -22,6 +22,7 @@ from typing import Any
 from dateutil import parser as date_parser
 
 from name_normalization import canonical_region_name
+from record_derivation import derive_standing_results
 from supabase import Client
 from supabase_client import (
     SUPABASE_REST_BASE,
@@ -97,7 +98,7 @@ def load_local_env() -> None:
         Path("packages/backend/.env"),
         Path(".env"),
         Path(__file__).resolve().parents[1] / ".env",
-        Path(__file__).resolve().parents[2] / ".env",
+        Path(__file__).resolve().parents[3] / ".env",
     )
     for env_path in env_paths:
         if not env_path.exists():
@@ -168,49 +169,6 @@ def resolve_record_fields(info: dict[str, Any]) -> dict[str, int]:
     if info.get("draws") is not None:
         fields["draws"] = info["draws"]
     return fields
-
-
-def derive_standing_results(rounds: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
-    """Derive player records from completed round tables.
-
-    TopDeck can publish standings with a points total but zero or missing W/L/D
-    fields (and, in the same payload, publish zero points for players who have
-    completed games). The table results are the authoritative result-level
-    source in that case. Players without a usable table result are omitted so
-    callers can retain the organizer's standing row for them.
-    """
-    results: dict[str, dict[str, int]] = {}
-
-    for round_data in rounds or []:
-        for table in round_data.get("tables", []) or []:
-            players = table.get("players", []) or []
-            player_ids = [str(player.get("id")) for player in players if player.get("id") is not None]
-            if not player_ids:
-                continue
-
-            winner_id = table.get("winner_id")
-            if winner_id is None:
-                winner_id = table.get("winnerId")
-            is_draw = str(winner_id).lower() in {"draw", "_draw_"}
-            winner_id = None if is_draw or winner_id is None else str(winner_id)
-
-            # A result without a winner is not a completed result. Do not turn
-            # an active/pending table into losses for every participant.
-            if winner_id is None and not is_draw:
-                continue
-
-            for player_id in player_ids:
-                stats = results.setdefault(player_id, {"wins": 0, "losses": 0, "draws": 0, "points": 0})
-                if is_draw:
-                    stats["draws"] += 1
-                    stats["points"] += 1
-                elif player_id == winner_id:
-                    stats["wins"] += 1
-                    stats["points"] += 5
-                else:
-                    stats["losses"] += 1
-
-    return results
 
 
 def clean_commander_card_name(name: str) -> str:

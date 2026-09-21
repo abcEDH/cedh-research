@@ -79,6 +79,20 @@ class TopDeckClientTests(unittest.TestCase):
         self.assertEqual(payload["swissNum"], 1)
         self.assertEqual(payload["rounds"][1]["tables"][0]["winner_id"], "player-1")
 
+    def test_legacy_flat_firestore_round_keys_remain_numeric(self) -> None:
+        payload = flat_firestore_league_to_topdeck_payload(
+            "T123",
+            {
+                "E1:P1": "player-1",
+                "E2:P1": "player-2",
+                "S1:T1": {"Es": [1, 2], "Winner": 1, "End": 123},
+                "S2:T1": {"Es": [1, 2], "Winner": 1, "End": 456},
+            },
+        )
+
+        self.assertEqual([row["round"] for row in payload["rounds"]], [1, 2])
+        self.assertEqual(payload["swissNum"], 2)
+
     @patch("topdeck_client.requests.get")
     def test_topdeck_client_request_success(self, mock_get: Mock) -> None:
         mock_response = Mock()
