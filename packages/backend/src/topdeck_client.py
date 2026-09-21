@@ -300,6 +300,20 @@ def flat_firestore_league_to_topdeck_payload(
     standings.sort(key=lambda row: row.get("rank") or 999999)
 
     rounds_by_number: dict[int | str, list[dict[str, Any]]] = {}
+    stage_player_ids: dict[int, set[str]] = {}
+    for stage_number, _round_number, _table_number, _has_round_segment, table_data in table_rows:
+        entry_numbers = table_data.get("Es") or []
+        if not isinstance(entry_numbers, list):
+            continue
+        stage_players = stage_player_ids.setdefault(stage_number, set())
+        for entry_number in entry_numbers:
+            try:
+                player_id = entry_to_player_id.get(int(entry_number))
+            except (TypeError, ValueError):
+                player_id = None
+            if player_id:
+                stage_players.add(player_id)
+
     for stage_number, round_number, table_number, has_round_segment, table_data in sorted(table_rows):
         if table_data.get("Mute"):
             continue
@@ -332,7 +346,7 @@ def flat_firestore_league_to_topdeck_payload(
         round_key: int | str = (
             round_number
             if not has_round_segment or stage_number == 1
-            else f"S{stage_number}:R{round_number}"
+            else f"Top {len(stage_player_ids[stage_number])}"
         )
 
         if winner_entry == "_DRAW_":

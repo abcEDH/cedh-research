@@ -75,7 +75,7 @@ class TopDeckClientTests(unittest.TestCase):
         )
 
         self.assertIsNotNone(payload)
-        self.assertEqual([row["round"] for row in payload["rounds"]], [1, "S2:R1"])
+        self.assertEqual([row["round"] for row in payload["rounds"]], [1, "Top 2"])
         self.assertEqual(payload["swissNum"], 1)
         self.assertEqual(payload["rounds"][1]["tables"][0]["winner_id"], "player-1")
 
