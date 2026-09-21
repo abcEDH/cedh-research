@@ -1,17 +1,19 @@
-import unittest
 import sys
+import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from topdeck_client import (
+    TopDeckClient,
     decode_firestore_value,
+    flat_firestore_league_to_topdeck_payload,
     is_placeholder_player_name,
     normalize_topdeck_tournament_payload,
     should_use_firestore_tournament_fallback,
-    TopDeckClient,
 )
+
 
 class TopDeckClientTests(unittest.TestCase):
     def test_decode_firestore_value(self) -> None:
@@ -32,11 +34,11 @@ class TopDeckClientTests(unittest.TestCase):
         # True if no rounds/standings and startDate is missing or name is Unknown
         self.assertTrue(should_use_firestore_tournament_fallback({}))
         self.assertTrue(should_use_firestore_tournament_fallback({"data": {"name": "Unknown Name"}}))
-        
+
         # False if rounds or standings exist
         self.assertFalse(should_use_firestore_tournament_fallback({"rounds": [{"round": 1}]}))
         self.assertFalse(should_use_firestore_tournament_fallback({"standings": [{"id": 1}]}))
-        
+
     def test_normalize_topdeck_tournament_payload(self) -> None:
         # Handles nested "data"
         raw = {
@@ -52,6 +54,30 @@ class TopDeckClientTests(unittest.TestCase):
         self.assertEqual(res["name"], "My Tourney")
         self.assertIn("standings", res)
         self.assertIn("rounds", res)
+
+    def test_flat_firestore_round_keys_preserve_swiss_and_bracket_rounds(self) -> None:
+        payload = flat_firestore_league_to_topdeck_payload(
+            "T123",
+            {
+                "E1:P1": "player-1",
+                "E2:P1": "player-2",
+                "S1:R1:T1": {
+                    "Es": [1, 2],
+                    "Winner": 1,
+                    "End": 123,
+                },
+                "S2:R1:T1": {
+                    "Es": [1, 2],
+                    "Winner": 1,
+                    "End": 456,
+                },
+            },
+        )
+
+        self.assertIsNotNone(payload)
+        self.assertEqual([row["round"] for row in payload["rounds"]], [1, "S2:R1"])
+        self.assertEqual(payload["swissNum"], 1)
+        self.assertEqual(payload["rounds"][1]["tables"][0]["winner_id"], "player-1")
 
     @patch("topdeck_client.requests.get")
     def test_topdeck_client_request_success(self, mock_get: Mock) -> None:

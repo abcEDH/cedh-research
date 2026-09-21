@@ -93,7 +93,13 @@ logger = logging.getLogger(__name__)
 
 def load_local_env() -> None:
     """Load local env files without overriding already-exported variables."""
-    for env_path in (Path("packages/backend/.env"), Path(".env"), Path(__file__).resolve().parents[1] / ".env"):
+    env_paths = (
+        Path("packages/backend/.env"),
+        Path(".env"),
+        Path(__file__).resolve().parents[1] / ".env",
+        Path(__file__).resolve().parents[2] / ".env",
+    )
+    for env_path in env_paths:
         if not env_path.exists():
             continue
         for line in env_path.read_text().splitlines():
@@ -162,6 +168,49 @@ def resolve_record_fields(info: dict[str, Any]) -> dict[str, int]:
     if info.get("draws") is not None:
         fields["draws"] = info["draws"]
     return fields
+
+
+def derive_standing_results(rounds: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    """Derive player records from completed round tables.
+
+    TopDeck can publish standings with a points total but zero or missing W/L/D
+    fields (and, in the same payload, publish zero points for players who have
+    completed games). The table results are the authoritative result-level
+    source in that case. Players without a usable table result are omitted so
+    callers can retain the organizer's standing row for them.
+    """
+    results: dict[str, dict[str, int]] = {}
+
+    for round_data in rounds or []:
+        for table in round_data.get("tables", []) or []:
+            players = table.get("players", []) or []
+            player_ids = [str(player.get("id")) for player in players if player.get("id") is not None]
+            if not player_ids:
+                continue
+
+            winner_id = table.get("winner_id")
+            if winner_id is None:
+                winner_id = table.get("winnerId")
+            is_draw = str(winner_id).lower() in {"draw", "_draw_"}
+            winner_id = None if is_draw or winner_id is None else str(winner_id)
+
+            # A result without a winner is not a completed result. Do not turn
+            # an active/pending table into losses for every participant.
+            if winner_id is None and not is_draw:
+                continue
+
+            for player_id in player_ids:
+                stats = results.setdefault(player_id, {"wins": 0, "losses": 0, "draws": 0, "points": 0})
+                if is_draw:
+                    stats["draws"] += 1
+                    stats["points"] += 1
+                elif player_id == winner_id:
+                    stats["wins"] += 1
+                    stats["points"] += 5
+                else:
+                    stats["losses"] += 1
+
+    return results
 
 
 def clean_commander_card_name(name: str) -> str:
@@ -692,6 +741,7 @@ class DataIngester:
         name = tournament.get("name", "Unknown Tournament")
         rounds = tournament.get("rounds", [])
         standings = tournament.get("standings", [])
+        derived_results = derive_standing_results(rounds)
         start_date = tournament.get("startDate")
         player_count = len(standings)
         swiss_rounds = tournament.get("swissNum", 0)
@@ -775,6 +825,19 @@ class DataIngester:
             player_topdeck_id = standing.get("id")
             player_name = standing.get("name", "Unknown")
             decklist = standing.get("decklist") or ""
+            result_stats = derived_results.get(str(player_topdeck_id)) if player_topdeck_id is not None else None
+            # Prefer result-level records whenever TopDeck exposed completed
+            # tables. This repairs payloads that report points but leave W/L/D
+            # at zero, and payloads that report zero points for played games.
+            wins = result_stats["wins"] if result_stats else standing.get("wins")
+            losses = result_stats["losses"] if result_stats else standing.get("losses")
+            draws = result_stats["draws"] if result_stats else standing.get("draws")
+            reported_points = standing.get("points") or 0
+            points = (
+                result_stats["points"]
+                if result_stats and reported_points == 0 and result_stats["points"] > 0
+                else reported_points
+            )
 
             # Extract and normalize commander
             commanders = extract_commanders(decklist)
@@ -796,10 +859,10 @@ class DataIngester:
                     "commander_name": commander_name,
                     "decklist": decklist,
                     "rank": standing.get("rank") or standing.get("standing"),
-                    "points": standing.get("points") or 0,
-                    "wins": standing.get("wins"),
-                    "losses": standing.get("losses"),
-                    "draws": standing.get("draws"),
+                    "points": points,
+                    "wins": wins,
+                    "losses": losses,
+                    "draws": draws,
                     "omw": standing.get("omw"),
                     "gw": standing.get("gw"),
                     "pgw": standing.get("pgw"),
