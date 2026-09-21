@@ -19,12 +19,22 @@ def derive_standing_results(rounds: list[dict[str, Any]]) -> dict[str, dict[str,
     for round_data in rounds or []:
         for table in round_data.get("tables", []) or []:
             status = table.get("status")
-            if status is not None and str(status).strip().lower() not in {"completed", "complete"}:
-                continue
-
             players = table.get("players", []) or []
             player_ids = [str(player.get("id")) for player in players if player.get("id") is not None]
             if not player_ids:
+                continue
+
+            normalized_status = str(status or "").strip().lower()
+            if normalized_status == "bye":
+                for player_id in player_ids:
+                    stats = results.setdefault(
+                        player_id, {"wins": 0, "losses": 0, "draws": 0, "points": 0}
+                    )
+                    stats["wins"] += 1
+                    stats["points"] += 5
+                continue
+
+            if status is not None and normalized_status not in {"completed", "complete"}:
                 continue
 
             winner_id = table.get("winner_id")

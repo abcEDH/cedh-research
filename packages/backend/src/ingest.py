@@ -51,6 +51,7 @@ __all__ = [
     "TOPDECK_FIRESTORE_PROJECT",
     "TopDeckClient",
     "decode_firestore_value",
+    "derive_standing_results",
 ]
 
 TOPDECK_STANDING_RATE_FIELDS = [

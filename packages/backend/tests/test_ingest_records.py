@@ -61,6 +61,14 @@ class DerivedStandingResultsTests(unittest.TestCase):
 
         self.assertEqual(derive_standing_results(rounds), {})
 
+    def test_counts_completed_byes_as_wins(self) -> None:
+        rounds = [{"tables": [{"players": [{"id": "bye-player"}], "status": "Bye"}]}]
+
+        self.assertEqual(
+            derive_standing_results(rounds),
+            {"bye-player": {"wins": 1, "losses": 0, "draws": 0, "points": 5}},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
