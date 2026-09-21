@@ -5,6 +5,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from ingest import derive_standing_results
+from record_derivation import derive_standing_results_with_completeness
 
 
 class DerivedStandingResultsTests(unittest.TestCase):
@@ -68,6 +69,21 @@ class DerivedStandingResultsTests(unittest.TestCase):
             derive_standing_results(rounds),
             {"bye-player": {"wins": 1, "losses": 0, "draws": 0, "points": 5}},
         )
+
+    def test_marks_players_with_incomplete_tables_as_incomplete(self) -> None:
+        rounds = [
+            {
+                "tables": [
+                    {"players": [{"id": "a"}, {"id": "b"}], "winner_id": "a"},
+                    {"players": [{"id": "a"}, {"id": "c"}], "status": "Incomplete"},
+                ]
+            }
+        ]
+
+        results, complete_player_ids = derive_standing_results_with_completeness(rounds)
+
+        self.assertEqual(results["a"]["wins"], 1)
+        self.assertEqual(complete_player_ids, {"b"})
 
 
 if __name__ == "__main__":

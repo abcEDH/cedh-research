@@ -325,6 +325,16 @@ def flat_firestore_league_to_topdeck_payload(
         if not players:
             continue
 
+        # Preserve an incomplete completed table so ingestion can retain the
+        # organizer's reported record instead of replacing it with partial
+        # result-derived stats. The game-ingestion path ignores this table
+        # because it has no winner_id and an explicit Incomplete status.
+        round_key: int | str = (
+            round_number
+            if not has_round_segment or stage_number == 1
+            else f"S{stage_number}:R{round_number}"
+        )
+
         if winner_entry == "_DRAW_":
             winner_id = "Draw"
             winner_name = None
@@ -334,6 +344,13 @@ def flat_firestore_league_to_topdeck_payload(
             except (TypeError, ValueError):
                 winner_player_id = None
             if not winner_player_id:
+                rounds_by_number.setdefault(round_key, []).append(
+                    {
+                        "table": table_number,
+                        "players": players,
+                        "status": "Incomplete",
+                    }
+                )
                 continue
             winner_id = winner_player_id
             winner_name = players_by_id.get(winner_player_id, {}).get("name")
@@ -342,11 +359,6 @@ def flat_firestore_league_to_topdeck_payload(
         # for the first top-cut round. Keep Swiss rounds numeric, but include
         # the stage in bracket round names so repeated R1/T1 keys do not
         # collide during game ingestion.
-        round_key: int | str = (
-            round_number
-            if not has_round_segment or stage_number == 1
-            else f"S{stage_number}:R{round_number}"
-        )
         rounds_by_number.setdefault(round_key, []).append(
             {
                 "table": table_number,

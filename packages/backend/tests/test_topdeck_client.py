@@ -93,6 +93,23 @@ class TopDeckClientTests(unittest.TestCase):
         self.assertEqual([row["round"] for row in payload["rounds"]], [1, 2])
         self.assertEqual(payload["swissNum"], 2)
 
+    def test_preserves_table_when_winner_mapping_is_missing(self) -> None:
+        payload = flat_firestore_league_to_topdeck_payload(
+            "T123",
+            {
+                "E1:P1": "player-1",
+                "E2:P1": "player-2",
+                "S1:R1:T1": {
+                    "Es": [1, 2],
+                    "Winner": 3,
+                    "End": 123,
+                },
+            },
+        )
+
+        self.assertEqual(payload["rounds"][0]["tables"][0]["status"], "Incomplete")
+        self.assertNotIn("winner_id", payload["rounds"][0]["tables"][0])
+
     @patch("topdeck_client.requests.get")
     def test_topdeck_client_request_success(self, mock_get: Mock) -> None:
         mock_response = Mock()

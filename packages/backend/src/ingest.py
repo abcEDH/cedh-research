@@ -22,7 +22,7 @@ from typing import Any
 from dateutil import parser as date_parser
 
 from name_normalization import canonical_region_name
-from record_derivation import derive_standing_results
+from record_derivation import derive_standing_results, derive_standing_results_with_completeness
 from supabase import Client
 from supabase_client import (
     SUPABASE_REST_BASE,
@@ -700,7 +700,7 @@ class DataIngester:
         name = tournament.get("name", "Unknown Tournament")
         rounds = tournament.get("rounds", [])
         standings = tournament.get("standings", [])
-        derived_results = derive_standing_results(rounds)
+        derived_results, complete_result_ids = derive_standing_results_with_completeness(rounds)
         start_date = tournament.get("startDate")
         player_count = len(standings)
         swiss_rounds = tournament.get("swissNum", 0)
@@ -784,7 +784,11 @@ class DataIngester:
             player_topdeck_id = standing.get("id")
             player_name = standing.get("name", "Unknown")
             decklist = standing.get("decklist") or ""
-            result_stats = derived_results.get(str(player_topdeck_id)) if player_topdeck_id is not None else None
+            result_stats = (
+                derived_results.get(str(player_topdeck_id))
+                if player_topdeck_id is not None and str(player_topdeck_id) in complete_result_ids
+                else None
+            )
             # Prefer result-level records whenever TopDeck exposed completed
             # tables. This repairs payloads that report points but leave W/L/D
             # at zero, and payloads that report zero points for played games.

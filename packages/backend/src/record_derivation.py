@@ -6,6 +6,14 @@ from typing import Any
 
 
 def derive_standing_results(rounds: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
+    """Return derived records, retaining the compatibility-only result shape."""
+    results, _complete_player_ids = derive_standing_results_with_completeness(rounds)
+    return results
+
+
+def derive_standing_results_with_completeness(
+    rounds: list[dict[str, Any]],
+) -> tuple[dict[str, dict[str, int]], set[str]]:
     """Derive player records from completed round tables.
 
     TopDeck can publish standings with a points total but zero or missing W/L/D
@@ -15,6 +23,7 @@ def derive_standing_results(rounds: list[dict[str, Any]]) -> dict[str, dict[str,
     callers can retain the organizer's standing row for them.
     """
     results: dict[str, dict[str, int]] = {}
+    incomplete_player_ids: set[str] = set()
 
     for round_data in rounds or []:
         for table in round_data.get("tables", []) or []:
@@ -35,6 +44,7 @@ def derive_standing_results(rounds: list[dict[str, Any]]) -> dict[str, dict[str,
                 continue
 
             if status is not None and normalized_status not in {"completed", "complete"}:
+                incomplete_player_ids.update(player_ids)
                 continue
 
             winner_id = table.get("winner_id")
@@ -46,6 +56,7 @@ def derive_standing_results(rounds: list[dict[str, Any]]) -> dict[str, dict[str,
             # A result without a winner is not a completed result. Do not turn
             # an active/pending table into losses for every participant.
             if winner_id is None and not is_draw:
+                incomplete_player_ids.update(player_ids)
                 continue
 
             for player_id in player_ids:
@@ -59,4 +70,4 @@ def derive_standing_results(rounds: list[dict[str, Any]]) -> dict[str, dict[str,
                 else:
                     stats["losses"] += 1
 
-    return results
+    return results, set(results) - incomplete_player_ids
