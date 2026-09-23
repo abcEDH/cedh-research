@@ -236,13 +236,17 @@ def flat_firestore_league_to_topdeck_payload(
     base_tournament: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """Convert TopDeck's flat league bracket document to v2-like data."""
-    table_rows: list[tuple[int, int, dict[str, Any]]] = []
+    table_rows: list[tuple[int, int, int, bool, dict[str, Any]]] = []
     entry_to_player_id: dict[int, str] = {}
 
     for key, value in data.items():
-        table_match = re.fullmatch(r"S(\d+):T(\d+)", key)
+        table_match = re.fullmatch(r"S(\d+)(?::R(\d+))?:T(\d+)", key)
         if table_match and isinstance(value, dict):
-            table_rows.append((int(table_match.group(1)), int(table_match.group(2)), value))
+            stage_number = int(table_match.group(1))
+            round_number = int(table_match.group(2) or stage_number)
+            table_rows.append(
+                (stage_number, round_number, int(table_match.group(3)), table_match.group(2) is not None, value)
+            )
             continue
 
         entry_match = re.fullmatch(r"E(\d+):P\d+", key)
@@ -295,8 +299,22 @@ def flat_firestore_league_to_topdeck_payload(
         ]
     standings.sort(key=lambda row: row.get("rank") or 999999)
 
-    rounds_by_number: dict[int, list[dict[str, Any]]] = {}
-    for stage_number, table_number, table_data in sorted(table_rows):
+    rounds_by_number: dict[int | str, list[dict[str, Any]]] = {}
+    stage_player_ids: dict[int, set[str]] = {}
+    for stage_number, _round_number, _table_number, _has_round_segment, table_data in table_rows:
+        entry_numbers = table_data.get("Es") or []
+        if not isinstance(entry_numbers, list):
+            continue
+        stage_players = stage_player_ids.setdefault(stage_number, set())
+        for entry_number in entry_numbers:
+            try:
+                player_id = entry_to_player_id.get(int(entry_number))
+            except (TypeError, ValueError):
+                player_id = None
+            if player_id:
+                stage_players.add(player_id)
+
+    for stage_number, round_number, table_number, has_round_segment, table_data in sorted(table_rows):
         if table_data.get("Mute"):
             continue
 
@@ -321,6 +339,16 @@ def flat_firestore_league_to_topdeck_payload(
         if not players:
             continue
 
+        # Preserve an incomplete completed table so ingestion can retain the
+        # organizer's reported record instead of replacing it with partial
+        # result-derived stats. The game-ingestion path ignores this table
+        # because it has no winner_id and an explicit Incomplete status.
+        round_key: int | str = (
+            round_number
+            if not has_round_segment or stage_number == 1
+            else f"Top {len(stage_player_ids[stage_number])} Round {round_number}"
+        )
+
         if winner_entry == "_DRAW_":
             winner_id = "Draw"
             winner_name = None
@@ -330,11 +358,22 @@ def flat_firestore_league_to_topdeck_payload(
             except (TypeError, ValueError):
                 winner_player_id = None
             if not winner_player_id:
+                rounds_by_number.setdefault(round_key, []).append(
+                    {
+                        "table": table_number,
+                        "players": players,
+                        "status": "Incomplete",
+                    }
+                )
                 continue
             winner_id = winner_player_id
             winner_name = players_by_id.get(winner_player_id, {}).get("name")
 
-        rounds_by_number.setdefault(stage_number, []).append(
+        # Flat Firestore currently uses S1:R1:T1 for Swiss and S2:R1:T1
+        # for the first top-cut round. Keep Swiss rounds numeric, but include
+        # the stage in bracket round names so repeated R1/T1 keys do not
+        # collide during game ingestion.
+        rounds_by_number.setdefault(round_key, []).append(
             {
                 "table": table_number,
                 "players": players,
@@ -345,7 +384,11 @@ def flat_firestore_league_to_topdeck_payload(
         )
 
     converted_rounds = [
-        {"round": round_number, "tables": tables} for round_number, tables in sorted(rounds_by_number.items())
+        {"round": round_number, "tables": tables}
+        for round_number, tables in sorted(
+            rounds_by_number.items(),
+            key=lambda item: (0, item[0]) if isinstance(item[0], int) else (1, str(item[0])),
+        )
     ]
     if not converted_rounds:
         return None
@@ -363,7 +406,10 @@ def flat_firestore_league_to_topdeck_payload(
         "game": data.get("Game") or base_tournament.get("game"),
         "format": data.get("Format") or base_tournament.get("format"),
         "startDate": start_date,
-        "swissNum": max(rounds_by_number) if rounds_by_number else 0,
+        "swissNum": max(
+            (round_number for round_number in rounds_by_number if isinstance(round_number, int)),
+            default=0,
+        ),
         "topCut": base_tournament.get("topCut") or 0,
         "standings": standings,
         "rounds": converted_rounds,

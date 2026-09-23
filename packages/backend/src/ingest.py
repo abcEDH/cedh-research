@@ -22,6 +22,7 @@ from typing import Any
 from dateutil import parser as date_parser
 
 from name_normalization import canonical_region_name
+from record_derivation import derive_standing_results, derive_standing_results_with_completeness
 from supabase import Client
 from supabase_client import (
     SUPABASE_REST_BASE,
@@ -50,6 +51,7 @@ __all__ = [
     "TOPDECK_FIRESTORE_PROJECT",
     "TopDeckClient",
     "decode_firestore_value",
+    "derive_standing_results",
 ]
 
 TOPDECK_STANDING_RATE_FIELDS = [
@@ -93,7 +95,13 @@ logger = logging.getLogger(__name__)
 
 def load_local_env() -> None:
     """Load local env files without overriding already-exported variables."""
-    for env_path in (Path("packages/backend/.env"), Path(".env"), Path(__file__).resolve().parents[1] / ".env"):
+    env_paths = (
+        Path("packages/backend/.env"),
+        Path(".env"),
+        Path(__file__).resolve().parents[1] / ".env",
+        Path(__file__).resolve().parents[3] / ".env",
+    )
+    for env_path in env_paths:
         if not env_path.exists():
             continue
         for line in env_path.read_text().splitlines():
@@ -692,6 +700,7 @@ class DataIngester:
         name = tournament.get("name", "Unknown Tournament")
         rounds = tournament.get("rounds", [])
         standings = tournament.get("standings", [])
+        derived_results, complete_result_ids = derive_standing_results_with_completeness(rounds)
         start_date = tournament.get("startDate")
         player_count = len(standings)
         swiss_rounds = tournament.get("swissNum", 0)
@@ -775,6 +784,23 @@ class DataIngester:
             player_topdeck_id = standing.get("id")
             player_name = standing.get("name", "Unknown")
             decklist = standing.get("decklist") or ""
+            result_stats = (
+                derived_results.get(str(player_topdeck_id))
+                if player_topdeck_id is not None and str(player_topdeck_id) in complete_result_ids
+                else None
+            )
+            # Prefer result-level records whenever TopDeck exposed completed
+            # tables. This repairs payloads that report points but leave W/L/D
+            # at zero, and payloads that report zero points for played games.
+            wins = result_stats["wins"] if result_stats else standing.get("wins")
+            losses = result_stats["losses"] if result_stats else standing.get("losses")
+            draws = result_stats["draws"] if result_stats else standing.get("draws")
+            reported_points = standing.get("points") or 0
+            points = (
+                result_stats["points"]
+                if result_stats and reported_points == 0 and result_stats["points"] > 0
+                else reported_points
+            )
 
             # Extract and normalize commander
             commanders = extract_commanders(decklist)
@@ -796,10 +822,10 @@ class DataIngester:
                     "commander_name": commander_name,
                     "decklist": decklist,
                     "rank": standing.get("rank") or standing.get("standing"),
-                    "points": standing.get("points") or 0,
-                    "wins": standing.get("wins"),
-                    "losses": standing.get("losses"),
-                    "draws": standing.get("draws"),
+                    "points": points,
+                    "wins": wins,
+                    "losses": losses,
+                    "draws": draws,
                     "omw": standing.get("omw"),
                     "gw": standing.get("gw"),
                     "pgw": standing.get("pgw"),
