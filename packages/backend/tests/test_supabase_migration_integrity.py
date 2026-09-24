@@ -5,6 +5,7 @@ MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "supabase" / "migrations"
 ELO_TIERS_MIGRATION = MIGRATIONS_DIR / "20260726000000_elo_ranking_eligibility_tiers.sql"
 GAME_LEVEL_ELIGIBILITY_MIGRATION = MIGRATIONS_DIR / "20260727042641_ranking_game_level_eligibility.sql"
 ELO_DISPLAY_STATS_MIGRATION = MIGRATIONS_DIR / "20260916160213_get_elo_display_stats.sql"
+WINRATE_MATRIX_MIGRATION = MIGRATIONS_DIR / "20260924000000_get_winrate_matrix_rpc.sql"
 
 
 class SupabaseMigrationIntegrityTests(unittest.TestCase):
@@ -122,6 +123,52 @@ class SupabaseMigrationIntegrityTests(unittest.TestCase):
         self.assertIn(expected_columns, sql)
         self.assertNotIn("NULL::text AS country_key,\n    g.player_id", sql)
         self.assertIn("MAX(game_date)::date AS last_game_date", sql)
+
+    def test_winrate_matrix_migration_defines_expected_rpc_surface(self) -> None:
+        """#147: get_winrate_matrix's public signature, its shared Wilson CI and
+        top-N-by-metashare helpers, and the grants that expose all three to
+        PostgREST. See test_wilson_ci_helper.py for the pure-Python mirror of
+        the CI formula and test_winrate_matrix_integration.py for the opt-in
+        live-database fixture check.
+        """
+        sql = WINRATE_MATRIX_MIGRATION.read_text()
+
+        self.assertIn("CREATE OR REPLACE FUNCTION public.wilson_ci_95(", sql)
+        self.assertIn("CREATE OR REPLACE FUNCTION public.top_commanders_by_metashare(", sql)
+        self.assertIn(
+            "CREATE OR REPLACE FUNCTION public.get_winrate_matrix(\n  top_n integer DEFAULT 30,\n"
+            "  days_back integer DEFAULT 180\n)",
+            sql,
+        )
+        self.assertIn(
+            "RETURNS TABLE (\n  deck_a_commander_id uuid,\n  deck_b_commander_id uuid,\n"
+            "  games_played bigint,\n  wins bigint,\n  losses bigint,\n  draws bigint,\n"
+            "  point_winrate numeric,\n  ci_low numeric,\n  ci_high numeric\n)",
+            sql,
+        )
+        for fn in (
+            "wilson_ci_95(bigint, bigint)",
+            "top_commanders_by_metashare(integer, integer)",
+            "get_winrate_matrix(integer, integer)",
+        ):
+            for role in ("anon", "authenticated", "service_role"):
+                self.assertIn(f"GRANT EXECUTE ON FUNCTION public.{fn} TO {role};", sql)
+
+    def test_winrate_matrix_forces_exact_mirror_cell_winrate(self) -> None:
+        """Acceptance criterion on #147: a commander vs itself must return
+        exactly 50%, not an even/odd approximation of the split."""
+        sql = WINRATE_MATRIX_MIGRATION.read_text()
+
+        self.assertIn("WHEN c.x_a_commander_id = c.x_b_commander_id THEN 0.5::numeric", sql)
+        self.assertIn("x_top_games AS x_games,\n      ROUND(x_top_games / 2.0)::bigint AS x_wins,", sql)
+
+    def test_winrate_matrix_omits_empty_cells_and_excludes_byes(self) -> None:
+        sql = WINRATE_MATRIX_MIGRATION.read_text()
+
+        self.assertIn("WHERE c.x_games > 0", sql)
+        self.assertIn("a.result <> 'bye'", sql)
+        self.assertIn("b.result <> 'bye'", sql)
+        self.assertIn("gp.result <> 'bye'", sql)
 
 
 if __name__ == "__main__":
