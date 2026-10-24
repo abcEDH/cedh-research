@@ -1,3 +1,10 @@
+## [1.34.2](https://github.com/abcEDH/cedh-research/compare/v1.34.1...v1.34.2) (2026-10-24)
+
+
+### Bug Fixes
+
+* **web:** preserve latest-deck weighting after tournament start ([#381](https://github.com/abcEDH/cedh-research/issues/381)) ([557b913](https://github.com/abcEDH/cedh-research/commit/557b9131f057996e55d652fdf0966f660bcc58e1))
+
 ## [1.34.1](https://github.com/abcEDH/cedh-research/compare/v1.34.0...v1.34.1) (2026-10-17)
 
 
