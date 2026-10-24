@@ -272,7 +272,7 @@ const getCachedCommanderForecasts = unstable_cache(
       ),
     };
   },
-  ["tournament-commander-forecasts-v1"],
+  ["tournament-commander-forecasts-v2"],
   { revalidate: 60 * 15 }
 );
 
