@@ -24,19 +24,19 @@ from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import LogisticRegression
 
 from ingest import SupabaseClient, load_local_env
+from sim_types import DEFAULT_DRAW_MODEL_FEATURES
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 DEFAULT_CACHE_PATH = DATA_DIR / "draw_model_rich_cache.pkl"
 DEFAULT_ARTIFACT_PATH = DATA_DIR / "draw_model_artifact.pkl"
 DEFAULT_REPORT_PATH = DATA_DIR / "draw_model_report.json"
 
-RESULTS_SELECT = (
-    "game_id,tournament_id,start_date,round_number,round_name,table_number,"
-    "player_id,entry_id,result"
-)
+RESULTS_SELECT = "game_id,tournament_id,start_date,round_number,round_name,table_number,player_id,entry_id,result"
 EVENTS_SELECT = "game_id,player_id,rating_before"
 SEATS_SELECT = "game_id,entry_id,seat_position"
 TOURNAMENTS_SELECT = "id,start_date,player_count,name,topdeck_tid,top_cut,state,country"
+TOPDECK_ELOS_SELECT = "player_id,elo"
+ENTRY_COMMANDERS_SELECT = "tournament_id,player_id,commanders(color_identity)"
 
 
 def parse_datetime_value(value: Any) -> datetime:
@@ -148,6 +148,7 @@ class DrawPodRow:
     state_prior_draw_rate: float
     country_prior_draw_rate: float
     count_players_near_cut_band: int
+    winner_index: int = -1
     tournament_id: str = ""
     tournament_name: str = ""
     series_key: str = ""
@@ -235,6 +236,20 @@ class DrawPodRow:
     draw_vs_win_status_same_count: int = 0
     pairwise_mutual_draw_benefit_count: int = 0
     count_players_draw_as_good_as_win_for_bye: int = 0
+    topdeck_elo_spread: float = 0.0
+    topdeck_elo_mean: float = 0.0
+    topdeck_elo_std: float = 0.0
+    topdeck_elo_missing_count: int = 0
+    topdeck_elo_minus_internal_mean: float = 0.0
+    count_white_commanders: int = 0
+    count_blue_commanders: int = 0
+    count_black_commanders: int = 0
+    count_red_commanders: int = 0
+    count_green_commanders: int = 0
+    avg_commander_color_count: float = 0.0
+    max_commander_color_count: int = 0
+    unique_commander_color_count: int = 0
+    commander_color_data_missing_count: int = 0
 
 
 @dataclass(slots=True)
@@ -376,7 +391,29 @@ def load_pods(cache_path: Path) -> list[DrawPodRow] | None:
         return None
     with cache_path.open("rb") as handle:
         raw_rows = pickle.load(handle)
-    return [DrawPodRow(**row) if isinstance(row, dict) else row for row in raw_rows]
+    rows = [DrawPodRow(**row) if isinstance(row, dict) else row for row in raw_rows]
+    defaults = {
+        "winner_index": -1,
+        "topdeck_elo_spread": 0.0,
+        "topdeck_elo_mean": 0.0,
+        "topdeck_elo_std": 0.0,
+        "topdeck_elo_missing_count": 0,
+        "topdeck_elo_minus_internal_mean": 0.0,
+        "count_white_commanders": 0,
+        "count_blue_commanders": 0,
+        "count_black_commanders": 0,
+        "count_red_commanders": 0,
+        "count_green_commanders": 0,
+        "avg_commander_color_count": 0.0,
+        "max_commander_color_count": 0,
+        "unique_commander_color_count": 0,
+        "commander_color_data_missing_count": 0,
+    }
+    for row in rows:
+        for key, value in defaults.items():
+            if not hasattr(row, key):
+                setattr(row, key, value)
+    return rows
 
 
 def save_pods(cache_path: Path, pods: list[DrawPodRow]) -> None:
@@ -452,6 +489,39 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
         if row.get("game_id") and row.get("player_id") and row.get("rating_before") is not None
     }
 
+    print("Fetching TopDeck Elo inputs...", flush=True)
+    topdeck_elo_rows = fetch_or_load_raw_rows(
+        client,
+        "topdeck_player_elos",
+        {"select": TOPDECK_ELOS_SELECT},
+        raw_data_cache_dir=raw_data_cache_dir,
+        label="topdeck_player_elos",
+    )
+    topdeck_elo_by_player_id = {
+        str(row["player_id"]): float(row["elo"])
+        for row in topdeck_elo_rows
+        if row.get("player_id") and row.get("elo") is not None
+    }
+
+    print("Fetching commander color inputs...", flush=True)
+    entry_commander_rows = fetch_or_load_raw_rows(
+        client,
+        "tournament_entries",
+        {"select": ENTRY_COMMANDERS_SELECT},
+        raw_data_cache_dir=raw_data_cache_dir,
+        label="tournament_entries_commanders",
+    )
+    commander_colors_by_entry = {}
+    for row in entry_commander_rows:
+        tournament_id = row.get("tournament_id")
+        player_id = row.get("player_id")
+        commander = row.get("commanders") or {}
+        colors = commander.get("color_identity") or ()
+        if tournament_id and player_id:
+            commander_colors_by_entry[(str(tournament_id), str(player_id))] = tuple(
+                sorted({str(color).upper() for color in colors if color})
+            )
+
     print("Fetching seats...", flush=True)
     seats = fetch_or_load_raw_rows(
         client,
@@ -511,9 +581,7 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
                 # Ignore rows where round_number is missing or malformed in source data.
                 continue
     max_swiss_round = {
-        tournament_id: max(rounds)
-        for tournament_id, rounds in swiss_rounds_by_tournament.items()
-        if rounds
+        tournament_id: max(rounds) for tournament_id, rounds in swiss_rounds_by_tournament.items() if rounds
     }
 
     player_history: dict[str, list[int]] = defaultdict(lambda: [0, 0, 0, 0])
@@ -563,6 +631,15 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
             return (0, round_number, "", parse_int(first.get("table_number"), 10_000))
         round_name = str(first.get("round_name") or "")
         return (1, bracket_round_sort_value(round_name), round_name, parse_int(first.get("table_number"), 10_000))
+
+    def model_round_number_for_bracket(round_name: str | None, max_round: int | None) -> int:
+        base_round = max_round or 0
+        lowered = str(round_name or "").strip().lower()
+        if lowered == "finals":
+            return base_round + 3
+        if lowered == "semifinals":
+            return base_round + 2
+        return base_round + 1
 
     def score_delta(result: str | None) -> int:
         normalized = str(result or "").lower()
@@ -633,8 +710,6 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
             round_number = int(raw_round_number) if raw_round_number is not None else None
         except (TypeError, ValueError):
             round_number = None
-        if round_number is None:
-            continue
 
         tournament_id = rows[0].get("tournament_id")
         tournament_id_str = str(tournament_id or "")
@@ -645,14 +720,31 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
         if tournament_id_str:
             last_round_key_by_tournament[tournament_id_str] = current_round_key
         max_round = max_swiss_round.get(str(tournament_id)) if tournament_id else None
+        is_swiss = 1 if round_number is not None else 0
+        model_round_number = (
+            round_number
+            if round_number is not None
+            else model_round_number_for_bracket(rows[0].get("round_name"), max_round)
+        )
         if round_number is not None and max_round and max_round > 1:
             swiss_progress = (round_number - 1) / (max_round - 1)
             rounds_remaining = max(0, max_round - round_number)
         else:
-            swiss_progress = 0.0
+            swiss_progress = 0.0 if is_swiss else 1.0
             rounds_remaining = 0
 
-        is_draw = 1 if any(str(row.get("result") or "") == "draw" for row in rows) else 0
+        has_draw_result = any(str(row.get("result") or "") == "draw" for row in rows)
+        if not is_swiss and has_draw_result:
+            continue
+        is_draw = 1 if is_swiss and has_draw_result else 0
+        winner_index = -1
+        if not is_draw:
+            for index, row in enumerate(rows):
+                if str(row.get("result") or "").lower() == "win":
+                    winner_index = index
+                    break
+            if winner_index < 0:
+                continue
         sorted_ratings = sorted(ratings, reverse=True)
         mean_elo = sum(ratings) / len(ratings)
         median_elo = float(np.median(np.asarray(ratings, dtype=float)))
@@ -667,7 +759,11 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
         high1700 = sum(1 for rating in ratings if rating >= 1700)
         high1800 = sum(1 for rating in ratings if rating >= 1800)
         highest_idx = max(range(len(ratings)), key=lambda index: ratings[index])
-        second_idx = sorted(range(len(ratings)), key=lambda index: ratings[index], reverse=True)[1] if len(ratings) > 1 else highest_idx
+        second_idx = (
+            sorted(range(len(ratings)), key=lambda index: ratings[index], reverse=True)[1]
+            if len(ratings) > 1
+            else highest_idx
+        )
         seat_highest = seat_positions[highest_idx] if seat_positions[highest_idx] is not None else -1
         seat_second = seat_positions[second_idx] if seat_positions[second_idx] is not None else -1
         top2_adjacent = 0
@@ -676,25 +772,21 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
             top2_adjacent = 1 if seat_gap in (1, 3) else 0
 
         prior_draw_rates = [
-            player_history[player_id][0] / player_history[player_id][1]
-            if player_history[player_id][1]
-            else 0.0
+            player_history[player_id][0] / player_history[player_id][1] if player_history[player_id][1] else 0.0
             for player_id in player_ids
         ]
         prior_win_rates = [
-            player_history[player_id][2] / player_history[player_id][1]
-            if player_history[player_id][1]
-            else 0.0
+            player_history[player_id][2] / player_history[player_id][1] if player_history[player_id][1] else 0.0
             for player_id in player_ids
         ]
         prior_decisive_rates = [
-            player_history[player_id][3] / player_history[player_id][1]
-            if player_history[player_id][1]
-            else 0.0
+            player_history[player_id][3] / player_history[player_id][1] if player_history[player_id][1] else 0.0
             for player_id in player_ids
         ]
         avg_player_prior_draw = sum(prior_draw_rates) / len(prior_draw_rates)
-        median_player_prior_draw = float(np.median(np.asarray(prior_draw_rates, dtype=float))) if prior_draw_rates else 0.0
+        median_player_prior_draw = (
+            float(np.median(np.asarray(prior_draw_rates, dtype=float))) if prior_draw_rates else 0.0
+        )
         min_player_prior_draw = min(prior_draw_rates) if prior_draw_rates else 0.0
         max_player_prior_draw = max(prior_draw_rates) if prior_draw_rates else 0.0
         prior_draw_std = float(np.std(np.asarray(prior_draw_rates, dtype=float))) if prior_draw_rates else 0.0
@@ -705,10 +797,14 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
             for win_rate, draw_rate in zip(prior_win_rates, prior_draw_rates, strict=True)
             if win_rate >= 0.35 and draw_rate <= 0.10
         )
-        draw_rate_range_above_threshold = 1 if prior_draw_rates and (max(prior_draw_rates) - min(prior_draw_rates)) >= 0.15 else 0
+        draw_rate_range_above_threshold = (
+            1 if prior_draw_rates and (max(prior_draw_rates) - min(prior_draw_rates)) >= 0.15 else 0
+        )
         avg_player_prior_win = sum(prior_win_rates) / len(prior_win_rates) if prior_win_rates else 0.0
         max_player_prior_win = max(prior_win_rates) if prior_win_rates else 0.0
-        avg_player_prior_decisive = sum(prior_decisive_rates) / len(prior_decisive_rates) if prior_decisive_rates else 0.0
+        avg_player_prior_decisive = (
+            sum(prior_decisive_rates) / len(prior_decisive_rates) if prior_decisive_rates else 0.0
+        )
         max_player_prior_decisive = max(prior_decisive_rates) if prior_decisive_rates else 0.0
 
         pair_counts = tournament_pair_meetings[tournament_id_str]
@@ -724,7 +820,9 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
         )
         prior_pair_meetings_max = max(prior_pair_meetings) if prior_pair_meetings else 0
         global_pair_meetings_avg = (
-            float(sum(global_prior_pair_meetings) / len(global_prior_pair_meetings)) if global_prior_pair_meetings else 0.0
+            float(sum(global_prior_pair_meetings) / len(global_prior_pair_meetings))
+            if global_prior_pair_meetings
+            else 0.0
         )
         global_pair_meetings_max = max(global_prior_pair_meetings) if global_prior_pair_meetings else 0
 
@@ -732,7 +830,9 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
         field_size = max(len(field_players), len(player_ids), 1)
         current_points_by_player = tournament_points[tournament_id_str]
         current_opponents_by_player = tournament_opponents[tournament_id_str]
-        point_values = [current_points_by_player.get(player_id, 0) for player_id in field_players] if field_players else [0]
+        point_values = (
+            [current_points_by_player.get(player_id, 0) for player_id in field_players] if field_players else [0]
+        )
         point_values.sort(reverse=True)
         points_percentile_map: dict[int, float] = {}
         if field_size <= 1:
@@ -751,7 +851,19 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
 
         top_cut = tournament_cut_sizes.get(tournament_id_str, 0)
         cut_fraction = min(1.0, top_cut / field_size) if top_cut > 0 else 0.0
-        cut_size_bucket = 0 if top_cut <= 0 else 1 if top_cut <= 4 else 2 if top_cut <= 8 else 3 if top_cut <= 16 else 4 if top_cut <= 32 else 5
+        cut_size_bucket = (
+            0
+            if top_cut <= 0
+            else 1
+            if top_cut <= 4
+            else 2
+            if top_cut <= 8
+            else 3
+            if top_cut <= 16
+            else 4
+            if top_cut <= 32
+            else 5
+        )
         cut_line_percentile = 1.0 - cut_fraction if cut_fraction > 0 else 1.0
         cut_rank_index = min(max(top_cut - 1, 0), max(len(point_values) - 1, 0)) if point_values else 0
         cut_line_points = point_values[cut_rank_index] if point_values and top_cut > 0 else 0
@@ -765,7 +877,9 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
             else:
                 expected_round_points = 0.0
             history_point_expectations.append(expected_round_points)
-        fallback_round_points = (sum(history_point_expectations) / len(history_point_expectations)) if history_point_expectations else 1.25
+        fallback_round_points = (
+            (sum(history_point_expectations) / len(history_point_expectations)) if history_point_expectations else 1.25
+        )
         projected_final_points = []
         for field_player_id in field_players:
             total_games = player_history[field_player_id][1]
@@ -776,7 +890,9 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
             else:
                 expected_round_points = fallback_round_points
             expected_round_points = max(0.0, min(5.0, expected_round_points))
-            projected_final_points.append(current_points_by_player.get(field_player_id, 0) + (max(0, rounds_remaining) * expected_round_points))
+            projected_final_points.append(
+                current_points_by_player.get(field_player_id, 0) + (max(0, rounds_remaining) * expected_round_points)
+            )
         projected_final_points.sort(reverse=True)
         expected_cut_line_points = (
             projected_final_points[cut_rank_index] if projected_final_points and top_cut > 0 else float(cut_line_points)
@@ -802,11 +918,15 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
                 for field_player_id in cohort:
                     same_points_omw_percentile_by_player[field_player_id] = 1.0
                 continue
-            ordered = sorted(cohort, key=lambda field_player_id: estimated_omw_by_player.get(field_player_id, 0.0), reverse=True)
+            ordered = sorted(
+                cohort, key=lambda field_player_id: estimated_omw_by_player.get(field_player_id, 0.0), reverse=True
+            )
             size = len(ordered)
             for index, field_player_id in enumerate(ordered):
                 same_points_omw_percentile_by_player[field_player_id] = 1.0 - (index / (size - 1))
-        tiebreak_seed_by_player = {field_player_id: index for index, field_player_id in enumerate(sorted(field_players))}
+        tiebreak_seed_by_player = {
+            field_player_id: index for index, field_player_id in enumerate(sorted(field_players))
+        }
         ordered_field_players = sorted(
             field_players,
             key=lambda field_player_id: (
@@ -816,7 +936,9 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
                 str(field_player_id),
             ),
         )
-        current_rank_by_player = {field_player_id: index + 1 for index, field_player_id in enumerate(ordered_field_players)}
+        current_rank_by_player = {
+            field_player_id: index + 1 for index, field_player_id in enumerate(ordered_field_players)
+        }
         draw_secure_rank_by_player = hypothetical_rank_by_player(
             ordered_field_players,
             target_player_ids=player_ids,
@@ -852,19 +974,27 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
         max_future_points = max(0, rounds_remaining) * 5
         count_above_cut_line = sum(1 for margin in cut_margins if margin >= 0.0)
         count_near_cut_line = sum(1 for margin in cut_margins if abs(margin) <= bubble_margin)
-        count_locked_for_current_cut = sum(1 for points in player_points if points > cut_line_points + max_future_points)
+        count_locked_for_current_cut = sum(
+            1 for points in player_points if points > cut_line_points + max_future_points
+        )
         count_dead_for_current_cut = sum(1 for points in player_points if points + max_future_points < cut_line_points)
         count_draw_safe_for_current_cut = sum(1 for points in player_points if points + 1 >= cut_line_points)
         count_must_win_for_current_cut = sum(
             1 for points in player_points if (points + 1 < cut_line_points and points + 5 >= cut_line_points)
         )
-        all_players_draw_safe_for_current_cut = 1 if player_points and count_draw_safe_for_current_cut == len(player_points) else 0
-        count_locked_for_cut = sum(1 for points in player_points if points > expected_cut_line_points + max_future_points)
+        all_players_draw_safe_for_current_cut = (
+            1 if player_points and count_draw_safe_for_current_cut == len(player_points) else 0
+        )
+        count_locked_for_cut = sum(
+            1 for points in player_points if points > expected_cut_line_points + max_future_points
+        )
         count_dead_for_cut = sum(1 for points in player_points if points + max_future_points < expected_cut_line_points)
         count_live_for_cut = len(player_points) - count_locked_for_cut - count_dead_for_cut
         count_draw_safe_for_cut = sum(1 for points in player_points if points + 1 >= expected_cut_line_points)
         count_must_win_for_cut = sum(
-            1 for points in player_points if (points + 1 < expected_cut_line_points and points + 5 >= expected_cut_line_points)
+            1
+            for points in player_points
+            if (points + 1 < expected_cut_line_points and points + 5 >= expected_cut_line_points)
         )
         all_players_draw_safe = 1 if player_points and count_draw_safe_for_cut == len(player_points) else 0
         count_currently_in_cut = sum(1 for rank in pod_current_ranks if rank <= top_cut) if top_cut > 0 else 0
@@ -898,10 +1028,19 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
             else 0
         )
         some_locked_some_must_win = 1 if count_locked_for_cut > 0 and count_must_win_to_stay_live > 0 else 0
-        rank_minus_cut = [float(rank - top_cut) for rank in pod_current_ranks] if top_cut > 0 else [0.0 for _ in pod_current_ranks]
-        draw_secure_rank_delta = [float(current - draw_rank) for current, draw_rank in zip(pod_current_ranks, pod_draw_secure_ranks, strict=True)]
-        win_secure_rank_delta = [float(current - win_rank) for current, win_rank in zip(pod_current_ranks, pod_win_secure_ranks, strict=True)]
-        count_bottom_quartile_omw_in_same_points_group = sum(1 for value in pod_same_points_omw_percentiles if value <= 0.25)
+        rank_minus_cut = (
+            [float(rank - top_cut) for rank in pod_current_ranks] if top_cut > 0 else [0.0 for _ in pod_current_ranks]
+        )
+        draw_secure_rank_delta = [
+            float(current - draw_rank)
+            for current, draw_rank in zip(pod_current_ranks, pod_draw_secure_ranks, strict=True)
+        ]
+        win_secure_rank_delta = [
+            float(current - win_rank) for current, win_rank in zip(pod_current_ranks, pod_win_secure_ranks, strict=True)
+        ]
+        count_bottom_quartile_omw_in_same_points_group = sum(
+            1 for value in pod_same_points_omw_percentiles if value <= 0.25
+        )
         count_players_near_cut_band = sum(1 for rank in pod_current_ranks if top_cut > 0 and abs(rank - top_cut) <= 4)
         is_last_swiss_round = 1 if rounds_remaining == 0 else 0
         is_penultimate_swiss_round = 1 if rounds_remaining == 1 else 0
@@ -925,10 +1064,18 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
         state_prior_draw_rate = (state_draws / state_total) if state_total and state_key else 0.0
         country_draws, country_total = country_history[country_key]
         country_prior_draw_rate = (country_draws / country_total) if country_total and country_key else 0.0
-        series_prior_draw_rate_smoothed_50 = smoothed_rate(series_draws, series_total, global_recent_draw_rate_90d, 50.0)
-        series_prior_draw_rate_smoothed_100 = smoothed_rate(series_draws, series_total, global_recent_draw_rate_90d, 100.0)
-        series_prior_draw_rate_smoothed_250 = smoothed_rate(series_draws, series_total, global_recent_draw_rate_90d, 250.0)
-        series_prior_draw_rate_smoothed_500 = smoothed_rate(series_draws, series_total, global_recent_draw_rate_90d, 500.0)
+        series_prior_draw_rate_smoothed_50 = smoothed_rate(
+            series_draws, series_total, global_recent_draw_rate_90d, 50.0
+        )
+        series_prior_draw_rate_smoothed_100 = smoothed_rate(
+            series_draws, series_total, global_recent_draw_rate_90d, 100.0
+        )
+        series_prior_draw_rate_smoothed_250 = smoothed_rate(
+            series_draws, series_total, global_recent_draw_rate_90d, 250.0
+        )
+        series_prior_draw_rate_smoothed_500 = smoothed_rate(
+            series_draws, series_total, global_recent_draw_rate_90d, 500.0
+        )
         series_events_seen_log = float(np.log1p(series_total))
 
         player_prior_games = [player_history[player_id][1] for player_id in player_ids]
@@ -949,18 +1096,23 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
             (draw_rank <= top_cut) == (win_rank <= top_cut) if top_cut > 0 else True
             for draw_rank, win_rank in zip(pod_draw_secure_ranks, pod_win_secure_ranks, strict=True)
         ]
-        loss_eliminates = [
-            points + max_future_points < expected_cut_line_points
-            for points in player_points
-        ]
-        draw_preserves_cut_rank = [
-            current_rank <= top_cut and draw_rank <= top_cut
-            for current_rank, draw_rank in zip(pod_current_ranks, pod_draw_secure_ranks, strict=True)
-        ] if top_cut > 0 else []
-        win_changes_cut_status = [
-            (current_rank <= top_cut) != (win_rank <= top_cut)
-            for current_rank, win_rank in zip(pod_current_ranks, pod_win_secure_ranks, strict=True)
-        ] if top_cut > 0 else []
+        loss_eliminates = [points + max_future_points < expected_cut_line_points for points in player_points]
+        draw_preserves_cut_rank = (
+            [
+                current_rank <= top_cut and draw_rank <= top_cut
+                for current_rank, draw_rank in zip(pod_current_ranks, pod_draw_secure_ranks, strict=True)
+            ]
+            if top_cut > 0
+            else []
+        )
+        win_changes_cut_status = (
+            [
+                (current_rank <= top_cut) != (win_rank <= top_cut)
+                for current_rank, win_rank in zip(pod_current_ranks, pod_win_secure_ranks, strict=True)
+            ]
+            if top_cut > 0
+            else []
+        )
 
         points_by_value: dict[int, int] = defaultdict(int)
         for points in player_points:
@@ -969,10 +1121,14 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
         min_points_in_pod = min(player_points) if player_points else 0
         max_points_in_pod = max(player_points) if player_points else 0
         points_range_within_pod = max_points_in_pod - min_points_in_pod
-        all_players_above_projected_cut_line = 1 if player_points and all(points >= expected_cut_line_points for points in player_points) else 0
-        all_players_within_one_point_of_cut_line = 1 if player_points and all(abs(points - expected_cut_line_points) <= 1 for points in player_points) else 0
+        all_players_above_projected_cut_line = (
+            1 if player_points and all(points >= expected_cut_line_points for points in player_points) else 0
+        )
+        all_players_within_one_point_of_cut_line = (
+            1 if player_points and all(abs(points - expected_cut_line_points) <= 1 for points in player_points) else 0
+        )
 
-        round_size_cut_key = (round_number if round_number is not None else -1, size_bucket, cut_size_bucket)
+        round_size_cut_key = (model_round_number, size_bucket, cut_size_bucket)
         round_size_cut_draws, round_size_cut_total = round_size_cut_history[round_size_cut_key]
         round_size_cut_prior_draw_rate_smoothed_100 = smoothed_rate(
             round_size_cut_draws,
@@ -988,7 +1144,6 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
             global_recent_draw_rate_90d,
             100.0,
         )
-        is_swiss = 1 if round_number is not None else 0
         series_swiss_key = (series_key, is_swiss)
         series_swiss_draws, series_swiss_total = series_swiss_history[series_swiss_key]
         series_swiss_prior_draw_rate_smoothed_100 = smoothed_rate(
@@ -1002,6 +1157,20 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
         count_players_with_no_history = sum(1 for games in player_prior_games if games == 0)
         count_players_with_low_history = sum(1 for games in player_prior_games if games < 10)
         count_default_elos = sum(1 for rating in ratings if abs(rating - 1500.0) < 1e-9)
+        topdeck_ratings = [
+            topdeck_elo_by_player_id[player_id] for player_id in player_ids if player_id in topdeck_elo_by_player_id
+        ]
+        topdeck_elo_mean = float(sum(topdeck_ratings) / len(topdeck_ratings)) if topdeck_ratings else 0.0
+        topdeck_elo_std = float(np.std(np.asarray(topdeck_ratings, dtype=float))) if topdeck_ratings else 0.0
+        topdeck_elo_spread = float(max(topdeck_ratings) - min(topdeck_ratings)) if len(topdeck_ratings) >= 2 else 0.0
+        topdeck_elo_missing_count = len(player_ids) - len(topdeck_ratings)
+        topdeck_elo_minus_internal_mean = topdeck_elo_mean - mean_elo if topdeck_ratings else 0.0
+        commander_color_sets = [
+            commander_colors_by_entry.get((tournament_id_str, player_id), ()) for player_id in player_ids
+        ]
+        commander_color_data_missing_count = sum(1 for colors in commander_color_sets if not colors)
+        commander_color_counts = [len(colors) for colors in commander_color_sets]
+        unique_commander_colors = {color for colors in commander_color_sets for color in colors}
         min_draw_secure_rank = min(pod_draw_secure_ranks) if pod_draw_secure_ranks else 0
         max_draw_secure_rank = max(pod_draw_secure_ranks) if pod_draw_secure_ranks else 0
         bye_rank = topdeck_bye_rank(top_cut)
@@ -1026,7 +1195,9 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
             if top_cut > 0 and draw_rank > top_cut and win_rank <= top_cut
         )
         count_players_win_only_live_for_bye = count_must_win_for_bye
-        all_players_draw_lock_cut = 1 if top_cut > 0 and pod_draw_secure_ranks and max_draw_secure_rank <= top_cut else 0
+        all_players_draw_lock_cut = (
+            1 if top_cut > 0 and pod_draw_secure_ranks and max_draw_secure_rank <= top_cut else 0
+        )
         all_players_draw_lock_bye = 1 if bye_rank and pod_draw_secure_ranks and max_draw_secure_rank <= bye_rank else 0
         min_draw_rank_margin_to_cut = (
             min(float(top_cut - rank) for rank in pod_draw_secure_ranks)
@@ -1034,9 +1205,7 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
             else 0.0
         )
         min_draw_rank_margin_to_bye = (
-            min(float(bye_rank - rank) for rank in pod_draw_secure_ranks)
-            if bye_rank and pod_draw_secure_ranks
-            else 0.0
+            min(float(bye_rank - rank) for rank in pod_draw_secure_ranks) if bye_rank and pod_draw_secure_ranks else 0.0
         )
         count_players_draw_makes_cut = sum(
             1
@@ -1051,13 +1220,19 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
         draw_hurts_any_player_cut_status = (
             1
             if top_cut > 0
-            and any(current_rank <= top_cut and draw_rank > top_cut for current_rank, draw_rank in zip(pod_current_ranks, pod_draw_secure_ranks, strict=True))
+            and any(
+                current_rank <= top_cut and draw_rank > top_cut
+                for current_rank, draw_rank in zip(pod_current_ranks, pod_draw_secure_ranks, strict=True)
+            )
             else 0
         )
         draw_hurts_any_player_bye_status = (
             1
             if bye_rank
-            and any(current_rank <= bye_rank and draw_rank > bye_rank for current_rank, draw_rank in zip(pod_current_ranks, pod_draw_secure_ranks, strict=True))
+            and any(
+                current_rank <= bye_rank and draw_rank > bye_rank
+                for current_rank, draw_rank in zip(pod_current_ranks, pod_draw_secure_ranks, strict=True)
+            )
             else 0
         )
         draw_hurts_any_player_status = 1 if draw_hurts_any_player_cut_status or draw_hurts_any_player_bye_status else 0
@@ -1065,8 +1240,12 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
         all_players_above_bye_after_draw = all_players_draw_lock_bye
         all_players_above_cut_after_loss = 1 if top_cut > 0 and pod_loss_ranks and max(pod_loss_ranks) <= top_cut else 0
         all_players_above_bye_after_loss = 1 if bye_rank and pod_loss_ranks and max(pod_loss_ranks) <= bye_rank else 0
-        pod_has_asymmetric_cut_incentive = 1 if top_cut > 0 and count_draw_secures_cut > 0 and count_draw_secures_cut < len(player_ids) else 0
-        pod_has_asymmetric_bye_incentive = 1 if bye_rank and count_draw_secures_bye > 0 and count_draw_secures_bye < len(player_ids) else 0
+        pod_has_asymmetric_cut_incentive = (
+            1 if top_cut > 0 and count_draw_secures_cut > 0 and count_draw_secures_cut < len(player_ids) else 0
+        )
+        pod_has_asymmetric_bye_incentive = (
+            1 if bye_rank and count_draw_secures_bye > 0 and count_draw_secures_bye < len(player_ids) else 0
+        )
         pod_has_asymmetric_incentive = 1 if pod_has_asymmetric_cut_incentive or pod_has_asymmetric_bye_incentive else 0
         draw_cut_status = [rank <= top_cut if top_cut > 0 else False for rank in pod_draw_secure_ranks]
         win_cut_status = [rank <= top_cut if top_cut > 0 else False for rank in pod_win_secure_ranks]
@@ -1074,7 +1253,9 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
         win_bye_status = [rank <= bye_rank if bye_rank else False for rank in pod_win_secure_ranks]
         player_draw_as_good_as_win = [
             (draw_cut == win_cut) and (draw_bye == win_bye)
-            for draw_cut, win_cut, draw_bye, win_bye in zip(draw_cut_status, win_cut_status, draw_bye_status, win_bye_status, strict=True)
+            for draw_cut, win_cut, draw_bye, win_bye in zip(
+                draw_cut_status, win_cut_status, draw_bye_status, win_bye_status, strict=True
+            )
         ]
         draw_vs_win_status_same_count = sum(1 for value in player_draw_as_good_as_win if value)
         pairwise_mutual_draw_benefit_count = 0
@@ -1094,6 +1275,7 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
                 game_id=game_id,
                 date=game_date,
                 is_draw=is_draw,
+                winner_index=winner_index,
                 is_swiss=is_swiss,
                 pod_size=len(rows),
                 spread=max(ratings) - min(ratings),
@@ -1113,7 +1295,7 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
                 seat_second=seat_second,
                 top2_adjacent=top2_adjacent,
                 swiss_progress=swiss_progress,
-                round_number=round_number if round_number is not None else -1,
+                round_number=model_round_number,
                 rounds_remaining=rounds_remaining,
                 cut_fraction=cut_fraction,
                 cut_size_bucket=cut_size_bucket,
@@ -1125,9 +1307,15 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
                 omw_std_within_pod=omw_std_within_pod,
                 avg_same_points_omw_percentile=(
                     sum(pod_same_points_omw_percentiles) / len(pod_same_points_omw_percentiles)
-                ) if pod_same_points_omw_percentiles else 0.0,
-                min_same_points_omw_percentile=min(pod_same_points_omw_percentiles) if pod_same_points_omw_percentiles else 0.0,
-                max_same_points_omw_percentile=max(pod_same_points_omw_percentiles) if pod_same_points_omw_percentiles else 0.0,
+                )
+                if pod_same_points_omw_percentiles
+                else 0.0,
+                min_same_points_omw_percentile=min(pod_same_points_omw_percentiles)
+                if pod_same_points_omw_percentiles
+                else 0.0,
+                max_same_points_omw_percentile=max(pod_same_points_omw_percentiles)
+                if pod_same_points_omw_percentiles
+                else 0.0,
                 count_bottom_quartile_omw_in_same_points_group=count_bottom_quartile_omw_in_same_points_group,
                 count_currently_in_cut=count_currently_in_cut,
                 count_currently_outside_cut=count_currently_outside_cut,
@@ -1143,14 +1331,20 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
                 avg_rank_minus_cut=(sum(rank_minus_cut) / len(rank_minus_cut)) if rank_minus_cut else 0.0,
                 min_rank_minus_cut=min(rank_minus_cut) if rank_minus_cut else 0.0,
                 rank_spread_within_pod=(max(pod_current_ranks) - min(pod_current_ranks)) if pod_current_ranks else 0,
-                avg_draw_secure_rank_delta=(sum(draw_secure_rank_delta) / len(draw_secure_rank_delta)) if draw_secure_rank_delta else 0.0,
-                avg_win_secure_rank_delta=(sum(win_secure_rank_delta) / len(win_secure_rank_delta)) if win_secure_rank_delta else 0.0,
+                avg_draw_secure_rank_delta=(sum(draw_secure_rank_delta) / len(draw_secure_rank_delta))
+                if draw_secure_rank_delta
+                else 0.0,
+                avg_win_secure_rank_delta=(sum(win_secure_rank_delta) / len(win_secure_rank_delta))
+                if win_secure_rank_delta
+                else 0.0,
                 avg_points_percentile=avg_points_percentile,
                 max_points_percentile=max_points_percentile,
                 points_std=points_std,
                 avg_cut_margin=avg_cut_margin,
                 min_abs_cut_margin=min_abs_cut_margin,
-                avg_points_to_current_cut=(sum(points_to_current_cut) / len(points_to_current_cut)) if points_to_current_cut else 0.0,
+                avg_points_to_current_cut=(sum(points_to_current_cut) / len(points_to_current_cut))
+                if points_to_current_cut
+                else 0.0,
                 min_points_to_current_cut=min(points_to_current_cut) if points_to_current_cut else 0.0,
                 avg_points_to_cut=(sum(points_to_cut) / len(points_to_cut)) if points_to_cut else 0.0,
                 min_points_to_cut=min(points_to_cut) if points_to_cut else 0.0,
@@ -1206,9 +1400,17 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
                 series_prior_draw_rate_smoothed_250=series_prior_draw_rate_smoothed_250,
                 series_prior_draw_rate_smoothed_500=series_prior_draw_rate_smoothed_500,
                 series_events_seen_log=series_events_seen_log,
-                avg_player_prior_draw_smoothed_50=(sum(smoothed_player_draw_rates) / len(smoothed_player_draw_rates)) if smoothed_player_draw_rates else 0.0,
-                median_player_prior_draw_smoothed_50=float(np.median(np.asarray(smoothed_player_draw_rates, dtype=float))) if smoothed_player_draw_rates else 0.0,
-                max_player_prior_draw_smoothed_50=max(smoothed_player_draw_rates) if smoothed_player_draw_rates else 0.0,
+                avg_player_prior_draw_smoothed_50=(sum(smoothed_player_draw_rates) / len(smoothed_player_draw_rates))
+                if smoothed_player_draw_rates
+                else 0.0,
+                median_player_prior_draw_smoothed_50=float(
+                    np.median(np.asarray(smoothed_player_draw_rates, dtype=float))
+                )
+                if smoothed_player_draw_rates
+                else 0.0,
+                max_player_prior_draw_smoothed_50=max(smoothed_player_draw_rates)
+                if smoothed_player_draw_rates
+                else 0.0,
                 avg_player_prior_games=avg_player_prior_games,
                 min_player_prior_games=min_player_prior_games,
                 player_prior_confidence_avg=player_prior_confidence_avg,
@@ -1228,9 +1430,9 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
                 all_players_within_one_point_of_cut_line=all_players_within_one_point_of_cut_line,
                 last_round_cut_fraction=cut_fraction if is_last_swiss_round else 0.0,
                 penultimate_round_cut_fraction=cut_fraction if is_penultimate_swiss_round else 0.0,
-                round_number_size_bucket=float((round_number if round_number is not None else -1) * (size_bucket + 1)),
+                round_number_size_bucket=float(model_round_number * (size_bucket + 1)),
                 last_round_size_bucket=size_bucket if is_last_swiss_round else 0,
-                round_size_cut_bucket_key=((round_number if round_number is not None else -1) * 100) + (size_bucket * 10) + cut_size_bucket,
+                round_size_cut_bucket_key=(model_round_number * 100) + (size_bucket * 10) + cut_size_bucket,
                 round_size_cut_prior_draw_rate_smoothed_100=round_size_cut_prior_draw_rate_smoothed_100,
                 decisive_win_probability_entropy=decisive_entropy,
                 max_decisive_win_probability=decisive_max,
@@ -1238,7 +1440,7 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
                 decisive_win_probability_spread=decisive_spread,
                 any_repeat_pair=1 if count_repeat_pairs > 0 else 0,
                 count_repeat_pairs=count_repeat_pairs,
-                pod_size_round_number=float(len(rows) * (round_number if round_number is not None else -1)),
+                pod_size_round_number=float(len(rows) * model_round_number),
                 pod_size_is_last_swiss_round=len(rows) if is_last_swiss_round else 0,
                 pod_size_cut_fraction=float(len(rows) * cut_fraction),
                 pod_size_series_prior_draw_rate=float(len(rows) * series_prior_draw_rate),
@@ -1253,8 +1455,12 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
                 min_draw_secure_rank=min_draw_secure_rank,
                 max_draw_secure_rank=max_draw_secure_rank,
                 draw_secure_rank_spread=max_draw_secure_rank - min_draw_secure_rank,
-                all_players_draw_rank_within_cut_plus_4=1 if top_cut > 0 and pod_draw_secure_ranks and max_draw_secure_rank <= top_cut + 4 else 0,
-                all_players_draw_rank_within_cut_plus_8=1 if top_cut > 0 and pod_draw_secure_ranks and max_draw_secure_rank <= top_cut + 8 else 0,
+                all_players_draw_rank_within_cut_plus_4=1
+                if top_cut > 0 and pod_draw_secure_ranks and max_draw_secure_rank <= top_cut + 4
+                else 0,
+                all_players_draw_rank_within_cut_plus_8=1
+                if top_cut > 0 and pod_draw_secure_ranks and max_draw_secure_rank <= top_cut + 8
+                else 0,
                 bye_fraction=bye_fraction,
                 bye_line_points=float(bye_line_points),
                 expected_bye_line_points=float(expected_bye_line_points),
@@ -1283,6 +1489,22 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
                 draw_vs_win_status_same_count=draw_vs_win_status_same_count,
                 pairwise_mutual_draw_benefit_count=pairwise_mutual_draw_benefit_count,
                 count_players_draw_as_good_as_win_for_bye=count_players_draw_as_good_as_win_for_bye,
+                topdeck_elo_spread=topdeck_elo_spread,
+                topdeck_elo_mean=topdeck_elo_mean,
+                topdeck_elo_std=topdeck_elo_std,
+                topdeck_elo_missing_count=topdeck_elo_missing_count,
+                topdeck_elo_minus_internal_mean=topdeck_elo_minus_internal_mean,
+                count_white_commanders=sum(1 for colors in commander_color_sets if "W" in colors),
+                count_blue_commanders=sum(1 for colors in commander_color_sets if "U" in colors),
+                count_black_commanders=sum(1 for colors in commander_color_sets if "B" in colors),
+                count_red_commanders=sum(1 for colors in commander_color_sets if "R" in colors),
+                count_green_commanders=sum(1 for colors in commander_color_sets if "G" in colors),
+                avg_commander_color_count=(
+                    float(sum(commander_color_counts) / len(commander_color_counts)) if commander_color_counts else 0.0
+                ),
+                max_commander_color_count=max(commander_color_counts) if commander_color_counts else 0,
+                unique_commander_color_count=len(unique_commander_colors),
+                commander_color_data_missing_count=commander_color_data_missing_count,
             )
         )
 
@@ -1291,7 +1513,11 @@ def build_rich_pod_cache(client: SupabaseClient, *, raw_data_cache_dir: Path | N
         for player_id in player_ids:
             player_history[player_id][0] += is_draw
             player_history[player_id][1] += 1
-            player_history[player_id][2] += 1 if next((row.get("result") for row in rows if row.get("player_id") == player_id), None) == "win" else 0
+            player_history[player_id][2] += (
+                1
+                if next((row.get("result") for row in rows if row.get("player_id") == player_id), None) == "win"
+                else 0
+            )
             player_history[player_id][3] += 0 if is_draw else 1
             pending_round_updates[tournament_id_str][player_id] += score_delta(
                 next((row.get("result") for row in rows if row.get("player_id") == player_id), None)
@@ -1819,7 +2045,14 @@ def main() -> None:
         "draw_vs_win_status_same_count",
         "pairwise_mutual_draw_benefit_count",
         "count_players_draw_as_good_as_win_for_bye",
+        "topdeck_elo_spread",
+        "topdeck_elo_mean",
+        "topdeck_elo_std",
+        "topdeck_elo_missing_count",
+        "topdeck_elo_minus_internal_mean",
     ]
+    default_feature_names = set(DEFAULT_DRAW_MODEL_FEATURES)
+    full_features = [feature for feature in full_features if feature in default_feature_names]
     raw_series_features = {"series_prior_draw_rate", "series_events_seen"}
     smoothed_series_features = {
         "series_prior_draw_rate_smoothed_50",
@@ -1890,7 +2123,9 @@ def main() -> None:
             }
         ],
         "no_calendar": [feature for feature in full_features if feature not in {"month", "quarter"}],
-        "no_seat": [feature for feature in full_features if feature not in {"seat_highest", "seat_second", "top2_adjacent"}],
+        "no_seat": [
+            feature for feature in full_features if feature not in {"seat_highest", "seat_second", "top2_adjacent"}
+        ],
         "no_player_history": [feature for feature in full_features if feature not in player_history_features],
         "no_recent_global": [feature for feature in full_features if feature != "global_recent_draw_rate_90d"],
         "no_round_context": [
@@ -1911,17 +2146,13 @@ def main() -> None:
                 "round_size_cut_prior_draw_rate_smoothed_100",
             }
         ],
-        "no_series": [feature for feature in full_features if feature not in raw_series_features | smoothed_series_features],
-        "smoothed_series_only": [
-            feature for feature in full_features if feature not in raw_series_features
+        "no_series": [
+            feature for feature in full_features if feature not in raw_series_features | smoothed_series_features
         ],
-        "raw_series_only": [
-            feature for feature in full_features if feature not in smoothed_series_features
-        ],
+        "smoothed_series_only": [feature for feature in full_features if feature not in raw_series_features],
+        "raw_series_only": [feature for feature in full_features if feature not in smoothed_series_features],
         "smoothed_series_100_only": [
-            feature
-            for feature in full_features
-            if feature not in raw_series_features | smoothed_series_features
+            feature for feature in full_features if feature not in raw_series_features | smoothed_series_features
         ]
         + ["series_prior_draw_rate_smoothed_100", "series_events_seen_log"],
         "compact": [
@@ -1994,6 +2225,10 @@ def main() -> None:
         for feature in feature_sets["projected_cut_only"]
         if feature not in v11_direct_incentive_features or feature in v11b_core_direct_incentive_features
     ]
+    feature_sets = {
+        name: [feature for feature in features if feature in default_feature_names]
+        for name, features in feature_sets.items()
+    }
 
     base_params = {
         "learning_rate": 0.08,
@@ -2062,7 +2297,9 @@ def main() -> None:
     rolling_results = evaluate_finalists_rolling(folds, selected_features, hyperparameter_results[:5])
     print("Rolling-validation finalists:", flush=True)
     for log_loss, brier, half_life, params in rolling_results:
-        print({"rolling_val_log_loss": log_loss, "rolling_val_brier": brier, "half_life": half_life, **params}, flush=True)
+        print(
+            {"rolling_val_log_loss": log_loss, "rolling_val_brier": brier, "half_life": half_life, **params}, flush=True
+        )
 
     _, _, best_half_life, best_params = rolling_results[0]
     selection = ModelSelection(
@@ -2215,8 +2452,7 @@ def main() -> None:
             for log_loss, brier, family, params in family_results
         ],
         "permutation_importance": [
-            {"feature": feature, "importance": importance}
-            for feature, importance in permutation[:15]
+            {"feature": feature, "importance": importance} for feature, importance in permutation[:15]
         ],
         "artifact_path": str(artifact_path),
         "cache_path": str(cache_path),

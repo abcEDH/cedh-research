@@ -331,7 +331,7 @@ export function TournamentAnalysisTables({
     <Card className="knd-panel mt-6">
       <CardHeader>
         <CardTitle className="text-sm uppercase tracking-[0.3em] text-muted-foreground">
-          {showActualDecks ? "Attendees" : "Attendee Forecast"}
+          {showTournamentRecord ? "Live Standings" : "Attendee Forecast"}
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -449,6 +449,11 @@ export function TournamentAnalysisTables({
                         >
                           {row.standing.name}
                         </Link>
+                        {showTournamentRecord && (
+                          <p className="text-xs text-muted-foreground md:hidden">
+                            {row.standing.points} pts · {row.standing.wins}-{row.standing.losses}-{row.standing.draws} (W–L–D)
+                          </p>
+                        )}
                       </div>
                     </td>
                     {showTournamentRecord && (

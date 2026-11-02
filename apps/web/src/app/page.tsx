@@ -15,7 +15,7 @@ import Link from "next/link";
 import { HomeSearchBar } from "@/components/home-search-bar";
 import { EloGameFilter } from "@/components/elo-game-filter";
 import { CommanderRowBackdrop } from "@/components/commanders/commander-row-backdrop";
-import { fetchEloDisplayStats } from "@/lib/elo-display-stats";
+import { overlayEloDisplayStats } from "@/lib/elo-display-stats";
 import { TIER_MIN } from "@/lib/tournaments";
 
 const HOME_CACHE_REVALIDATE_SECONDS = 60 * 60 * 6; // 6 hours
@@ -116,7 +116,9 @@ async function getLeaderboardPreview(): Promise<LeaderboardPlayer[]> {
     });
   } catch (error) {
     console.error("Error fetching home leaderboard preview:", error);
-    return [];
+    // Reject so unstable_cache does not retain an empty leaderboard for six
+    // hours after a transient Supabase failure. Home handles this per request.
+    throw error;
   }
 }
 
@@ -272,7 +274,9 @@ const getCachedRecentTournaments = unstable_cache(
 
 const getCachedLeaderboardPreview = unstable_cache(
   getLeaderboardPreview,
-  ["home-leaderboard-preview-v4"],
+  // v5 clears any empty result cached before transient refresh failures were
+  // made retryable.
+  ["home-leaderboard-preview-v5"],
   { revalidate: HOME_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -290,25 +294,19 @@ export default async function Home({
   const resolvedSearchParams = await Promise.resolve(searchParams);
   const eloOnly = isEloOnlyParam(resolvedSearchParams?.eloOnly);
   const [allLeaderboardPlayers, recentTournaments] = await Promise.all([
-    getCachedLeaderboardPreview(),
+    getCachedLeaderboardPreview().catch((error) => {
+      console.error("Home leaderboard cache refresh failed:", error);
+      return [];
+    }),
     getCachedRecentTournaments().catch((error) => {
       console.error("Home recent tournaments cache refresh failed:", error);
       return [];
     }),
   ]);
-  const displayStats = await fetchEloDisplayStats(
-    allLeaderboardPlayers.map((player) => player.topdeck_id),
+  const leaderboardPlayers = await overlayEloDisplayStats(
+    allLeaderboardPlayers,
     eloOnly ? "ranking" : "all"
   );
-  const leaderboardPlayers = allLeaderboardPlayers.map((player) => ({
-    ...player,
-    ...(displayStats?.get(player.topdeck_id) ?? {
-      games_played: player.games_played,
-      wins: player.wins,
-      draws: player.draws,
-      losses: player.losses,
-    }),
-  }));
 
   return (
     <div className="min-h-screen">
@@ -405,14 +403,14 @@ export default async function Home({
                     {leaderboardPlayers.length > 0 ? (
                       leaderboardPlayers.map((player) => {
                         return (
-                          <TableRow key={player.player_id} className="relative border-border/60">
+                          <TableRow key={player.player_id} className="border-border/60">
                             <TableCell className="py-3 px-1 font-mono text-[10px] text-muted-foreground">
+                              {player.rank}
+                            </TableCell>
+                            <TableCell className="relative overflow-hidden py-3 px-2">
                               {isKnownCommanderName(player.active_commander) ? (
                                 <CommanderRowBackdrop name={player.active_commander} />
                               ) : null}
-                              {player.rank}
-                            </TableCell>
-                            <TableCell className="py-3 px-2">
                               <Link
                                 href={`/regional-elo/player/${player.topdeck_id}${eloOnly ? "?eloOnly=true" : ""}`}
                                 className="font-medium text-foreground hover:text-primary text-xs sm:text-sm"

@@ -77,7 +77,7 @@ describe("regional-elo cache configuration", () => {
 
   it("getCachedLatestCommanders returns a plain object, not a Map", async () => {
     // Import the module - our mock makes unstable_cache pass through the callback
-    await import("@/app/regional-elo/page");
+    await import("@/lib/regional-elo/fetchers");
 
     // We can't directly call getCachedLatestCommanders since it's not exported,
     // but we can verify the pattern: the wrapper converts Map to plain object
@@ -102,7 +102,7 @@ describe("regional-elo cache configuration", () => {
     const fs = await import("fs");
     const path = await import("path");
     const source = fs.readFileSync(
-      path.resolve(__dirname, "../../src/app/regional-elo/page.tsx"),
+      path.resolve(__dirname, "../../src/lib/regional-elo/fetchers.ts"),
       "utf-8"
     );
 
@@ -110,11 +110,11 @@ describe("regional-elo cache configuration", () => {
     expect(source).not.toContain("return { rows: [], totalCount: 0 };");
   });
 
-  it("sorts leaderboard rows by persisted TopDeck Elo and avoids request-time full scans", async () => {
+  it("sorts leaderboard rows by persisted TopDeck Elo and keeps leaderboard reads on active views", async () => {
     const fs = await import("fs");
     const path = await import("path");
     const source = fs.readFileSync(
-      path.resolve(__dirname, "../../src/app/regional-elo/page.tsx"),
+      path.resolve(__dirname, "../../src/lib/regional-elo/fetchers.ts"),
       "utf-8"
     );
 
@@ -128,17 +128,17 @@ describe("regional-elo cache configuration", () => {
     expect(primaryReadSource).not.toContain('.order("rank", { ascending: true })');
     expect(source).toContain("normalizeLeaderboardRows");
     expect(source).toContain('.from("global_elo_active_regions")');
-    expect(source).toContain('["regional-elo-regions-v5"]');
-    expect(source).toContain('["regional-elo-leaderboard-v6"]');
+    expect(source).toContain('["regional-elo-regions-v6-canonical-names"]');
+    expect(source).toContain('["regional-elo-leaderboard-v7-canonical-names"]');
     expect(source).toContain('console.info(`[regional-elo] ${event}`, details);');
     expect(source).toContain('logReadSummary("leaderboard-cache-miss"');
     expect(source).toContain('logReadSummary("latest-commanders-cache-miss"');
 
     expect(source).toContain("latest_tournament_name, latest_tournament_date, latest_tournament_topdeck_tid");
+    expect(source).toContain('.from("global_elo_game_event_log")');
     expect(source).not.toContain("fetchAllTopdeckEloMap");
     expect(source).not.toContain("fetchTopdeckEloMap");
     expect(source).not.toContain('.from("topdeck_player_elos")');
-    expect(source).not.toContain('.from("global_elo_game_event_log")');
     expect(source).not.toContain('.from("regional_elo_game_event_log")');
     expect(source).not.toContain("fetchLeaderboardRowsFromView");
     expect(source).not.toContain("fetchLegacyLeaderboardRows");

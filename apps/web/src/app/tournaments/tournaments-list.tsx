@@ -41,7 +41,10 @@ type TournamentsListProps = {
   initialSort: SortOption;
   initialTier: TierOption;
   initialPeriod: PeriodOption;
+  initialPage: number;
 };
+
+const PAGE_SIZE = 20;
 
 function relTime(days: number): string {
   if (days <= 0) return "today";
@@ -84,22 +87,34 @@ function FilterSelect({ label, value, onChange, options }: FilterSelectProps) {
 }
 
 // ---- Page ----
-export function TournamentsList({ initialSort, initialTier, initialPeriod }: TournamentsListProps) {
+export function TournamentsList({ initialSort, initialTier, initialPeriod, initialPage }: TournamentsListProps) {
   const [sortBy, setSortBy] = useState<SortOption>(initialSort);
   const [tierFilter, setTierFilter] = useState<TierOption>(initialTier);
   const [period, setPeriod] = useState<PeriodOption>(initialPeriod);
+  const [page, setPage] = useState(initialPage);
   const [events, setEvents] = useState<TournamentSummary[]>([]);
+  const [totalEvents, setTotalEvents] = useState(0);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadEvents() {
-      const response = await fetch("/api/tournaments");
-      const payload = (await response.json()) as { tournaments?: TournamentSummary[] };
+      setLoading(true);
+      const params = new URLSearchParams({
+        page: String(page),
+        sort: sortBy,
+        tier: tierFilter,
+        period,
+      });
+      const response = await fetch(`/api/tournaments?${params.toString()}`);
+      const payload = (await response.json()) as { tournaments?: TournamentSummary[]; total?: number };
       const loadedEvents = response.ok ? payload.tournaments ?? [] : [];
 
-      if (!cancelled && loadedEvents.length > 0) {
+      if (!cancelled) {
         setEvents(loadedEvents);
+        setTotalEvents(payload.total ?? 0);
+        setLoading(false);
       }
     }
 
@@ -108,11 +123,15 @@ export function TournamentsList({ initialSort, initialTier, initialPeriod }: Tou
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [page, period, sortBy, tierFilter]);
 
-  function setFilter(key: string, value: string) {
+  function setFilter(key: string, value: string, resetPage = false) {
     const p = new URLSearchParams(window.location.search);
     p.set(key, value);
+    if (resetPage) {
+      setPage(1);
+      p.set("page", "1");
+    }
     window.history.replaceState(null, "", window.location.pathname + "?" + p.toString());
   }
 
@@ -124,12 +143,12 @@ export function TournamentsList({ initialSort, initialTier, initialPeriod }: Tou
     const days = Math.round((TODAY.getTime() - d.getTime()) / 86400000);
     return { ...t, d, days };
   })
-    .filter((t) => (tierFilter === "All Tiers" || t.tier === tierFilter) && t.days <= periodDays)
-    .sort((a, b) => (sortBy === "Players" ? b.players - a.players : a.days - b.days));
+    .filter((t) => t.days <= periodDays);
 
   const tierLabel =
     tierFilter === "All Tiers" ? "all tiers" : tierFilter.toLowerCase();
-  const countText = `${items.length} events · ${period.toLowerCase()} · ${tierLabel}`;
+  const countText = `${totalEvents.toLocaleString("en-US")} events · ${period.toLowerCase()} · ${tierLabel}`;
+  const totalPages = Math.max(1, Math.ceil(totalEvents / PAGE_SIZE));
 
   // ---- Select option builders ----
   const sortOptions = (["Date", "Players"] as SortOption[]).map((o) => ({
@@ -173,7 +192,7 @@ export function TournamentsList({ initialSort, initialTier, initialPeriod }: Tou
             value={sortBy}
             onChange={(v) => {
               setSortBy(v as SortOption);
-              setFilter("sort", v);
+              setFilter("sort", v, true);
             }}
             options={sortOptions}
           />
@@ -182,7 +201,7 @@ export function TournamentsList({ initialSort, initialTier, initialPeriod }: Tou
             value={tierFilter}
             onChange={(v) => {
               setTierFilter(v as TierOption);
-              setFilter("tier", v);
+              setFilter("tier", v, true);
             }}
             options={tierOptions}
           />
@@ -191,7 +210,7 @@ export function TournamentsList({ initialSort, initialTier, initialPeriod }: Tou
             value={period}
             onChange={(v) => {
               setPeriod(v as PeriodOption);
-              setFilter("period", v);
+              setFilter("period", v, true);
             }}
             options={periodOptions}
           />
@@ -205,7 +224,9 @@ export function TournamentsList({ initialSort, initialTier, initialPeriod }: Tou
 
         {/* Tournament list */}
         <div className="relative knd-panel overflow-hidden">
-          {items.length === 0 ? (
+          {loading ? (
+            <div className="px-6 py-12 text-center text-sm text-muted-foreground font-mono">Loading events…</div>
+          ) : items.length === 0 ? (
             <div className="px-6 py-12 text-center text-sm text-muted-foreground font-mono">
               No events match the current filters.
             </div>
@@ -362,6 +383,41 @@ export function TournamentsList({ initialSort, initialTier, initialPeriod }: Tou
             })
           )}
         </div>
+
+        {totalPages > 1 ? (
+          <nav className="mt-4 flex flex-col items-center justify-between gap-3 border-t border-border/60 pt-4 sm:flex-row" aria-label="Tournament pages">
+            <span className="text-xs text-muted-foreground font-mono">
+              Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, totalEvents)} of {totalEvents.toLocaleString("en-US")}
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                className="min-h-11 rounded-md border border-border px-3 text-sm text-foreground disabled:opacity-40"
+                disabled={page <= 1}
+                onClick={() => {
+                  const nextPage = page - 1;
+                  setPage(nextPage);
+                  setFilter("page", String(nextPage));
+                }}
+              >
+                Previous
+              </button>
+              <span className="min-w-20 text-center text-sm text-muted-foreground">Page {page} of {totalPages}</span>
+              <button
+                type="button"
+                className="min-h-11 rounded-md border border-border px-3 text-sm text-foreground disabled:opacity-40"
+                disabled={page >= totalPages}
+                onClick={() => {
+                  const nextPage = page + 1;
+                  setPage(nextPage);
+                  setFilter("page", String(nextPage));
+                }}
+              >
+                Next
+              </button>
+            </div>
+          </nav>
+        ) : null}
 
         {/* Footer note */}
         <p className="mt-5 mx-0.5 text-xs text-muted-foreground font-mono">

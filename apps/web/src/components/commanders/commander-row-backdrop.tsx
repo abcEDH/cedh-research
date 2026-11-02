@@ -5,16 +5,10 @@ import { useScryfallArts } from "@/hooks/use-scryfall-art";
 import { splitCardName } from "@/lib/scryfall/client";
 
 /**
- * Subtle art backdrop for a leaderboard/table row, keyed off a commander
- * name (a player's active commander, or a played-commander row). Must be
- * rendered inside one of the row's own <td>/<TableCell> children (a <div>
- * can't be a direct child of <tr>), but positions itself against the row
- * itself: pair with `relative` on the parent <tr>/TableRow and leave every
- * cell in between position-static, so this absolutely positioned box's
- * containing block resolves to the row, not the cell it's nested in — it
- * bleeds across the row's full height/width rather than being boxed into
- * one column. `inset-0` (not `contents`) also keeps a real layout box for
- * useScryfallArts' IntersectionObserver to measure.
+ * Decorative commander art contained by a `relative overflow-hidden` table
+ * cell. Do not anchor it to a positioned <tr>: WebKit can resolve that
+ * containing block to the surrounding panel and stretch art over other rows.
+ * Keep a real layout box so the lazy-loading observer can measure it.
  */
 export function CommanderRowBackdrop({ name }: { name: string | null | undefined }) {
   const frontFace = name ? splitCardName(name)[0] ?? name : null;
@@ -24,7 +18,7 @@ export function CommanderRowBackdrop({ name }: { name: string | null | undefined
   if (!frontFace) return null;
 
   return (
-    <div ref={ref} className="pointer-events-none absolute inset-0">
+    <div ref={ref} aria-hidden="true" data-testid="commander-row-backdrop" className="pointer-events-none absolute inset-0 overflow-hidden">
       {artCrop && (
         <div className="pointer-events-none absolute inset-y-0 right-0 w-1/2 overflow-hidden opacity-20 [mask-image:linear-gradient(to_right,transparent,black_78%)] [-webkit-mask-image:linear-gradient(to_right,transparent,black_78%)]">
           <Image src={artCrop} alt="" fill unoptimized loading="lazy" className="object-cover" />

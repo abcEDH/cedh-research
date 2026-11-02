@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ELO_TIER_INFO, ELO_TIERS, type EloTier } from "@/lib/elo-tiers";
 import { fetchPlayerMatchupExport } from "@/lib/analytics/fetchers";
+import { trackMatchupExport } from "@/lib/analytics";
 import { PlayerPicker, type PlayerPickerOption } from "./player-picker";
 
 export { parseContentDispositionFilename } from "@/lib/analytics/fetchers";
@@ -41,6 +42,7 @@ export function PlayerMatchupsExport() {
       a.click();
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
+      trackMatchupExport(dataType, tier);
     } catch (err) {
       const message = err instanceof Error ? err.message : "An error occurred";
       setError(message);

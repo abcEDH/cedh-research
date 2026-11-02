@@ -1,12 +1,12 @@
+import { CommanderPredictions } from "@/components/commander-predictions";
+import { canonicalRegionKey } from "@/lib/region-name-normalization";
 import { Suspense } from "react";
 import Link from "next/link";
-import { unstable_cache } from "next/cache";
 import type { Metadata } from "next";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CommanderRowBackdrop } from "@/components/commanders/commander-row-backdrop";
 import type { CommanderUsageRow } from "@/lib/meta-prep";
-import { withTiming } from "@/lib/performance";
 import { supabase } from "@/lib/supabase";
 import { OpponentRecordsTable } from "./opponent-records-table";
 import {
@@ -29,7 +29,7 @@ import {
   sortAchievementsByFinish,
   isKnownCommanderName,
 } from "./player-profile-components";
-import { fetchRawPlayerLogPage } from "./player-log-data";
+import { fetchCachedRawPlayerLogPage } from "./player-log-data";
 
 export const revalidate = 86400; // 24 hours
 export const dynamicParams = true;
@@ -38,8 +38,6 @@ export const metadata: Metadata = {
 };
 
 const ACHIEVEMENTS_PAGE_SIZE = 10;
-const PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS = 60 * 60 * 24;
-
 export async function generateStaticParams() {
   try {
     const { data, error } = await supabase
@@ -168,13 +166,7 @@ export type PlayerAchievementRow = {
   recordGames: number;
 };
 
-export type PlayerCommanderProfileRow = {
-  active_commander: string | null;
-  latest_decklist_url: string | null;
-  latest_tournament_name: string | null;
-  latest_tournament_date: string | null;
-  latest_tournament_topdeck_tid: string | null;
-};
+export type { PlayerCommanderProfileRow } from "@/lib/commander-predictions";
 
 export type PlayerEventLogRow = {
   game_id: string;
@@ -305,15 +297,6 @@ function achievementTournamentKey(tournamentName: string | null | undefined, sta
   return `${tournamentName ?? "Unknown tournament"}:${(startDate ?? "").slice(0, 10)}`;
 }
 
-const fetchCachedRawPlayerLogs = unstable_cache(
-  async (playerId: string) =>
-    withTiming("regional-player:raw-history", async () =>
-      fetchRawPlayerLogPage(playerId)
-    ),
-  ["regional-player-raw-history-v1"],
-  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
-);
-
 export default async function RegionalPlayerPage({
   params,
   searchParams,
@@ -364,10 +347,10 @@ async function PlayerProfileBodyWrapper({
 
   const resolvedSearchParams = await Promise.resolve(searchParams);
   const requestedRegion = decodeURIComponent(readRegionParam(resolvedSearchParams)).trim().toUpperCase();
-  const regionFilter = requestedRegion === "ALL" ? "" : requestedRegion;
+  const regionFilter = requestedRegion === "ALL" ? "" : canonicalRegionKey(requestedRegion);
   const eloOnly = readStringParam(resolvedSearchParams, "eloOnly") === "true";
   const [playerLogPage, lifetimeSummary] = await Promise.all([
-    fetchCachedRawPlayerLogs(player.id),
+    fetchCachedRawPlayerLogPage(player.id),
     fetchCachedPlayerProfileSummary(player.id),
   ]);
   const allPlayerLogs = playerLogPage.logs;
@@ -432,7 +415,7 @@ export async function PlayerProfileBody({
 }) {
   const resolvedSearchParams = await Promise.resolve(searchParams);
   const requestedRegion = decodeURIComponent(readRegionParam(resolvedSearchParams)).trim().toUpperCase();
-  const regionFilter = requestedRegion === "ALL" ? "" : requestedRegion;
+  const regionFilter = requestedRegion === "ALL" ? "" : canonicalRegionKey(requestedRegion);
   const requestedAchievementsPage = readPositiveIntParam(resolvedSearchParams, "achievementsPage");
   const achievementTournamentSearch = readStringParam(resolvedSearchParams, "achievementTournament");
   const achievementCommanderSearch = readStringParam(resolvedSearchParams, "achievementCommander");
@@ -466,10 +449,9 @@ export async function PlayerProfileBody({
     fetchCachedPlayerAchievements(player.id, topdeckId),
   ]);
 
-  const activeCommander = commanderProfile?.active_commander ?? null;
 
   const allPlayerLogs: PlayerGameLog[] =
-    rawPlayerLogs ?? (await fetchCachedRawPlayerLogs(player.id)).logs;
+    rawPlayerLogs ?? (await fetchCachedRawPlayerLogPage(player.id)).logs;
   const playerLogs = filterPlayerLogs(allPlayerLogs, eloOnly);
   const historyMayBeTruncated = rawPlayerLogsHasMore;
   const {
@@ -556,7 +538,7 @@ export async function PlayerProfileBody({
         if (b.games_played !== a.games_played) return b.games_played - a.games_played;
         return a.region_key.localeCompare(b.region_key);
       })[0]?.region_key ?? null;
-  const homeRegion = profileSummary?.home_region_key ?? globalEloRank?.primary_region_key ?? regionalRanks[0]?.region_key ?? derivedHomeRegion;
+  const homeRegion = globalEloRank?.primary_region_key ?? profileSummary?.home_region_key ?? regionalRanks[0]?.region_key ?? derivedHomeRegion;
   const stateAssignmentRows = Array.from(assignmentRowsByRegion.values()).sort((a: StateAssignmentRow, b: StateAssignmentRow) => {
     const aCountry = a.country_key ?? "UNKNOWN";
     const bCountry = b.country_key ?? "UNKNOWN";
@@ -618,6 +600,10 @@ export async function PlayerProfileBody({
     if (b.games !== a.games) return b.games - a.games;
     return a.commander.localeCompare(b.commander);
   });
+  const activeCommander =
+    isKnownCommanderName(commanderProfile?.active_commander)
+      ? commanderProfile?.active_commander ?? null
+      : null;
   const latestDecklistByCommander = new Map<string, { date: string; url: string }>();
   const latestTournamentByCommander = new Map<
     string,
@@ -638,28 +624,6 @@ export async function PlayerProfileBody({
         date: row.start_date,
         name: tournamentName,
         url: buildTopdeckTournamentUrl(row.tournament_topdeck_tid),
-      });
-    }
-  }
-  if (activeCommander) {
-    if (
-      commanderProfile?.latest_decklist_url &&
-      commanderProfile.latest_tournament_date &&
-      !latestDecklistByCommander.has(activeCommander)
-    ) {
-      latestDecklistByCommander.set(activeCommander, {
-        date: commanderProfile.latest_tournament_date,
-        url: commanderProfile.latest_decklist_url,
-      });
-    }
-    if (
-      commanderProfile?.latest_tournament_date &&
-      !latestTournamentByCommander.has(activeCommander)
-    ) {
-      latestTournamentByCommander.set(activeCommander, {
-        date: commanderProfile.latest_tournament_date,
-        name: commanderProfile.latest_tournament_name || "Unknown tournament",
-        url: buildTopdeckTournamentUrl(commanderProfile.latest_tournament_topdeck_tid),
       });
     }
   }
@@ -732,6 +696,7 @@ export async function PlayerProfileBody({
               </p>
             </CardHeader>
             <CardContent>
+              <CommanderPredictions profile={commanderProfile} />
               <div className="overflow-auto">
                 <table className="w-full text-sm">
                   <thead className="text-left text-xs uppercase tracking-[0.2em] text-muted-foreground">
@@ -755,8 +720,8 @@ export async function PlayerProfileBody({
                           : latestTournamentByCommander.get(row.commander) ?? null;
                       const commanderLabel = row.commander === "Unknown Commander" ? "Unknown" : row.commander;
                       return (
-                        <tr key={row.commander} className="relative border-t border-border/60">
-                          <td className="px-2 py-3">
+                        <tr key={row.commander} className="border-t border-border/60">
+                          <td className="relative overflow-hidden px-2 py-3">
                             {row.commander !== "Unknown Commander" ? (
                               <CommanderRowBackdrop name={row.commander} />
                             ) : null}
@@ -1169,7 +1134,7 @@ export async function PlayerProfileBody({
                             <span className="text-foreground line-clamp-2 max-w-[140px] sm:max-w-none">{row.tournamentName}</span>
                           )}
                         </td>
-                        <td className="px-2 py-3 text-muted-foreground hidden sm:table-cell">
+                        <td className="px-2 py-3 text-muted-foreground">
                           {formatShortDate(row.startDate)}
                         </td>
                         <td className="px-2 py-3 text-muted-foreground">

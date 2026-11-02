@@ -4,6 +4,12 @@ import { unstable_cache } from "next/cache";
 import { supabase } from "@/lib/supabase";
 import { assignEventTier, type EventTier, type TournamentSummary } from "@/lib/tournaments";
 
+export type TournamentListSort = "Date" | "Players";
+export type TournamentListTier = "All Tiers" | EventTier;
+export type TournamentListPeriod = "3 Months" | "6 Months" | "1 Year" | "All";
+
+export const TOURNAMENT_PAGE_SIZE = 20;
+
 export type PublicSearchResult =
   | { kind: "commander"; id: string; name: string; color_identity: string[] | null }
   | { kind: "player"; topdeck_id: string; name: string }
@@ -132,17 +138,50 @@ export const getCachedPublicSearch = unstable_cache(
   { revalidate: 300 }
 );
 
-async function fetchTournamentSummaries(): Promise<TournamentSummary[]> {
-  const { data, error } = await supabase
+async function fetchTournamentPage(
+  page: number,
+  sort: TournamentListSort,
+  tier: TournamentListTier,
+  period: TournamentListPeriod,
+): Promise<{ tournaments: TournamentSummary[]; total: number }> {
+  const safePage = Math.max(1, Math.floor(page));
+  const query = supabase
     .from("tournaments")
-    .select("id, topdeck_tid, name, start_date, player_count, tier")
+    .select("id, topdeck_tid, name, start_date, player_count, tier", { count: "exact" })
     .not("topdeck_tid", "is", null)
     .gte("player_count", 16)
-    .lte("start_date", new Date().toISOString())
+    .lte("start_date", new Date().toISOString());
+
+  const periodDays: Record<TournamentListPeriod, number> = {
+    "3 Months": 92,
+    "6 Months": 183,
+    "1 Year": 365,
+    All: 1e9,
+  };
+  if (period !== "All") {
+    const since = new Date(Date.now() - periodDays[period] * 86_400_000).toISOString();
+    query.gte("start_date", since);
+  }
+
+  const tierRanges: Record<Exclude<TournamentListTier, "All Tiers">, { min: number; max?: number }> = {
+    Diamond: { min: 250 },
+    Platinum: { min: 100, max: 249 },
+    Gold: { min: 50, max: 99 },
+    Silver: { min: 30, max: 49 },
+    Bronze: { min: 16, max: 29 },
+  };
+  if (tier !== "All Tiers") {
+    const range = tierRanges[tier];
+    query.gte("player_count", range.min);
+    if (range.max) query.lte("player_count", range.max);
+  }
+
+  const { data, error, count } = await query
+    .order(sort === "Players" ? "player_count" : "start_date", { ascending: false })
     .order("start_date", { ascending: false })
-    .limit(100);
+    .range((safePage - 1) * TOURNAMENT_PAGE_SIZE, safePage * TOURNAMENT_PAGE_SIZE - 1);
   if (error) throw error;
-  if (!data?.length) return [];
+  if (!data?.length) return { tournaments: [], total: count ?? 0 };
 
   const rows = data as TournamentRow[];
   const { data: topRows } = await supabase
@@ -164,7 +203,7 @@ async function fetchTournamentSummaries(): Promise<TournamentSummary[]> {
     topCutByTournamentId.set(row.tournament_id, entries);
   }
 
-  return rows
+  const tournaments = rows
     .filter(
       (row): row is TournamentRow & {
         topdeck_tid: string;
@@ -187,12 +226,15 @@ async function fetchTournamentSummaries(): Promise<TournamentSummary[]> {
         hasDetail: true,
       };
     });
+
+  return { tournaments, total: count ?? tournaments.length };
 }
 
-export const getCachedTournamentSummaries = unstable_cache(
-  fetchTournamentSummaries,
-  ["public-tournament-summaries-v1"],
-  { revalidate: 3600 }
+export const getCachedTournamentPage = unstable_cache(
+  async (page: number, sort: TournamentListSort, tier: TournamentListTier, period: TournamentListPeriod) =>
+    fetchTournamentPage(page, sort, tier, period),
+  ["public-tournament-page-v2"],
+  { revalidate: 3600 },
 );
 
 export const getCachedTrapSpiceData = unstable_cache(

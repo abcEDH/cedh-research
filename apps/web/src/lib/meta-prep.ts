@@ -403,7 +403,15 @@ export function buildProfiles(
     }));
     const total = rows.reduce((sum, row) => sum + row.entries, 0);
     const totalPrediction = rows.reduce((sum, row) => sum + row.predictionScore, 0);
+    const latestCommander = rows.reduce<typeof rows[number] | null>((latest, row) =>
+      !latest || (row.latestDate ?? "") > (latest.latestDate ?? "") ? row : latest, null
+    )?.commander;
+    // Match the persisted Python model: 75% recency share + 25% latest deck.
+    const modelShare = (row: typeof rows[number]) =>
+      0.75 * (totalPrediction ? row.predictionScore / totalPrediction : total ? row.entries / total : 0)
+      + (row.commander === latestCommander ? 0.25 : 0);
     const sorted = rows.sort((a, b) => {
+      if (modelShare(b) !== modelShare(a)) return modelShare(b) - modelShare(a);
       if (b.predictionScore !== a.predictionScore) return b.predictionScore - a.predictionScore;
       if (b.entries !== a.entries) return b.entries - a.entries;
       if ((b.latestDate ?? "") !== (a.latestDate ?? "")) {
@@ -415,8 +423,8 @@ export function buildProfiles(
       commander: row.commander,
       entries: row.entries,
       share: total ? row.entries / total : 0,
-      weightedShare: totalPrediction ? row.predictionScore / totalPrediction : total ? row.entries / total : 0,
-      predictionShare: totalPrediction ? row.predictionScore / totalPrediction : total ? row.entries / total : 0,
+      weightedShare: modelShare(row),
+      predictionShare: modelShare(row),
       predictionScore: row.predictionScore,
       latestDate: row.latestDate,
       latestDecklistUrl: row.latestDecklistUrl,

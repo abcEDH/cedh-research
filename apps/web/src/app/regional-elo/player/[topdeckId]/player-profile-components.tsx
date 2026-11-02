@@ -113,7 +113,7 @@ async function fetchActiveRankRow(
 
 export const fetchCachedGlobalEloRank = unstable_cache(
   async (playerId: string) => fetchActiveRankRow("global", "ALL", playerId),
-  ["regional-player-global-rank-v4"],
+  ["regional-player-global-rank-v4-canonical-names"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -143,7 +143,7 @@ async function fetchRegionalRanks(playerId: string): Promise<LeaderboardRankRow[
 
 export const fetchCachedRegionalRanks = unstable_cache(
   async (playerId: string) => fetchRegionalRanks(playerId),
-  ["regional-player-regional-ranks-v3"],
+  ["regional-player-regional-ranks-v3-canonical-names"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -158,7 +158,7 @@ export const fetchCachedPlayerProfileSummary = unstable_cache(
     if (error) return null;
     return data as PlayerProfileSummaryRow | null;
   },
-  ["regional-player-profile-summary-v4"],
+  ["regional-player-profile-summary-v4-canonical-names"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -190,20 +190,22 @@ export const fetchCachedGlobalSnapshot = unstable_cache(
 
 export const fetchCachedRegionalRank = unstable_cache(
   async (playerId: string, regionKey: string) => fetchActiveRankRow("state", regionKey, playerId),
-  ["regional-player-local-rank-v4"],
+  ["regional-player-local-rank-v4-canonical-names"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
 export const fetchCachedCountryRank = unstable_cache(
   async (playerId: string, countryKey: string) => fetchCountryRank(playerId, countryKey),
-  ["regional-player-country-rank-v4"],
+  ["regional-player-country-rank-v4-canonical-names"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
 async function fetchPlayerCommanderProfile(topdeckId: string): Promise<PlayerCommanderProfileRow | null> {
   const { data: profileRow, error: profileError } = await supabase
     .from("player_commander_profiles")
-    .select("active_commander, latest_decklist_url, latest_tournament_name, latest_tournament_date, latest_tournament_topdeck_tid")
+    .select(
+      "active_commander, active_commander_prediction_score, latest_commander, latest_commander_date, commander_predictions"
+    )
     .eq("topdeck_id", topdeckId)
     .maybeSingle();
 
@@ -213,7 +215,7 @@ async function fetchPlayerCommanderProfile(topdeckId: string): Promise<PlayerCom
 
 export const fetchCachedPlayerCommanderProfile = unstable_cache(
   async (topdeckId: string) => fetchPlayerCommanderProfile(topdeckId),
-  ["regional-player-commander-profile-v1"],
+  ["regional-player-commander-profile-v2-canonical-names"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -266,7 +268,7 @@ export const fetchCachedPlayerAchievements = unstable_cache(
     const rows = await fetchPlayerTournamentEntries(playerId);
     return buildPlayerAchievements(rows, topdeckId);
   },
-  ["regional-player-achievements-v3"],
+  ["regional-player-achievements-v3-canonical-names"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -296,7 +298,7 @@ export const fetchCachedPlayerCommanderUsageRows = unstable_cache(
     const rows = await fetchPlayerTournamentEntries(playerId);
     return buildPlayerCommanderUsageRows(rows, topdeckId, playerName);
   },
-  ["regional-player-commander-usage-v3"],
+  ["regional-player-commander-usage-v3-canonical-names"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -414,7 +416,7 @@ async function fetchPlayerEventLogs(playerId: string, regionFilter: string): Pro
 
 export const fetchCachedPlayerEventLogs = unstable_cache(
   async (playerId: string, regionFilter: string) => fetchPlayerEventLogs(playerId, regionFilter),
-  ["regional-player-event-logs-v3"],
+  ["regional-player-event-logs-v3-canonical-names"],
   { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
 );
 
@@ -498,14 +500,14 @@ export async function PlayerProfileGrid({
       })[0]?.region_key ?? null;
 
   const homeRegion =
-    profileSummary?.home_region_key ??
     globalEloRank?.primary_region_key ??
+    profileSummary?.home_region_key ??
     regionalRanks[0]?.region_key ??
     derivedHomeRegion;
 
   const homeCountry =
-    profileSummary?.home_country_key ??
     globalEloRank?.primary_country_key ??
+    profileSummary?.home_country_key ??
     (homeRegion ? inferCountryForRegion(homeRegion) : null) ??
     (regionalRankRows[0]?.country_key ?? null);
 
@@ -547,7 +549,7 @@ export async function PlayerProfileGrid({
   const displayedUniqueOpponents = displaySummary?.opponentRecords.length;
 
   return (
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-9">
+    <div className="grid grid-cols-2 gap-3 md:gap-4 xl:grid-cols-9 [&_[data-slot=card]]:gap-3 [&_[data-slot=card]]:py-3 [&_[data-slot=card-header]]:gap-1 [&_[data-slot=card-header]]:px-3 [&_[data-slot=card-content]]:px-3 md:[&_[data-slot=card]]:gap-6 md:[&_[data-slot=card]]:py-6 md:[&_[data-slot=card-header]]:gap-2 md:[&_[data-slot=card-header]]:px-6 md:[&_[data-slot=card-content]]:px-6">
       <Card className="knd-panel">
         <CardHeader>
           <CardTitle className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
@@ -555,7 +557,7 @@ export async function PlayerProfileGrid({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-1">
-          <div className="text-2xl font-semibold text-foreground">
+          <div className="text-xl font-semibold text-foreground sm:text-2xl">
             {stateLeaderboardHref && isActiveRank(regionalRank) && regionalRank ? (
               <Link href={stateLeaderboardHref} className="hover:text-primary">
                 #{regionalRank.rank}
@@ -582,7 +584,7 @@ export async function PlayerProfileGrid({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-1">
-          <div className="text-2xl font-semibold text-foreground">
+          <div className="text-xl font-semibold text-foreground sm:text-2xl">
             {countryLeaderboardHref && isActiveRank(countryRank) && countryRank ? (
               <Link href={countryLeaderboardHref} className="hover:text-primary">
                 #{countryRank.rank}
@@ -609,7 +611,7 @@ export async function PlayerProfileGrid({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-1">
-          <div className="text-2xl font-semibold text-foreground">
+          <div className="text-xl font-semibold text-foreground sm:text-2xl">
             {isActiveRank(globalEloRank) && globalEloRank ? (
               <Link href="/regional-elo" className="hover:text-primary">
                 #{globalEloRank.rank}
@@ -635,7 +637,7 @@ export async function PlayerProfileGrid({
               rel="noreferrer"
               className="block hover:text-primary"
             >
-              <div className="text-2xl font-semibold text-foreground">
+              <div className="text-xl font-semibold text-foreground sm:text-2xl">
                 {globalSnapshot?.rank
                   ? `#${globalSnapshot.rank}`
                   : globalEloRank?.topdeck_elo_rank
@@ -652,7 +654,7 @@ export async function PlayerProfileGrid({
             </a>
           ) : (
             <div className="block">
-              <div className="text-2xl font-semibold text-foreground">
+              <div className="text-xl font-semibold text-foreground sm:text-2xl">
                 {globalSnapshot?.rank
                   ? `#${globalSnapshot.rank}`
                   : globalEloRank?.topdeck_elo_rank
@@ -676,7 +678,7 @@ export async function PlayerProfileGrid({
             TopDeck Elo
           </CardTitle>
         </CardHeader>
-        <CardContent className="text-2xl font-semibold text-foreground">
+        <CardContent className="text-xl font-semibold text-foreground sm:text-2xl">
           {displayedTopdeckElo === null ? "—" : Math.round(displayedTopdeckElo)}
         </CardContent>
       </Card>
@@ -686,7 +688,7 @@ export async function PlayerProfileGrid({
             Games Played
           </CardTitle>
         </CardHeader>
-        <CardContent className="text-2xl font-semibold text-foreground">
+        <CardContent className="text-xl font-semibold text-foreground sm:text-2xl">
           {displayedGames}
         </CardContent>
       </Card>
@@ -696,7 +698,7 @@ export async function PlayerProfileGrid({
             Record
           </CardTitle>
         </CardHeader>
-        <CardContent className="text-2xl font-semibold text-foreground">
+        <CardContent className="text-xl font-semibold text-foreground sm:text-2xl">
           {displayedWins}-{displayedLosses}-{displayedDraws}
         </CardContent>
       </Card>
@@ -759,7 +761,7 @@ async function UniqueOpponentsCard({ player }: { player: PlayerRow }) {
 
 export function PlayerProfileGridSkeleton() {
   return (
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-9">
+    <div className="grid grid-cols-2 gap-3 md:gap-4 xl:grid-cols-9">
       {Array.from({ length: 9 }).map((_, i) => (
         <Card key={i} className="knd-panel animate-pulse">
           <CardHeader>

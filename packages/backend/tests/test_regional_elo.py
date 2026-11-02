@@ -5,7 +5,6 @@ from pathlib import Path
 from unittest import TestCase, main
 from unittest.mock import Mock, patch
 
-
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import regional_elo  # noqa: E402
@@ -91,29 +90,25 @@ class RefreshMaterializedViewsTests(TestCase):
             result = regional_elo.refresh_materialized_views(client)
 
         # Called via direct POST (long read timeout), not client.rpc's 120s default.
-        self.assertEqual(post.call_count, 4)
+        self.assertEqual(post.call_count, 2)
         called_endpoints = [call.args[0] for call in post.call_args_list]
         for fn in regional_elo.MATERIALIZED_VIEW_REFRESH_FUNCTIONS:
             self.assertIn(f"{client.url}/rest/v1/rpc/{fn}", called_endpoints)
         # Long read timeout is applied so slow refreshes aren't cut off client-side.
-        self.assertEqual(
-            post.call_args.kwargs["timeout"], regional_elo.REFRESH_RPC_TIMEOUT_SECONDS
-        )
-        self.assertEqual(result, 4)
+        self.assertEqual(post.call_args.kwargs["timeout"], regional_elo.REFRESH_RPC_TIMEOUT_SECONDS)
+        self.assertEqual(result, 2)
 
     def test_refresh_materialized_views_continues_on_failure(self) -> None:
         client = self._client()
         responses = [
             Mock(status_code=500, text="boom"),
             Mock(status_code=200),
-            Mock(status_code=200),
-            Mock(status_code=200),
         ]
         with patch("regional_elo.requests.post", side_effect=responses) as post:
             result = regional_elo.refresh_materialized_views(client)
 
-        self.assertEqual(post.call_count, 4)
-        self.assertEqual(result, 3)
+        self.assertEqual(post.call_count, 2)
+        self.assertEqual(result, 1)
 
     def test_refresh_materialized_views_returns_success_count(self) -> None:
         client = self._client()
@@ -121,7 +116,7 @@ class RefreshMaterializedViewsTests(TestCase):
             post.return_value = Mock(status_code=200)
             result = regional_elo.refresh_materialized_views(client)
 
-        self.assertEqual(result, 4)
+        self.assertEqual(result, 2)
 
     def test_refresh_materialized_views_uses_direct_connection_when_available(self) -> None:
         client = self._client()
@@ -131,16 +126,20 @@ class RefreshMaterializedViewsTests(TestCase):
 
         # Direct path bypasses the REST gateway (no POST) and its 504s.
         post.assert_not_called()
-        self.assertEqual(direct.call_function.call_count, 4)
+        self.assertEqual(direct.call_function.call_count, 2)
         called = [c.args[0] for c in direct.call_function.call_args_list]
         self.assertEqual(called, regional_elo.MATERIALIZED_VIEW_REFRESH_FUNCTIONS)
-        self.assertEqual(result, 4)
+        self.assertEqual(result, 2)
 
 
 class RegionalEloCliValidationTests(TestCase):
     def test_job_id_requires_apply(self) -> None:
         with patch.object(sys, "argv", ["regional_elo.py", "--job-id", "job-123", "--dry-run"]):
-            with patch.dict(os.environ, {"SUPABASE_URL": "https://test.supabase.co", "SUPABASE_SERVICE_KEY": "test-key"}, clear=False):
+            with patch.dict(
+                os.environ,
+                {"SUPABASE_URL": "https://test.supabase.co", "SUPABASE_SERVICE_KEY": "test-key"},
+                clear=False,
+            ):
                 with self.assertRaises(SystemExit) as ctx:
                     regional_elo.main()
 
@@ -190,47 +189,59 @@ class FetchDistinctCommanderIdsTests(TestCase):
         self.assertEqual(result, {"abc123"})
 
 
-class GameEventsAlwaysWrittenTests(TestCase):
-    """Game events are always written to global_elo_game_events (no flag required)."""
+class CanonicalMaintenanceTests(TestCase):
+    def test_job_completion_maps_only_existing_job_columns(self):
+        counts = {
+            "global_elo_ratings": 10,
+            "global_elo_state_activity": 20,
+            "global_elo_game_events": 30,
+            "global_elo_active_leaderboard": 40,
+            "global_elo_player_profile_summaries": 50,
+        }
+        result = {"counts": counts, "model_version": "test", "source_cutoff": "2026-01-01"}
+        with patch.object(sys, "argv", ["regional_elo.py", "--apply", "--job-id", "job-1"]):
+            with patch.dict(
+                os.environ,
+                {
+                    "SUPABASE_URL": "https://test.supabase.co",
+                    "SUPABASE_SERVICE_KEY": "test-key",
+                    "SUPABASE_DB_URL": "",
+                },
+            ):
+                with patch.dict(sys.modules, {"internal_elo_maintenance": Mock(run=Mock(return_value=result))}):
+                    with patch("regional_elo.SupabaseClient"), patch("regional_elo.claim_job", return_value=True):
+                        with (
+                            patch("regional_elo.refresh_materialized_views"),
+                            patch("regional_elo.complete_job") as complete,
+                        ):
+                            regional_elo.main()
+        payload = complete.call_args.args[2]
+        self.assertEqual(payload["ratings_count"], 10)
+        self.assertEqual(payload["game_events_count"], 30)
+        self.assertEqual(
+            set(payload),
+            {
+                "ratings_count",
+                "state_activity_count",
+                "game_events_count",
+                "leaderboard_count",
+                "profile_count",
+                "duration_seconds",
+            },
+        )
 
-    _ENV = {"SUPABASE_URL": "https://test.supabase.co", "SUPABASE_SERVICE_KEY": "test-key"}
-
-    def _run_main(self) -> Mock:
-        """Run main() with --apply and return the SupabaseClient mock."""
-        argv = ["regional_elo.py", "--apply"]
-        # update_ratings_with_games now returns db_event_rows
-        fake_db_rows = [{"region_type": "global", "region_key": "ALL", "game_id": "g1", "player_id": "p1"}]
-        with patch.object(sys, "argv", argv):
-            with patch.dict(os.environ, self._ENV, clear=False):
-                with patch("regional_elo.SupabaseClient") as mock_cls:
-                    mock_client = Mock()
-                    mock_cls.return_value = mock_client
-                    mock_client.upsert.return_value = None
-                    mock_client.update.return_value = []
-                    with patch("regional_elo.fetch_elo_watermark", return_value=None):
-                        with patch("regional_elo.fetch_participants_for_leaderboard", return_value=[]):
-                            with patch("regional_elo.fetch_distinct_entry_ids", return_value=set()):
-                                with patch("regional_elo.process_results", return_value=[]):
-                                    with patch("regional_elo.update_ratings_with_games", return_value=fake_db_rows):
-                                        with patch("regional_elo.fetch_player_index", return_value={}):
-                                            with patch("regional_elo.fetch_topdeck_elo_by_topdeck_id", return_value={}):
-                                                with patch("regional_elo.fetch_primary_state_stats", return_value={}):
-                                                    with patch("regional_elo.fetch_canonical_event_counts", return_value={}):
-                                                      with patch("regional_elo.build_active_leaderboard_rows", return_value=[]):
-                                                        with patch("regional_elo.upsert_active_leaderboard_rows"):
-                                                            with patch("regional_elo.delete_stale_active_leaderboard_rows"):
-                                                                with patch("regional_elo.build_player_profiles", return_value=[]):
-                                                                    with patch("regional_elo.build_primary_commanders", return_value={}):
-                                                                        with patch("regional_elo.detect_active_players", return_value=[]):
-                                                                            with patch("regional_elo.refresh_materialized_views", return_value=0):
-                                                                                regional_elo.main()
-                    return mock_client
-
-    def test_game_events_always_upserted(self) -> None:
-        mock_client = self._run_main()
-
-        upsert_tables = [call.args[0] for call in mock_client.upsert.call_args_list]
-        self.assertIn("global_elo_game_events", upsert_tables)
+    def test_apply_uses_atomic_canonical_rebuild(self):
+        with patch.object(sys, "argv", ["regional_elo.py", "--apply"]):
+            with patch.dict(
+                os.environ,
+                {"SUPABASE_URL": "https://test.supabase.co", "SUPABASE_SERVICE_KEY": "test-key", "SUPABASE_DB_URL": ""},
+            ):
+                with patch("regional_elo.SupabaseClient"), patch("regional_elo.refresh_materialized_views"):
+                    rebuild = Mock(return_value={})
+                    with patch.dict(sys.modules, {"internal_elo_maintenance": Mock(run=rebuild)}):
+                        regional_elo.main()
+        self.assertTrue(rebuild.call_args.kwargs["apply"])
+        self.assertTrue(callable(rebuild.call_args.kwargs["heartbeat"]))
 
 
 class DetectActivePlayersTests(TestCase):
@@ -264,9 +275,9 @@ class DetectActivePlayersTests(TestCase):
 class ProcessResultsTests(TestCase):
     def test_groups_by_game_id(self) -> None:
         rows = [
-            {"game_id": "g1", "entry_id": "e1", "result": "win",  "seat_position": 1, "rating": 1500},
+            {"game_id": "g1", "entry_id": "e1", "result": "win", "seat_position": 1, "rating": 1500},
             {"game_id": "g1", "entry_id": "e2", "result": "loss", "seat_position": 2, "rating": 1500},
-            {"game_id": "g2", "entry_id": "e3", "result": "win",  "seat_position": 1, "rating": 1500},
+            {"game_id": "g2", "entry_id": "e3", "result": "win", "seat_position": 1, "rating": 1500},
             {"game_id": "g2", "entry_id": "e4", "result": "loss", "seat_position": 2, "rating": 1500},
         ]
         events = regional_elo.process_results(rows)
@@ -281,10 +292,24 @@ class ProcessResultsTests(TestCase):
 
     def test_events_carry_game_metadata(self) -> None:
         rows = [
-            {"game_id": "g1", "tournament_id": "t1", "start_date": "2026-01-01",
-             "entry_id": "e1", "result": "win",  "seat_position": 1, "rating": 1500},
-            {"game_id": "g1", "tournament_id": "t1", "start_date": "2026-01-01",
-             "entry_id": "e2", "result": "loss", "seat_position": 2, "rating": 1500},
+            {
+                "game_id": "g1",
+                "tournament_id": "t1",
+                "start_date": "2026-01-01",
+                "entry_id": "e1",
+                "result": "win",
+                "seat_position": 1,
+                "rating": 1500,
+            },
+            {
+                "game_id": "g1",
+                "tournament_id": "t1",
+                "start_date": "2026-01-01",
+                "entry_id": "e2",
+                "result": "loss",
+                "seat_position": 2,
+                "rating": 1500,
+            },
         ]
         events = regional_elo.process_results(rows)
         self.assertEqual(len(events), 1)
@@ -311,7 +336,7 @@ class ProcessResultsTests(TestCase):
 
     def test_fallback_no_game_id(self) -> None:
         rows = [
-            {"entry_id": "e1", "result": "win",  "seat_position": 1, "rating": 1500},
+            {"entry_id": "e1", "result": "win", "seat_position": 1, "rating": 1500},
             {"entry_id": "e2", "result": "loss", "seat_position": 2, "rating": 1500},
         ]
         events = regional_elo.process_results(rows)
@@ -326,12 +351,18 @@ class UpdateRatingsTests(TestCase):
         }
         events = [
             {
-                "player_id": "p1", "opp_player_id": "p2", "entry_id": "e1",
-                "outcome": "win", "game_id": "g1", "tournament_id": "t1",
-                "game_date": "2026-01-01", "is_draw": False, "opponent_count": 1,
+                "player_id": "p1",
+                "opp_player_id": "p2",
+                "entry_id": "e1",
+                "outcome": "win",
+                "game_id": "g1",
+                "tournament_id": "t1",
+                "game_date": "2026-01-01",
+                "is_draw": False,
+                "opponent_count": 1,
             }
         ]
-        db_rows = regional_elo.update_ratings_with_games(ratings, events)
+        regional_elo.update_ratings_with_games(ratings, events)
         self.assertEqual(ratings[("global", "ALL", "p1")]["wins"], 1)
         self.assertEqual(ratings[("global", "ALL", "p2")]["losses"], 1)
 
@@ -342,9 +373,15 @@ class UpdateRatingsTests(TestCase):
         }
         events = [
             {
-                "player_id": "p1", "opp_player_id": "p2", "entry_id": "e1",
-                "outcome": "win", "game_id": "g1", "tournament_id": "t1",
-                "game_date": "2026-01-01", "is_draw": False, "opponent_count": 1,
+                "player_id": "p1",
+                "opp_player_id": "p2",
+                "entry_id": "e1",
+                "outcome": "win",
+                "game_id": "g1",
+                "tournament_id": "t1",
+                "game_date": "2026-01-01",
+                "is_draw": False,
+                "opponent_count": 1,
             }
         ]
         db_rows = regional_elo.update_ratings_with_games(ratings, events)
@@ -394,8 +431,15 @@ class LoadRatingsFromSnapshotTests(TestCase):
     @patch("regional_elo._rpc_fetch_all")
     def test_builds_ratings_dict_from_rpc_rows(self, mock_rpc: Mock) -> None:
         mock_rpc.return_value = [
-            {"player_id": "abc-123", "rating": 1650.5, "games_played": 20,
-             "wins": 10, "draws": 2, "losses": 8, "last_game_date": "2026-01-01"},
+            {
+                "player_id": "abc-123",
+                "rating": 1650.5,
+                "games_played": 20,
+                "wins": 10,
+                "draws": 2,
+                "losses": 8,
+                "last_game_date": "2026-01-01",
+            },
         ]
         client = Mock()
 

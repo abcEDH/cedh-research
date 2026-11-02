@@ -41,9 +41,25 @@ const tableData: TableData = {
       topdeck_id: "player-1-topdeck",
       active_commander: "Kinnan, Bonder Prodigy",
       latest_decklist_url: "https://topdeck.gg/deck/event-1/player-1-topdeck",
-      latest_tournament_name: "LEVEL SEVEN'S WEEKLY CEDH EVENT",
-      latest_tournament_date: "2026-04-25",
-      latest_tournament_topdeck_tid: "event-1",
+      latest_tournament_name: "FUTURE SIGNUP WITHOUT GAMES",
+      latest_tournament_date: "2026-05-25",
+      latest_tournament_topdeck_tid: "future-event",
+    },
+  ],
+  global_elo_game_event_log: [
+    {
+      player_id: "player-1",
+      game_date: "2026-04-24T12:00:00Z",
+      tournament_name: "LEVEL SEVEN'S WEEKLY CEDH EVENT",
+      tournament_id: "tournament-1",
+    },
+  ],
+  tournaments: [
+    {
+      id: "tournament-1",
+      name: "LEVEL SEVEN'S WEEKLY CEDH EVENT",
+      start_date: "2026-04-24",
+      topdeck_tid: "event-1",
     },
   ],
   global_elo_game_results: [
@@ -152,6 +168,37 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/lib/supabase", () => ({
   supabase: {
     from: (table: string) => new MockQuery(table),
+    rpc: (name: string, args: { p_topdeck_ids: string[]; p_tier: "ranking" | "all" }) => {
+      if (name !== "get_elo_display_stats") {
+        return Promise.resolve({ data: null, error: { message: `Unexpected RPC: ${name}` } });
+      }
+
+      const statsByTopdeckId = new Map<
+        string,
+        { topdeck_id: string; games_played: number; wins: number; draws: number; losses: number }
+      >();
+      for (const row of tableData.global_elo_game_results) {
+        const topdeckId = row.topdeck_id as string;
+        const isEligible = args.p_tier === "ranking" ? row.ranking_eligible : row.all_eligible;
+        if (!isEligible || !args.p_topdeck_ids.includes(topdeckId)) continue;
+
+        const stats = statsByTopdeckId.get(topdeckId) ?? {
+          topdeck_id: topdeckId,
+          games_played: 0,
+          wins: 0,
+          draws: 0,
+          losses: 0,
+        };
+        if (row.result === "win") stats.wins += 1;
+        else if (row.result === "draw") stats.draws += 1;
+        else if (row.result === "loss") stats.losses += 1;
+        else continue;
+        stats.games_played += 1;
+        statsByTopdeckId.set(topdeckId, stats);
+      }
+
+      return Promise.resolve({ data: Array.from(statsByTopdeckId.values()), error: null });
+    },
   },
 }));
 
@@ -191,6 +238,7 @@ describe("RegionalEloPage", () => {
     expect(html).toContain("Jason Doan // CriticalEDH");
     expect(html).toContain("Kinnan, Bonder Prodigy");
     expect(html).toMatch(/LEVEL SEVEN(?:'|&#x27;)S WEEKLY CEDH EVENT/);
+    expect(html).not.toContain("FUTURE SIGNUP WITHOUT GAMES");
     expect(html).not.toContain("No commander data");
     expect(html).not.toContain("No tournament data");
     expect(html).toMatch(/Games<\/th>[\s\S]*?>3<\/td>/);
@@ -209,7 +257,7 @@ describe("RegionalEloPage", () => {
     expect(html).toContain('aria-checked="false"');
   });
 
-  it("renders 'No commander data' and 'No tournament data' when enriched profile rows are missing", async () => {
+  it("renders latest played tournament even when enriched profile rows are missing", async () => {
     // Clear the profile data for this test
     const originalProfiles = [...tableData.player_commander_profiles];
     tableData.player_commander_profiles = [];
@@ -224,7 +272,8 @@ describe("RegionalEloPage", () => {
 
       expect(html).toContain("Jason Doan // CriticalEDH");
       expect(html).toContain("No commander data");
-      expect(html).toContain("No tournament data");
+      expect(html).toMatch(/LEVEL SEVEN(?:'|&#x27;)S WEEKLY CEDH EVENT/);
+      expect(html).not.toContain("No tournament data");
     } finally {
       tableData.player_commander_profiles = originalProfiles;
     }

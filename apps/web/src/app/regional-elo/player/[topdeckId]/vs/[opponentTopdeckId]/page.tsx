@@ -1,28 +1,18 @@
 import Link from "next/link";
-import { unstable_cache } from "next/cache";
 import type { Metadata } from "next";
-import { withTiming } from "@/lib/performance";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  fetchRawPlayerLogs,
+  fetchCachedRawPlayerLogPage,
   fetchPlayer,
   type PlayerRow,
 } from "../../player-log-data";
 import { buildPlayerVersusHref } from "../../player-routes";
-import { filterPlayerLogs } from "../../player-stats";
-
-const PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS = 60 * 60 * 24; // 24 hours
+import { filterPlayerLogs, type PlayerGameLog } from "../../player-stats";
 
 export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
-
-const fetchCachedRawPlayerLogs = unstable_cache(
-  async (playerId: string) => withTiming("regional-player:raw-logs", () => fetchRawPlayerLogs(playerId)),
-  ["regional-player-raw-logs-v1"],
-  { revalidate: PLAYER_PROFILE_CACHE_REVALIDATE_SECONDS }
-);
 
 function formatShortDate(value: string | null | undefined) {
   if (!value) return "—";
@@ -127,7 +117,7 @@ function formatPlayerSeatCommanderLabel(
 function buildPodRows(
   player: PlayerRow,
   opponent: PlayerRow,
-  log: Awaited<ReturnType<typeof fetchRawPlayerLogs>>[number]
+  log: PlayerGameLog
 ) {
   return [
     {
@@ -226,7 +216,10 @@ export default async function RegionalPlayerVsPage({
   const resolvedSearchParams = await Promise.resolve(searchParams);
   const rawEloOnly = resolvedSearchParams?.eloOnly;
   const eloOnly = Array.isArray(rawEloOnly) ? rawEloOnly[0] === "true" : rawEloOnly === "true";
-  const playerLogs = filterPlayerLogs(await fetchCachedRawPlayerLogs(player.id), eloOnly);
+  const playerLogs = filterPlayerLogs(
+    (await fetchCachedRawPlayerLogPage(player.id)).logs,
+    eloOnly
+  );
   const sharedLogs = playerLogs.filter((log) =>
     log.opponents.some((podPlayer) => podPlayer.topdeckId === opponentTopdeckId)
   );

@@ -1,3 +1,118 @@
+## [1.34.2](https://github.com/abcEDH/cedh-research/compare/v1.34.1...v1.34.2) (2026-10-24)
+
+
+### Bug Fixes
+
+* **web:** preserve latest-deck weighting after tournament start ([#381](https://github.com/abcEDH/cedh-research/issues/381)) ([557b913](https://github.com/abcEDH/cedh-research/commit/557b9131f057996e55d652fdf0966f660bcc58e1))
+
+## [1.34.1](https://github.com/abcEDH/cedh-research/compare/v1.34.0...v1.34.1) (2026-10-17)
+
+
+### Bug Fixes
+
+* share internal Elo parameters across simulation and maintenance ([#372](https://github.com/abcEDH/cedh-research/issues/372)) ([250dc7c](https://github.com/abcEDH/cedh-research/commit/250dc7cde2860f3548403748b2aa076e116a893f))
+
+# [1.34.0](https://github.com/abcEDH/cedh-research/compare/v1.33.3...v1.34.0) (2026-09-20)
+
+
+### Bug Fixes
+
+* **web:** extract tournament URLs from mobile TopDeck shares ([7517fe0](https://github.com/abcEDH/cedh-research/commit/7517fe07ce57d484aaea1fef7a0825d20f6dc2bd))
+* **web:** refresh scouting only on load or manual request ([1c9d11a](https://github.com/abcEDH/cedh-research/commit/1c9d11a5abe568773ac11f3ccc9089be545c9026))
+* **web:** refresh scouting standings independently of forecasts ([c30a3e7](https://github.com/abcEDH/cedh-research/commit/c30a3e71aae9e16991917308ad43a36f45a37871))
+* **web:** remove scouting checked timestamp ([981cd4d](https://github.com/abcEDH/cedh-research/commit/981cd4d02b430a12f02c895e34e86b60ef783d96))
+* **web:** use browser reload for scouting updates ([9c392ee](https://github.com/abcEDH/cedh-research/commit/9c392ee350c1c4248791bc50f3a6422f5fcc7f2d))
+
+
+### Features
+
+* **web:** add scouting tournament bracket button ([0d2a5ae](https://github.com/abcEDH/cedh-research/commit/0d2a5ae7a6f48b902edb19d607e6300a669fd596))
+
+## [1.33.3](https://github.com/abcEDH/cedh-research/compare/v1.33.2...v1.33.3) (2026-09-20)
+
+
+### Bug Fixes
+
+* integrate hybrid draw model and defer web endpoint ([14a369a](https://github.com/abcEDH/cedh-research/commit/14a369a2162f522ac6e9648e6a492a6e996b87d8))
+* resolve MTM Series IV location to Saarland ([#367](https://github.com/abcEDH/cedh-research/issues/367)) ([b547eb8](https://github.com/abcEDH/cedh-research/commit/b547eb89cd86a3ea2ad3b0a265976d1e454053be))
+* retain positive loss counts in pairing diagnostic output ([199303b](https://github.com/abcEDH/cedh-research/commit/199303be8dc14cbf3732ad41d202ba3abe0fe5be))
+* validate commander models with chronological historical features ([8ced890](https://github.com/abcEDH/cedh-research/commit/8ced890ea57f116ce7b6d2107e96068eaca5edf3))
+* validate historical pairing cohorts and duplicate tables ([cee2853](https://github.com/abcEDH/cedh-research/commit/cee2853582493b211c236815e0b4b393b5c1fe60))
+* **web:** contain commander row artwork in Safari ([#368](https://github.com/abcEDH/cedh-research/issues/368)) ([30bfea5](https://github.com/abcEDH/cedh-research/commit/30bfea56c212afc9a1c33e6b02e85d1dd4e9b150))
+
+## [1.33.2](https://github.com/abcEDH/cedh-research/compare/v1.33.1...v1.33.2) (2026-09-19)
+
+
+### Bug Fixes
+
+* keep commander prediction shares inside mobile cards ([570aeb6](https://github.com/abcEDH/cedh-research/commit/570aeb644bb8072a694c069ec1a63c9aad8bd253))
+* show normalized commander forecasts on player profiles ([0c0a6b6](https://github.com/abcEDH/cedh-research/commit/0c0a6b6053a635d29b699e6cd5eeec4c8874ebd7))
+
+## [1.33.1](https://github.com/abcEDH/cedh-research/compare/v1.33.0...v1.33.1) (2026-09-19)
+
+
+### Bug Fixes
+
+* refresh player caches after canonical name cleanup ([#366](https://github.com/abcEDH/cedh-research/issues/366)) ([9eafe81](https://github.com/abcEDH/cedh-research/commit/9eafe810d39cc3dd9ca8b84f1ee1e60368713f06))
+
+# [1.33.0](https://github.com/abcEDH/cedh-research/compare/v1.32.3...v1.33.0) (2026-09-19)
+
+
+### Bug Fixes
+
+* map canonical Elo results to maintenance job metrics ([#364](https://github.com/abcEDH/cedh-research/issues/364)) ([f5b67df](https://github.com/abcEDH/cedh-research/commit/f5b67df40d0686f53b74c81a82258fade68b5e35))
+* preserve league backfills and normalize commander forecasts ([ca01556](https://github.com/abcEDH/cedh-research/commit/ca015567f595ac209b974f26315a5568364ac814))
+
+
+### Features
+
+* deploy validated internal Elo and atomic maintenance ([#363](https://github.com/abcEDH/cedh-research/issues/363)) ([98b1d02](https://github.com/abcEDH/cedh-research/commit/98b1d0217bc2d38d449905e0087e6c9c8447b6c6))
+
+## [1.32.3](https://github.com/abcEDH/cedh-research/compare/v1.32.2...v1.32.3) (2026-09-17)
+
+
+### Bug Fixes
+
+* centralize Elo display counter fallback ([#360](https://github.com/abcEDH/cedh-research/issues/360)) ([d6f018e](https://github.com/abcEDH/cedh-research/commit/d6f018ef89ae6a2d6a850a1a3aeadac39639a09a))
+
+## [1.32.2](https://github.com/abcEDH/cedh-research/compare/v1.32.1...v1.32.2) (2026-09-16)
+
+
+### Bug Fixes
+
+* address Elo aggregate review feedback ([4cbafe9](https://github.com/abcEDH/cedh-research/commit/4cbafe94ec245a7a02123240c89f44aa41c69d68))
+* invalidate stale Elo display stat cache ([e4f676c](https://github.com/abcEDH/cedh-research/commit/e4f676cdbffcd3d3a9a97171b69cedfac68801db))
+* prevent Elo display stats query timeout ([356fe21](https://github.com/abcEDH/cedh-research/commit/356fe219e7935643ac14701b2e9f3fb307ff2180))
+* retain leaderboard aggregates on RPC fallback ([c014bde](https://github.com/abcEDH/cedh-research/commit/c014bde6298ccbe3b827a16873903be4b17909d1))
+
+## [1.32.1](https://github.com/abcEDH/cedh-research/compare/v1.32.0...v1.32.1) (2026-09-09)
+
+
+### Bug Fixes
+
+* compact player profile stats on mobile ([#350](https://github.com/abcEDH/cedh-research/issues/350)) ([c97e4fe](https://github.com/abcEDH/cedh-research/commit/c97e4fef84129e03e22053f23340da480ec11f80))
+
+# [1.32.0](https://github.com/abcEDH/cedh-research/compare/v1.31.0...v1.32.0) (2026-09-09)
+
+
+### Features
+
+* paginate filtered tournaments ([#349](https://github.com/abcEDH/cedh-research/issues/349)) ([d566464](https://github.com/abcEDH/cedh-research/commit/d566464143d4dd7e0a7c01f776b2e42cf30f1919))
+
+# [1.31.0](https://github.com/abcEDH/cedh-research/compare/v1.30.2...v1.31.0) (2026-09-09)
+
+
+### Features
+
+* add PostHog usage analytics dashboard ([#347](https://github.com/abcEDH/cedh-research/issues/347)) ([a11a404](https://github.com/abcEDH/cedh-research/commit/a11a404889cbd87c4417929ad5fdb2d15cc59de7))
+
+## [1.30.2](https://github.com/abcEDH/cedh-research/compare/v1.30.1...v1.30.2) (2026-09-08)
+
+
+### Performance Improvements
+
+* reduce Supabase maintenance workload ([#345](https://github.com/abcEDH/cedh-research/issues/345)) ([e69470b](https://github.com/abcEDH/cedh-research/commit/e69470b684b7020b06e8883a2ca6e57239bd6c18))
+
 ## [1.30.1](https://github.com/abcEDH/cedh-research/compare/v1.30.0...v1.30.1) (2026-09-03)
 
 

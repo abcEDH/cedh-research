@@ -33,7 +33,9 @@ VIEW_SPECS: list[tuple[str, int]] = [
     ("commander_stats", 10),
     ("card_frequencies_global", 100),
     ("card_frequencies_by_commander", 100),
-    ("trap_cards_report", 1),
+    # A trap classification is data-dependent; an empty report is valid when
+    # no cards meet the underperformance threshold.
+    ("trap_cards_report", 0),
     ("spice_cards_report", 1),
     ("commander_meta_monthly", 5),
     ("commander_momentum", 1),

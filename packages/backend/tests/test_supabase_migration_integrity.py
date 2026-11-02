@@ -4,6 +4,7 @@ from pathlib import Path
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "supabase" / "migrations"
 ELO_TIERS_MIGRATION = MIGRATIONS_DIR / "20260726000000_elo_ranking_eligibility_tiers.sql"
 GAME_LEVEL_ELIGIBILITY_MIGRATION = MIGRATIONS_DIR / "20260727042641_ranking_game_level_eligibility.sql"
+ELO_DISPLAY_STATS_MIGRATION = MIGRATIONS_DIR / "20260916160213_get_elo_display_stats.sql"
 
 
 class SupabaseMigrationIntegrityTests(unittest.TestCase):
@@ -36,6 +37,13 @@ class SupabaseMigrationIntegrityTests(unittest.TestCase):
 
         self.assertIn("t.player_count >= 30", sql)
         self.assertIn("AS ranking_eligible", sql)
+        self.assertNotIn("decklist_text", sql)
+        self.assertNotIn("decklist_url", sql)
+
+    def test_elo_display_stats_matches_game_level_eligibility_and_bounds_ids(self) -> None:
+        sql = ELO_DISPLAY_STATS_MIGRATION.read_text()
+
+        self.assertIn("p.topdeck_id = ANY (p_topdeck_ids[1:50])", sql)
         self.assertNotIn("decklist_text", sql)
         self.assertNotIn("decklist_url", sql)
 

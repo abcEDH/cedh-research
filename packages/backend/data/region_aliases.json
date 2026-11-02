@@ -1,0 +1,569 @@
+[
+  {
+    "country": "UNITED STATES",
+    "name": "Alabama",
+    "aliases": [
+      "AL"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Alaska",
+    "aliases": [
+      "AK"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Arizona",
+    "aliases": [
+      "AZ"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Arkansas",
+    "aliases": [
+      "AR"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "California",
+    "aliases": [
+      "CA"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Colorado",
+    "aliases": [
+      "CO"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Connecticut",
+    "aliases": [
+      "CT"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Delaware",
+    "aliases": [
+      "DE"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "District of Columbia",
+    "aliases": [
+      "DC",
+      "D.C.",
+      "D.C",
+      "D.C., US"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Florida",
+    "aliases": [
+      "FL"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Georgia",
+    "aliases": [
+      "GA"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Hawaii",
+    "aliases": [
+      "HI"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Idaho",
+    "aliases": [
+      "ID"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Illinois",
+    "aliases": [
+      "IL"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Indiana",
+    "aliases": [
+      "IN"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Iowa",
+    "aliases": [
+      "IA"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Kansas",
+    "aliases": [
+      "KS"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Kentucky",
+    "aliases": [
+      "KY"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Louisiana",
+    "aliases": [
+      "LA"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Maine",
+    "aliases": [
+      "ME"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Maryland",
+    "aliases": [
+      "MD"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Massachusetts",
+    "aliases": [
+      "MA"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Michigan",
+    "aliases": [
+      "MI"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Minnesota",
+    "aliases": [
+      "MN"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Mississippi",
+    "aliases": [
+      "MS"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Missouri",
+    "aliases": [
+      "MO"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Montana",
+    "aliases": [
+      "MT"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Nebraska",
+    "aliases": [
+      "NE"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Nevada",
+    "aliases": [
+      "NV"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "New Hampshire",
+    "aliases": [
+      "NH"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "New Jersey",
+    "aliases": [
+      "NJ"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "New Mexico",
+    "aliases": [
+      "NM"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "New York",
+    "aliases": [
+      "NY"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "North Carolina",
+    "aliases": [
+      "NC"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "North Dakota",
+    "aliases": [
+      "ND"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Ohio",
+    "aliases": [
+      "OH"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Oklahoma",
+    "aliases": [
+      "OK"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Oregon",
+    "aliases": [
+      "OR"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Pennsylvania",
+    "aliases": [
+      "PA"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Rhode Island",
+    "aliases": [
+      "RI"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "South Carolina",
+    "aliases": [
+      "SC"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "South Dakota",
+    "aliases": [
+      "SD"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Tennessee",
+    "aliases": [
+      "TN"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Texas",
+    "aliases": [
+      "TX"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Utah",
+    "aliases": [
+      "UT"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Vermont",
+    "aliases": [
+      "VT"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Virginia",
+    "aliases": [
+      "VA"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Washington",
+    "aliases": [
+      "WA"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "West Virginia",
+    "aliases": [
+      "WV"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Wisconsin",
+    "aliases": [
+      "WI"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Wyoming",
+    "aliases": [
+      "WY"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Puerto Rico",
+    "aliases": [
+      "PR"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Guam",
+    "aliases": [
+      "GU"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "United States Virgin Islands",
+    "aliases": [
+      "VI"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "American Samoa",
+    "aliases": [
+      "AS"
+    ]
+  },
+  {
+    "country": "UNITED STATES",
+    "name": "Northern Mariana Islands",
+    "aliases": [
+      "MP"
+    ]
+  },
+  {
+    "country": "CANADA",
+    "name": "Alberta",
+    "aliases": [
+      "AB"
+    ]
+  },
+  {
+    "country": "CANADA",
+    "name": "British Columbia",
+    "aliases": [
+      "BC"
+    ]
+  },
+  {
+    "country": "CANADA",
+    "name": "Manitoba",
+    "aliases": [
+      "MB"
+    ]
+  },
+  {
+    "country": "CANADA",
+    "name": "New Brunswick",
+    "aliases": [
+      "NB",
+      "Nouveau Brunswick"
+    ]
+  },
+  {
+    "country": "CANADA",
+    "name": "Newfoundland and Labrador",
+    "aliases": [
+      "NL"
+    ]
+  },
+  {
+    "country": "CANADA",
+    "name": "Nova Scotia",
+    "aliases": [
+      "NS"
+    ]
+  },
+  {
+    "country": "CANADA",
+    "name": "Northwest Territories",
+    "aliases": [
+      "NT"
+    ]
+  },
+  {
+    "country": "CANADA",
+    "name": "Nunavut",
+    "aliases": [
+      "NU"
+    ]
+  },
+  {
+    "country": "CANADA",
+    "name": "Ontario",
+    "aliases": [
+      "ON"
+    ]
+  },
+  {
+    "country": "CANADA",
+    "name": "Prince Edward Island",
+    "aliases": [
+      "PE"
+    ]
+  },
+  {
+    "country": "CANADA",
+    "name": "Quebec",
+    "aliases": [
+      "QC",
+      "Québec"
+    ]
+  },
+  {
+    "country": "CANADA",
+    "name": "Saskatchewan",
+    "aliases": [
+      "SK"
+    ]
+  },
+  {
+    "country": "CANADA",
+    "name": "Yukon",
+    "aliases": [
+      "YT"
+    ]
+  },
+  {
+    "country": "AUSTRALIA",
+    "name": "Australian Capital Territory",
+    "aliases": [
+      "ACT"
+    ]
+  },
+  {
+    "country": "AUSTRALIA",
+    "name": "New South Wales",
+    "aliases": [
+      "NSW"
+    ]
+  },
+  {
+    "country": "AUSTRALIA",
+    "name": "Northern Territory",
+    "aliases": [
+      "NT"
+    ]
+  },
+  {
+    "country": "AUSTRALIA",
+    "name": "Queensland",
+    "aliases": [
+      "QLD"
+    ]
+  },
+  {
+    "country": "AUSTRALIA",
+    "name": "South Australia",
+    "aliases": [
+      "SA"
+    ]
+  },
+  {
+    "country": "AUSTRALIA",
+    "name": "Tasmania",
+    "aliases": [
+      "TAS"
+    ]
+  },
+  {
+    "country": "AUSTRALIA",
+    "name": "Victoria",
+    "aliases": [
+      "VIC"
+    ]
+  },
+  {
+    "country": "AUSTRALIA",
+    "name": "Western Australia",
+    "aliases": [
+      "WA",
+      "West Australia"
+    ]
+  },
+  {
+    "country": "UNITED KINGDOM",
+    "name": "England",
+    "aliases": []
+  },
+  {
+    "country": "UNITED KINGDOM",
+    "name": "Scotland",
+    "aliases": [
+      "SCT"
+    ]
+  },
+  {
+    "country": "UNITED KINGDOM",
+    "name": "Wales",
+    "aliases": []
+  },
+  {
+    "country": "UNITED KINGDOM",
+    "name": "Northern Ireland",
+    "aliases": []
+  }
+]

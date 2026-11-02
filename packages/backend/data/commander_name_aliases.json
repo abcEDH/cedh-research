@@ -1,0 +1,4280 @@
+[
+  {
+    "alias": "'Tis But a Scratch!",
+    "canonical_name": "Dismember",
+    "oracle_id": "fd74f8eb-0253-42dd-8277-186d4934da38",
+    "source": "https://scryfall.com/card/sld/1674/dismember?utm_source=api"
+  },
+  {
+    "alias": "A Most Helpful Weaver",
+    "canonical_name": "Origin of Spider-Man",
+    "oracle_id": "7fbe9056-190f-40a1-bee9-59ebd6f981f5",
+    "source": "https://scryfall.com/card/om1/14/origin-of-spider-man?utm_source=api"
+  },
+  {
+    "alias": "A Promise Fulfilled",
+    "canonical_name": "Light Up the Stage",
+    "oracle_id": "8d286376-f386-43ab-a9bd-8478fb9e2497",
+    "source": "https://scryfall.com/card/fca/39/light-up-the-stage?utm_source=api"
+  },
+  {
+    "alias": "A Trail of Teacups",
+    "canonical_name": "Kraven's Last Hunt",
+    "oracle_id": "e74efcf2-d77f-4fb5-9027-77e462ec829e",
+    "source": "https://scryfall.com/card/om1/121/kravens-last-hunt?utm_source=api"
+  },
+  {
+    "alias": "Aang's Shelter",
+    "canonical_name": "Teferi's Protection",
+    "oracle_id": "0d4ecdb1-ec90-497f-a7a4-1c68092b8757",
+    "source": "https://scryfall.com/card/tle/7/teferis-protection?utm_source=api"
+  },
+  {
+    "alias": "Aang, Ascendant Airbender",
+    "canonical_name": "Serra Ascendant",
+    "oracle_id": "27ad3e00-6ffb-48f7-8469-8868d066d1e2",
+    "source": "https://scryfall.com/card/sld/2291/serra-ascendant?utm_source=api"
+  },
+  {
+    "alias": "Aang, Awoken Avatar",
+    "canonical_name": "Marit Lage",
+    "oracle_id": "48e9147e-59f7-4693-83d7-7f514be871bc",
+    "source": "https://scryfall.com/card/ttle/1/marit-lage?utm_source=api"
+  },
+  {
+    "alias": "Abraham Van Helsing",
+    "canonical_name": "Savior of Ollenbock",
+    "oracle_id": "1857dc32-8ff1-4519-b1ca-480a5c2d3b3c",
+    "source": "https://scryfall.com/card/vow/330/savior-of-ollenbock?utm_source=api"
+  },
+  {
+    "alias": "Absolutely Accurate Actor",
+    "canonical_name": "Phantasmal Image",
+    "oracle_id": "bde94af8-faea-41ff-8eed-ba642eac9968",
+    "source": "https://scryfall.com/card/sld/2306/phantasmal-image?utm_source=api"
+  },
+  {
+    "alias": "Absorb into Time",
+    "canonical_name": "Temporal Extortion",
+    "oracle_id": "13da5255-2fc5-43a4-a44c-13a5d9ff77c3",
+    "source": "https://scryfall.com/card/sld/1859/temporal-extortion?utm_source=api"
+  },
+  {
+    "alias": "Abundant Groot",
+    "canonical_name": "Abundant Growth",
+    "oracle_id": "947a2665-2f4d-4193-8768-118f85334549",
+    "source": "https://scryfall.com/card/sld/870/abundant-growth?utm_source=api"
+  },
+  {
+    "alias": "Adamantium Bonding Tank",
+    "canonical_name": "The Ozolith",
+    "oracle_id": "1946ded1-5f53-409f-b0a6-5433bb0357d2",
+    "source": "https://scryfall.com/card/sld/1741/the-ozolith?utm_source=api"
+  },
+  {
+    "alias": "Ademi of the Silkchutes",
+    "canonical_name": "Spectacular Spider-Man",
+    "oracle_id": "eed5e0cc-8f88-4779-bf10-6a823c72df7f",
+    "source": "https://scryfall.com/card/om1/1/spectacular-spider-man?utm_source=api"
+  },
+  {
+    "alias": "Aerith's Curaga Magic",
+    "canonical_name": "Heroic Intervention",
+    "oracle_id": "24882fa2-3fe9-4c1b-aa3d-0e6488b9db27",
+    "source": "https://scryfall.com/card/sld/1872/heroic-intervention?utm_source=api"
+  },
+  {
+    "alias": "Afternoon Tea 3:00 PM",
+    "canonical_name": "Food",
+    "oracle_id": "a468338f-635e-4206-89d6-72d723071d45",
+    "source": "https://scryfall.com/card/sld/2549/food?utm_source=api"
+  },
+  {
+    "alias": "Aggressive Symbiosis",
+    "canonical_name": "Alien Symbiosis",
+    "oracle_id": "19504e19-2886-4d28-a813-b798a9a446a2",
+    "source": "https://scryfall.com/card/om1/49/alien-symbiosis?utm_source=api"
+  },
+  {
+    "alias": "Aggro Amalgam",
+    "canonical_name": "Voracious Hydra",
+    "oracle_id": "ff8f5a4b-112a-425e-b489-7ee26d1d9fb3",
+    "source": "https://scryfall.com/card/tmc/54/voracious-hydra?utm_source=api"
+  },
+  {
+    "alias": "Air Shoes",
+    "canonical_name": "Swiftfoot Boots",
+    "oracle_id": "c8b143ad-43ec-4e0d-a440-e348daa31391",
+    "source": "https://scryfall.com/card/sld/2096/swiftfoot-boots?utm_source=api"
+  },
+  {
+    "alias": "Alenni, Brood Recruiter",
+    "canonical_name": "Silk, Web Weaver",
+    "oracle_id": "50477dc8-9a2a-41eb-984d-c9e1e78e08a2",
+    "source": "https://scryfall.com/card/om1/123/silk-web-weaver?utm_source=api"
+  },
+  {
+    "alias": "Alessos and Pras, Acrobats",
+    "canonical_name": "Spider-Man India",
+    "oracle_id": "8933297c-62f1-4df9-91b8-2d3481db77e5",
+    "source": "https://scryfall.com/card/om1/124/spider-man-india?utm_source=api"
+  },
+  {
+    "alias": "All-Seeing Toby",
+    "canonical_name": "Sovereign Okinec Ahau",
+    "oracle_id": "087b2490-e415-44e2-a674-3b5619a0fad5",
+    "source": "https://scryfall.com/card/sld/2695/sovereign-okinec-ahau?utm_source=api"
+  },
+  {
+    "alias": "Altaïr, Brotherhood Mentor",
+    "canonical_name": "Kelsien, the Plague",
+    "oracle_id": "5b3326a5-18c5-4d45-90e1-f6d00ca2bced",
+    "source": "https://scryfall.com/card/sld/1558/kelsien-the-plague?utm_source=api"
+  },
+  {
+    "alias": "Amunet, Tyrants' End",
+    "canonical_name": "Queen Marchesa",
+    "oracle_id": "d7ac4be1-dcca-49b6-8ddb-d1b0e6cf2dcf",
+    "source": "https://scryfall.com/card/sld/1559/queen-marchesa?utm_source=api"
+  },
+  {
+    "alias": "Ancestral Carvings",
+    "canonical_name": "Pictures of Spider-Man",
+    "oracle_id": "4fd74a8c-a4e7-4988-ae02-9a73ab6ec89e",
+    "source": "https://scryfall.com/card/om1/99/pictures-of-spider-man?utm_source=api"
+  },
+  {
+    "alias": "Angler's Shield",
+    "canonical_name": "Biorganic Carapace",
+    "oracle_id": "7d27c583-469c-42d7-a547-8c65654e9d95",
+    "source": "https://scryfall.com/card/om1/125/biorganic-carapace?utm_source=api"
+  },
+  {
+    "alias": "Anguirus, Armored Killer",
+    "canonical_name": "Gemrazer",
+    "oracle_id": "3dfb0c0a-b68f-43b9-8475-28d0192fc4ed",
+    "source": "https://scryfall.com/card/iko/376/gemrazer?utm_source=api"
+  },
+  {
+    "alias": "Anima",
+    "canonical_name": "Grief",
+    "oracle_id": "0d6b89dc-23fb-48e9-a54b-cea2838ae7c8",
+    "source": "https://scryfall.com/card/sld/7006/grief?utm_source=api"
+  },
+  {
+    "alias": "Answer the Call",
+    "canonical_name": "Eladamri's Call",
+    "oracle_id": "4acb6612-54e8-428d-acb6-c7259a5ad6a8",
+    "source": "https://scryfall.com/card/sld/1770/eladamris-call?utm_source=api"
+  },
+  {
+    "alias": "Arachnomania",
+    "canonical_name": "Spider-Verse",
+    "oracle_id": "7ef7d902-1f05-40b3-8997-dec197b0b678",
+    "source": "https://scryfall.com/card/om1/75/spider-verse?utm_source=api"
+  },
+  {
+    "alias": "Arala, Hedron Scaler",
+    "canonical_name": "Beetle, Legacy Criminal",
+    "oracle_id": "87972de1-c1d7-408e-8d56-995590f639b8",
+    "source": "https://scryfall.com/card/om1/25/beetle-legacy-criminal?utm_source=api"
+  },
+  {
+    "alias": "Archaeon the Everchosen",
+    "canonical_name": "Najeela, the Blade-Blossom",
+    "oracle_id": "09619943-6aec-4080-ace5-a0c6ebb23f1c",
+    "source": "https://scryfall.com/card/sld/1032/najeela-the-blade-blossom?utm_source=api"
+  },
+  {
+    "alias": "Archangel of Tunes",
+    "canonical_name": "Archangel of Thune",
+    "oracle_id": "4f2d4538-dc1d-4c09-964b-b0d7c240fb7d",
+    "source": "https://scryfall.com/card/sld/2430/archangel-of-thune?utm_source=api"
+  },
+  {
+    "alias": "Archangler's Skyrod",
+    "canonical_name": "Web-Shooters",
+    "oracle_id": "ec528198-a38a-4ef7-9804-78a25c94ecc1",
+    "source": "https://scryfall.com/card/om1/2/web-shooters?utm_source=api"
+  },
+  {
+    "alias": "Ardyn Izunia",
+    "canonical_name": "Varragoth, Bloodsky Sire",
+    "oracle_id": "68b41a04-8cb0-4edf-b488-a219494453ae",
+    "source": "https://scryfall.com/card/fca/37/varragoth-bloodsky-sire?utm_source=api"
+  },
+  {
+    "alias": "Argonath, Pillars of the Kings",
+    "canonical_name": "The Ozolith",
+    "oracle_id": "1946ded1-5f53-409f-b0a6-5433bb0357d2",
+    "source": "https://scryfall.com/card/ltc/381z/the-ozolith?utm_source=api"
+  },
+  {
+    "alias": "Argyr, Tidal Spinner",
+    "canonical_name": "Spider-Byte, Web Warden",
+    "oracle_id": "845472ca-3fcb-4bcd-953c-96eb8d914af9",
+    "source": "https://scryfall.com/card/om1/26/spider-byte-web-warden?utm_source=api"
+  },
+  {
+    "alias": "Armiger Unleashed",
+    "canonical_name": "Forge Anew",
+    "oracle_id": "4df579df-fdbb-418a-af2d-709e140ee569",
+    "source": "https://scryfall.com/card/sld/7002/forge-anew?utm_source=api"
+  },
+  {
+    "alias": "Ash, Destined Survivor",
+    "canonical_name": "Puresteel Paladin",
+    "oracle_id": "74a62c7b-4753-4af2-b7a1-9a4ae8988801",
+    "source": "https://scryfall.com/card/sld/1352/puresteel-paladin?utm_source=api"
+  },
+  {
+    "alias": "Assaultron Invader",
+    "canonical_name": "Walking Ballista",
+    "oracle_id": "4b515bb0-f275-4400-8032-3173b799ab40",
+    "source": "https://scryfall.com/card/pip/880/walking-ballista?utm_source=api"
+  },
+  {
+    "alias": "Astral Titan",
+    "canonical_name": "Primeval Titan",
+    "oracle_id": "ae83ef2c-960f-4c5b-97cc-52465c687c18",
+    "source": "https://scryfall.com/card/fca/48/primeval-titan?utm_source=api"
+  },
+  {
+    "alias": "Atsu, Ghost of Yōtei",
+    "canonical_name": "Tetsuko Umezawa, Fugitive",
+    "oracle_id": "ceeeacbc-01b0-4421-aaca-2ce6cdbe45d7",
+    "source": "https://scryfall.com/card/sld/7055/tetsuko-umezawa-fugitive?utm_source=api"
+  },
+  {
+    "alias": "Avatar Sanctuary",
+    "canonical_name": "Cryptolith Rite",
+    "oracle_id": "043f869d-b11c-4c0d-9591-2bf0df7bde55",
+    "source": "https://scryfall.com/card/sld/2293/cryptolith-rite?utm_source=api"
+  },
+  {
+    "alias": "Avengers Monitoring Station",
+    "canonical_name": "Herald's Horn",
+    "oracle_id": "c02c5547-b9c9-4b2d-9d12-e87bfba8f2d2",
+    "source": "https://scryfall.com/card/msc/287/heralds-horn?utm_source=api"
+  },
+  {
+    "alias": "Awesome Android",
+    "canonical_name": "Containment Construct",
+    "oracle_id": "54d48e54-be4a-4a78-a778-b28e74ef7134",
+    "source": "https://scryfall.com/card/msc/284/containment-construct?utm_source=api"
+  },
+  {
+    "alias": "Azula, Flame of Ember Island",
+    "canonical_name": "Diaochan, Artful Beauty",
+    "oracle_id": "bf20bc37-3205-45af-a3be-05d6835c0d87",
+    "source": "https://scryfall.com/card/tle/27/diaochan-artful-beauty?utm_source=api"
+  },
+  {
+    "alias": "Babygodzilla, Ruin Reborn",
+    "canonical_name": "Pollywog Symbiote",
+    "oracle_id": "0a766368-c982-4cba-9638-c7a56978c240",
+    "source": "https://scryfall.com/card/iko/372/pollywog-symbiote?utm_source=api"
+  },
+  {
+    "alias": "Backstage Monitor",
+    "canonical_name": "Tigereye Cameo",
+    "oracle_id": "d2be289e-e560-405d-9728-d8a4ee9cbf56",
+    "source": "https://scryfall.com/card/sld/7093/tigereye-cameo?utm_source=api"
+  },
+  {
+    "alias": "Bag End",
+    "canonical_name": "Horizon Canopy",
+    "oracle_id": "262a5d83-506c-4781-9bc9-1a2b5d83955c",
+    "source": "https://scryfall.com/card/ltc/396z/horizon-canopy?utm_source=api"
+  },
+  {
+    "alias": "Balamb Garden",
+    "canonical_name": "Command Beacon",
+    "oracle_id": "7e8c2a18-e404-40ff-a9e0-ec3eeb6d576e",
+    "source": "https://scryfall.com/card/fca/64/command-beacon?utm_source=api"
+  },
+  {
+    "alias": "Balin's Tomb",
+    "canonical_name": "Ancient Tomb",
+    "oracle_id": "23467047-6dba-4498-b783-1ebc4f74b8c2",
+    "source": "https://scryfall.com/card/ltc/387z/ancient-tomb?utm_source=api"
+  },
+  {
+    "alias": "Bane-Marked Leonin",
+    "canonical_name": "Venomized Cat",
+    "oracle_id": "eb54d807-624b-471e-8c44-07322003903e",
+    "source": "https://scryfall.com/card/om1/50/venomized-cat?utm_source=api"
+  },
+  {
+    "alias": "Barnabas Tharmr",
+    "canonical_name": "Kraum, Ludevic's Opus",
+    "oracle_id": "5f694f2d-9349-4988-b2b4-788136d4293e",
+    "source": "https://scryfall.com/card/fca/56/kraum-ludevics-opus?utm_source=api"
+  },
+  {
+    "alias": "Baron Rivalry",
+    "canonical_name": "Deadly Dispute",
+    "oracle_id": "457af74a-02b3-4659-846d-63e482667f34",
+    "source": "https://scryfall.com/card/fca/33/deadly-dispute?utm_source=api"
+  },
+  {
+    "alias": "Barrow-Downs",
+    "canonical_name": "Bojuka Bog",
+    "oracle_id": "04b7362d-0490-4cb0-b5d7-2a7732f659ce",
+    "source": "https://scryfall.com/card/ltc/388z/bojuka-bog?utm_source=api"
+  },
+  {
+    "alias": "Bartz Klauser",
+    "canonical_name": "Winota, Joiner of Forces",
+    "oracle_id": "02598a35-1b11-4abe-89cd-fc44c8c36c15",
+    "source": "https://scryfall.com/card/fca/19/winota-joiner-of-forces?utm_source=api"
+  },
+  {
+    "alias": "Basil, Cabaretti Loudmouth",
+    "canonical_name": "Flash Thompson, Spider-Fan",
+    "oracle_id": "f536a518-160e-4267-89da-3d34accc6d2c",
+    "source": "https://scryfall.com/card/om1/3/flash-thompson-spider-fan?utm_source=api"
+  },
+  {
+    "alias": "Basim, Master Assassin",
+    "canonical_name": "Ramses, Assassin Lord",
+    "oracle_id": "170182ed-af1d-442a-8868-d74a96e17f03",
+    "source": "https://scryfall.com/card/sld/1560/ramses-assassin-lord?utm_source=api"
+  },
+  {
+    "alias": "Bast's Blessing",
+    "canonical_name": "Primal Vigor",
+    "oracle_id": "c665544f-557b-4631-a1dc-39571470ca2e",
+    "source": "https://scryfall.com/card/sld/1749/primal-vigor?utm_source=api"
+  },
+  {
+    "alias": "Battle Bus",
+    "canonical_name": "Smuggler's Copter",
+    "oracle_id": "49136bdc-bc50-49a2-999a-1ef9c16ea130",
+    "source": "https://scryfall.com/card/sld/446/smugglers-copter?utm_source=api"
+  },
+  {
+    "alias": "Battle Cat, Fighting Tiger",
+    "canonical_name": "Fortune, Loyal Steed",
+    "oracle_id": "dc440b62-0bf0-4f23-9210-3550ff0a8d4d",
+    "source": "https://scryfall.com/card/sld/2790/fortune-loyal-steed?utm_source=api"
+  },
+  {
+    "alias": "Battle Royale",
+    "canonical_name": "Triumph of the Hordes",
+    "oracle_id": "3ded0c0c-40ce-4d14-a9a6-b023bc19ee0e",
+    "source": "https://scryfall.com/card/sld/445/triumph-of-the-hordes?utm_source=api"
+  },
+  {
+    "alias": "Battle at the Big Bridge",
+    "canonical_name": "Fatal Push",
+    "oracle_id": "16437a83-be52-44cd-a768-a767c9347eb2",
+    "source": "https://scryfall.com/card/fca/9/fatal-push?utm_source=api"
+  },
+  {
+    "alias": "Battle of Olympus",
+    "canonical_name": "World at War",
+    "oracle_id": "02a8a5cc-62ce-4ae5-aa7d-760124af7d7b",
+    "source": "https://scryfall.com/card/sld/2208/world-at-war?utm_source=api"
+  },
+  {
+    "alias": "Battra, Dark Destroyer",
+    "canonical_name": "Dirge Bat",
+    "oracle_id": "4746828f-46ea-439f-88de-5e54cc536545",
+    "source": "https://scryfall.com/card/prm/80935/dirge-bat?utm_source=api"
+  },
+  {
+    "alias": "Bayo, Irritable Instructor",
+    "canonical_name": "Electro, Assaulting Battery",
+    "oracle_id": "3db16fb8-5650-4568-b975-42ad3d44ebcd",
+    "source": "https://scryfall.com/card/om1/76/electro-assaulting-battery?utm_source=api"
+  },
+  {
+    "alias": "Beast Man, Savage Henchman",
+    "canonical_name": "Kona, Rescue Beastie",
+    "oracle_id": "76372327-41ec-4516-abff-3b612e073629",
+    "source": "https://scryfall.com/card/sld/2785/kona-rescue-beastie?utm_source=api"
+  },
+  {
+    "alias": "Beholder's Charm Ray",
+    "canonical_name": "Bribery",
+    "oracle_id": "6d194882-ca37-49bb-ac9f-a751c53850a8",
+    "source": "https://scryfall.com/card/sld/1786/bribery?utm_source=api"
+  },
+  {
+    "alias": "Beholder's Death Ray",
+    "canonical_name": "Snuff Out",
+    "oracle_id": "324824cb-f938-401c-b9b5-d8908b431ef0",
+    "source": "https://scryfall.com/card/sld/1792/snuff-out?utm_source=api"
+  },
+  {
+    "alias": "Beholder's Disintegration Ray",
+    "canonical_name": "Fire Covenant",
+    "oracle_id": "025939a0-424a-41bf-8fc9-2ef9ea5485f7",
+    "source": "https://scryfall.com/card/sld/1796/fire-covenant?utm_source=api"
+  },
+  {
+    "alias": "Beholder's Enervation Ray",
+    "canonical_name": "Defile",
+    "oracle_id": "49dddec0-d958-4810-8c6e-225fc8118c8f",
+    "source": "https://scryfall.com/card/sld/1793/defile?utm_source=api"
+  },
+  {
+    "alias": "Beholder's Fear Ray",
+    "canonical_name": "Drown in the Loch",
+    "oracle_id": "0f264e5b-264e-4e97-9a8d-8ae1d6a286ce",
+    "source": "https://scryfall.com/card/sld/1790/drown-in-the-loch?utm_source=api"
+  },
+  {
+    "alias": "Beholder's Paralyzing Ray",
+    "canonical_name": "Oubliette",
+    "oracle_id": "c753e9e3-9374-4e3c-8622-94576a8c1da3",
+    "source": "https://scryfall.com/card/sld/1794/oubliette?utm_source=api"
+  },
+  {
+    "alias": "Beholder's Petrification Ray",
+    "canonical_name": "Blood Money",
+    "oracle_id": "75f5d372-4ff9-430c-8302-72472439e0d2",
+    "source": "https://scryfall.com/card/sld/1789/blood-money?utm_source=api"
+  },
+  {
+    "alias": "Beholder's Sleep Ray",
+    "canonical_name": "Stifle",
+    "oracle_id": "b3b00911-ece7-4484-bc36-f211ce72b6cc",
+    "source": "https://scryfall.com/card/sld/1787/stifle?utm_source=api"
+  },
+  {
+    "alias": "Beholder's Slowing Ray",
+    "canonical_name": "Delay",
+    "oracle_id": "983caa3f-7089-4e66-825d-4086a5adb9bb",
+    "source": "https://scryfall.com/card/sld/1788/delay?utm_source=api"
+  },
+  {
+    "alias": "Beholder's Telekinetic Ray",
+    "canonical_name": "Fling",
+    "oracle_id": "24227761-b50e-4b9e-93a2-e82d053b3e3d",
+    "source": "https://scryfall.com/card/sld/1795/fling?utm_source=api"
+  },
+  {
+    "alias": "Belion, the Parched",
+    "canonical_name": "Hydro-Man, Fluid Felon",
+    "oracle_id": "a93a8edf-2879-4cae-b3b9-b46298270823",
+    "source": "https://scryfall.com/card/om1/27/hydro-man-fluid-felon?utm_source=api"
+  },
+  {
+    "alias": "Benedikta Harman",
+    "canonical_name": "Ishai, Ojutai Dragonspeaker",
+    "oracle_id": "4aae7102-301a-429d-b169-4f462384d55d",
+    "source": "https://scryfall.com/card/fca/53/ishai-ojutai-dragonspeaker?utm_source=api"
+  },
+  {
+    "alias": "Benny, Platinum Thief",
+    "canonical_name": "Tinybones, Trinket Thief",
+    "oracle_id": "008eda1f-b913-4f04-8c29-5e87c270149e",
+    "source": "https://scryfall.com/card/sld/2458/tinybones-trinket-thief?utm_source=api"
+  },
+  {
+    "alias": "Bherna Huntmaster",
+    "canonical_name": "Imperial Recruiter",
+    "oracle_id": "4d6a1391-817a-4ddc-840d-886b138eeb3f",
+    "source": "https://scryfall.com/card/sld/2244/imperial-recruiter?utm_source=api"
+  },
+  {
+    "alias": "Bhujerba, Floating City",
+    "canonical_name": "City of Brass",
+    "oracle_id": "f25351e3-539b-4bbc-b92d-6480acf4d722",
+    "source": "https://scryfall.com/card/sch/41/city-of-brass?utm_source=api"
+  },
+  {
+    "alias": "Big Slime",
+    "canonical_name": "Mitotic Slime",
+    "oracle_id": "1162c7ff-c0cb-469a-ad3c-322b0981ae1d",
+    "source": "https://scryfall.com/card/sld/2815/mitotic-slime?utm_source=api"
+  },
+  {
+    "alias": "Bio-Quartz Spacegodzilla",
+    "canonical_name": "Brokkos, Apex of Forever",
+    "oracle_id": "e9137b54-3464-4f57-95e3-f94bf2ac854e",
+    "source": "https://scryfall.com/card/iko/378/brokkos-apex-of-forever?utm_source=api"
+  },
+  {
+    "alias": "Biollante, Plant Beast Form",
+    "canonical_name": "Nethroi, Apex of Death",
+    "oracle_id": "66bef5a7-79b7-4a9c-98dc-8670f867f04c",
+    "source": "https://scryfall.com/card/iko/380/nethroi-apex-of-death?utm_source=api"
+  },
+  {
+    "alias": "Black Panther's Claws",
+    "canonical_name": "Hammer of Nazahn",
+    "oracle_id": "e3955573-3db5-490e-903e-65e0172a9202",
+    "source": "https://scryfall.com/card/msc/427/hammer-of-nazahn?utm_source=api"
+  },
+  {
+    "alias": "Black Panther's Redirection",
+    "canonical_name": "Narset's Reversal",
+    "oracle_id": "d55f6c70-321f-4fb4-bd33-0850ae1a7c36",
+    "source": "https://scryfall.com/card/mar/58/narsets-reversal?utm_source=api"
+  },
+  {
+    "alias": "Blanka, Ferocious Friend",
+    "canonical_name": "The Howling Abomination",
+    "oracle_id": "4a67946e-8903-4994-9641-d31fbb62082c",
+    "source": "https://scryfall.com/card/sld/431/the-howling-abomination?utm_source=api"
+  },
+  {
+    "alias": "Blessing of the Oracle",
+    "canonical_name": "Akroma's Will",
+    "oracle_id": "fd949f82-fc10-4e37-8aa9-6c7569fe3c55",
+    "source": "https://scryfall.com/card/fca/21/akromas-will?utm_source=api"
+  },
+  {
+    "alias": "Bloodbender's Rise",
+    "canonical_name": "Bloodchief Ascension",
+    "oracle_id": "d5ea905b-4bb6-48d0-9082-c472703db550",
+    "source": "https://scryfall.com/card/tle/23/bloodchief-ascension?utm_source=api"
+  },
+  {
+    "alias": "Bone Throne",
+    "canonical_name": "Throne of the God-Pharaoh",
+    "oracle_id": "ea750169-1f6f-40c2-96e9-55719e103a63",
+    "source": "https://scryfall.com/card/sld/2792/throne-of-the-god-pharaoh?utm_source=api"
+  },
+  {
+    "alias": "Boogie Bomb",
+    "canonical_name": "Pyrite Spellbomb",
+    "oracle_id": "2c10cae2-951a-4f4f-94e4-8713b58d07dd",
+    "source": "https://scryfall.com/card/sld/676/pyrite-spellbomb?utm_source=api"
+  },
+  {
+    "alias": "Borys, the Spider Rider",
+    "canonical_name": "Scarlet Spider, Ben Reilly",
+    "oracle_id": "13ab2f3f-f65e-42b5-b743-39b30a4c4751",
+    "source": "https://scryfall.com/card/om1/126/scarlet-spider-ben-reilly?utm_source=api"
+  },
+  {
+    "alias": "Both Down",
+    "canonical_name": "Bone Splinters",
+    "oracle_id": "0c936582-d4c0-4da8-bc7e-49da5a433939",
+    "source": "https://scryfall.com/card/sld/1037/bone-splinters?utm_source=api"
+  },
+  {
+    "alias": "Bow, Master Archer",
+    "canonical_name": "Hajar, Loyal Bodyguard",
+    "oracle_id": "63584001-7f58-42ee-b072-914baa66c78a",
+    "source": "https://scryfall.com/card/sld/2781/hajar-loyal-bodyguard?utm_source=api"
+  },
+  {
+    "alias": "Brachiosaurus",
+    "canonical_name": "Colossal Dreadmaw",
+    "oracle_id": "08c7db90-c0cf-4482-b7ee-bb033e5996d2",
+    "source": "https://scryfall.com/card/sld/740%E2%98%85/colossal-dreadmaw?utm_source=api"
+  },
+  {
+    "alias": "Brachydios, Brutish Indigo",
+    "canonical_name": "Kalamax, the Stormsire",
+    "oracle_id": "b8501a37-23e4-4873-80cb-d1c0f6c95155",
+    "source": "https://scryfall.com/card/sld/2252/kalamax-the-stormsire?utm_source=api"
+  },
+  {
+    "alias": "Brako, Heartless Hunter",
+    "canonical_name": "Kraven the Hunter",
+    "oracle_id": "3e2bfa3a-ae83-453a-8e3f-ca6205a9af12",
+    "source": "https://scryfall.com/card/om1/127/kraven-the-hunter?utm_source=api"
+  },
+  {
+    "alias": "Breakfast 7:00 AM",
+    "canonical_name": "Food",
+    "oracle_id": "a468338f-635e-4206-89d6-72d723071d45",
+    "source": "https://scryfall.com/card/sld/2545/food?utm_source=api"
+  },
+  {
+    "alias": "Bridge of Khazad-dûm",
+    "canonical_name": "Ensnaring Bridge",
+    "oracle_id": "dade5835-ccaf-45e3-b9a3-46017e0384b3",
+    "source": "https://scryfall.com/card/ltc/380z/ensnaring-bridge?utm_source=api"
+  },
+  {
+    "alias": "Bring Out Your Dead!",
+    "canonical_name": "Buried Alive",
+    "oracle_id": "8203c621-a1a0-4865-8c9a-0d4064c86107",
+    "source": "https://scryfall.com/card/sld/1673/buried-alive?utm_source=api"
+  },
+  {
+    "alias": "Bucklebury Ferry",
+    "canonical_name": "Oboro, Palace in the Clouds",
+    "oracle_id": "645fb11b-d684-4bec-8532-8fa97e8f7b28",
+    "source": "https://scryfall.com/card/ltc/401z/oboro-palace-in-the-clouds?utm_source=api"
+  },
+  {
+    "alias": "Buttercup, Provincial Princess",
+    "canonical_name": "Sisay, Weatherlight Captain",
+    "oracle_id": "fb777610-7562-4d9d-8497-62c562e6d7cb",
+    "source": "https://scryfall.com/card/sld/1444/sisay-weatherlight-captain?utm_source=api"
+  },
+  {
+    "alias": "Cabin of the Dead",
+    "canonical_name": "Field of the Dead",
+    "oracle_id": "aa959340-c869-4caa-92c7-572bd8d23eef",
+    "source": "https://scryfall.com/card/sld/1356/field-of-the-dead?utm_source=api"
+  },
+  {
+    "alias": "Cactarantula Saddle",
+    "canonical_name": "Spider-Suit",
+    "oracle_id": "ba08b4cf-9a13-40fd-8522-9504d2ff1a19",
+    "source": "https://scryfall.com/card/om1/161/spider-suit?utm_source=api"
+  },
+  {
+    "alias": "Caldaia Brawlers",
+    "canonical_name": "Inner Demons Gangsters",
+    "oracle_id": "40b43763-3fbf-4ecd-8187-5d2c2c9cda82",
+    "source": "https://scryfall.com/card/om1/51/inner-demons-gangsters?utm_source=api"
+  },
+  {
+    "alias": "Calliope's Song",
+    "canonical_name": "Seething Song",
+    "oracle_id": "64bf8929-f5f2-4d50-8667-13b1d007bcfc",
+    "source": "https://scryfall.com/card/sld/7051/seething-song?utm_source=api"
+  },
+  {
+    "alias": "Cam and Farrik, Havoc Duo",
+    "canonical_name": "Hobgoblin, Mantled Marauder",
+    "oracle_id": "1d453331-6b8e-4d3d-b658-683eab2760da",
+    "source": "https://scryfall.com/card/om1/77/hobgoblin-mantled-marauder?utm_source=api"
+  },
+  {
+    "alias": "Captain America's Aid",
+    "canonical_name": "Sigarda's Aid",
+    "oracle_id": "4f5f2792-0cc4-4caa-b798-2ee9597f2524",
+    "source": "https://scryfall.com/card/sld/1727/sigardas-aid?utm_source=api"
+  },
+  {
+    "alias": "Caras Galadhon",
+    "canonical_name": "Tranquil Thicket",
+    "oracle_id": "9f8fe514-77ed-41b4-a6f3-c6f095bb97be",
+    "source": "https://scryfall.com/card/pf23/2/tranquil-thicket?utm_source=api"
+  },
+  {
+    "alias": "Carlo, Suave Schemer",
+    "canonical_name": "Prowler, Clawed Thief",
+    "oracle_id": "76742bfc-ae99-4b06-b29d-e0e41d92ae14",
+    "source": "https://scryfall.com/card/om1/128/prowler-clawed-thief?utm_source=api"
+  },
+  {
+    "alias": "Carriage of Dreams",
+    "canonical_name": "Passenger Ferry",
+    "oracle_id": "e9832d58-0ee6-4641-a9fd-d34d54b3b11c",
+    "source": "https://scryfall.com/card/om1/162/passenger-ferry?utm_source=api"
+  },
+  {
+    "alias": "Cascade of Song",
+    "canonical_name": "Halo Fountain",
+    "oracle_id": "36a9de4c-8073-475d-8679-e50844eef09e",
+    "source": "https://scryfall.com/card/sld/2431/halo-fountain?utm_source=api"
+  },
+  {
+    "alias": "Cast-Off Consort",
+    "canonical_name": "Bloodletter of Aclazotz",
+    "oracle_id": "469956a2-7cd4-4695-b8f4-c841526f160d",
+    "source": "https://scryfall.com/card/sld/2502/bloodletter-of-aclazotz?utm_source=api"
+  },
+  {
+    "alias": "Castle Dracula",
+    "canonical_name": "Voldaren Estate",
+    "oracle_id": "fb0c0426-f1a6-4e52-9242-627786d3119a",
+    "source": "https://scryfall.com/card/vow/403/voldaren-estate?utm_source=api"
+  },
+  {
+    "alias": "Castle Ravenloft",
+    "canonical_name": "Voldaren Estate",
+    "oracle_id": "fb0c0426-f1a6-4e52-9242-627786d3119a",
+    "source": "https://scryfall.com/card/sld/2504/voldaren-estate?utm_source=api"
+  },
+  {
+    "alias": "Castle Shimura",
+    "canonical_name": "Eiganjo Castle",
+    "oracle_id": "895a0e00-20a9-44f8-9215-66edcdf016b7",
+    "source": "https://scryfall.com/card/sld/2230/eiganjo-castle?utm_source=api"
+  },
+  {
+    "alias": "Castle of Aaargh",
+    "canonical_name": "Dark Depths",
+    "oracle_id": "c9b82110-7dfd-4617-9399-9510be449043",
+    "source": "https://scryfall.com/card/sld/1680/dark-depths?utm_source=api"
+  },
+  {
+    "alias": "Catra, Force Captain",
+    "canonical_name": "Kutzil, Malamet Exemplar",
+    "oracle_id": "3233af43-7826-4895-b67e-03c6102c2cd5",
+    "source": "https://scryfall.com/card/sld/2782/kutzil-malamet-exemplar?utm_source=api"
+  },
+  {
+    "alias": "Cecil Harvey",
+    "canonical_name": "Tymna the Weaver",
+    "oracle_id": "d15642e4-e61c-4d29-af48-de837991245e",
+    "source": "https://scryfall.com/card/fca/18/tymna-the-weaver?utm_source=api"
+  },
+  {
+    "alias": "Centurion of the Marked",
+    "canonical_name": "Lord of the Undead",
+    "oracle_id": "7714af0e-41d9-4609-967f-27233b46055f",
+    "source": "https://scryfall.com/card/pip/873/lord-of-the-undead?utm_source=api"
+  },
+  {
+    "alias": "Champion of Kotoko",
+    "canonical_name": "Champion of Lambholt",
+    "oracle_id": "c549b0fd-1e08-4873-952e-a14dc45a0fd2",
+    "source": "https://scryfall.com/card/sld/2245/champion-of-lambholt?utm_source=api"
+  },
+  {
+    "alias": "Chancla relámpago",
+    "canonical_name": "Lightning Greaves",
+    "oracle_id": "ca204b66-8d0c-431a-8d34-282f7c2d17da",
+    "source": "https://scryfall.com/card/sld/2062/lightning-greaves?utm_source=api"
+  },
+  {
+    "alias": "Chaos Emerald",
+    "canonical_name": "Lotus Petal",
+    "oracle_id": "32e5339e-9e4f-46f8-b305-f9d6d3ba8bb5",
+    "source": "https://scryfall.com/card/sld/7037/lotus-petal?utm_source=api"
+  },
+  {
+    "alias": "Chaos Theory",
+    "canonical_name": "Chaos Warp",
+    "oracle_id": "07a0cba9-8768-4fd9-a3d5-b0f83b4bf8e8",
+    "source": "https://scryfall.com/card/sld/741%E2%98%85/chaos-warp?utm_source=api"
+  },
+  {
+    "alias": "Chaotic Chaotician",
+    "canonical_name": "Laboratory Maniac",
+    "oracle_id": "aa286dd5-aa19-446d-9003-684d81eb57ca",
+    "source": "https://scryfall.com/card/sld/1394%E2%98%85/laboratory-maniac?utm_source=api"
+  },
+  {
+    "alias": "Chief Jim Hopper",
+    "canonical_name": "Sophina, Spearsage Deserter",
+    "oracle_id": "095dabda-4570-4764-8d62-4a29eb19d3e6",
+    "source": "https://scryfall.com/card/sld/341/sophina-spearsage-deserter?utm_source=api"
+  },
+  {
+    "alias": "Chizak, Apex Arachnosaur",
+    "canonical_name": "Spider-Rex, Daring Dino",
+    "oracle_id": "58b771d4-dfaf-4189-a5f6-4bc0fb4c0fa3",
+    "source": "https://scryfall.com/card/om1/100/spider-rex-daring-dino?utm_source=api"
+  },
+  {
+    "alias": "Chosen by Valgavoth",
+    "canonical_name": "With Great Power . . .",
+    "oracle_id": "dfedb968-f27c-4117-aff6-da707dd43e82",
+    "source": "https://scryfall.com/card/om1/4/with-great-power-?utm_source=api"
+  },
+  {
+    "alias": "Chun-Li, Countless Kicks",
+    "canonical_name": "Zethi, Arcane Blademaster",
+    "oracle_id": "ac136d46-32b7-4222-a840-b8be011c1872",
+    "source": "https://scryfall.com/card/sld/432/zethi-arcane-blademaster?utm_source=api"
+  },
+  {
+    "alias": "Cirina Bargainspinner",
+    "canonical_name": "Sun-Spider, Nimble Webber",
+    "oracle_id": "2d961997-4f5f-4ce2-b062-11411147e2f7",
+    "source": "https://scryfall.com/card/om1/130/sun-spider-nimble-webber?utm_source=api"
+  },
+  {
+    "alias": "Clandestine Work",
+    "canonical_name": "Risky Research",
+    "oracle_id": "47d52cd7-d72f-455f-aad3-70f08d54691f",
+    "source": "https://scryfall.com/card/om1/52/risky-research?utm_source=api"
+  },
+  {
+    "alias": "Clive Rosfield",
+    "canonical_name": "Vial Smasher the Fierce",
+    "oracle_id": "1b355139-4891-436c-9079-0ce17ecc2d65",
+    "source": "https://scryfall.com/card/fca/59/vial-smasher-the-fierce?utm_source=api"
+  },
+  {
+    "alias": "Clive's Invictus Blade",
+    "canonical_name": "Blade of Selves",
+    "oracle_id": "9c329f3d-4d0a-4012-8aa6-92afdd120a52",
+    "source": "https://scryfall.com/card/sld/1864/blade-of-selves?utm_source=api"
+  },
+  {
+    "alias": "Cloud Strife",
+    "canonical_name": "Najeela, the Blade-Blossom",
+    "oracle_id": "09619943-6aec-4080-ace5-a0c6ebb23f1c",
+    "source": "https://scryfall.com/card/fca/42/najeela-the-blade-blossom?utm_source=api"
+  },
+  {
+    "alias": "Cloud's Buster Sword",
+    "canonical_name": "Umezawa's Jitte",
+    "oracle_id": "1da10d5c-36a8-473f-a5d4-782ad61d8057",
+    "source": "https://scryfall.com/card/sld/1865/umezawas-jitte?utm_source=api"
+  },
+  {
+    "alias": "Colonel John Jameson",
+    "canonical_name": "Huntmaster of the Fells",
+    "oracle_id": "582328cd-660d-47a4-bb23-e91e80b9a907",
+    "source": "https://scryfall.com/card/lmar/3/huntmaster-of-the-fells-ravager-of-the-fells?utm_source=api"
+  },
+  {
+    "alias": "Community Center",
+    "canonical_name": "Fountainport",
+    "oracle_id": "94e8b0a9-44a1-4dce-8d44-78681ae638a1",
+    "source": "https://scryfall.com/card/sld/2810/fountainport?utm_source=api"
+  },
+  {
+    "alias": "Confessor's Bindings",
+    "canonical_name": "Rent Is Due",
+    "oracle_id": "3fe1530d-bcf2-440b-a905-5a2216daa7eb",
+    "source": "https://scryfall.com/card/om1/6/rent-is-due?utm_source=api"
+  },
+  {
+    "alias": "Cordyceps Excision",
+    "canonical_name": "Cabal Ritual",
+    "oracle_id": "5b5bf1fa-6502-4790-b66b-f0f8504ebc7c",
+    "source": "https://scryfall.com/card/sld/2199/cabal-ritual?utm_source=api"
+  },
+  {
+    "alias": "Cordyceps Rat King",
+    "canonical_name": "Mycoloth",
+    "oracle_id": "d7fd16ce-282d-49cd-b2b4-0d25935e7a72",
+    "source": "https://scryfall.com/card/sld/2205/mycoloth?utm_source=api"
+  },
+  {
+    "alias": "Count Dracula",
+    "canonical_name": "Sorin the Mirthless",
+    "oracle_id": "fbffaf9f-40e7-4113-a037-533b733cebce",
+    "source": "https://scryfall.com/card/vow/337/sorin-the-mirthless?utm_source=api"
+  },
+  {
+    "alias": "Cow-tapult",
+    "canonical_name": "Goblin Bombardment",
+    "oracle_id": "edad60c6-80de-4033-af1b-a703ac332983",
+    "source": "https://scryfall.com/card/sld/825/goblin-bombardment?utm_source=api"
+  },
+  {
+    "alias": "Cozy Headphones",
+    "canonical_name": "Paradise Mantle",
+    "oracle_id": "c1121b83-1ba2-473d-89c9-e3bbd4529072",
+    "source": "https://scryfall.com/card/sld/2825/paradise-mantle?utm_source=api"
+  },
+  {
+    "alias": "Crack the Vault",
+    "canonical_name": "Grim Tutor",
+    "oracle_id": "e62f8d69-a559-4f13-a5c9-5fb750b4af2c",
+    "source": "https://scryfall.com/card/sld/444/grim-tutor?utm_source=api"
+  },
+  {
+    "alias": "Crash, Reckless Endrider",
+    "canonical_name": "Shriek, Treblemaker",
+    "oracle_id": "5773ae05-44bc-423c-846c-f323dd8a5079",
+    "source": "https://scryfall.com/card/om1/131/shriek-treblemaker?utm_source=api"
+  },
+  {
+    "alias": "Cren, Undercity Dreamer",
+    "canonical_name": "Miles Morales",
+    "oracle_id": "be48c721-bdc6-4f2c-96d6-82d934b31615",
+    "source": "https://scryfall.com/card/om1/102/miles-morales-ultimate-spider-man?utm_source=api"
+  },
+  {
+    "alias": "Crime-Scene Instructor",
+    "canonical_name": "Selfless Police Captain",
+    "oracle_id": "ece77a64-8d99-430e-8407-bdb321828d63",
+    "source": "https://scryfall.com/card/om1/8/selfless-police-captain?utm_source=api"
+  },
+  {
+    "alias": "Crimson Moonlight",
+    "canonical_name": "Blind Obedience",
+    "oracle_id": "5d998c09-7d89-4265-ada4-6d80cbf56dae",
+    "source": "https://scryfall.com/card/sld/2246/blind-obedience?utm_source=api"
+  },
+  {
+    "alias": "Croft Manor",
+    "canonical_name": "Command Tower",
+    "oracle_id": "0895c9b7-ae7d-4bb3-af17-3b75deb50a25",
+    "source": "https://scryfall.com/card/sld/792/command-tower?utm_source=api"
+  },
+  {
+    "alias": "Cruel Caracals",
+    "canonical_name": "Kraven's Cats",
+    "oracle_id": "976db753-9887-448a-8e67-ec7937b6505c",
+    "source": "https://scryfall.com/card/om1/103/kravens-cats?utm_source=api"
+  },
+  {
+    "alias": "Crystal of Altar Cave",
+    "canonical_name": "Chromatic Lantern",
+    "oracle_id": "539f5396-d99a-417d-a84c-dff7930b5900",
+    "source": "https://scryfall.com/card/fca/61/chromatic-lantern?utm_source=api"
+  },
+  {
+    "alias": "Custom Caravan Deck",
+    "canonical_name": "The Deck of Many Things",
+    "oracle_id": "91df4cf5-d7ec-4fcd-87ed-e075ef6ceba9",
+    "source": "https://scryfall.com/card/sld/2460/the-deck-of-many-things?utm_source=api"
+  },
+  {
+    "alias": "Cybertron",
+    "canonical_name": "Command Tower",
+    "oracle_id": "0895c9b7-ae7d-4bb3-af17-3b75deb50a25",
+    "source": "https://scryfall.com/card/sld/710/command-tower?utm_source=api"
+  },
+  {
+    "alias": "Da Vulcha",
+    "canonical_name": "Skysovereign, Consul Flagship",
+    "oracle_id": "50b14338-9318-4327-a1dd-c0ef38903cc4",
+    "source": "https://scryfall.com/card/sld/1029/skysovereign-consul-flagship?utm_source=api"
+  },
+  {
+    "alias": "Damning Caress",
+    "canonical_name": "Venom's Hunger",
+    "oracle_id": "8388faa0-f64e-4b01-836e-617f99b808a4",
+    "source": "https://scryfall.com/card/om1/54/venoms-hunger?utm_source=api"
+  },
+  {
+    "alias": "Dance Battle",
+    "canonical_name": "Dance of Many",
+    "oracle_id": "72e1a239-11a7-4dbe-b093-65d395e3ccc9",
+    "source": "https://scryfall.com/card/sld/442/dance-of-many?utm_source=api"
+  },
+  {
+    "alias": "Darkness of Eternity",
+    "canonical_name": "Dark Ritual",
+    "oracle_id": "53f7c868-b03e-4fc2-8dcf-a75bbfa3272b",
+    "source": "https://scryfall.com/card/fca/8/dark-ritual?utm_source=api"
+  },
+  {
+    "alias": "Darval, Whose Web Protects",
+    "canonical_name": "Spider-Man, Web-Slinger",
+    "oracle_id": "505231d8-714f-4c5b-a635-d1662bd18a78",
+    "source": "https://scryfall.com/card/om1/9/spider-man-web-slinger?utm_source=api"
+  },
+  {
+    "alias": "Daryl, Hunter of Walkers",
+    "canonical_name": "Hansk, Slayer Zealot",
+    "oracle_id": "d818f863-17ee-4387-94bf-d7e6e8ab590c",
+    "source": "https://scryfall.com/card/sld/144/hansk-slayer-zealot?utm_source=api"
+  },
+  {
+    "alias": "Data Scrubber",
+    "canonical_name": "Mechanical Mobster",
+    "oracle_id": "b0672aa3-3207-4ff8-af8f-bdabacbb4d04",
+    "source": "https://scryfall.com/card/om1/163/mechanical-mobster?utm_source=api"
+  },
+  {
+    "alias": "Dawn Warriors' Legacy",
+    "canonical_name": "Mizzix's Mastery",
+    "oracle_id": "40362fe0-a1a9-4d76-8c35-eac474b91af5",
+    "source": "https://scryfall.com/card/fca/41/mizzixs-mastery?utm_source=api"
+  },
+  {
+    "alias": "Deathflame Burst",
+    "canonical_name": "Electro's Bolt",
+    "oracle_id": "e9222f89-e495-4502-bb0c-f5e802686b01",
+    "source": "https://scryfall.com/card/om1/78/electros-bolt?utm_source=api"
+  },
+  {
+    "alias": "Demera, Soul of a Spider",
+    "canonical_name": "Mary Jane Watson",
+    "oracle_id": "6d44c87b-8945-4c39-b034-7690cf483992",
+    "source": "https://scryfall.com/card/om1/132/mary-jane-watson?utm_source=api"
+  },
+  {
+    "alias": "Denting Blows",
+    "canonical_name": "Krosan Grip",
+    "oracle_id": "3e39224c-72ce-4ecc-aa17-12c071ea1f3e",
+    "source": "https://scryfall.com/card/sld/481/krosan-grip?utm_source=api"
+  },
+  {
+    "alias": "Desecrex, Gift of Servitude",
+    "canonical_name": "Carnage, Crimson Chaos",
+    "oracle_id": "c0efafc6-8ffb-4908-ae64-3f391722370a",
+    "source": "https://scryfall.com/card/om1/133/carnage-crimson-chaos?utm_source=api"
+  },
+  {
+    "alias": "Destoroyah, Perfect Lifeform",
+    "canonical_name": "Everquill Phoenix",
+    "oracle_id": "56ba78c1-d1eb-4cc1-b70d-98c35d2972ba",
+    "source": "https://scryfall.com/card/iko/374/everquill-phoenix?utm_source=api"
+  },
+  {
+    "alias": "Destroy the Dead",
+    "canonical_name": "Vanquish the Horde",
+    "oracle_id": "a332e80a-dc51-4dc6-bc85-e114a1c6fdb8",
+    "source": "https://scryfall.com/card/sld/1353/vanquish-the-horde?utm_source=api"
+  },
+  {
+    "alias": "Detect Intrusion",
+    "canonical_name": "Spider-Sense",
+    "oracle_id": "c4485bf9-e7ff-48b5-a983-02900939ee9d",
+    "source": "https://scryfall.com/card/om1/28/spider-sense?utm_source=api"
+  },
+  {
+    "alias": "Dhalsim, Pliable Pacifist",
+    "canonical_name": "Tadeas, Juniper Ascendant",
+    "oracle_id": "b4b5b928-8b98-4f65-9f15-212859874fe4",
+    "source": "https://scryfall.com/card/sld/433/tadeas-juniper-ascendant?utm_source=api"
+  },
+  {
+    "alias": "Diabolos, Guardian Force",
+    "canonical_name": "Death's Shadow",
+    "oracle_id": "e08722b3-0f79-4c82-b298-603e04a37857",
+    "source": "https://scryfall.com/card/sch/40/deaths-shadow?utm_source=api"
+  },
+  {
+    "alias": "Diligent Webkeepers",
+    "canonical_name": "Web-Warriors",
+    "oracle_id": "3b23e4f8-882d-4cce-9b61-171ae2cc3a18",
+    "source": "https://scryfall.com/card/om1/134/web-warriors?utm_source=api"
+  },
+  {
+    "alias": "Dinner 6:00 PM",
+    "canonical_name": "Food",
+    "oracle_id": "a468338f-635e-4206-89d6-72d723071d45",
+    "source": "https://scryfall.com/card/sld/2550/food?utm_source=api"
+  },
+  {
+    "alias": "Doc Ock, Armed and Dangerous",
+    "canonical_name": "Lorthos, the Tidemaker",
+    "oracle_id": "d9fd4ff3-5ada-40f4-b949-6fe65624a0c4",
+    "source": "https://scryfall.com/card/mar/10/lorthos-the-tidemaker?utm_source=api"
+  },
+  {
+    "alias": "Dogmeat, Constant Companion",
+    "canonical_name": "Yoshimaru, Ever Faithful",
+    "oracle_id": "963834c8-42df-4ee6-9b45-b9de88ce2eac",
+    "source": "https://scryfall.com/card/sld/2463/yoshimaru-ever-faithful?utm_source=api"
+  },
+  {
+    "alias": "Dol Amroth",
+    "canonical_name": "Minamo, School at Water's Edge",
+    "oracle_id": "17784f90-89a1-47a5-83ef-ae60dfc30bd1",
+    "source": "https://scryfall.com/card/ltc/399z/minamo-school-at-waters-edge?utm_source=api"
+  },
+  {
+    "alias": "Donnie's Bō",
+    "canonical_name": "Shadowspear",
+    "oracle_id": "8b27326f-e7b8-4a4d-b589-df459246d19a",
+    "source": "https://scryfall.com/card/pza/17/shadowspear?utm_source=api"
+  },
+  {
+    "alias": "Doom Variant",
+    "canonical_name": "Roaming Throne",
+    "oracle_id": "3640c29b-1534-4952-b297-619ade948431",
+    "source": "https://scryfall.com/card/mar/99/roaming-throne?utm_source=api"
+  },
+  {
+    "alias": "Dorat, the Perfect Pet",
+    "canonical_name": "Sprite Dragon",
+    "oracle_id": "a9d8ab76-70a4-475e-b87e-4737c090553a",
+    "source": "https://scryfall.com/card/iko/382/sprite-dragon?utm_source=api"
+  },
+  {
+    "alias": "Doric, Nature's Warden",
+    "canonical_name": "Casal, Lurkwood Pathfinder",
+    "oracle_id": "b7bdb688-f8ee-4d22-a679-37a2ecd390a1",
+    "source": "https://scryfall.com/card/sld/1241/casal-lurkwood-pathfinder-casal-pathbreaker-owlbear?utm_source=api"
+  },
+  {
+    "alias": "Dr. Ian Malcolm",
+    "canonical_name": "Atla Palani, Nest Tender",
+    "oracle_id": "b56cebe0-3752-4ce5-afbd-911543784015",
+    "source": "https://scryfall.com/card/sld/1397%E2%98%85/atla-palani-nest-tender?utm_source=api"
+  },
+  {
+    "alias": "Dr. John Seward",
+    "canonical_name": "Torens, Fist of the Angels",
+    "oracle_id": "2cb96408-9195-4e41-ad9a-f8c74fbad083",
+    "source": "https://scryfall.com/card/vow/344/torens-fist-of-the-angels?utm_source=api"
+  },
+  {
+    "alias": "Dracula the Voyager",
+    "canonical_name": "Edgar, Charmed Groom",
+    "oracle_id": "96cb97ca-4ce0-4d33-86fb-4db4ce1956be",
+    "source": "https://scryfall.com/card/vow/341/edgar-charmed-groom-edgar-markovs-coffin?utm_source=api"
+  },
+  {
+    "alias": "Dracula's Tomb",
+    "canonical_name": "Phyrexian Tower",
+    "oracle_id": "1861e642-21d5-4232-89f3-b5557f2946c1",
+    "source": "https://scryfall.com/card/sld/208/phyrexian-tower?utm_source=api"
+  },
+  {
+    "alias": "Dracula, Blood Immortal",
+    "canonical_name": "Falkenrath Forebear",
+    "oracle_id": "940080ce-c504-48c8-a763-326fef907217",
+    "source": "https://scryfall.com/card/vow/334/falkenrath-forebear?utm_source=api"
+  },
+  {
+    "alias": "Dracula, Lord of Blood",
+    "canonical_name": "Voldaren Bloodcaster",
+    "oracle_id": "a720f3d3-c2d7-4e50-8cc6-600120380e9c",
+    "source": "https://scryfall.com/card/vow/338/voldaren-bloodcaster-bloodbat-summoner?utm_source=api"
+  },
+  {
+    "alias": "Dragon of Mount Gulg",
+    "canonical_name": "Ancient Copper Dragon",
+    "oracle_id": "48daee9d-ddaf-410f-8c3a-12fa1064ab56",
+    "source": "https://scryfall.com/card/fca/12/ancient-copper-dragon?utm_source=api"
+  },
+  {
+    "alias": "Dreadfang, Loathed by Fans",
+    "canonical_name": "Kraven, Proud Predator",
+    "oracle_id": "12b8b4bf-ba85-419c-8005-1ec34b2b1deb",
+    "source": "https://scryfall.com/card/om1/135/kraven-proud-predator?utm_source=api"
+  },
+  {
+    "alias": "Drix Interception",
+    "canonical_name": "Amazing Acrobatics",
+    "oracle_id": "0466f23c-d07c-4015-82d5-eab4b226f1ff",
+    "source": "https://scryfall.com/card/om1/29/amazing-acrobatics?utm_source=api"
+  },
+  {
+    "alias": "Druneth, Reviver of the Hive",
+    "canonical_name": "Jackal, Genius Geneticist",
+    "oracle_id": "5998f07e-01f9-4d02-94dd-867c7166463f",
+    "source": "https://scryfall.com/card/om1/136/jackal-genius-geneticist?utm_source=api"
+  },
+  {
+    "alias": "Dual-Bladed Hunter",
+    "canonical_name": "Grand Abolisher",
+    "oracle_id": "c749f23c-40c0-4159-b84c-a70cbb062c14",
+    "source": "https://scryfall.com/card/sld/2241/grand-abolisher?utm_source=api"
+  },
+  {
+    "alias": "Duskmourn's Claim",
+    "canonical_name": "Parker Luck",
+    "oracle_id": "03d1a4e9-3ebc-491f-8741-5d933b500abf",
+    "source": "https://scryfall.com/card/om1/55/parker-luck?utm_source=api"
+  },
+  {
+    "alias": "Dustin, Gadget Genius",
+    "canonical_name": "Hargilde, Kindly Runechanter",
+    "oracle_id": "747009e7-da07-48c7-b838-687f19b884ea",
+    "source": "https://scryfall.com/card/sld/342/hargilde-kindly-runechanter?utm_source=api"
+  },
+  {
+    "alias": "Dwight Schrute, Hay King",
+    "canonical_name": "Heliod, Sun-Crowned",
+    "oracle_id": "63e596a2-9126-4af6-8782-c38687d664ad",
+    "source": "https://scryfall.com/card/sld/2165/heliod-sun-crowned?utm_source=api"
+  },
+  {
+    "alias": "Dwight o' Lantern",
+    "canonical_name": "Reaper King",
+    "oracle_id": "70034860-5198-421f-871d-7c1676337b6e",
+    "source": "https://scryfall.com/card/sld/2170/reaper-king?utm_source=api"
+  },
+  {
+    "alias": "Dwight's Weapon Stash",
+    "canonical_name": "Steelshaper's Gift",
+    "oracle_id": "d9abda7e-6ca2-42ea-ab24-c542e57014f1",
+    "source": "https://scryfall.com/card/sld/2166/steelshapers-gift?utm_source=api"
+  },
+  {
+    "alias": "Dwight, Assistant (to the) King",
+    "canonical_name": "Baral, Chief of Compliance",
+    "oracle_id": "baf80db7-2ca8-4bfc-b5b6-25ed51878dd7",
+    "source": "https://scryfall.com/card/sld/2168/baral-chief-of-compliance?utm_source=api"
+  },
+  {
+    "alias": "E. Honda, Sumo Champion",
+    "canonical_name": "Baldin, Century Herdmaster",
+    "oracle_id": "14493624-fdc7-4630-9b1e-f35668651108",
+    "source": "https://scryfall.com/card/sld/428/baldin-century-herdmaster?utm_source=api"
+  },
+  {
+    "alias": "Earth Rumble Triumph",
+    "canonical_name": "Return of the Wildspeaker",
+    "oracle_id": "2b76f9e9-cd28-4eaf-8674-215c34263f96",
+    "source": "https://scryfall.com/card/tle/44/return-of-the-wildspeaker?utm_source=api"
+  },
+  {
+    "alias": "Earth's Mightiest Emblem",
+    "canonical_name": "Arcane Signet",
+    "oracle_id": "0bc7f093-bef0-4f1a-852c-4b75ebf54838",
+    "source": "https://scryfall.com/card/sld/908/arcane-signet?utm_source=api"
+  },
+  {
+    "alias": "Eccentric Arachnologist",
+    "canonical_name": "Guy in the Chair",
+    "oracle_id": "83eb74df-1c77-48b0-83be-55d7aa4d3618",
+    "source": "https://scryfall.com/card/om1/104/guy-in-the-chair?utm_source=api"
+  },
+  {
+    "alias": "Ecto-1",
+    "canonical_name": "Unlicensed Hearse",
+    "oracle_id": "c640654c-487e-4a2c-aced-126ed835b78f",
+    "source": "https://scryfall.com/card/sld/1772/unlicensed-hearse?utm_source=api"
+  },
+  {
+    "alias": "Eddie the Judge",
+    "canonical_name": "Bruvac the Grandiloquent",
+    "oracle_id": "274b999f-f193-48fd-9a4a-0fdaf535e6c3",
+    "source": "https://scryfall.com/card/sld/2181/bruvac-the-grandiloquent?utm_source=api"
+  },
+  {
+    "alias": "Eddie, Ghost of the Navigator",
+    "canonical_name": "Captain N'ghathrod",
+    "oracle_id": "cfb23c6b-6e4a-4fc9-b3bb-a3ddc2ba06b8",
+    "source": "https://scryfall.com/card/sld/2183/captain-nghathrod?utm_source=api"
+  },
+  {
+    "alias": "Eddie, Lord of Light",
+    "canonical_name": "Nekusar, the Mindrazer",
+    "oracle_id": "8a5e3c8e-8e22-49b9-8ee5-4a36361f0da6",
+    "source": "https://scryfall.com/card/sld/2184/nekusar-the-mindrazer?utm_source=api"
+  },
+  {
+    "alias": "Edea Kramer",
+    "canonical_name": "Teferi, Mage of Zhalfir",
+    "oracle_id": "2b6cbd55-5adc-4a34-ac45-8531705a7ee1",
+    "source": "https://scryfall.com/card/fca/32/teferi-mage-of-zhalfir?utm_source=api"
+  },
+  {
+    "alias": "Edgin, Larcenous Lutenist",
+    "canonical_name": "Bohn, Beguiling Balladeer",
+    "oracle_id": "ab31b652-ddf2-480f-a955-e8b5c87728f9",
+    "source": "https://scryfall.com/card/sld/1242/bohn-beguiling-balladeer?utm_source=api"
+  },
+  {
+    "alias": "Edoras, Capital of Rohan",
+    "canonical_name": "Hammerheim",
+    "oracle_id": "c7476beb-7923-4994-8476-bc69187ecb72",
+    "source": "https://scryfall.com/card/ltc/518/hammerheim?utm_source=api"
+  },
+  {
+    "alias": "Edward, Jackdaw Captain",
+    "canonical_name": "Admiral Beckett Brass",
+    "oracle_id": "43b5e462-d860-473d-828f-6c513fc7768a",
+    "source": "https://scryfall.com/card/sld/1561/admiral-beckett-brass?utm_source=api"
+  },
+  {
+    "alias": "Egg Hammer",
+    "canonical_name": "Myr Battlesphere",
+    "oracle_id": "c53ba31a-ba27-4e17-9a92-311acb1cab29",
+    "source": "https://scryfall.com/card/sld/2097/myr-battlesphere?utm_source=api"
+  },
+  {
+    "alias": "Egg Pawn",
+    "canonical_name": "Myr",
+    "oracle_id": "bf690282-125f-431c-a363-39f6772324c8",
+    "source": "https://scryfall.com/card/sld/2101/myr?utm_source=api"
+  },
+  {
+    "alias": "Egrix the Bile Bulwark",
+    "canonical_name": "Gwenom, Remorseless",
+    "oracle_id": "c48cf135-b280-4e9f-a9d9-225104870741",
+    "source": "https://scryfall.com/card/om1/56/gwenom-remorseless?utm_source=api"
+  },
+  {
+    "alias": "Eivor, Raven Clan Champion",
+    "canonical_name": "Najeela, the Blade-Blossom",
+    "oracle_id": "09619943-6aec-4080-ace5-a0c6ebb23f1c",
+    "source": "https://scryfall.com/card/sld/1557/najeela-the-blade-blossom?utm_source=api"
+  },
+  {
+    "alias": "El Dorado Sarcophagus",
+    "canonical_name": "Whip of Erebos",
+    "oracle_id": "53987a39-c18c-4c13-b1ea-fd1b2a369f9e",
+    "source": "https://scryfall.com/card/sld/2218/whip-of-erebos?utm_source=api"
+  },
+  {
+    "alias": "Elektra, Deadly Assassin",
+    "canonical_name": "Massacre Girl",
+    "oracle_id": "63e6cb7d-cc27-4200-85fc-ff6472318c1a",
+    "source": "https://scryfall.com/card/mar/67/massacre-girl?utm_source=api"
+  },
+  {
+    "alias": "Elessar, the Elfstone",
+    "canonical_name": "Cloudstone Curio",
+    "oracle_id": "5cd2fd32-4da2-40eb-b003-c0b9a9ec91c1",
+    "source": "https://scryfall.com/card/ltc/379z/cloudstone-curio?utm_source=api"
+  },
+  {
+    "alias": "Eleven, the Mage",
+    "canonical_name": "Cecily, Haunted Mage",
+    "oracle_id": "a726c27d-2955-4d41-b8a6-fca654c020a2",
+    "source": "https://scryfall.com/card/sld/343/cecily-haunted-mage?utm_source=api"
+  },
+  {
+    "alias": "Elevenses 11:00 AM",
+    "canonical_name": "Food",
+    "oracle_id": "a468338f-635e-4206-89d6-72d723071d45",
+    "source": "https://scryfall.com/card/sld/2547/food?utm_source=api"
+  },
+  {
+    "alias": "Ellie's Rage",
+    "canonical_name": "Dictate of Erebos",
+    "oracle_id": "7c777a41-e40a-4b40-96bf-8ddd5c12924c",
+    "source": "https://scryfall.com/card/sld/2204/dictate-of-erebos?utm_source=api"
+  },
+  {
+    "alias": "Emet-Selch, Ascian",
+    "canonical_name": "K'rrik, Son of Yawgmoth",
+    "oracle_id": "cbe3a4e7-5dbe-4f58-8ee6-a1762b65acfd",
+    "source": "https://scryfall.com/card/fca/36/krrik-son-of-yawgmoth?utm_source=api"
+  },
+  {
+    "alias": "Encore Electromancer",
+    "canonical_name": "Snapcaster Mage",
+    "oracle_id": "2bb2eda7-3b38-4c56-870f-c3218a1056f5",
+    "source": "https://scryfall.com/card/sld/808/snapcaster-mage?utm_source=api"
+  },
+  {
+    "alias": "Endwalker",
+    "canonical_name": "Brainstorm",
+    "oracle_id": "36cd2364-d113-47d1-b2c4-b088d9eb88dd",
+    "source": "https://scryfall.com/card/fca/28/brainstorm?utm_source=api"
+  },
+  {
+    "alias": "Erebor Heirloom",
+    "canonical_name": "Fellwar Stone",
+    "oracle_id": "95560508-7ac9-4be9-8a3f-3c7d5b52807b",
+    "source": "https://scryfall.com/card/sld/2557/fellwar-stone?utm_source=api"
+  },
+  {
+    "alias": "Error-9, Viral Node",
+    "canonical_name": "Living Brain, Mechanical Marvel",
+    "oracle_id": "b255e13d-01b2-4348-80bd-8d9a8f29be91",
+    "source": "https://scryfall.com/card/om1/165/living-brain-mechanical-marvel?utm_source=api"
+  },
+  {
+    "alias": "Escape Containment",
+    "canonical_name": "Incarnation Technique",
+    "oracle_id": "0ab9539d-3461-4936-95cd-4c229308c4a4",
+    "source": "https://scryfall.com/card/sld/1776/incarnation-technique?utm_source=api"
+  },
+  {
+    "alias": "Evil Warriors' Shroud",
+    "canonical_name": "Necrogen Mists",
+    "oracle_id": "db25d48e-e5eb-4364-9d7a-f9757ee4ccbe",
+    "source": "https://scryfall.com/card/sld/2776/necrogen-mists?utm_source=api"
+  },
+  {
+    "alias": "Evil-Lyn, Evil Warrior Goddess",
+    "canonical_name": "Ertai Resurrected",
+    "oracle_id": "3d038f7c-95fa-4b71-8f74-b9b4dd45cde0",
+    "source": "https://scryfall.com/card/sld/2786/ertai-resurrected?utm_source=api"
+  },
+  {
+    "alias": "Exclusive Nightclub",
+    "canonical_name": "Oscorp Industries",
+    "oracle_id": "f432eb6a-f1bf-4ce7-b915-1488dccb4bb9",
+    "source": "https://scryfall.com/card/om1/179/oscorp-industries?utm_source=api"
+  },
+  {
+    "alias": "Eztli of the Thousand Moons",
+    "canonical_name": "Starling, Aerial Ally",
+    "oracle_id": "13fd7ca6-c278-409f-a9c4-57f16051ffce",
+    "source": "https://scryfall.com/card/om1/10/starling-aerial-ally?utm_source=api"
+  },
+  {
+    "alias": "FAS-BOR7 Horus",
+    "canonical_name": "Blightsteel Colossus",
+    "oracle_id": "e80772e2-8623-4094-81a2-70828b2b151c",
+    "source": "https://scryfall.com/card/sld/2223/blightsteel-colossus?utm_source=api"
+  },
+  {
+    "alias": "Fal'Cie Paradise",
+    "canonical_name": "Carpet of Flowers",
+    "oracle_id": "2ffc6372-f63b-4f32-8dd0-2d7938aeb412",
+    "source": "https://scryfall.com/card/fca/44/carpet-of-flowers?utm_source=api"
+  },
+  {
+    "alias": "Fangorn Forest",
+    "canonical_name": "Yavimaya, Cradle of Growth",
+    "oracle_id": "8dd5f5af-d2d8-4356-8617-8381081b930c",
+    "source": "https://scryfall.com/card/ltc/407z/yavimaya-cradle-of-growth?utm_source=api"
+  },
+  {
+    "alias": "Fatalis, the Black Dragon",
+    "canonical_name": "Ziatora, the Incinerator",
+    "oracle_id": "d46c3fb6-f1c7-4a96-ae42-5bce17fc7c1d",
+    "source": "https://scryfall.com/card/sld/2238/ziatora-the-incinerator?utm_source=api"
+  },
+  {
+    "alias": "Fateweaver",
+    "canonical_name": "Radioactive Spider",
+    "oracle_id": "f15bd5c0-99ff-42c6-8eed-48de6df81b61",
+    "source": "https://scryfall.com/card/om1/105/radioactive-spider?utm_source=api"
+  },
+  {
+    "alias": "Favored Fighter",
+    "canonical_name": "Professional Wrestler",
+    "oracle_id": "3dd92eea-02ca-4e55-8f69-8c8059dd7ee6",
+    "source": "https://scryfall.com/card/om1/106/professional-wrestler?utm_source=api"
+  },
+  {
+    "alias": "Fearsome Ridgeline",
+    "canonical_name": "Daily Bugle Building",
+    "oracle_id": "483e0c6c-8131-486c-b482-cc3396c9786b",
+    "source": "https://scryfall.com/card/om1/180/daily-bugle-building?utm_source=api"
+  },
+  {
+    "alias": "Feral Felix",
+    "canonical_name": "Barrowgoyf",
+    "oracle_id": "74c0164c-130f-4572-9066-626c77f6e2ff",
+    "source": "https://scryfall.com/card/sld/2702/barrowgoyf?utm_source=api"
+  },
+  {
+    "alias": "Fezzik, Rhyming Giant",
+    "canonical_name": "Brion Stoutarm",
+    "oracle_id": "b816b3cc-ae4b-4fb7-8b1a-e01ab83459a3",
+    "source": "https://scryfall.com/card/sld/1450/brion-stoutarm?utm_source=api"
+  },
+  {
+    "alias": "Fire Nation Tank Train",
+    "canonical_name": "Noxious Gearhulk",
+    "oracle_id": "a77b5be2-f361-4135-ba25-670a74d268ac",
+    "source": "https://scryfall.com/card/tle/25/noxious-gearhulk?utm_source=api"
+  },
+  {
+    "alias": "Fire-Brained Scheme",
+    "canonical_name": "Heroes' Hangout",
+    "oracle_id": "43306a78-85b5-4df4-a018-75dd75aa8997",
+    "source": "https://scryfall.com/card/om1/79/heroes-hangout?utm_source=api"
+  },
+  {
+    "alias": "Firion, Swordmaster",
+    "canonical_name": "Sram, Senior Edificer",
+    "oracle_id": "7e00b0cd-d212-4604-ba07-da21f4fe00b0",
+    "source": "https://scryfall.com/card/fca/3/sram-senior-edificer?utm_source=api"
+  },
+  {
+    "alias": "Fizik, Etherium Mechanic",
+    "canonical_name": "Iron Spider, Stark Upgrade",
+    "oracle_id": "e123fd7d-ace9-48a4-9510-eedcc837d8e8",
+    "source": "https://scryfall.com/card/om1/166/iron-spider-stark-upgrade?utm_source=api"
+  },
+  {
+    "alias": "Fog Crawler",
+    "canonical_name": "Vigor",
+    "oracle_id": "70787d8b-0a40-43ea-837a-9617dc13e7e5",
+    "source": "https://scryfall.com/card/pip/875/vigor?utm_source=api"
+  },
+  {
+    "alias": "Forge, Neverwinter Charlatan",
+    "canonical_name": "Evin, Waterdeep Opportunist",
+    "oracle_id": "f688f839-c7c2-45a9-8c60-9fdb030803e6",
+    "source": "https://scryfall.com/card/sld/1239/evin-waterdeep-opportunist?utm_source=api"
+  },
+  {
+    "alias": "Franklin's Finality",
+    "canonical_name": "Annie Joins Up",
+    "oracle_id": "4c3ad545-b375-44a7-a24e-58baacc4e4b6",
+    "source": "https://scryfall.com/card/msc/403/annie-joins-up?utm_source=api"
+  },
+  {
+    "alias": "Freestrider Aces",
+    "canonical_name": "Wild Pack Squad",
+    "oracle_id": "294b2aa7-cb46-46bd-8241-69b26d73aa2d",
+    "source": "https://scryfall.com/card/om1/11/wild-pack-squad?utm_source=api"
+  },
+  {
+    "alias": "Freya, Queen of the Valkyries",
+    "canonical_name": "Iroas, God of Victory",
+    "oracle_id": "36041cf2-159f-4809-9377-930ac4db545f",
+    "source": "https://scryfall.com/card/sld/2215/iroas-god-of-victory?utm_source=api"
+  },
+  {
+    "alias": "Friends to the End",
+    "canonical_name": "Twinflame",
+    "oracle_id": "83cf1169-5853-4332-b897-7b17d72d76ab",
+    "source": "https://scryfall.com/card/sld/1810/twinflame?utm_source=api"
+  },
+  {
+    "alias": "Full-Throttle Fanatic",
+    "canonical_name": "Taxi Driver",
+    "oracle_id": "a17a92f7-e95c-4d0e-a43e-7e6b41a59139",
+    "source": "https://scryfall.com/card/om1/80/taxi-driver?utm_source=api"
+  },
+  {
+    "alias": "Gaia's Dark Hammer",
+    "canonical_name": "Colossus Hammer",
+    "oracle_id": "8ec03b88-8d3a-4a32-8b7c-7da59b0c03d0",
+    "source": "https://scryfall.com/card/sld/1866/colossus-hammer?utm_source=api"
+  },
+  {
+    "alias": "Galaxy Sword",
+    "canonical_name": "Sword of Forge and Frontier",
+    "oracle_id": "c6331ce3-21f7-4784-80fe-df1f541a4c46",
+    "source": "https://scryfall.com/card/sld/2817/sword-of-forge-and-frontier?utm_source=api"
+  },
+  {
+    "alias": "Galvanized Workforce",
+    "canonical_name": "Angry Rabble",
+    "oracle_id": "cf6dc79e-840c-4d47-8f94-c8623528acd2",
+    "source": "https://scryfall.com/card/om1/81/angry-rabble?utm_source=api"
+  },
+  {
+    "alias": "Garfield and Odie, Best Buds",
+    "canonical_name": "Rin and Seri, Inseparable",
+    "oracle_id": "28c46eb7-bdfc-44b9-b7e9-b073260851f0",
+    "source": "https://scryfall.com/card/sld/2668/rin-and-seri-inseparable?utm_source=api"
+  },
+  {
+    "alias": "Garnet Til Alexandros 17th",
+    "canonical_name": "Loran of the Third Path",
+    "oracle_id": "b3d81980-76f2-44e2-b1c9-01e30c726312",
+    "source": "https://scryfall.com/card/fca/24/loran-of-the-third-path?utm_source=api"
+  },
+  {
+    "alias": "Gary, the Snail",
+    "canonical_name": "Toxrill, the Corrosive",
+    "oracle_id": "c71b2325-bde6-4364-a93b-8477ffeb25d8",
+    "source": "https://scryfall.com/card/sld/1929/toxrill-the-corrosive?utm_source=api"
+  },
+  {
+    "alias": "Generous Betty Wray",
+    "canonical_name": "Silver Sable, Mercenary Leader",
+    "oracle_id": "40b82dee-98c7-4b86-88b8-28388cd0331f",
+    "source": "https://scryfall.com/card/om1/12/silver-sable-mercenary-leader?utm_source=api"
+  },
+  {
+    "alias": "Ghal Maraz, the Great Shatterer",
+    "canonical_name": "Loxodon Warhammer",
+    "oracle_id": "dba35ac5-7ad3-488a-a006-6b9a1d54eea5",
+    "source": "https://scryfall.com/card/sld/1034/loxodon-warhammer?utm_source=api"
+  },
+  {
+    "alias": "Ghazghkull, Prophet of the Waaagh!",
+    "canonical_name": "Zurgo Helmsmasher",
+    "oracle_id": "6c48d888-9f5d-43f4-adbd-61dbdba09260",
+    "source": "https://scryfall.com/card/sld/1028/zurgo-helmsmasher?utm_source=api"
+  },
+  {
+    "alias": "Ghidorah, King of the Cosmos",
+    "canonical_name": "Illuna, Apex of Wishes",
+    "oracle_id": "08daa30f-7ce0-4a72-b539-fbb0c585fd73",
+    "source": "https://scryfall.com/card/iko/379/illuna-apex-of-wishes?utm_source=api"
+  },
+  {
+    "alias": "Ghost Trap",
+    "canonical_name": "Soul-Guide Lantern",
+    "oracle_id": "1b5e6560-ff2e-4475-96cb-63f64c8a86db",
+    "source": "https://scryfall.com/card/sld/871/soul-guide-lantern?utm_source=api"
+  },
+  {
+    "alias": "Ghostbuster's Patch",
+    "canonical_name": "Boros Charm",
+    "oracle_id": "2679d0dd-ba30-4a1c-b6a0-b3ac6c790496",
+    "source": "https://scryfall.com/card/sld/1771/boros-charm?utm_source=api"
+  },
+  {
+    "alias": "Giant of Babil",
+    "canonical_name": "Traxos, Scourge of Kroog",
+    "oracle_id": "c1c78144-b335-4d22-a668-9173ab6a0d04",
+    "source": "https://scryfall.com/card/fca/20/traxos-scourge-of-kroog?utm_source=api"
+  },
+  {
+    "alias": "Giantcraft Helm",
+    "canonical_name": "Doc Ock's Tentacles",
+    "oracle_id": "a5a18764-eb29-4bd8-a2e9-0ce55f4f6c88",
+    "source": "https://scryfall.com/card/om1/167/doc-ocks-tentacles?utm_source=api"
+  },
+  {
+    "alias": "Gigan, Cyberclaw Terror",
+    "canonical_name": "Gyruda, Doom of Depths",
+    "oracle_id": "25eaa977-ca85-4f8d-8be5-9297a3edb14f",
+    "source": "https://scryfall.com/card/iko/384/gyruda-doom-of-depths?utm_source=api"
+  },
+  {
+    "alias": "Gilgamesh, Weapon Collector",
+    "canonical_name": "Godo, Bandit Warlord",
+    "oracle_id": "f890d51a-dc90-4179-8423-4738a72a527c",
+    "source": "https://scryfall.com/card/fca/13/godo-bandit-warlord?utm_source=api"
+  },
+  {
+    "alias": "Gimme, Gimme, Gimme!",
+    "canonical_name": "Shiny Impetus",
+    "oracle_id": "aae76e5c-f5e0-4d18-b465-e6a829be908a",
+    "source": "https://scryfall.com/card/sld/7165/shiny-impetus?utm_source=api"
+  },
+  {
+    "alias": "Glenn, the Voice of Calm",
+    "canonical_name": "Gregor, Shrewd Magistrate",
+    "oracle_id": "0b64da77-ca1c-427b-b48b-b919f0fe08e9",
+    "source": "https://scryfall.com/card/sld/145/gregor-shrewd-magistrate?utm_source=api"
+  },
+  {
+    "alias": "Glittering Caves of Aglarond",
+    "canonical_name": "Gemstone Caverns",
+    "oracle_id": "c0adbddc-b070-4c5f-afe0-0474c72a9251",
+    "source": "https://scryfall.com/card/ltc/394z/gemstone-caverns?utm_source=api"
+  },
+  {
+    "alias": "Gloria, the Great Armorer",
+    "canonical_name": "Araña, Heart of the Spider",
+    "oracle_id": "a16037f2-a0f6-465d-8d6e-cec34b4a6320",
+    "source": "https://scryfall.com/card/om1/138/ara%C3%B1a-heart-of-the-spider?utm_source=api"
+  },
+  {
+    "alias": "Goben, Gene-Splice Savant",
+    "canonical_name": "Norman Osborn",
+    "oracle_id": "aa5b06a4-90c3-45e7-ab83-cb5c96ded21d",
+    "source": "https://scryfall.com/card/om1/30/norman-osborn-green-goblin?utm_source=api"
+  },
+  {
+    "alias": "Godzilla, Doom Inevitable",
+    "canonical_name": "Yidaro, Wandering Monster",
+    "oracle_id": "6c0e22f2-f0f3-43e6-87c5-c543032112d8",
+    "source": "https://scryfall.com/card/iko/375/yidaro-wandering-monster?utm_source=api"
+  },
+  {
+    "alias": "Godzilla, King of the Monsters",
+    "canonical_name": "Zilortha, Strength Incarnate",
+    "oracle_id": "2dba8d8d-891e-482e-8014-879f701d0619",
+    "source": "https://scryfall.com/card/iko/275/zilortha-strength-incarnate?utm_source=api"
+  },
+  {
+    "alias": "Godzilla, Primeval Champion",
+    "canonical_name": "Titanoth Rex",
+    "oracle_id": "8656a32b-eb95-402b-9daf-0b6d876b4b13",
+    "source": "https://scryfall.com/card/iko/377/titanoth-rex?utm_source=api"
+  },
+  {
+    "alias": "Golbez, Clad In Darkness",
+    "canonical_name": "Syr Konrad, the Grim",
+    "oracle_id": "14c3ff84-1e82-4606-a433-869fc52cc382",
+    "source": "https://scryfall.com/card/fca/10/syr-konrad-the-grim?utm_source=api"
+  },
+  {
+    "alias": "Gore Magala, Dark Eclipse",
+    "canonical_name": "Razaketh, the Foulblooded",
+    "oracle_id": "136c9ecb-59b4-4ef6-bcb2-7b8d3df3ee75",
+    "source": "https://scryfall.com/card/sld/2251/razaketh-the-foulblooded?utm_source=api"
+  },
+  {
+    "alias": "Goro Rel, Scourge to Spiders",
+    "canonical_name": "Spider-Slayer, Hatred Honed",
+    "oracle_id": "ca68f436-2522-4007-87bf-2669c7743db0",
+    "source": "https://scryfall.com/card/om1/168/spider-slayer-hatred-honed?utm_source=api"
+  },
+  {
+    "alias": "Grandma's Scroll",
+    "canonical_name": "Merchant Scroll",
+    "oracle_id": "86cebe2a-95e7-4f22-99cc-e805aeaf347e",
+    "source": "https://scryfall.com/card/sld/2824/merchant-scroll?utm_source=api"
+  },
+  {
+    "alias": "Green Dragon Inn",
+    "canonical_name": "Homeward Path",
+    "oracle_id": "cb8ec2e4-8223-4172-8f2c-37c918a573fa",
+    "source": "https://scryfall.com/card/ltc/395z/homeward-path?utm_source=api"
+  },
+  {
+    "alias": "Grimm Fate",
+    "canonical_name": "Beast Within",
+    "oracle_id": "7735eeba-693b-47e2-bd51-414379cf1016",
+    "source": "https://scryfall.com/card/mar/75/beast-within?utm_source=api"
+  },
+  {
+    "alias": "Gromp",
+    "canonical_name": "Spore Frog",
+    "oracle_id": "97db6c39-e690-49b6-93a6-e51b8dfad10b",
+    "source": "https://scryfall.com/card/sld/696/spore-frog?utm_source=api"
+  },
+  {
+    "alias": "Guile, Sonic Soldier",
+    "canonical_name": "Immard, the Stormcleaver",
+    "oracle_id": "104f65d3-bedb-4dc5-a5dd-8ab9fe796af4",
+    "source": "https://scryfall.com/card/sld/434/immard-the-stormcleaver?utm_source=api"
+  },
+  {
+    "alias": "Hades Grip",
+    "canonical_name": "Sulfuric Vortex",
+    "oracle_id": "7652f328-e142-494b-a869-772ced10c26a",
+    "source": "https://scryfall.com/card/sld/2210/sulfuric-vortex?utm_source=api"
+  },
+  {
+    "alias": "Hadoken",
+    "canonical_name": "Lightning Bolt",
+    "oracle_id": "4457ed35-7c10-48c8-9776-456485fdf070",
+    "source": "https://scryfall.com/card/sld/675/lightning-bolt?utm_source=api"
+  },
+  {
+    "alias": "Hang In There",
+    "canonical_name": "Ponder",
+    "oracle_id": "02090581-61aa-4348-ad57-451be8ee91c2",
+    "source": "https://scryfall.com/card/sld/2670/ponder?utm_source=api"
+  },
+  {
+    "alias": "Harker's Journal",
+    "canonical_name": "Investigator's Journal",
+    "oracle_id": "22e0e822-c4aa-4ec1-b7e4-0c1c869ef71b",
+    "source": "https://scryfall.com/card/vow/345/investigators-journal?utm_source=api"
+  },
+  {
+    "alias": "Hawkins National Laboratory",
+    "canonical_name": "Havengul Laboratory",
+    "oracle_id": "e71ac446-02a4-4468-8d29-f28b21617665",
+    "source": "https://scryfall.com/card/sld/609/havengul-laboratory-havengul-mystery?utm_source=api"
+  },
+  {
+    "alias": "He-Man, Champion of Eternia",
+    "canonical_name": "Winota, Joiner of Forces",
+    "oracle_id": "02598a35-1b11-4abe-89cd-fc44c8c36c15",
+    "source": "https://scryfall.com/card/sld/2768/winota-joiner-of-forces?utm_source=api"
+  },
+  {
+    "alias": "Heart of the Explorer",
+    "canonical_name": "Search for Azcanta",
+    "oracle_id": "f74c4d96-bc4a-4d32-9519-a753d192144e",
+    "source": "https://scryfall.com/card/sld/1502/search-for-azcanta-azcanta-the-sunken-ruin?utm_source=api"
+  },
+  {
+    "alias": "Heart of the Mountain",
+    "canonical_name": "Arcane Signet",
+    "oracle_id": "0bc7f093-bef0-4f1a-852c-4b75ebf54838",
+    "source": "https://scryfall.com/card/sld/916/arcane-signet?utm_source=api"
+  },
+  {
+    "alias": "Heaven-Sent Marvel",
+    "canonical_name": "Archangel of Thune",
+    "oracle_id": "4f2d4538-dc1d-4c09-964b-b0d7c240fb7d",
+    "source": "https://scryfall.com/card/mar/41/archangel-of-thune?utm_source=api"
+  },
+  {
+    "alias": "Helm's Deep",
+    "canonical_name": "Shinka, the Bloodsoaked Keep",
+    "oracle_id": "255b937f-c9c9-4ae9-815e-17418eba0602",
+    "source": "https://scryfall.com/card/ltc/404z/shinka-the-bloodsoaked-keep?utm_source=api"
+  },
+  {
+    "alias": "Henneth Annûn",
+    "canonical_name": "Reflecting Pool",
+    "oracle_id": "67f43ac6-2a58-4b53-b5d7-0330e2a252e2",
+    "source": "https://scryfall.com/card/ltc/403z/reflecting-pool?utm_source=api"
+  },
+  {
+    "alias": "Heralds of the Shredder",
+    "canonical_name": "Vigor",
+    "oracle_id": "70787d8b-0a40-43ea-837a-9617dc13e7e5",
+    "source": "https://scryfall.com/card/tmc/53/vigor?utm_source=api"
+  },
+  {
+    "alias": "Hero of Hoarfrost Reach",
+    "canonical_name": "Archaeomancer",
+    "oracle_id": "a91a3266-cadd-47a0-9b20-160307f14c07",
+    "source": "https://scryfall.com/card/sld/2242/archaeomancer?utm_source=api"
+  },
+  {
+    "alias": "Hero of Light",
+    "canonical_name": "Adeline, Resplendent Cathar",
+    "oracle_id": "38515f89-348b-4cf3-b7bd-1f6fe4ce2fba",
+    "source": "https://scryfall.com/card/fca/1/adeline-resplendent-cathar?utm_source=api"
+  },
+  {
+    "alias": "Herugrim, Sword of Rohan",
+    "canonical_name": "Sword of Hearth and Home",
+    "oracle_id": "913e6182-706a-4872-8c8a-e146b0ae0738",
+    "source": "https://scryfall.com/card/ltc/384z/sword-of-hearth-and-home?utm_source=api"
+  },
+  {
+    "alias": "Hex of Undeath",
+    "canonical_name": "Behold the Sinister Six!",
+    "oracle_id": "6fa27f8a-bade-460f-853a-abc1c05c946a",
+    "source": "https://scryfall.com/card/om1/57/behold-the-sinister-six!?utm_source=api"
+  },
+  {
+    "alias": "Hide in Mundanity",
+    "canonical_name": "Spider-Man No More",
+    "oracle_id": "163f1fce-70c8-44e3-a679-f97d52cd1e9a",
+    "source": "https://scryfall.com/card/om1/31/spider-man-no-more?utm_source=api"
+  },
+  {
+    "alias": "Holga, Relentless Rager",
+    "canonical_name": "Jurin, Leading the Charge",
+    "oracle_id": "de384867-8bb4-4edf-b542-970538718fdd",
+    "source": "https://scryfall.com/card/sld/1240/jurin-leading-the-charge?utm_source=api"
+  },
+  {
+    "alias": "Hope's Aero Magic",
+    "canonical_name": "Cyclonic Rift",
+    "oracle_id": "d75b9c82-1b49-4c3e-a1b5-aeef57d6644b",
+    "source": "https://scryfall.com/card/sld/1869/cyclonic-rift?utm_source=api"
+  },
+  {
+    "alias": "Hugo Kupka",
+    "canonical_name": "Bruse Tarl, Boorish Herder",
+    "oracle_id": "e39a1f6b-6b13-4a8b-ac0c-63ede4636812",
+    "source": "https://scryfall.com/card/fca/50/bruse-tarl-boorish-herder?utm_source=api"
+  },
+  {
+    "alias": "Humongous Fungus",
+    "canonical_name": "Corpsejack Menace",
+    "oracle_id": "ca0cc02b-b106-4eca-9388-d4b48dd3be49",
+    "source": "https://scryfall.com/card/tmc/56/corpsejack-menace?utm_source=api"
+  },
+  {
+    "alias": "Hunger of the Ancient One",
+    "canonical_name": "Exquisite Blood",
+    "oracle_id": "8f933fae-6c0c-42d7-a817-14760d8285cd",
+    "source": "https://scryfall.com/card/sld/206/exquisite-blood?utm_source=api"
+  },
+  {
+    "alias": "Huu's Reach",
+    "canonical_name": "Kodama's Reach",
+    "oracle_id": "1593ea18-2f2f-4ab4-83fb-6ccc0bec8a90",
+    "source": "https://scryfall.com/card/sld/2294/kodamas-reach?utm_source=api"
+  },
+  {
+    "alias": "I Hate Mondays",
+    "canonical_name": "Beast Within",
+    "oracle_id": "7735eeba-693b-47e2-bd51-414379cf1016",
+    "source": "https://scryfall.com/card/sld/2671/beast-within?utm_source=api"
+  },
+  {
+    "alias": "Ian, Convalescent Charmer",
+    "canonical_name": "Tasigur, the Golden Fang",
+    "oracle_id": "837e3fde-241f-4826-ad04-f146fdcf2278",
+    "source": "https://scryfall.com/card/sld/1396%E2%98%85/tasigur-the-golden-fang?utm_source=api"
+  },
+  {
+    "alias": "Ifrit",
+    "canonical_name": "Fury",
+    "oracle_id": "fbf9f8c5-849f-45d5-8129-5fc683c21a04",
+    "source": "https://scryfall.com/card/sld/7007/fury?utm_source=api"
+  },
+  {
+    "alias": "Indominus Rex",
+    "canonical_name": "Polyraptor",
+    "oracle_id": "e47e3a40-f51f-41ed-8e7c-06200a2abc22",
+    "source": "https://scryfall.com/card/sld/1391%E2%98%85/polyraptor?utm_source=api"
+  },
+  {
+    "alias": "Inigo, Avenging Swordsman",
+    "canonical_name": "Samut, Voice of Dissent",
+    "oracle_id": "b1eee275-5106-4c8d-a497-d7945ad81d74",
+    "source": "https://scryfall.com/card/sld/1451/samut-voice-of-dissent?utm_source=api"
+  },
+  {
+    "alias": "Inn of the Prancing Pony",
+    "canonical_name": "Pillar of the Paruns",
+    "oracle_id": "677b8ce7-f922-4ee3-b311-f199da9b352b",
+    "source": "https://scryfall.com/card/ltc/402z/pillar-of-the-paruns?utm_source=api"
+  },
+  {
+    "alias": "Intergalactic Wrestling",
+    "canonical_name": "Possibility Storm",
+    "oracle_id": "8586169f-cb8c-4424-ba64-a7c1cc00680e",
+    "source": "https://scryfall.com/card/sld/7073/possibility-storm?utm_source=api"
+  },
+  {
+    "alias": "Iron Spider, Civil Warrior",
+    "canonical_name": "Alibou, Ancient Witness",
+    "oracle_id": "e5e8e116-10fe-48b0-b3d8-6edb39bd5f90",
+    "source": "https://scryfall.com/card/mar/39/alibou-ancient-witness?utm_source=api"
+  },
+  {
+    "alias": "Isengard, Saruman's Fortress",
+    "canonical_name": "Boseiju, Who Shelters All",
+    "oracle_id": "36937483-30cb-449a-8028-75017a124922",
+    "source": "https://scryfall.com/card/ltc/389z/boseiju-who-shelters-all?utm_source=api"
+  },
+  {
+    "alias": "Janai and Hoppy, Roofskippers",
+    "canonical_name": "Spider-Girl, Legacy Hero",
+    "oracle_id": "d459b3f5-a18c-4c17-a855-dc147f7c2161",
+    "source": "https://scryfall.com/card/om1/139/spider-girl-legacy-hero?utm_source=api"
+  },
+  {
+    "alias": "Joe Fixit's Expertise",
+    "canonical_name": "Rishkar's Expertise",
+    "oracle_id": "97407cd0-2bd2-4074-94d3-4ec3d243fa78",
+    "source": "https://scryfall.com/card/sld/2597/rishkars-expertise?utm_source=api"
+  },
+  {
+    "alias": "Jonathan Harker",
+    "canonical_name": "Jacob Hauken, Inspector",
+    "oracle_id": "16d2a56a-7181-4ef3-866b-10dd8615d9e9",
+    "source": "https://scryfall.com/card/vow/332/jacob-hauken-inspector-haukens-insight?utm_source=api"
+  },
+  {
+    "alias": "Joo Dee, Public Servant",
+    "canonical_name": "Sakashima of a Thousand Faces",
+    "oracle_id": "8ecdaf4b-4442-42da-9714-4257a83faf50",
+    "source": "https://scryfall.com/card/tle/18/sakashima-of-a-thousand-faces?utm_source=api"
+  },
+  {
+    "alias": "Joshua Graham, Burned Man",
+    "canonical_name": "Isshin, Two Heavens as One",
+    "oracle_id": "65114758-9a75-43a7-96e8-0aa68faa6b24",
+    "source": "https://scryfall.com/card/sld/2459/isshin-two-heavens-as-one?utm_source=api"
+  },
+  {
+    "alias": "Joshua Rosfield",
+    "canonical_name": "Rograkh, Son of Rohgahh",
+    "oracle_id": "584cee10-f18c-4633-95cc-f2e7a11841ac",
+    "source": "https://scryfall.com/card/pf25/11/rograkh-son-of-rohgahh?utm_source=api"
+  },
+  {
+    "alias": "Junimo Farmhands",
+    "canonical_name": "Sylvan Caryatid",
+    "oracle_id": "13d4c46b-c2d6-44cc-a252-4a991d471854",
+    "source": "https://scryfall.com/card/sld/7189/sylvan-caryatid?utm_source=api"
+  },
+  {
+    "alias": "KAITO, Mysterious Maestro",
+    "canonical_name": "Jace, Unraveler of Secrets",
+    "oracle_id": "ac29873e-28c3-4933-b427-61d34ff0afcd",
+    "source": "https://scryfall.com/card/sld/1590/jace-unraveler-of-secrets?utm_source=api"
+  },
+  {
+    "alias": "Katsuichi's Peace",
+    "canonical_name": "Felidar Retreat",
+    "oracle_id": "16629f59-bae8-4c19-bf50-443eb0ed6856",
+    "source": "https://scryfall.com/card/sld/2378/felidar-retreat?utm_source=api"
+  },
+  {
+    "alias": "Kavaero, Mind-Bitten",
+    "canonical_name": "Superior Spider-Man",
+    "oracle_id": "636cc915-9d1b-4ffe-9e74-795b78663911",
+    "source": "https://scryfall.com/card/om1/140/superior-spider-man?utm_source=api"
+  },
+  {
+    "alias": "Kazuo, Ruthless Rival",
+    "canonical_name": "Shocker, Unshakable",
+    "oracle_id": "564dac59-97f7-4988-9f30-d82a891e29ef",
+    "source": "https://scryfall.com/card/om1/83/shocker-unshakable?utm_source=api"
+  },
+  {
+    "alias": "Kefka Palazzo",
+    "canonical_name": "Purphoros, God of the Forge",
+    "oracle_id": "4fdbbec2-e921-4b63-958d-f9ba1e417197",
+    "source": "https://scryfall.com/card/fca/14/purphoros-god-of-the-forge?utm_source=api"
+  },
+  {
+    "alias": "Kefka's Tower",
+    "canonical_name": "Bolas's Citadel",
+    "oracle_id": "2bd111bb-ce02-414c-b5b7-e0e037d8d96b",
+    "source": "https://scryfall.com/card/fca/7/bolass-citadel?utm_source=api"
+  },
+  {
+    "alias": "Ken, Burning Brawler",
+    "canonical_name": "Aisha of Sparks and Smoke",
+    "oracle_id": "eae3e762-dacd-4bd2-923c-3abb5ceb729a",
+    "source": "https://scryfall.com/card/sld/430/aisha-of-sparks-and-smoke?utm_source=api"
+  },
+  {
+    "alias": "Kephon, Rage Incubator",
+    "canonical_name": "Stegron the Dinosaur Man",
+    "oracle_id": "5c94b616-8edf-465c-b316-4599df95c52a",
+    "source": "https://scryfall.com/card/om1/84/stegron-the-dinosaur-man?utm_source=api"
+  },
+  {
+    "alias": "Khan, Engineered Evil",
+    "canonical_name": "Sheoldred, the Apocalypse",
+    "oracle_id": "34f34409-326d-4994-a0ea-1a69aa278f03",
+    "source": "https://scryfall.com/card/sds/11/sheoldred-the-apocalypse?utm_source=api"
+  },
+  {
+    "alias": "Killer Rabbit of Caerbannog",
+    "canonical_name": "Kezzerdrix",
+    "oracle_id": "1523671c-0cf4-442c-a5f8-c74ae31016e6",
+    "source": "https://scryfall.com/card/sld/826/kezzerdrix?utm_source=api"
+  },
+  {
+    "alias": "King Caesar, Ancient Guardian",
+    "canonical_name": "Huntmaster Liger",
+    "oracle_id": "38f5e6bf-18a3-4ff3-9726-a25a9715a2d9",
+    "source": "https://scryfall.com/card/iko/370/huntmaster-liger?utm_source=api"
+  },
+  {
+    "alias": "King Caesar, Awoken Titan",
+    "canonical_name": "Snapdax, Apex of the Hunt",
+    "oracle_id": "b2b78623-5a10-4ef7-b983-3d82478269c3",
+    "source": "https://scryfall.com/card/iko/381/snapdax-apex-of-the-hunt?utm_source=api"
+  },
+  {
+    "alias": "King of the Coldblood Curse",
+    "canonical_name": "Lizard, Connors's Curse",
+    "oracle_id": "48d1b217-b068-468c-bc6c-4bef9e44cc6e",
+    "source": "https://scryfall.com/card/om1/108/lizard-connorss-curse?utm_source=api"
+  },
+  {
+    "alias": "Kings Bay Clock Tower",
+    "canonical_name": "Midnight Clock",
+    "oracle_id": "c68faebc-b2cd-461b-b93e-e1fcd4816810",
+    "source": "https://scryfall.com/card/sld/2217/midnight-clock?utm_source=api"
+  },
+  {
+    "alias": "Kitezh, Sunken City",
+    "canonical_name": "Academy Ruins",
+    "oracle_id": "a3da7d5b-2c2b-45fe-b9c5-413b8c8fc0a2",
+    "source": "https://scryfall.com/card/sld/1506/academy-ruins?utm_source=api"
+  },
+  {
+    "alias": "Kivni, Orb Weaver",
+    "canonical_name": "Scarlet Spider, Kaine",
+    "oracle_id": "4ec8a5ea-b750-4711-8843-2bc98f4ce060",
+    "source": "https://scryfall.com/card/om1/141/scarlet-spider-kaine?utm_source=api"
+  },
+  {
+    "alias": "Knife Trick",
+    "canonical_name": "Pumpkin Bombardment",
+    "oracle_id": "37827e84-9f5f-49ed-b939-0cf80dac82e7",
+    "source": "https://scryfall.com/card/om1/142/pumpkin-bombardment?utm_source=api"
+  },
+  {
+    "alias": "Knights of San d'Oria",
+    "canonical_name": "Ranger-Captain of Eos",
+    "oracle_id": "cada3481-cc2b-4412-b9b5-0436af53aad2",
+    "source": "https://scryfall.com/card/fca/2/ranger-captain-of-eos?utm_source=api"
+  },
+  {
+    "alias": "Knowby's Incantation",
+    "canonical_name": "Zombie Apocalypse",
+    "oracle_id": "8241277d-654f-4985-9d49-a22c1e59eec2",
+    "source": "https://scryfall.com/card/sld/1354/zombie-apocalypse?utm_source=api"
+  },
+  {
+    "alias": "Knuckles's Gloves",
+    "canonical_name": "The Reaver Cleaver",
+    "oracle_id": "37a2a31d-51e6-4c07-b4c2-b206ad40eb42",
+    "source": "https://scryfall.com/card/sld/2095/the-reaver-cleaver?utm_source=api"
+  },
+  {
+    "alias": "Krang's Android",
+    "canonical_name": "Triskelion",
+    "oracle_id": "74f67dcf-5afb-45aa-8d4b-3cdb23f6f2a1",
+    "source": "https://scryfall.com/card/sld/2371/triskelion?utm_source=api"
+  },
+  {
+    "alias": "Kratos' Rage",
+    "canonical_name": "Pyrohemia",
+    "oracle_id": "9ac57a10-3402-4656-9079-f713884cde35",
+    "source": "https://scryfall.com/card/sld/2211/pyrohemia?utm_source=api"
+  },
+  {
+    "alias": "Kraza, the Swarm as One",
+    "canonical_name": "Spider-Punk",
+    "oracle_id": "03bf7a90-78c1-4e83-8553-e22d85e49876",
+    "source": "https://scryfall.com/card/om1/85/spider-punk?utm_source=api"
+  },
+  {
+    "alias": "Kroble, Envoy of the Bog",
+    "canonical_name": "Spider-Man Noir",
+    "oracle_id": "2efd6494-c5e1-41de-bc6e-8490ff046cd1",
+    "source": "https://scryfall.com/card/om1/59/spider-man-noir?utm_source=api"
+  },
+  {
+    "alias": "Krobus",
+    "canonical_name": "Academy Manufactor",
+    "oracle_id": "f36d1d8b-8303-44a9-ab56-531931641ea2",
+    "source": "https://scryfall.com/card/sld/7188/academy-manufactor?utm_source=api"
+  },
+  {
+    "alias": "Kuja, Mage Manufacturer",
+    "canonical_name": "Inalla, Archmage Ritualist",
+    "oracle_id": "21bdba6e-3f9d-4ead-8212-0cbb0ce7f8cc",
+    "source": "https://scryfall.com/card/fca/52/inalla-archmage-ritualist?utm_source=api"
+  },
+  {
+    "alias": "Kumonosu, the Watchful",
+    "canonical_name": "SP//dr, Piloted by Peni",
+    "oracle_id": "722ab6e4-a2e0-4aaa-a050-7b6436e22b40",
+    "source": "https://scryfall.com/card/om1/143/spdr-piloted-by-peni?utm_source=api"
+  },
+  {
+    "alias": "Kushala Daora's Fury",
+    "canonical_name": "Snap",
+    "oracle_id": "ac914d98-221e-426c-8a50-342896b15f9e",
+    "source": "https://scryfall.com/card/sld/2247/snap?utm_source=api"
+  },
+  {
+    "alias": "La Madre Tierra",
+    "canonical_name": "Xenagos, God of Revels",
+    "oracle_id": "cb15a8dd-57fe-466f-847e-66476b690a1f",
+    "source": "https://scryfall.com/card/sld/2061/xenagos-god-of-revels?utm_source=api"
+  },
+  {
+    "alias": "La abuela, siempre generosa",
+    "canonical_name": "Tireless Provisioner",
+    "oracle_id": "ab8d5f5c-1976-4f77-8ed2-8d28ee666741",
+    "source": "https://scryfall.com/card/sld/2057/tireless-provisioner?utm_source=api"
+  },
+  {
+    "alias": "La abundancia de Yucahú",
+    "canonical_name": "Sylvan Library",
+    "oracle_id": "92eed395-62ca-4293-882b-8565c40daab5",
+    "source": "https://scryfall.com/card/sld/2058/sylvan-library?utm_source=api"
+  },
+  {
+    "alias": "La danza del pueblo",
+    "canonical_name": "Expressive Iteration",
+    "oracle_id": "c7aecca5-2f67-4245-ab2d-e723d8b23a67",
+    "source": "https://scryfall.com/card/sld/2060/expressive-iteration?utm_source=api"
+  },
+  {
+    "alias": "Lady Loki's Manifestation",
+    "canonical_name": "Titan of Littjara",
+    "oracle_id": "f62250c6-0832-46c8-a800-806589504f5f",
+    "source": "https://scryfall.com/card/msc/335/titan-of-littjara?utm_source=api"
+  },
+  {
+    "alias": "Lagiacrus, Lord of the Seas",
+    "canonical_name": "Nezahal, Primal Tide",
+    "oracle_id": "c45e96cb-2539-4e00-9fff-782a182c2f4b",
+    "source": "https://scryfall.com/card/sld/2236/nezahal-primal-tide?utm_source=api"
+  },
+  {
+    "alias": "Lavaborn Goblins",
+    "canonical_name": "Raging Goblinoids",
+    "oracle_id": "c807b53f-2917-41a0-812c-57240b623365",
+    "source": "https://scryfall.com/card/om1/86/raging-goblinoids?utm_source=api"
+  },
+  {
+    "alias": "Lavabrink Repels the Magmaloth",
+    "canonical_name": "Maximum Carnage",
+    "oracle_id": "7351fca5-8672-4ba3-a015-bd4b6b289efc",
+    "source": "https://scryfall.com/card/om1/87/maximum-carnage?utm_source=api"
+  },
+  {
+    "alias": "Lazlo, Enthusiastic Accuser",
+    "canonical_name": "J. Jonah Jameson",
+    "oracle_id": "de861715-fd0b-493e-9a7c-c470a23044c0",
+    "source": "https://scryfall.com/card/om1/88/j-jonah-jameson?utm_source=api"
+  },
+  {
+    "alias": "Len and Rin, Harmony Incarnate",
+    "canonical_name": "The Royal Scions",
+    "oracle_id": "4ecde8d1-e4ec-4bd9-8a80-49885b032557",
+    "source": "https://scryfall.com/card/sld/1600/the-royal-scions?utm_source=api"
+  },
+  {
+    "alias": "Leo's Katana",
+    "canonical_name": "Sword of Sinew and Steel",
+    "oracle_id": "ccab4509-f189-4610-9597-547e7f6b0775",
+    "source": "https://scryfall.com/card/pza/18/sword-of-sinew-and-steel?utm_source=api"
+  },
+  {
+    "alias": "Leyline Weaver",
+    "canonical_name": "Spider Manifestation",
+    "oracle_id": "8281f2b9-e81b-48da-812a-8713b2adf8ab",
+    "source": "https://scryfall.com/card/om1/144/spider-manifestation?utm_source=api"
+  },
+  {
+    "alias": "Lifelong Friendship",
+    "canonical_name": "Eladamri's Call",
+    "oracle_id": "4acb6612-54e8-428d-acb6-c7259a5ad6a8",
+    "source": "https://scryfall.com/card/tle/48/eladamris-call?utm_source=api"
+  },
+  {
+    "alias": "Lightning, Lone Commando",
+    "canonical_name": "Isshin, Two Heavens as One",
+    "oracle_id": "65114758-9a75-43a7-96e8-0aa68faa6b24",
+    "source": "https://scryfall.com/card/fca/54/isshin-two-heavens-as-one?utm_source=api"
+  },
+  {
+    "alias": "Linda, Kandarian Queen",
+    "canonical_name": "Varina, Lich Queen",
+    "oracle_id": "9859fbca-60c3-4a57-a377-51b56f03894f",
+    "source": "https://scryfall.com/card/sld/1355/varina-lich-queen?utm_source=api"
+  },
+  {
+    "alias": "Lively Leap",
+    "canonical_name": "Thwip!",
+    "oracle_id": "f7d11254-b48a-4016-a035-c0d6642fdfae",
+    "source": "https://scryfall.com/card/om1/13/thwip!?utm_source=api"
+  },
+  {
+    "alias": "Lofi Cat",
+    "canonical_name": "Felidar Guardian",
+    "oracle_id": "33869ba6-13e5-4e48-8963-92f7965648fb",
+    "source": "https://scryfall.com/card/sld/2821/felidar-guardian?utm_source=api"
+  },
+  {
+    "alias": "Loki's Double",
+    "canonical_name": "Spark Double",
+    "oracle_id": "8dcb35e5-ae44-455f-86e3-4a77d496ff34",
+    "source": "https://scryfall.com/card/msc/337/spark-double?utm_source=api"
+  },
+  {
+    "alias": "Lost in Littjara",
+    "canonical_name": "The Clone Saga",
+    "oracle_id": "0f0282c6-aceb-4879-8ec8-482d0501204a",
+    "source": "https://scryfall.com/card/om1/33/the-clone-saga?utm_source=api"
+  },
+  {
+    "alias": "Luca Stadium",
+    "canonical_name": "Strixhaven Stadium",
+    "oracle_id": "2ed0c6fc-b8b4-47da-a04b-1d995bdeecb0",
+    "source": "https://scryfall.com/card/fca/63/strixhaven-stadium?utm_source=api"
+  },
+  {
+    "alias": "Lucas, the Sharpshooter",
+    "canonical_name": "Bjorna, Nightfall Alchemist",
+    "oracle_id": "c880fbdc-bdd9-4f80-81d4-e3e1124f76ca",
+    "source": "https://scryfall.com/card/sld/344/bjorna-nightfall-alchemist?utm_source=api"
+  },
+  {
+    "alias": "Lucille",
+    "canonical_name": "Gisa's Favorite Shovel",
+    "oracle_id": "9c298c7b-9c63-4a66-a0fc-977491b623c7",
+    "source": "https://scryfall.com/card/sld/581/gisas-favorite-shovel?utm_source=api"
+  },
+  {
+    "alias": "Lucky Purple Memento",
+    "canonical_name": "Puca's Mischief",
+    "oracle_id": "a8e6655c-e63f-4a60-98f6-9d5bf8631488",
+    "source": "https://scryfall.com/card/sld/923/pucas-mischief?utm_source=api"
+  },
+  {
+    "alias": "Lucy Westenra",
+    "canonical_name": "Innocent Traveler",
+    "oracle_id": "7950a7ff-7c2e-40fe-b64a-324f4fbcf528",
+    "source": "https://scryfall.com/card/vow/336/innocent-traveler-malicious-invader?utm_source=api"
+  },
+  {
+    "alias": "Luis, Pompous Pillager",
+    "canonical_name": "Morlun, Devourer of Spiders",
+    "oracle_id": "273ad15c-366a-4691-978b-d6028b57005a",
+    "source": "https://scryfall.com/card/om1/60/morlun-devourer-of-spiders?utm_source=api"
+  },
+  {
+    "alias": "Luka, the Traveling Sound",
+    "canonical_name": "Liliana of the Dark Realms",
+    "oracle_id": "92301066-8904-41bc-84bd-4aa286cbab9c",
+    "source": "https://scryfall.com/card/sld/1593/liliana-of-the-dark-realms?utm_source=api"
+  },
+  {
+    "alias": "Lunch 1:00 PM",
+    "canonical_name": "Food",
+    "oracle_id": "a468338f-635e-4206-89d6-72d723071d45",
+    "source": "https://scryfall.com/card/sld/2548/food?utm_source=api"
+  },
+  {
+    "alias": "Lórien Brooch",
+    "canonical_name": "Trailblazer's Boots",
+    "oracle_id": "634d5009-cbf3-44cb-8c15-7057f501a210",
+    "source": "https://scryfall.com/card/ltr/398/trailblazers-boots?utm_source=api"
+  },
+  {
+    "alias": "MEIKO, Explosive Entertainer",
+    "canonical_name": "Chandra, Flamecaller",
+    "oracle_id": "0c2a9131-f3d7-4f71-8bcc-3c169574b2e3",
+    "source": "https://scryfall.com/card/sld/807/chandra-flamecaller?utm_source=api"
+  },
+  {
+    "alias": "Magus Sisters",
+    "canonical_name": "Endurance",
+    "oracle_id": "c85d824b-c190-4d04-ab99-918ad0e6516c",
+    "source": "https://scryfall.com/card/sld/7008/endurance?utm_source=api"
+  },
+  {
+    "alias": "Makari the Lucky Grot",
+    "canonical_name": "Krenko, Tin Street Kingpin",
+    "oracle_id": "e8065e1d-e937-4b56-8011-78f0d07328a0",
+    "source": "https://scryfall.com/card/sld/1027/krenko-tin-street-kingpin?utm_source=api"
+  },
+  {
+    "alias": "Makdee and Itla, Skysnarers",
+    "canonical_name": "Spider-Woman, Stunning Savior",
+    "oracle_id": "be2b9c6d-4ecb-49ec-b276-4aa93c5dfc00",
+    "source": "https://scryfall.com/card/om1/145/spider-woman-stunning-savior?utm_source=api"
+  },
+  {
+    "alias": "Malcolm's Mercurial Mirth",
+    "canonical_name": "Tasha's Hideous Laughter",
+    "oracle_id": "e352f5b9-6406-4914-bc79-f24608be6bc9",
+    "source": "https://scryfall.com/card/sld/1395%E2%98%85/tashas-hideous-laughter?utm_source=api"
+  },
+  {
+    "alias": "Man Ray, Eco Avenger",
+    "canonical_name": "Deepglow Skate",
+    "oracle_id": "debce64a-18bd-42f5-9e85-158c2242e9e9",
+    "source": "https://scryfall.com/card/sld/2362/deepglow-skate?utm_source=api"
+  },
+  {
+    "alias": "Man-At-Arms, Master Tactician",
+    "canonical_name": "Bruenor Battlehammer",
+    "oracle_id": "ea7de96f-db69-421d-a951-ffaeac140379",
+    "source": "https://scryfall.com/card/sld/2771/bruenor-battlehammer?utm_source=api"
+  },
+  {
+    "alias": "Man-E-Faces, Actor of Eternia",
+    "canonical_name": "Sakashima the Impostor",
+    "oracle_id": "a7243d25-22a2-4df5-adaf-1f40f5330ec1",
+    "source": "https://scryfall.com/card/sld/2784/sakashima-the-impostor?utm_source=api"
+  },
+  {
+    "alias": "Man-Thing, Marsh Protector",
+    "canonical_name": "Bristly Bill, Spine Sower",
+    "oracle_id": "d3b2d8a2-d3bc-448c-9cf6-6bead6010c28",
+    "source": "https://scryfall.com/card/sld/2621/bristly-bill-spine-sower?utm_source=api"
+  },
+  {
+    "alias": "Marauding Mutagen",
+    "canonical_name": "Acidic Slime",
+    "oracle_id": "21f45043-5419-4019-8b6c-e5294bd5f549",
+    "source": "https://scryfall.com/card/tmc/48/acidic-slime?utm_source=api"
+  },
+  {
+    "alias": "Margot, On the Case",
+    "canonical_name": "Wraith, Vicious Vigilante",
+    "oracle_id": "38684c31-e8c6-4825-8740-1a3d34b58b39",
+    "source": "https://scryfall.com/card/om1/146/wraith-vicious-vigilante?utm_source=api"
+  },
+  {
+    "alias": "Master Emerald Shrine",
+    "canonical_name": "Command Tower",
+    "oracle_id": "0895c9b7-ae7d-4bb3-af17-3b75deb50a25",
+    "source": "https://scryfall.com/card/sld/7030/command-tower?utm_source=api"
+  },
+  {
+    "alias": "Master Weaver, Web Protector",
+    "canonical_name": "Arasta of the Endless Web",
+    "oracle_id": "695eea46-1535-48c5-bbb6-0b8379e77bfc",
+    "source": "https://scryfall.com/card/mar/32/arasta-of-the-endless-web?utm_source=api"
+  },
+  {
+    "alias": "Master Xande",
+    "canonical_name": "Venser, Shaper Savant",
+    "oracle_id": "0f41cefc-d6ff-4db7-ba35-502b7e081de1",
+    "source": "https://scryfall.com/card/fca/6/venser-shaper-savant?utm_source=api"
+  },
+  {
+    "alias": "Max, the Daredevil",
+    "canonical_name": "Elmar, Ulvenwald Informant",
+    "oracle_id": "5a35201d-e9b1-433a-bb70-3280ceedbcd6",
+    "source": "https://scryfall.com/card/sld/345/elmar-ulvenwald-informant?utm_source=api"
+  },
+  {
+    "alias": "Mayor Tong of Chin Village",
+    "canonical_name": "Drannith Magistrate",
+    "oracle_id": "aadd10d0-6dd0-4bdc-8d93-ff08e29a5863",
+    "source": "https://scryfall.com/card/tle/2/drannith-magistrate?utm_source=api"
+  },
+  {
+    "alias": "Mechagodzilla, Battle Fortress",
+    "canonical_name": "Hangarback Walker",
+    "oracle_id": "dde55256-5259-44e7-a267-fca45a7f0d04",
+    "source": "https://scryfall.com/card/plg20/2/hangarback-walker?utm_source=api"
+  },
+  {
+    "alias": "Mechagodzilla, the Weapon",
+    "canonical_name": "Crystalline Giant",
+    "oracle_id": "49a46cfa-f2e9-4718-a6cb-47dbb0792b56",
+    "source": "https://scryfall.com/card/prm/80937/crystalline-giant?utm_source=api"
+  },
+  {
+    "alias": "Meduseld, Golden Hall of Edoras",
+    "canonical_name": "Castle Ardenvale",
+    "oracle_id": "f8f4fc60-725d-46d8-8e8f-e68e00d20589",
+    "source": "https://scryfall.com/card/ltc/391z/castle-ardenvale?utm_source=api"
+  },
+  {
+    "alias": "Memories of Nibelheim",
+    "canonical_name": "Stroke of Midnight",
+    "oracle_id": "9a107e48-3d50-4941-95b1-10f2b29a4245",
+    "source": "https://scryfall.com/card/fca/26/stroke-of-midnight?utm_source=api"
+  },
+  {
+    "alias": "Merata, Neuron Hacker",
+    "canonical_name": "Lady Octopus, Inspired Inventor",
+    "oracle_id": "8e51fdb8-4f83-4e94-b36c-40a501075ecb",
+    "source": "https://scryfall.com/card/om1/34/lady-octopus-inspired-inventor?utm_source=api"
+  },
+  {
+    "alias": "Merciless Poisoning",
+    "canonical_name": "Toxic Deluge",
+    "oracle_id": "afaef788-34d1-460b-b884-9d7ae6ddeb18",
+    "source": "https://scryfall.com/card/sld/1860/toxic-deluge?utm_source=api"
+  },
+  {
+    "alias": "Mermaid's Pendant",
+    "canonical_name": "Wedding Ring",
+    "oracle_id": "0c34e962-99d9-4163-b852-4f61886546aa",
+    "source": "https://scryfall.com/card/sld/2802/wedding-ring?utm_source=api"
+  },
+  {
+    "alias": "Meteorfall",
+    "canonical_name": "Star of Extinction",
+    "oracle_id": "48220e6c-5752-46e0-9b7f-f0eef274d929",
+    "source": "https://scryfall.com/card/sld/1862/star-of-extinction?utm_source=api"
+  },
+  {
+    "alias": "Miasmic Mist",
+    "canonical_name": "Sandman's Quicksand",
+    "oracle_id": "f2b376d2-a2f4-4d23-a1fb-eb7b6ebd0b7a",
+    "source": "https://scryfall.com/card/om1/62/sandmans-quicksand?utm_source=api"
+  },
+  {
+    "alias": "Michonne, Ruthless Survivor",
+    "canonical_name": "Enkira, Hostile Scavenger",
+    "oracle_id": "558fd7a9-9b39-4c82-b909-5febf55dc010",
+    "source": "https://scryfall.com/card/sld/146/enkira-hostile-scavenger?utm_source=api"
+  },
+  {
+    "alias": "Mike, the Dungeon Master",
+    "canonical_name": "Othelm, Sigardian Outcast",
+    "oracle_id": "4ee401bf-dc86-41a9-84f9-57aa0a314d08",
+    "source": "https://scryfall.com/card/sld/346/othelm-sigardian-outcast?utm_source=api"
+  },
+  {
+    "alias": "Miku's Spark",
+    "canonical_name": "Chandra's Ignition",
+    "oracle_id": "f61680da-606e-4d16-b0a0-361aa5210901",
+    "source": "https://scryfall.com/card/sld/1594%E2%98%85/chandras-ignition?utm_source=api"
+  },
+  {
+    "alias": "Miku, Child of Song",
+    "canonical_name": "Child of Alara",
+    "oracle_id": "70dbe8a9-505d-41c2-9b5b-a991d13ab459",
+    "source": "https://scryfall.com/card/sld/1599/child-of-alara?utm_source=api"
+  },
+  {
+    "alias": "Miku, Divine Diva",
+    "canonical_name": "Elspeth Tirel",
+    "oracle_id": "5f815e69-fdd6-4186-9317-25f5c7e0b08e",
+    "source": "https://scryfall.com/card/sld/1585/elspeth-tirel?utm_source=api"
+  },
+  {
+    "alias": "Miku, Font of Pop",
+    "canonical_name": "Giada, Font of Hope",
+    "oracle_id": "48e6d3d8-2f27-4017-acdd-40bce8cdbc02",
+    "source": "https://scryfall.com/card/sld/1586/giada-font-of-hope?utm_source=api"
+  },
+  {
+    "alias": "Miku, Lost but Singing",
+    "canonical_name": "Azusa, Lost but Seeking",
+    "oracle_id": "6c2c8bf3-9bf8-4a86-89d3-3bb36260dc51",
+    "source": "https://scryfall.com/card/sld/1597%E2%98%85/azusa-lost-but-seeking?utm_source=api"
+  },
+  {
+    "alias": "Miku, Queen Electric",
+    "canonical_name": "Brago, King Eternal",
+    "oracle_id": "fcb0c7db-bd07-4c25-b7f8-b6c207e4f6be",
+    "source": "https://scryfall.com/card/sld/1601/brago-king-eternal?utm_source=api"
+  },
+  {
+    "alias": "Miku, Song of the People",
+    "canonical_name": "Trostani, Selesnya's Voice",
+    "oracle_id": "e94ef397-f5c5-4b8d-ae27-528352fa1d1e",
+    "source": "https://scryfall.com/card/sld/2443/trostani-selesnyas-voice?utm_source=api"
+  },
+  {
+    "alias": "Miku, Voice Over All",
+    "canonical_name": "Shalai, Voice of Plenty",
+    "oracle_id": "a0c47ab6-dfb4-46ee-a3f7-9e1521b4bb4b",
+    "source": "https://scryfall.com/card/sld/2433/shalai-voice-of-plenty?utm_source=api"
+  },
+  {
+    "alias": "Miku, Voice of Power",
+    "canonical_name": "Freyalise, Llanowar's Fury",
+    "oracle_id": "659dfdbf-5e9d-4828-a967-348cb3bcf05a",
+    "source": "https://scryfall.com/card/sld/1598/freyalise-llanowars-fury?utm_source=api"
+  },
+  {
+    "alias": "Miku, the Complete Performer",
+    "canonical_name": "Vorinclex, Voice of Hunger",
+    "oracle_id": "dbf0ad03-ab31-49d2-89b1-05b45948a61f",
+    "source": "https://scryfall.com/card/sld/2439/vorinclex-voice-of-hunger?utm_source=api"
+  },
+  {
+    "alias": "Miku, the Renowned",
+    "canonical_name": "Feather, the Redeemed",
+    "oracle_id": "aa219936-661b-4ccb-8741-78b70cff2b1a",
+    "source": "https://scryfall.com/card/sld/1602%E2%98%85/feather-the-redeemed?utm_source=api"
+  },
+  {
+    "alias": "Mina Harker",
+    "canonical_name": "Thalia, Guardian of Thraben",
+    "oracle_id": "9b7f1d05-707c-4ed3-9f0e-8ced1232c2ee",
+    "source": "https://scryfall.com/card/vow/331/thalia-guardian-of-thraben?utm_source=api"
+  },
+  {
+    "alias": "Minas Morgul",
+    "canonical_name": "Cabal Coffers",
+    "oracle_id": "7358e164-5704-4e78-9b21-6a9bf2a968ce",
+    "source": "https://scryfall.com/card/ltc/390z/cabal-coffers?utm_source=api"
+  },
+  {
+    "alias": "Mind Flayer, the Shadow",
+    "canonical_name": "Arvinox, the Mind Flail",
+    "oracle_id": "9abecd23-a2d9-43c7-8d01-f8afdc53026e",
+    "source": "https://scryfall.com/card/sld/340/arvinox-the-mind-flail?utm_source=api"
+  },
+  {
+    "alias": "Minwu, Rebellion Strategist",
+    "canonical_name": "Mangara, the Diplomat",
+    "oracle_id": "cbcb6d9a-6ae5-4bcd-8013-2b657553764a",
+    "source": "https://scryfall.com/card/fca/25/mangara-the-diplomat?utm_source=api"
+  },
+  {
+    "alias": "Miracle Max, Unemployed",
+    "canonical_name": "Marchesa, the Black Rose",
+    "oracle_id": "17a59d3d-9e01-48cd-bb4a-3eaaa077751c",
+    "source": "https://scryfall.com/card/sld/1452/marchesa-the-black-rose?utm_source=api"
+  },
+  {
+    "alias": "Mirelurk Hatchling",
+    "canonical_name": "Ruin Crab",
+    "oracle_id": "8afc00d4-a1c6-4329-af2c-a7f58a0c33e7",
+    "source": "https://scryfall.com/card/sld/7095/ruin-crab?utm_source=api"
+  },
+  {
+    "alias": "Mister Sinister, Hubris Unbound",
+    "canonical_name": "Endrek Sahr, Master Breeder",
+    "oracle_id": "47a0079f-3544-45bc-a32a-bd93844c8c43",
+    "source": "https://scryfall.com/card/sld/2620/endrek-sahr-master-breeder?utm_source=api"
+  },
+  {
+    "alias": "Miyamoto Usagi",
+    "canonical_name": "Baylen, the Haymaker",
+    "oracle_id": "73dc28a7-37ac-4b16-aa00-967c9c44d979",
+    "source": "https://scryfall.com/card/sld/2377/baylen-the-haymaker?utm_source=api"
+  },
+  {
+    "alias": "Mondo Gecko, Esquire",
+    "canonical_name": "Kediss, Emberclaw Familiar",
+    "oracle_id": "d9c87cc2-943e-49b6-becc-748857549617",
+    "source": "https://scryfall.com/card/sld/2364/kediss-emberclaw-familiar?utm_source=api"
+  },
+  {
+    "alias": "Monica, the Marvel",
+    "canonical_name": "Aurelia, the Warleader",
+    "oracle_id": "0f5a3a09-2f07-4774-9e0f-e99d9a444166",
+    "source": "https://scryfall.com/card/mar/86/aurelia-the-warleader?utm_source=api"
+  },
+  {
+    "alias": "Monkey, Awakened to Emptiness",
+    "canonical_name": "Kibo, Uktabi Prince",
+    "oracle_id": "0b9be4fa-5238-4afd-a9f6-f9022e67e5ab",
+    "source": "https://scryfall.com/card/sld/2401/kibo-uktabi-prince?utm_source=api"
+  },
+  {
+    "alias": "Morgul-Knife",
+    "canonical_name": "Shadowspear",
+    "oracle_id": "8b27326f-e7b8-4a4d-b589-df459246d19a",
+    "source": "https://scryfall.com/card/ltc/383z/shadowspear?utm_source=api"
+  },
+  {
+    "alias": "Mothman Egg",
+    "canonical_name": "Mesmeric Orb",
+    "oracle_id": "03efb4f3-b8e2-4441-824f-886dc40712c4",
+    "source": "https://scryfall.com/card/sld/2457/mesmeric-orb?utm_source=api"
+  },
+  {
+    "alias": "Mothra's Great Cocoon",
+    "canonical_name": "Mysterious Egg",
+    "oracle_id": "d3b62851-6013-49e5-8808-fa61b1bdfe98",
+    "source": "https://scryfall.com/card/prm/80939/mysterious-egg?utm_source=api"
+  },
+  {
+    "alias": "Mothra, Supersonic Queen",
+    "canonical_name": "Luminous Broodmoth",
+    "oracle_id": "28c7c816-07e7-42fb-923c-bf149ba28b38",
+    "source": "https://scryfall.com/card/iko/371/luminous-broodmoth?utm_source=api"
+  },
+  {
+    "alias": "Mothwing Shroud",
+    "canonical_name": "Web Up",
+    "oracle_id": "9b9b086c-d201-4574-a1e9-0d6f8de53d7d",
+    "source": "https://scryfall.com/card/om1/15/web-up?utm_source=api"
+  },
+  {
+    "alias": "Mr. Krabs, Penny Pincher",
+    "canonical_name": "Charix, the Raging Isle",
+    "oracle_id": "c38cc5fe-936a-4d61-a816-9be773ae1d02",
+    "source": "https://scryfall.com/card/sld/1927/charix-the-raging-isle?utm_source=api"
+  },
+  {
+    "alias": "Mutanimals United",
+    "canonical_name": "Triumph of the Hordes",
+    "oracle_id": "3ded0c0c-40ce-4d14-a9a6-b023bc19ee0e",
+    "source": "https://scryfall.com/card/sld/2366/triumph-of-the-hordes?utm_source=api"
+  },
+  {
+    "alias": "Mysterious Blood Illness",
+    "canonical_name": "Vampires' Vengeance",
+    "oracle_id": "3a82e724-28f6-430f-a474-ab4276197963",
+    "source": "https://scryfall.com/card/vow/339/vampires-vengeance?utm_source=api"
+  },
+  {
+    "alias": "NOT A WOLF",
+    "canonical_name": "Tovolar, Dire Overlord",
+    "oracle_id": "45d49831-548a-4a0e-9a18-9f7397913895",
+    "source": "https://scryfall.com/card/sld/1612/tovolar-dire-overlord-tovolar-the-midnight-scourge?utm_source=api"
+  },
+  {
+    "alias": "Nargacuga Stalker",
+    "canonical_name": "Grim Haruspex",
+    "oracle_id": "72aef1d8-11df-4bc2-af83-907b05df73a8",
+    "source": "https://scryfall.com/card/sld/2243/grim-haruspex?utm_source=api"
+  },
+  {
+    "alias": "Nargacuga, Ever-Present Shadow",
+    "canonical_name": "Wasitora, Nekoru Queen",
+    "oracle_id": "13fc4168-fcc2-4011-804f-211d5d86b7dd",
+    "source": "https://scryfall.com/card/sld/2253/wasitora-nekoru-queen?utm_source=api"
+  },
+  {
+    "alias": "Neach, Pinnacle Pariah",
+    "canonical_name": "Doctor Octopus, Master Planner",
+    "oracle_id": "2fecfbef-e521-4025-94ea-451c9abde3de",
+    "source": "https://scryfall.com/card/om1/148/doctor-octopus-master-planner?utm_source=api"
+  },
+  {
+    "alias": "Neave Blacktalon",
+    "canonical_name": "Danitha Capashen, Paragon",
+    "oracle_id": "4b6377da-83e7-4519-9582-16a9c16b8faa",
+    "source": "https://scryfall.com/card/sld/1031/danitha-capashen-paragon?utm_source=api"
+  },
+  {
+    "alias": "Negan, the Cold-Blooded",
+    "canonical_name": "Malik, Grim Manipulator",
+    "oracle_id": "416608a1-89a4-44ce-8fd0-fab6b023d3d4",
+    "source": "https://scryfall.com/card/sld/147/malik-grim-manipulator?utm_source=api"
+  },
+  {
+    "alias": "Nergigante, Herald of Destruction",
+    "canonical_name": "Vaevictis Asmadi, the Dire",
+    "oracle_id": "c42ce2e9-4dfe-468a-8f41-49e187cb91d4",
+    "source": "https://scryfall.com/card/sld/2239/vaevictis-asmadi-the-dire?utm_source=api"
+  },
+  {
+    "alias": "Newfound Adventure",
+    "canonical_name": "Farseek",
+    "oracle_id": "495e52e6-4c2b-4574-9474-eadbdcc8b4ac",
+    "source": "https://scryfall.com/card/fca/45/farseek?utm_source=api"
+  },
+  {
+    "alias": "Nia, Skysail Storyteller",
+    "canonical_name": "Gwen Stacy",
+    "oracle_id": "5f143d87-35fb-40e3-94ae-f85cfff9adb5",
+    "source": "https://scryfall.com/card/om1/89/gwen-stacy-ghost-spider?utm_source=api"
+  },
+  {
+    "alias": "Nightfeeder's Visitation",
+    "canonical_name": "Night's Whisper",
+    "oracle_id": "7ffae8f8-3006-4969-a339-6d30678f87ea",
+    "source": "https://scryfall.com/card/sld/207/nights-whisper?utm_source=api"
+  },
+  {
+    "alias": "Nill, Vessel of Valgavoth",
+    "canonical_name": "Tombstone, Career Criminal",
+    "oracle_id": "6ad2cbb6-2291-420c-bfc8-ed3f079b59bf",
+    "source": "https://scryfall.com/card/om1/63/tombstone-career-criminal?utm_source=api"
+  },
+  {
+    "alias": "Noctis Lucis Caelum",
+    "canonical_name": "Kenrith, the Returned King",
+    "oracle_id": "d209b948-9afb-4fd1-a961-72c87282878c",
+    "source": "https://scryfall.com/card/fca/23/kenrith-the-returned-king?utm_source=api"
+  },
+  {
+    "alias": "Noctis's Death Magic",
+    "canonical_name": "Damn",
+    "oracle_id": "b01d61cc-9844-4191-86a0-f2db6d42d6e5",
+    "source": "https://scryfall.com/card/sld/1870/damn?utm_source=api"
+  },
+  {
+    "alias": "Nu and Sumi, Career Criminals",
+    "canonical_name": "Green Goblin, Revenant",
+    "oracle_id": "67175889-02f9-4ad8-a9ab-11db44328b67",
+    "source": "https://scryfall.com/card/om1/149/green-goblin-revenant?utm_source=api"
+  },
+  {
+    "alias": "Obscura Alleylurkers",
+    "canonical_name": "Doc Ock's Henchmen",
+    "oracle_id": "ae91c16c-5267-4957-b36c-5aa787fa6b5e",
+    "source": "https://scryfall.com/card/om1/35/doc-ocks-henchmen?utm_source=api"
+  },
+  {
+    "alias": "Olx, Mouth to Many Eyes",
+    "canonical_name": "Madame Web, Clairvoyant",
+    "oracle_id": "b1e0841d-b004-40f9-a644-aecb422f6ad5",
+    "source": "https://scryfall.com/card/om1/36/madame-web-clairvoyant?utm_source=api"
+  },
+  {
+    "alias": "Opulent Valet",
+    "canonical_name": "News Helicopter",
+    "oracle_id": "192dd1e2-b6c2-432a-a1b4-e52ff39b3db2",
+    "source": "https://scryfall.com/card/om1/169/news-helicopter?utm_source=api"
+  },
+  {
+    "alias": "Orbital Vibranium Bomb",
+    "canonical_name": "Scourglass",
+    "oracle_id": "78541a40-c27a-49c0-aa3e-5a48b97065f0",
+    "source": "https://scryfall.com/card/msc/318/scourglass?utm_source=api"
+  },
+  {
+    "alias": "Ork Kommando",
+    "canonical_name": "Merciless Executioner",
+    "oracle_id": "c3c45d50-9038-41df-bb2f-9bc40071845b",
+    "source": "https://scryfall.com/card/sld/1025/merciless-executioner?utm_source=api"
+  },
+  {
+    "alias": "Orko, Trollan Magician",
+    "canonical_name": "Delina, Wild Mage",
+    "oracle_id": "8d57dadb-c689-4691-b331-aba15daf46ff",
+    "source": "https://scryfall.com/card/sld/2770/delina-wild-mage?utm_source=api"
+  },
+  {
+    "alias": "Ororo Borealis",
+    "canonical_name": "Manamorphose",
+    "oracle_id": "89c83a6d-f6c8-4984-a888-0db62dfb93b1",
+    "source": "https://scryfall.com/card/sld/1746/manamorphose?utm_source=api"
+  },
+  {
+    "alias": "Orphan, Cocoon fal'Cie",
+    "canonical_name": "Muldrotha, the Gravetide",
+    "oracle_id": "e4625704-1d52-44e4-804f-2f45644d76ac",
+    "source": "https://scryfall.com/card/fca/57/muldrotha-the-gravetide?utm_source=api"
+  },
+  {
+    "alias": "Orris, Last of the Web Lords",
+    "canonical_name": "Ezekiel Sims, Spider-Totem",
+    "oracle_id": "4074e897-82a4-4f57-86c2-4aab3f29ef9b",
+    "source": "https://scryfall.com/card/om1/110/ezekiel-sims-spider-totem?utm_source=api"
+  },
+  {
+    "alias": "Osgiliath, Fallen Capital",
+    "canonical_name": "Kor Haven",
+    "oracle_id": "276cece9-f9f2-46e6-ae76-daddaa2fb9ab",
+    "source": "https://scryfall.com/card/ltc/398z/kor-haven?utm_source=api"
+  },
+  {
+    "alias": "Outsmart the Amateur",
+    "canonical_name": "School Daze",
+    "oracle_id": "af2275ea-1085-4145-aa6b-36924d53d88a",
+    "source": "https://scryfall.com/card/om1/37/school-daze?utm_source=api"
+  },
+  {
+    "alias": "Ozor, Chronicler of Collapse",
+    "canonical_name": "Doc Ock, Sinister Scientist",
+    "oracle_id": "dbaa70e6-26de-4ce9-9543-e652cbe387c1",
+    "source": "https://scryfall.com/card/om1/38/doc-ock-sinister-scientist?utm_source=api"
+  },
+  {
+    "alias": "Panic on Amity Island",
+    "canonical_name": "Descent into Avernus",
+    "oracle_id": "1313da2f-92bb-4862-9153-373972cc1520",
+    "source": "https://scryfall.com/card/sld/2176/descent-into-avernus?utm_source=api"
+  },
+  {
+    "alias": "Panther Idol",
+    "canonical_name": "Mind's Eye",
+    "oracle_id": "63fd2a57-7a47-4e07-947c-f4e9da7ee538",
+    "source": "https://scryfall.com/card/msc/447/minds-eye?utm_source=api"
+  },
+  {
+    "alias": "Panthor, Savage Cat",
+    "canonical_name": "The Gitrog, Ravenous Ride",
+    "oracle_id": "7739311a-682b-48a6-8db2-c07f44141751",
+    "source": "https://scryfall.com/card/sld/2791/the-gitrog-ravenous-ride?utm_source=api"
+  },
+  {
+    "alias": "Paradise Chocobo",
+    "canonical_name": "Birds of Paradise",
+    "oracle_id": "d3a0b660-358c-41bd-9cd2-41fbf3491b1a",
+    "source": "https://scryfall.com/card/fic/483/birds-of-paradise?utm_source=api"
+  },
+  {
+    "alias": "Pastor da Selva",
+    "canonical_name": "Ancient Greenwarden",
+    "oracle_id": "3bcf090c-e890-4a9f-a8aa-6079e4ec9947",
+    "source": "https://scryfall.com/card/sld/2059/ancient-greenwarden?utm_source=api"
+  },
+  {
+    "alias": "Patchwork Chucky",
+    "canonical_name": "Stuffy Doll",
+    "oracle_id": "499dceab-1890-49c8-b35d-b059a1dc950f",
+    "source": "https://scryfall.com/card/sld/880/stuffy-doll?utm_source=api"
+  },
+  {
+    "alias": "Paths of the Dead",
+    "canonical_name": "Cavern of Souls",
+    "oracle_id": "89ca686a-7c72-4d8f-9290-e89635624a83",
+    "source": "https://scryfall.com/card/ltc/392/cavern-of-souls?utm_source=api"
+  },
+  {
+    "alias": "Patrick Star",
+    "canonical_name": "Barktooth Warbeard",
+    "oracle_id": "4a221518-c850-4e8a-a697-765c0a0e76e7",
+    "source": "https://scryfall.com/card/sld/1931/barktooth-warbeard?utm_source=api"
+  },
+  {
+    "alias": "Patriotic Shield",
+    "canonical_name": "Sword of Fire and Ice",
+    "oracle_id": "2ccdc60a-49a9-44b9-a7af-0ebf18b26785",
+    "source": "https://scryfall.com/card/mar/100/sword-of-fire-and-ice?utm_source=api"
+  },
+  {
+    "alias": "Pelican Town",
+    "canonical_name": "Homeward Path",
+    "oracle_id": "cb8ec2e4-8223-4172-8f2c-37c918a573fa",
+    "source": "https://scryfall.com/card/sld/2811/homeward-path?utm_source=api"
+  },
+  {
+    "alias": "Perfect Defense",
+    "canonical_name": "Defense of the Heart",
+    "oracle_id": "e7e1b166-9267-426d-897d-24903327b48d",
+    "source": "https://scryfall.com/card/sld/1039/defense-of-the-heart?utm_source=api"
+  },
+  {
+    "alias": "Perfected Pastry",
+    "canonical_name": "Bagel and Schmear",
+    "oracle_id": "1389c9fa-fec2-4212-a7aa-6dfb318dc202",
+    "source": "https://scryfall.com/card/om1/170/bagel-and-schmear?utm_source=api"
+  },
+  {
+    "alias": "Perilous Lunge",
+    "canonical_name": "Kapow!",
+    "oracle_id": "d6eabbff-cc0c-4000-8feb-4826e1b6bc66",
+    "source": "https://scryfall.com/card/om1/111/kapow!?utm_source=api"
+  },
+  {
+    "alias": "Phantasmal Vision",
+    "canonical_name": "Mysterio's Phantasm",
+    "oracle_id": "99419378-8a23-44f3-aebe-e62d6e20e877",
+    "source": "https://scryfall.com/card/om1/39/mysterios-phantasm?utm_source=api"
+  },
+  {
+    "alias": "Phenomena Recorder",
+    "canonical_name": "Peter Parker's Camera",
+    "oracle_id": "10777360-c046-43e3-ab44-9d0b926fbbf8",
+    "source": "https://scryfall.com/card/om1/171/peter-parkers-camera?utm_source=api"
+  },
+  {
+    "alias": "Pierre's Truce",
+    "canonical_name": "Dawn's Truce",
+    "oracle_id": "37c06f89-db36-4937-9404-2b07cd22e1a6",
+    "source": "https://scryfall.com/card/sld/2803/dawns-truce?utm_source=api"
+  },
+  {
+    "alias": "Pigsy of the Eight Precepts",
+    "canonical_name": "Ilharg, the Raze-Boar",
+    "oracle_id": "8d571129-9030-47e0-9624-a49fb63e5a1b",
+    "source": "https://scryfall.com/card/sld/2402/ilharg-the-raze-boar?utm_source=api"
+  },
+  {
+    "alias": "Piko Piko Hammer",
+    "canonical_name": "Hammer of Nazahn",
+    "oracle_id": "e3955573-3db5-490e-903e-65e0172a9202",
+    "source": "https://scryfall.com/card/sld/2098/hammer-of-nazahn?utm_source=api"
+  },
+  {
+    "alias": "Pinnacle Research Team",
+    "canonical_name": "Oscorp Research Team",
+    "oracle_id": "4d2e233c-0173-417f-82a0-1e692a400ae1",
+    "source": "https://scryfall.com/card/om1/40/oscorp-research-team?utm_source=api"
+  },
+  {
+    "alias": "Plankton, Tiny Tyrant",
+    "canonical_name": "Skrelv, Defector Mite",
+    "oracle_id": "20053847-6623-493c-8cdb-a69cda3b1577",
+    "source": "https://scryfall.com/card/sld/1926/skrelv-defector-mite?utm_source=api"
+  },
+  {
+    "alias": "Play Pals Factory",
+    "canonical_name": "Genesis Chamber",
+    "oracle_id": "150ab025-5cc3-4468-a724-bbba8838445d",
+    "source": "https://scryfall.com/card/sld/1811/genesis-chamber?utm_source=api"
+  },
+  {
+    "alias": "Porom's Silence Magic",
+    "canonical_name": "Silence",
+    "oracle_id": "8aed54cb-d1bb-45ad-adbe-38e55d84ff31",
+    "source": "https://scryfall.com/card/sld/7003/silence?utm_source=api"
+  },
+  {
+    "alias": "Post the Enchanter",
+    "canonical_name": "Zur the Enchanter",
+    "oracle_id": "d7950018-d744-48a8-81aa-0d8384703f48",
+    "source": "https://scryfall.com/card/sld/726/zur-the-enchanter?utm_source=api"
+  },
+  {
+    "alias": "Post's Citadel",
+    "canonical_name": "Bolas's Citadel",
+    "oracle_id": "2bd111bb-ce02-414c-b5b7-e0e037d8d96b",
+    "source": "https://scryfall.com/card/sld/1187/bolass-citadel?utm_source=api"
+  },
+  {
+    "alias": "Post's Sigil",
+    "canonical_name": "Leshrac's Sigil",
+    "oracle_id": "98388eba-31ab-4302-be9e-ea67ea2b8c1a",
+    "source": "https://scryfall.com/card/sld/1188/leshracs-sigil?utm_source=api"
+  },
+  {
+    "alias": "Post, Son of Rich",
+    "canonical_name": "K'rrik, Son of Yawgmoth",
+    "oracle_id": "cbe3a4e7-5dbe-4f58-8ee6-a1762b65acfd",
+    "source": "https://scryfall.com/card/sld/1186/krrik-son-of-yawgmoth?utm_source=api"
+  },
+  {
+    "alias": "Power Sneakers",
+    "canonical_name": "Lightning Greaves",
+    "oracle_id": "ca204b66-8d0c-431a-8d34-282f7c2d17da",
+    "source": "https://scryfall.com/card/sld/2099/lightning-greaves?utm_source=api"
+  },
+  {
+    "alias": "Prime Mirelurk Queen",
+    "canonical_name": "Hullbreaker Horror",
+    "oracle_id": "d4a84e78-d9b9-4c67-8a4b-4329e65f0f15",
+    "source": "https://scryfall.com/card/pip/872/hullbreaker-horror?utm_source=api"
+  },
+  {
+    "alias": "Primogenesis",
+    "canonical_name": "Feed the Swarm",
+    "oracle_id": "5825997b-10d7-4a36-972c-a80ddd90b8ed",
+    "source": "https://scryfall.com/card/sld/7001/feed-the-swarm?utm_source=api"
+  },
+  {
+    "alias": "Princess Sarah",
+    "canonical_name": "Azusa, Lost but Seeking",
+    "oracle_id": "6c2c8bf3-9bf8-4a86-89d3-3bb36260dc51",
+    "source": "https://scryfall.com/card/fca/15/azusa-lost-but-seeking?utm_source=api"
+  },
+  {
+    "alias": "Principled Referee",
+    "canonical_name": "Daily Bugle Reporters",
+    "oracle_id": "2e677ded-7af3-4af0-81df-b70d6ee616ec",
+    "source": "https://scryfall.com/card/om1/16/daily-bugle-reporters?utm_source=api"
+  },
+  {
+    "alias": "Prophetic Beginning",
+    "canonical_name": "Preordain",
+    "oracle_id": "ac641490-ca14-48d7-8cc4-b69ce984befa",
+    "source": "https://scryfall.com/card/sch/39/preordain?utm_source=api"
+  },
+  {
+    "alias": "Qoneus, Horizon Splicer",
+    "canonical_name": "The Spot, Living Portal",
+    "oracle_id": "a5dfa7ad-9637-4da8-9ed2-0ac863617d9a",
+    "source": "https://scryfall.com/card/om1/150/the-spot-living-portal?utm_source=api"
+  },
+  {
+    "alias": "Quincey Harker",
+    "canonical_name": "Reclusive Taxidermist",
+    "oracle_id": "7a0168c5-e258-4c50-96aa-95deb2198e6f",
+    "source": "https://scryfall.com/card/vow/340/reclusive-taxidermist?utm_source=api"
+  },
+  {
+    "alias": "Quint's Insight",
+    "canonical_name": "Shadow of the Goblin",
+    "oracle_id": "f343b6f9-41c3-419b-a57c-a7b08603ef5c",
+    "source": "https://scryfall.com/card/om1/90/shadow-of-the-goblin?utm_source=api"
+  },
+  {
+    "alias": "Quite a Merry Gathering",
+    "canonical_name": "Tocasia's Welcome",
+    "oracle_id": "25c983e0-a8c9-4784-91a4-8fe04c6df882",
+    "source": "https://scryfall.com/card/sld/2553/tocasias-welcome?utm_source=api"
+  },
+  {
+    "alias": "Raise Repulsor Shields",
+    "canonical_name": "Raise the Palisade",
+    "oracle_id": "f55a3781-fe33-4301-9bb5-6a54b9c13c4f",
+    "source": "https://scryfall.com/card/msc/340/raise-the-palisade?utm_source=api"
+  },
+  {
+    "alias": "Rally the Evil Warriors",
+    "canonical_name": "Breach the Multiverse",
+    "oracle_id": "ebbd5b9c-07ff-4b42-81c2-ba09539f3a42",
+    "source": "https://scryfall.com/card/sld/2777/breach-the-multiverse?utm_source=api"
+  },
+  {
+    "alias": "Raph's Jitte",
+    "canonical_name": "Umezawa's Jitte",
+    "oracle_id": "1da10d5c-36a8-473f-a5d4-782ad61d8057",
+    "source": "https://scryfall.com/card/pza/19/umezawas-jitte?utm_source=api"
+  },
+  {
+    "alias": "Rathalos, King of the Skies",
+    "canonical_name": "Drakuseth, Maw of Flames",
+    "oracle_id": "060deaff-44d6-4f03-9568-bcb7add80255",
+    "source": "https://scryfall.com/card/sld/2237/drakuseth-maw-of-flames?utm_source=api"
+  },
+  {
+    "alias": "Re-Roll",
+    "canonical_name": "Rewind",
+    "oracle_id": "bb27bfdf-fe8d-45bd-ad62-8118dce06eda",
+    "source": "https://scryfall.com/card/sld/1036/rewind?utm_source=api"
+  },
+  {
+    "alias": "Reality Fulcrum",
+    "canonical_name": "Interdimensional Web Watch",
+    "oracle_id": "456dbec4-1b0e-48c4-abae-5c8205651872",
+    "source": "https://scryfall.com/card/om1/172/interdimensional-web-watch?utm_source=api"
+  },
+  {
+    "alias": "Recyclops, Eco-friendly",
+    "canonical_name": "Garruk Relentless",
+    "oracle_id": "7cec9021-6f25-4fd8-b40e-adf4ffd3a7b8",
+    "source": "https://scryfall.com/card/sld/2169/garruk-relentless-garruk-the-veil-cursed?utm_source=api"
+  },
+  {
+    "alias": "Redhorn Pass",
+    "canonical_name": "Mouth of Ronom",
+    "oracle_id": "7c05d239-39fc-4d34-a853-e3d591f4a235",
+    "source": "https://scryfall.com/card/ltc/400z/mouth-of-ronom?utm_source=api"
+  },
+  {
+    "alias": "Regalla's Wrath",
+    "canonical_name": "Tarrian's Soulcleaver",
+    "oracle_id": "2ffb38ec-5852-4e91-85a5-cfccd1f23556",
+    "source": "https://scryfall.com/card/sld/2224/tarrians-soulcleaver?utm_source=api"
+  },
+  {
+    "alias": "Remarkable Readings",
+    "canonical_name": "Friendly Neighborhood",
+    "oracle_id": "10fe402e-8d6f-4058-9f42-86f229055359",
+    "source": "https://scryfall.com/card/om1/17/friendly-neighborhood?utm_source=api"
+  },
+  {
+    "alias": "Remorseless Coup",
+    "canonical_name": "The Spot's Portal",
+    "oracle_id": "3ceac6ce-acde-42ab-b79d-ff153074d2d8",
+    "source": "https://scryfall.com/card/om1/65/the-spots-portal?utm_source=api"
+  },
+  {
+    "alias": "Renfield, Delusional Minion",
+    "canonical_name": "Eruth, Tormented Prophet",
+    "oracle_id": "a0380b63-58ef-4545-beec-6ad307bbc21b",
+    "source": "https://scryfall.com/card/vow/342/eruth-tormented-prophet?utm_source=api"
+  },
+  {
+    "alias": "Restless Razorkin",
+    "canonical_name": "Superior Foes of Spider-Man",
+    "oracle_id": "a6a7af21-e52c-4f7f-a57f-bd365d075966",
+    "source": "https://scryfall.com/card/om1/91/superior-foes-of-spider-man?utm_source=api"
+  },
+  {
+    "alias": "Rhilex the Accursed",
+    "canonical_name": "Agent Venom",
+    "oracle_id": "14c356aa-178d-4c14-a88e-fbe92ee6d89f",
+    "source": "https://scryfall.com/card/om1/66/agent-venom?utm_source=api"
+  },
+  {
+    "alias": "Rick, Steadfast Leader",
+    "canonical_name": "Greymond, Avacyn's Stalwart",
+    "oracle_id": "739a5220-50cd-4148-be58-1bbdeef2954e",
+    "source": "https://scryfall.com/card/sld/143/greymond-avacyns-stalwart?utm_source=api"
+  },
+  {
+    "alias": "Ring of Barahir",
+    "canonical_name": "Sword of the Animist",
+    "oracle_id": "d79cbc61-6c15-48ea-bbba-3cffb819ccba",
+    "source": "https://scryfall.com/card/ltc/385z/sword-of-the-animist?utm_source=api"
+  },
+  {
+    "alias": "Rishei, Getaway Accomplice",
+    "canonical_name": "Vulture, Scheming Scavenger",
+    "oracle_id": "0409765a-bbb4-465e-99b3-3687bffc3cf9",
+    "source": "https://scryfall.com/card/om1/152/vulture-scheming-scavenger?utm_source=api"
+  },
+  {
+    "alias": "Rizna, the Spider-Crowned",
+    "canonical_name": "Spinneret and Spiderling",
+    "oracle_id": "daca1d5e-349d-4e8a-abc7-427dab43fb0c",
+    "source": "https://scryfall.com/card/om1/92/spinneret-and-spiderling?utm_source=api"
+  },
+  {
+    "alias": "Rodan, Titan of Winged Fury",
+    "canonical_name": "Vadrok, Apex of Thunder",
+    "oracle_id": "775c41fa-2316-43c9-af34-ac9c9b0db7e2",
+    "source": "https://scryfall.com/card/iko/383/vadrok-apex-of-thunder?utm_source=api"
+  },
+  {
+    "alias": "Rodents of Unusual Size",
+    "canonical_name": "Pack Rat",
+    "oracle_id": "5632c2df-71e6-41b7-b8f5-c683812cc0e2",
+    "source": "https://scryfall.com/card/sld/1448/pack-rat?utm_source=api"
+  },
+  {
+    "alias": "Ronin's Arsenal",
+    "canonical_name": "Conqueror's Flail",
+    "oracle_id": "9aace0d3-89e6-4254-b96f-ee3a878f2f91",
+    "source": "https://scryfall.com/card/pza/15/conquerors-flail?utm_source=api"
+  },
+  {
+    "alias": "Round Two",
+    "canonical_name": "Seize the Day",
+    "oracle_id": "2a6abd59-e448-46f1-9af8-bb9040645971",
+    "source": "https://scryfall.com/card/sld/480/seize-the-day?utm_source=api"
+  },
+  {
+    "alias": "Rouse the Swarm",
+    "canonical_name": "Wall Crawl",
+    "oracle_id": "4a09536e-dfc1-4b15-adc1-07ef866ebda0",
+    "source": "https://scryfall.com/card/om1/112/wall-crawl?utm_source=api"
+  },
+  {
+    "alias": "Royal Serpent",
+    "canonical_name": "Atsushi, the Blazing Sky",
+    "oracle_id": "535f405d-94df-4f45-aedc-b331103720b7",
+    "source": "https://scryfall.com/card/sld/2814/atsushi-the-blazing-sky?utm_source=api"
+  },
+  {
+    "alias": "Ruzic, Booed but Victorious",
+    "canonical_name": "Ultimate Green Goblin",
+    "oracle_id": "b5b43d01-fce6-4a00-9c19-7a7e2a09d833",
+    "source": "https://scryfall.com/card/om1/153/ultimate-green-goblin?utm_source=api"
+  },
+  {
+    "alias": "Ruzka, Terror of Point Lookout",
+    "canonical_name": "Ayula, Queen Among Bears",
+    "oracle_id": "a79d2fc8-467f-464d-9e73-2dae4b059628",
+    "source": "https://scryfall.com/card/pip/876/ayula-queen-among-bears?utm_source=api"
+  },
+  {
+    "alias": "Ryu, World Warrior",
+    "canonical_name": "Vikya, Scorching Stalwart",
+    "oracle_id": "ad43ccce-3052-4817-8c46-f5c23cb49300",
+    "source": "https://scryfall.com/card/sld/429/vikya-scorching-stalwart?utm_source=api"
+  },
+  {
+    "alias": "S.H.I.E.L.D. Spy Satellite",
+    "canonical_name": "Fellwar Stone",
+    "oracle_id": "95560508-7ac9-4be9-8a3f-3c7d5b52807b",
+    "source": "https://scryfall.com/card/msc/285/fellwar-stone?utm_source=api"
+  },
+  {
+    "alias": "Sadistic String-Puller",
+    "canonical_name": "Spider-Islanders",
+    "oracle_id": "2d1a15dc-3123-4425-b036-a3b5a83fcdf8",
+    "source": "https://scryfall.com/card/om1/94/spider-islanders?utm_source=api"
+  },
+  {
+    "alias": "Sandy Cheeks, Martial Astronaut",
+    "canonical_name": "Toski, Bearer of Secrets",
+    "oracle_id": "a8e707ec-ce77-4bc5-8c76-5ea3e81e8c7f",
+    "source": "https://scryfall.com/card/sld/1930/toski-bearer-of-secrets?utm_source=api"
+  },
+  {
+    "alias": "Sandy, Awakened to Purity",
+    "canonical_name": "Kazuul, Tyrant of the Cliffs",
+    "oracle_id": "f8bf3d91-cb50-48ce-88c6-cdcb37b64b57",
+    "source": "https://scryfall.com/card/sld/2403/kazuul-tyrant-of-the-cliffs?utm_source=api"
+  },
+  {
+    "alias": "Sarn of the Silken Throne",
+    "canonical_name": "Spider-UK",
+    "oracle_id": "ebf8d006-2997-431b-b4cb-9692741b45ca",
+    "source": "https://scryfall.com/card/om1/18/spider-uk?utm_source=api"
+  },
+  {
+    "alias": "Scions of the Ur-Spider",
+    "canonical_name": "Cosmic Spider-Man",
+    "oracle_id": "0334a2f8-a74a-44c9-ba64-d9b7fabe160c",
+    "source": "https://scryfall.com/card/om1/154/cosmic-spider-man?utm_source=api"
+  },
+  {
+    "alias": "Scorvus Ames, Crimelord",
+    "canonical_name": "Scorpion, Seething Striker",
+    "oracle_id": "c357230a-afde-4c2a-b390-9f6928599236",
+    "source": "https://scryfall.com/card/om1/68/scorpion-seething-striker?utm_source=api"
+  },
+  {
+    "alias": "Scrounging Deathclaw",
+    "canonical_name": "Tarmogoyf",
+    "oracle_id": "45900b2f-f6a9-4c42-9642-008f3c1cf6dd",
+    "source": "https://scryfall.com/card/pip/877/tarmogoyf?utm_source=api"
+  },
+  {
+    "alias": "Scuttling Spidercoach",
+    "canonical_name": "Spider-Mobile",
+    "oracle_id": "3c322d99-2bc4-4618-aeb3-5583fce54f1b",
+    "source": "https://scryfall.com/card/om1/173/spider-mobile?utm_source=api"
+  },
+  {
+    "alias": "Search for the Frozen Esper",
+    "canonical_name": "Nature's Claim",
+    "oracle_id": "6d4e558e-9109-4918-a082-fdcbaffd516b",
+    "source": "https://scryfall.com/card/fca/47/natures-claim?utm_source=api"
+  },
+  {
+    "alias": "Search the Count's Castle",
+    "canonical_name": "Thirst for Discovery",
+    "oracle_id": "1e05e6ef-14af-451d-9d54-e75b1f8871ab",
+    "source": "https://scryfall.com/card/vow/333/thirst-for-discovery?utm_source=api"
+  },
+  {
+    "alias": "Second Breakfast 9:00 AM",
+    "canonical_name": "Food",
+    "oracle_id": "a468338f-635e-4206-89d6-72d723071d45",
+    "source": "https://scryfall.com/card/sld/2546/food?utm_source=api"
+  },
+  {
+    "alias": "Selesnya Archivist",
+    "canonical_name": "Damage Control Crew",
+    "oracle_id": "c0f9e604-a8bf-4c7d-8480-487e8076e1d8",
+    "source": "https://scryfall.com/card/om1/115/damage-control-crew?utm_source=api"
+  },
+  {
+    "alias": "Sephiroth, the Savior",
+    "canonical_name": "Atraxa, Grand Unifier",
+    "oracle_id": "abbcb153-0763-44c6-964f-b4ff0eb64257",
+    "source": "https://scryfall.com/card/fca/49/atraxa-grand-unifier?utm_source=api"
+  },
+  {
+    "alias": "Seymour Guado",
+    "canonical_name": "Kinnan, Bonder Prodigy",
+    "oracle_id": "8d11aa49-d4cd-48b1-aa0f-8548fa733416",
+    "source": "https://scryfall.com/card/fca/55/kinnan-bonder-prodigy?utm_source=api"
+  },
+  {
+    "alias": "Shadowbringers",
+    "canonical_name": "Dovin's Veto",
+    "oracle_id": "1b388371-f9ef-45b4-82a3-ca20a8cd7807",
+    "source": "https://scryfall.com/card/fca/51/dovins-veto?utm_source=api"
+  },
+  {
+    "alias": "Shantotto's Coercion",
+    "canonical_name": "Diabolic Intent",
+    "oracle_id": "038519b9-bca8-4b27-b5ac-2409595469d0",
+    "source": "https://scryfall.com/card/fca/34/diabolic-intent?utm_source=api"
+  },
+  {
+    "alias": "Shards of Narsil",
+    "canonical_name": "Thorn of Amethyst",
+    "oracle_id": "0c6c5336-9233-4ab1-9d55-79f20be7ea57",
+    "source": "https://scryfall.com/card/ltc/386z/thorn-of-amethyst?utm_source=api"
+  },
+  {
+    "alias": "She-Ra, Princess of Power",
+    "canonical_name": "Sisay, Weatherlight Captain",
+    "oracle_id": "fb777610-7562-4d9d-8497-62c562e6d7cb",
+    "source": "https://scryfall.com/card/sld/2778/sisay-weatherlight-captain?utm_source=api"
+  },
+  {
+    "alias": "Sheldon, the Commander",
+    "canonical_name": "Ruhan of the Fomori",
+    "oracle_id": "82d109ea-3421-46eb-9bbf-f7f28b548ea6",
+    "source": "https://scryfall.com/card/sld/1695/ruhan-of-the-fomori?utm_source=api"
+  },
+  {
+    "alias": "Shelob, Whose Lair Is Death",
+    "canonical_name": "Ishkanah, Grafwidow",
+    "oracle_id": "6f4861f4-1b3b-4dbc-b55b-196075d0a693",
+    "source": "https://scryfall.com/card/ltc/516/ishkanah-grafwidow?utm_source=api"
+  },
+  {
+    "alias": "Shield of War and Peace",
+    "canonical_name": "Sword of War and Peace",
+    "oracle_id": "b10ad415-0aae-4d70-82e6-a4055a40cbe4",
+    "source": "https://scryfall.com/card/sld/1730/sword-of-war-and-peace?utm_source=api"
+  },
+  {
+    "alias": "Shiva",
+    "canonical_name": "Subtlety",
+    "oracle_id": "377179d5-ac83-4d34-b5b1-f3d8caa60f79",
+    "source": "https://scryfall.com/card/sld/7005/subtlety?utm_source=api"
+  },
+  {
+    "alias": "Shovel of Decapitation",
+    "canonical_name": "Colossus Hammer",
+    "oracle_id": "8ec03b88-8d3a-4a32-8b7c-7da59b0c03d0",
+    "source": "https://scryfall.com/card/sld/736/colossus-hammer?utm_source=api"
+  },
+  {
+    "alias": "Shredder, Criminal Mastermind",
+    "canonical_name": "Higure, the Still Wind",
+    "oracle_id": "01197456-62f1-4bc0-9f2f-127f97f9b05d",
+    "source": "https://scryfall.com/card/sld/2368/higure-the-still-wind?utm_source=api"
+  },
+  {
+    "alias": "Shrinking Storm",
+    "canonical_name": "Wrath of God",
+    "oracle_id": "34515b16-c9a4-4f98-8c77-416a7a523407",
+    "source": "https://scryfall.com/card/sld/441/wrath-of-god?utm_source=api"
+  },
+  {
+    "alias": "Shu Jing Meteorite",
+    "canonical_name": "Fellwar Stone",
+    "oracle_id": "95560508-7ac9-4be9-8a3f-3c7d5b52807b",
+    "source": "https://scryfall.com/card/sld/7062/fellwar-stone?utm_source=api"
+  },
+  {
+    "alias": "Simon, Wild Magic Sorcerer",
+    "canonical_name": "Mathise, Surge Channeler",
+    "oracle_id": "61be7df8-cc78-4822-9e70-f226a8a96c9d",
+    "source": "https://scryfall.com/card/sld/1238/mathise-surge-channeler?utm_source=api"
+  },
+  {
+    "alias": "Sir Bedivere's Scales",
+    "canonical_name": "Ashnod's Altar",
+    "oracle_id": "4d18bcba-a346-445e-a182-6cc30b7e066d",
+    "source": "https://scryfall.com/card/sld/1679/ashnods-altar?utm_source=api"
+  },
+  {
+    "alias": "Sisters of the Undead",
+    "canonical_name": "Olivia, Crimson Bride",
+    "oracle_id": "8922a91e-3d15-4351-8d77-e0d6bc4de82e",
+    "source": "https://scryfall.com/card/vow/343/olivia-crimson-bride?utm_source=api"
+  },
+  {
+    "alias": "Skeletor's Villainous Glee",
+    "canonical_name": "Tasha's Hideous Laughter",
+    "oracle_id": "e352f5b9-6406-4914-bc79-f24608be6bc9",
+    "source": "https://scryfall.com/card/sld/2774/tashas-hideous-laughter?utm_source=api"
+  },
+  {
+    "alias": "Skeletor, Lord of Destruction",
+    "canonical_name": "Tinybones, the Pickpocket",
+    "oracle_id": "7bc4c7e2-6758-4a85-84e7-03ab93981106",
+    "source": "https://scryfall.com/card/sld/2773/tinybones-the-pickpocket?utm_source=api"
+  },
+  {
+    "alias": "Skittering Kitten",
+    "canonical_name": "Masked Meower",
+    "oracle_id": "a0037ff8-64db-45dd-bba1-db5c49095083",
+    "source": "https://scryfall.com/card/om1/96/masked-meower?utm_source=api"
+  },
+  {
+    "alias": "Skv'x the Augmenter",
+    "canonical_name": "Symbiote Spider-Man",
+    "oracle_id": "bc681ecf-2a52-4782-9a47-90f5a9f435d8",
+    "source": "https://scryfall.com/card/om1/155/symbiote-spider-man?utm_source=api"
+  },
+  {
+    "alias": "Skybreaker, Sword of Bashenga",
+    "canonical_name": "Sword of the Animist",
+    "oracle_id": "d79cbc61-6c15-48ea-bbba-3cffb819ccba",
+    "source": "https://scryfall.com/card/msc/452/sword-of-the-animist?utm_source=api"
+  },
+  {
+    "alias": "Slash Clone",
+    "canonical_name": "Steelbane Hydra",
+    "oracle_id": "e38e3723-05f5-4a51-8364-1cda19f9cc49",
+    "source": "https://scryfall.com/card/tmc/52/steelbane-hydra?utm_source=api"
+  },
+  {
+    "alias": "Slash, Evil Turtle from Dimension X",
+    "canonical_name": "Pirated Copy",
+    "oracle_id": "09ea5508-78fd-4bbc-8395-38ec13202d9a",
+    "source": "https://scryfall.com/card/sld/2363/pirated-copy?utm_source=api"
+  },
+  {
+    "alias": "Slimed",
+    "canonical_name": "Trickbind",
+    "oracle_id": "0c2abd2a-ca98-45d2-8dd1-984d2c0c266a",
+    "source": "https://scryfall.com/card/sld/1774/trickbind?utm_source=api"
+  },
+  {
+    "alias": "Slimer and Stay Puft",
+    "canonical_name": "Yargle and Multani",
+    "oracle_id": "980e1721-3717-4425-95a4-938dbf2ac661",
+    "source": "https://scryfall.com/card/sld/872/yargle-and-multani?utm_source=api"
+  },
+  {
+    "alias": "Slimer's Feast",
+    "canonical_name": "Windfall",
+    "oracle_id": "08becc07-28bc-4a2f-a6b0-28a2998d2f50",
+    "source": "https://scryfall.com/card/sld/1775/windfall?utm_source=api"
+  },
+  {
+    "alias": "Slimer, Voracious Apparition",
+    "canonical_name": "The Mimeoplasm",
+    "oracle_id": "55123455-d435-46d4-b0cd-0c1614343be2",
+    "source": "https://scryfall.com/card/sld/1773/the-mimeoplasm?utm_source=api"
+  },
+  {
+    "alias": "Snatch Back",
+    "canonical_name": "Whoosh!",
+    "oracle_id": "855353e2-b686-482a-b987-c6ae456f088c",
+    "source": "https://scryfall.com/card/om1/43/whoosh!?utm_source=api"
+  },
+  {
+    "alias": "Snowman Starfield",
+    "canonical_name": "Starfield of Nyx",
+    "oracle_id": "922d603e-6623-4455-b91f-fad76f94045a",
+    "source": "https://scryfall.com/card/sld/2822/starfield-of-nyx?utm_source=api"
+  },
+  {
+    "alias": "Song of the Barbarous Beast",
+    "canonical_name": "Village Rites",
+    "oracle_id": "365548fb-5acc-4a8a-b20b-26d28b7d029f",
+    "source": "https://scryfall.com/card/sld/2248/village-rites?utm_source=api"
+  },
+  {
+    "alias": "Sorry, Jack . . . Chucky's Back",
+    "canonical_name": "Phyrexian Reclamation",
+    "oracle_id": "647ca69e-cc01-4b2b-b376-bee2a98331e8",
+    "source": "https://scryfall.com/card/sld/1808/phyrexian-reclamation?utm_source=api"
+  },
+  {
+    "alias": "Spacegodzilla, Death Corona",
+    "canonical_name": "Void Beckoner",
+    "oracle_id": "7185e345-d8a1-4dd3-a071-f90f265634b4",
+    "source": "https://scryfall.com/card/iko/373/void-beckoner?utm_source=api"
+  },
+  {
+    "alias": "Specimen 73",
+    "canonical_name": "Hornet Queen",
+    "oracle_id": "3b1f8108-6911-49e9-8f78-f950bb58cb6c",
+    "source": "https://scryfall.com/card/pip/878/hornet-queen?utm_source=api"
+  },
+  {
+    "alias": "Spectral Restitching",
+    "canonical_name": "Hide on the Ceiling",
+    "oracle_id": "376fa374-ead1-4728-ab8b-aca230b72031",
+    "source": "https://scryfall.com/card/om1/44/hide-on-the-ceiling?utm_source=api"
+  },
+  {
+    "alias": "Spider-Gwen, Web-Warrior",
+    "canonical_name": "Najeela, the Blade-Blossom",
+    "oracle_id": "09619943-6aec-4080-ace5-a0c6ebb23f1c",
+    "source": "https://scryfall.com/card/mar/24/najeela-the-blade-blossom?utm_source=api"
+  },
+  {
+    "alias": "Spinosaurus",
+    "canonical_name": "Regisaur Alpha",
+    "oracle_id": "0673f4e0-66ff-458c-b4ba-eb067e560cce",
+    "source": "https://scryfall.com/card/sld/1393%E2%98%85/regisaur-alpha?utm_source=api"
+  },
+  {
+    "alias": "Spira's Punishment",
+    "canonical_name": "Day of Judgment",
+    "oracle_id": "d057289d-5e28-43d5-8ff3-4a1bc723477d",
+    "source": "https://scryfall.com/card/sld/1858/day-of-judgment?utm_source=api"
+  },
+  {
+    "alias": "Splinter of the Shadows",
+    "canonical_name": "Ashcoat of the Shadow Swarm",
+    "oracle_id": "9cc69ea5-42a2-4306-ac6d-cff5adb20bcb",
+    "source": "https://scryfall.com/card/pza/6/ashcoat-of-the-shadow-swarm?utm_source=api"
+  },
+  {
+    "alias": "Splinter, Vengeful Sensei",
+    "canonical_name": "Ink-Eyes, Servant of Oni",
+    "oracle_id": "5d520476-740a-4005-801e-472b24fa6497",
+    "source": "https://scryfall.com/card/sld/2374/ink-eyes-servant-of-oni?utm_source=api"
+  },
+  {
+    "alias": "SpongeBob SquarePants",
+    "canonical_name": "Jodah, the Unifier",
+    "oracle_id": "490a8045-e160-4ccf-a05e-658ad2b7ac2d",
+    "source": "https://scryfall.com/card/sld/1932/jodah-the-unifier?utm_source=api"
+  },
+  {
+    "alias": "Squall Leonhart",
+    "canonical_name": "Danitha Capashen, Paragon",
+    "oracle_id": "4b6377da-83e7-4519-9582-16a9c16b8faa",
+    "source": "https://scryfall.com/card/fca/22/danitha-capashen-paragon?utm_source=api"
+  },
+  {
+    "alias": "Squidward, Sarcastic Snob",
+    "canonical_name": "Grazilaxx, Illithid Scholar",
+    "oracle_id": "d22ff377-d282-4a28-9dce-96f25913dc96",
+    "source": "https://scryfall.com/card/sld/1928/grazilaxx-illithid-scholar?utm_source=api"
+  },
+  {
+    "alias": "Stampeding Brutes",
+    "canonical_name": "Rampaging Baloths",
+    "oracle_id": "2d3e6549-6cc6-434f-a189-ba3b55e64c34",
+    "source": "https://scryfall.com/card/sld/2370/rampaging-baloths?utm_source=api"
+  },
+  {
+    "alias": "Stardrake",
+    "canonical_name": "Scourge of the Throne",
+    "oracle_id": "06496a05-7f1a-402c-9594-304cd82bfefd",
+    "source": "https://scryfall.com/card/sld/1033/scourge-of-the-throne?utm_source=api"
+  },
+  {
+    "alias": "Stay with Me",
+    "canonical_name": "Rhystic Study",
+    "oracle_id": "53236dd7-845a-444c-96d5-f41ed7325d8f",
+    "source": "https://scryfall.com/card/fca/31/rhystic-study?utm_source=api"
+  },
+  {
+    "alias": "Steelweb Surveyor",
+    "canonical_name": "Spider-Bot",
+    "oracle_id": "e4bb33b2-adde-4176-9274-7598b559aa6a",
+    "source": "https://scryfall.com/card/om1/174/spider-bot?utm_source=api"
+  },
+  {
+    "alias": "Stitcher's Wings",
+    "canonical_name": "Rocket-Powered Goblin Glider",
+    "oracle_id": "5db9121d-934a-44f1-b178-b389c6595af7",
+    "source": "https://scryfall.com/card/om1/175/rocket-powered-goblin-glider?utm_source=api"
+  },
+  {
+    "alias": "Storm's Will",
+    "canonical_name": "Jeska's Will",
+    "oracle_id": "0fd114c4-092b-4e28-b0dc-ef529f3bc73e",
+    "source": "https://scryfall.com/card/sld/1744/jeskas-will?utm_source=api"
+  },
+  {
+    "alias": "Storms of Yamatai",
+    "canonical_name": "Anger of the Gods",
+    "oracle_id": "3a7fe095-8278-4b1d-bec4-19b35bdcdd1b",
+    "source": "https://scryfall.com/card/sld/1503/anger-of-the-gods?utm_source=api"
+  },
+  {
+    "alias": "Suki of the Kyoshi Warriors",
+    "canonical_name": "Captain Sisay",
+    "oracle_id": "2e7a9ea9-f76c-4c12-950f-c613fa16cfa8",
+    "source": "https://scryfall.com/card/tle/47/captain-sisay?utm_source=api"
+  },
+  {
+    "alias": "Summoner's Rift",
+    "canonical_name": "Command Tower",
+    "oracle_id": "0895c9b7-ae7d-4bb3-af17-3b75deb50a25",
+    "source": "https://scryfall.com/card/sld/697/command-tower?utm_source=api"
+  },
+  {
+    "alias": "Sunset Sarsaparilla Machine",
+    "canonical_name": "Nuka-Cola Vending Machine",
+    "oracle_id": "6cfb03e5-aca6-4fe2-a3f1-93e1f0cbf9e1",
+    "source": "https://scryfall.com/card/sld/2462/nuka-cola-vending-machine?utm_source=api"
+  },
+  {
+    "alias": "Supper 8:00 PM",
+    "canonical_name": "Food",
+    "oracle_id": "a468338f-635e-4206-89d6-72d723071d45",
+    "source": "https://scryfall.com/card/sld/2551/food?utm_source=api"
+  },
+  {
+    "alias": "Supply Llama",
+    "canonical_name": "Etherium Sculptor",
+    "oracle_id": "96b87445-6362-4a17-91b2-cbf203fd03fd",
+    "source": "https://scryfall.com/card/sld/443/etherium-sculptor?utm_source=api"
+  },
+  {
+    "alias": "Surris, Spidersilk Innovator",
+    "canonical_name": "Peter Parker",
+    "oracle_id": "f1b7488c-c675-42e9-818a-24a50347ec2c",
+    "source": "https://scryfall.com/card/om1/21/peter-parker-amazing-spider-man?utm_source=api"
+  },
+  {
+    "alias": "Swift Wind, Steed of She-Ra",
+    "canonical_name": "Emiel the Blessed",
+    "oracle_id": "b11c250c-f191-4c52-ba02-a9176f163447",
+    "source": "https://scryfall.com/card/sld/2780/emiel-the-blessed?utm_source=api"
+  },
+  {
+    "alias": "Sword of Power",
+    "canonical_name": "Sword of War and Peace",
+    "oracle_id": "b10ad415-0aae-4d70-82e6-a4055a40cbe4",
+    "source": "https://scryfall.com/card/sld/2793/sword-of-war-and-peace?utm_source=api"
+  },
+  {
+    "alias": "T'Challa's Protection",
+    "canonical_name": "Teferi's Protection",
+    "oracle_id": "0d4ecdb1-ec90-497f-a7a4-1c68092b8757",
+    "source": "https://scryfall.com/card/mar/51/teferis-protection?utm_source=api"
+  },
+  {
+    "alias": "T-60 Power Armor",
+    "canonical_name": "T-45 Power Armor",
+    "oracle_id": "370aced9-d8bc-4abe-b648-4c62b5aee5ba",
+    "source": "https://scryfall.com/card/sld/2452/t-45-power-armor?utm_source=api"
+  },
+  {
+    "alias": "Talk to the Paw",
+    "canonical_name": "Orim's Chant",
+    "oracle_id": "26d3a818-7faf-443a-a6bd-9773edaedf17",
+    "source": "https://scryfall.com/card/sld/2669/orims-chant?utm_source=api"
+  },
+  {
+    "alias": "Tarantusk, Unwisely Awoken",
+    "canonical_name": "Spider-Ham, Peter Porker",
+    "oracle_id": "00b50215-e832-417f-9c80-2bc3050b6ebb",
+    "source": "https://scryfall.com/card/om1/118/spider-ham-peter-porker?utm_source=api"
+  },
+  {
+    "alias": "Tearle, Entropic Hunger",
+    "canonical_name": "Morbius the Living Vampire",
+    "oracle_id": "1a947e4d-8a14-45f1-bb80-760a317b1ed0",
+    "source": "https://scryfall.com/card/om1/156/morbius-the-living-vampire?utm_source=api"
+  },
+  {
+    "alias": "Teela, Warrior Goddess",
+    "canonical_name": "Samut, Voice of Dissent",
+    "oracle_id": "b1eee275-5106-4c8d-a497-d7945ad81d74",
+    "source": "https://scryfall.com/card/sld/2788/samut-voice-of-dissent?utm_source=api"
+  },
+  {
+    "alias": "Temple Trap",
+    "canonical_name": "Steel Wrecking Ball",
+    "oracle_id": "3a07e22c-71cd-4723-b07e-0ff02009a878",
+    "source": "https://scryfall.com/card/om1/176/steel-wrecking-ball?utm_source=api"
+  },
+  {
+    "alias": "Terra Branford",
+    "canonical_name": "Urza, Lord High Artificer",
+    "oracle_id": "e87906d2-db1a-4e19-b910-adb4eb339945",
+    "source": "https://scryfall.com/card/fca/5/urza-lord-high-artificer?utm_source=api"
+  },
+  {
+    "alias": "Tethex, Gift of Malice",
+    "canonical_name": "Venom, Evil Unleashed",
+    "oracle_id": "6731d861-cc52-4a2e-8c33-154681fd50e4",
+    "source": "https://scryfall.com/card/om1/70/venom-evil-unleashed?utm_source=api"
+  },
+  {
+    "alias": "The Ball",
+    "canonical_name": "Fellwar Stone",
+    "oracle_id": "95560508-7ac9-4be9-8a3f-3c7d5b52807b",
+    "source": "https://scryfall.com/card/sld/1040/fellwar-stone?utm_source=api"
+  },
+  {
+    "alias": "The Banyan Tree",
+    "canonical_name": "The Great Henge",
+    "oracle_id": "78427103-9543-41fb-b6d4-72963fe87275",
+    "source": "https://scryfall.com/card/tle/41/the-great-henge?utm_source=api"
+  },
+  {
+    "alias": "The Black Beast of Aaargh",
+    "canonical_name": "Marit Lage",
+    "oracle_id": "48e9147e-59f7-4693-83d7-7f514be871bc",
+    "source": "https://scryfall.com/card/sld/1681/marit-lage?utm_source=api"
+  },
+  {
+    "alias": "The Blades of Chaos Bond",
+    "canonical_name": "Rite of Flame",
+    "oracle_id": "8a2e53f9-8100-488f-8504-b59e9bd1cc29",
+    "source": "https://scryfall.com/card/sld/2209/rite-of-flame?utm_source=api"
+  },
+  {
+    "alias": "The Boy in the Iceberg",
+    "canonical_name": "Dark Depths",
+    "oracle_id": "c9b82110-7dfd-4617-9399-9510be449043",
+    "source": "https://scryfall.com/card/tle/56/dark-depths?utm_source=api"
+  },
+  {
+    "alias": "The Bridge of Death",
+    "canonical_name": "Door to Nothingness",
+    "oracle_id": "b919cca5-88c0-4104-b54e-49644fbf78a5",
+    "source": "https://scryfall.com/card/sld/1678/door-to-nothingness?utm_source=api"
+  },
+  {
+    "alias": "The Cloudsea Djinn",
+    "canonical_name": "Nyxbloom Ancient",
+    "oracle_id": "8b610f8f-c8dd-4eeb-bc6e-3bc706d5f63e",
+    "source": "https://scryfall.com/card/fca/16/nyxbloom-ancient?utm_source=api"
+  },
+  {
+    "alias": "The Clutter Cluster",
+    "canonical_name": "Spiders-Man, Heroic Horde",
+    "oracle_id": "d21d7557-9702-46c1-8277-42a3442084c2",
+    "source": "https://scryfall.com/card/om1/101/spiders-man-heroic-horde?utm_source=api"
+  },
+  {
+    "alias": "The Cube",
+    "canonical_name": "Planar Bridge",
+    "oracle_id": "853c6cc0-ed2b-4d65-add1-2449ade8cf68",
+    "source": "https://scryfall.com/card/sld/447/planar-bridge?utm_source=api"
+  },
+  {
+    "alias": "The Dead Marshes",
+    "canonical_name": "Urborg, Tomb of Yawgmoth",
+    "oracle_id": "db6174d7-211d-4817-b8e4-8384594c83f9",
+    "source": "https://scryfall.com/card/ltc/405z/urborg-tomb-of-yawgmoth?utm_source=api"
+  },
+  {
+    "alias": "The Devil Strahd",
+    "canonical_name": "Strefan, Maurer Progenitor",
+    "oracle_id": "3cc745d2-5021-43ff-ace8-35011011e62a",
+    "source": "https://scryfall.com/card/sld/2501/strefan-maurer-progenitor?utm_source=api"
+  },
+  {
+    "alias": "The Emperor, Hell Tyrant",
+    "canonical_name": "Yawgmoth, Thran Physician",
+    "oracle_id": "a1e232c0-dc38-47be-a5a0-f68bc1d86a29",
+    "source": "https://scryfall.com/card/fca/11/yawgmoth-thran-physician?utm_source=api"
+  },
+  {
+    "alias": "The Five Arrive",
+    "canonical_name": "Genesis Ultimatum",
+    "oracle_id": "06f42f49-32f0-413b-8437-b8efa4d647c2",
+    "source": "https://scryfall.com/card/msc/402/genesis-ultimatum?utm_source=api"
+  },
+  {
+    "alias": "The Grass-Cutting Sword",
+    "canonical_name": "Sunforger",
+    "oracle_id": "d1421070-a3cc-4af3-bf91-0f97372f4161",
+    "source": "https://scryfall.com/card/sld/2381/sunforger?utm_source=api"
+  },
+  {
+    "alias": "The Grim Whisper",
+    "canonical_name": "Bow of Nylea",
+    "oracle_id": "361b965f-2ce7-49f8-84e7-7325ea0c948d",
+    "source": "https://scryfall.com/card/sld/1504/bow-of-nylea?utm_source=api"
+  },
+  {
+    "alias": "The Hexcore",
+    "canonical_name": "Thran Dynamo",
+    "oracle_id": "a699c663-8131-4045-9265-a83e86609374",
+    "source": "https://scryfall.com/card/sld/483/thran-dynamo?utm_source=api"
+  },
+  {
+    "alias": "The House Grows Hungry",
+    "canonical_name": "The Death of Gwen Stacy",
+    "oracle_id": "2624b5c5-ba59-4e20-8e66-e463268366e4",
+    "source": "https://scryfall.com/card/om1/58/the-death-of-gwen-stacy?utm_source=api"
+  },
+  {
+    "alias": "The Imperial City of Archades",
+    "canonical_name": "Wall of Omens",
+    "oracle_id": "5f601f48-d24b-4883-9fde-b3f620e7c9ea",
+    "source": "https://scryfall.com/card/fca/27/wall-of-omens?utm_source=api"
+  },
+  {
+    "alias": "The Infernus",
+    "canonical_name": "Molten Man, Inferno Incarnate",
+    "oracle_id": "c6fcf3c1-0626-4d53-92c0-caa22fa61e9a",
+    "source": "https://scryfall.com/card/om1/82/molten-man-inferno-incarnate?utm_source=api"
+  },
+  {
+    "alias": "The Mechanist, Tactical Tinkerer",
+    "canonical_name": "Lita, Mechanical Engineer",
+    "oracle_id": "715cb547-726f-4bc8-ad46-297d4dccb881",
+    "source": "https://scryfall.com/card/tle/4/lita-mechanical-engineer?utm_source=api"
+  },
+  {
+    "alias": "The Monstrous Serpent",
+    "canonical_name": "Koma, Cosmos Serpent",
+    "oracle_id": "6ba0656f-e0d2-4735-9c66-3a00afa9fc23",
+    "source": "https://scryfall.com/card/tle/51/koma-cosmos-serpent?utm_source=api"
+  },
+  {
+    "alias": "The Party Tree",
+    "canonical_name": "The Great Henge",
+    "oracle_id": "78427103-9543-41fb-b6d4-72963fe87275",
+    "source": "https://scryfall.com/card/ltc/378z/the-great-henge?utm_source=api"
+  },
+  {
+    "alias": "The Platinum Chip",
+    "canonical_name": "Caged Sun",
+    "oracle_id": "09b895ff-e729-48d1-bfc1-ea5fd7adda6a",
+    "source": "https://scryfall.com/card/sld/2461/caged-sun?utm_source=api"
+  },
+  {
+    "alias": "The Rage of Yian Garuga",
+    "canonical_name": "Mizzium Mortars",
+    "oracle_id": "48ddba1e-2ad7-463f-9307-d2379a800e51",
+    "source": "https://scryfall.com/card/sld/2249/mizzium-mortars?utm_source=api"
+  },
+  {
+    "alias": "The Scouring Stormsoul",
+    "canonical_name": "Sandman, Shifting Scoundrel",
+    "oracle_id": "8b205480-b1fb-490c-b1c9-cf5cc3c5acdb",
+    "source": "https://scryfall.com/card/om1/113/sandman-shifting-scoundrel?utm_source=api"
+  },
+  {
+    "alias": "The Shadow Lord",
+    "canonical_name": "Gix, Yawgmoth Praetor",
+    "oracle_id": "928d977e-cff0-4e0e-83bb-16d73a754f35",
+    "source": "https://scryfall.com/card/fca/35/gix-yawgmoth-praetor?utm_source=api"
+  },
+  {
+    "alias": "The Sorceress, Heroic Guardian",
+    "canonical_name": "Derevi, Empyrial Tactician",
+    "oracle_id": "afa49a09-146f-4439-850e-dd1938c93cef",
+    "source": "https://scryfall.com/card/sld/2787/derevi-empyrial-tactician?utm_source=api"
+  },
+  {
+    "alias": "The Spire",
+    "canonical_name": "Command Tower",
+    "oracle_id": "0895c9b7-ae7d-4bb3-af17-3b75deb50a25",
+    "source": "https://scryfall.com/card/sld/677/command-tower?utm_source=api"
+  },
+  {
+    "alias": "The Strahl",
+    "canonical_name": "Smuggler's Copter",
+    "oracle_id": "49136bdc-bc50-49a2-999a-1ef9c16ea130",
+    "source": "https://scryfall.com/card/fca/62/smugglers-copter?utm_source=api"
+  },
+  {
+    "alias": "The Terminus of Return",
+    "canonical_name": "The Soul Stone",
+    "oracle_id": "92cfba68-12f6-4f97-9187-0f6a39656a0f",
+    "source": "https://scryfall.com/card/om1/69/the-soul-stone?utm_source=api"
+  },
+  {
+    "alias": "The Three Weird Sisters",
+    "canonical_name": "Henrika Domnathi",
+    "oracle_id": "0c0845c3-f4b5-444e-8f42-da0c7dbf2841",
+    "source": "https://scryfall.com/card/vow/335/henrika-domnathi-henrika-infernal-seer?utm_source=api"
+  },
+  {
+    "alias": "The Watcher on the Road",
+    "canonical_name": "Mysterio, Master of Illusion",
+    "oracle_id": "40f664d8-4c73-44aa-8fb1-d38771a42520",
+    "source": "https://scryfall.com/card/om1/48/mysterio-master-of-illusion?utm_source=api"
+  },
+  {
+    "alias": "The Watcher's Warning",
+    "canonical_name": "Mind's Dilation",
+    "oracle_id": "d4b5e09b-9ca2-4b51-a4f8-080741810df8",
+    "source": "https://scryfall.com/card/msc/344/minds-dilation?utm_source=api"
+  },
+  {
+    "alias": "The Welcoming Committee",
+    "canonical_name": "Kynaios and Tiro of Meletis",
+    "oracle_id": "53ee4254-fef7-49ec-aafc-0320987764e6",
+    "source": "https://scryfall.com/card/sld/2806/kynaios-and-tiro-of-meletis?utm_source=api"
+  },
+  {
+    "alias": "Three Rings for the Elven-Kings",
+    "canonical_name": "Rings of Brighthearth",
+    "oracle_id": "bbf9494c-c4bb-4d36-98fe-8387846b342e",
+    "source": "https://scryfall.com/card/ltc/382z/rings-of-brighthearth?utm_source=api"
+  },
+  {
+    "alias": "Through the Omenpath",
+    "canonical_name": "Web of Life and Destiny",
+    "oracle_id": "33d556c5-1bb4-49bb-88c2-627311eb8c9b",
+    "source": "https://scryfall.com/card/om1/120/web-of-life-and-destiny?utm_source=api"
+  },
+  {
+    "alias": "Throw Team-Mate",
+    "canonical_name": "Fling",
+    "oracle_id": "24227761-b50e-4b9e-93a2-e82d053b3e3d",
+    "source": "https://scryfall.com/card/sld/1038/fling?utm_source=api"
+  },
+  {
+    "alias": "Thrum of the Vestige",
+    "canonical_name": "Lightning Bolt",
+    "oracle_id": "4457ed35-7c10-48c8-9776-456485fdf070",
+    "source": "https://scryfall.com/card/fca/40/lightning-bolt?utm_source=api"
+  },
+  {
+    "alias": "Thunderjaw",
+    "canonical_name": "Meteor Golem",
+    "oracle_id": "d9f11aa1-9219-42a8-85a9-a8f204160706",
+    "source": "https://scryfall.com/card/sld/2225/meteor-golem?utm_source=api"
+  },
+  {
+    "alias": "Théoden, Strength Restored",
+    "canonical_name": "Kenrith, the Returned King",
+    "oracle_id": "d209b948-9afb-4fd1-a961-72c87282878c",
+    "source": "https://scryfall.com/card/ltc/515/kenrith-the-returned-king?utm_source=api"
+  },
+  {
+    "alias": "Tidus's Brotherhood Sword",
+    "canonical_name": "Sword of Truth and Justice",
+    "oracle_id": "7a8baaf9-e21f-41a0-9f15-80764f6e5e68",
+    "source": "https://scryfall.com/card/sld/1867/sword-of-truth-and-justice?utm_source=api"
+  },
+  {
+    "alias": "Tidus, Zanarkand Fayth",
+    "canonical_name": "Thrasios, Triton Hero",
+    "oracle_id": "3d867016-2601-4a37-a73d-308898d3bd37",
+    "source": "https://scryfall.com/card/fca/58/thrasios-triton-hero?utm_source=api"
+  },
+  {
+    "alias": "Tiffany, Bride of Chucky",
+    "canonical_name": "Varragoth, Bloodsky Sire",
+    "oracle_id": "68b41a04-8cb0-4edf-b488-a219494453ae",
+    "source": "https://scryfall.com/card/sld/1809/varragoth-bloodsky-sire?utm_source=api"
+  },
+  {
+    "alias": "Tim the Enchanter",
+    "canonical_name": "Prodigal Sorcerer",
+    "oracle_id": "5e961d15-5972-4e4b-9385-1cd7cd7c6bbe",
+    "source": "https://scryfall.com/card/sld/1672/prodigal-sorcerer?utm_source=api"
+  },
+  {
+    "alias": "To the Crystal Tower",
+    "canonical_name": "Cryptic Command",
+    "oracle_id": "a3e51a35-09df-4189-b131-08a21e6a557d",
+    "source": "https://scryfall.com/card/fca/29/cryptic-command?utm_source=api"
+  },
+  {
+    "alias": "Torgal, Clive's Companion",
+    "canonical_name": "Yoshimaru, Ever Faithful",
+    "oracle_id": "963834c8-42df-4ee6-9b45-b9de88ce2eac",
+    "source": "https://scryfall.com/card/pf25/5/yoshimaru-ever-faithful?utm_source=api"
+  },
+  {
+    "alias": "Tornado, Sonic's Biplane",
+    "canonical_name": "Weatherlight",
+    "oracle_id": "73b3682f-396a-4ebe-aaac-6ce3ee36283a",
+    "source": "https://scryfall.com/card/sld/2100/weatherlight?utm_source=api"
+  },
+  {
+    "alias": "Total Containment Failure",
+    "canonical_name": "Living End",
+    "oracle_id": "3939fbe0-3be4-41ef-828d-c93f2cb33b4f",
+    "source": "https://scryfall.com/card/sld/1769/living-end?utm_source=api"
+  },
+  {
+    "alias": "Totec's Spear",
+    "canonical_name": "Shadowspear",
+    "oracle_id": "8b27326f-e7b8-4a4d-b589-df459246d19a",
+    "source": "https://scryfall.com/card/sld/1505/shadowspear?utm_source=api"
+  },
+  {
+    "alias": "Touchdown!",
+    "canonical_name": "Approach of the Second Sun",
+    "oracle_id": "e4125377-34c0-4b54-bdf8-4e88f5d24565",
+    "source": "https://scryfall.com/card/sld/1035/approach-of-the-second-sun?utm_source=api"
+  },
+  {
+    "alias": "Tower of Cirith Ungol",
+    "canonical_name": "Urborg",
+    "oracle_id": "b6114962-035e-4e7f-9009-4739bf83a05a",
+    "source": "https://scryfall.com/card/ltc/519/urborg?utm_source=api"
+  },
+  {
+    "alias": "Tower of Rasmodius",
+    "canonical_name": "Command Tower",
+    "oracle_id": "0895c9b7-ae7d-4bb3-af17-3b75deb50a25",
+    "source": "https://scryfall.com/card/sld/2812/command-tower?utm_source=api"
+  },
+  {
+    "alias": "Toxic Sheepsquatch",
+    "canonical_name": "Gemrazer",
+    "oracle_id": "3dfb0c0a-b68f-43b9-8475-28d0192fc4ed",
+    "source": "https://scryfall.com/card/pip/879/gemrazer?utm_source=api"
+  },
+  {
+    "alias": "Trap Jaw, Wizard of Weapons",
+    "canonical_name": "Tetsuo, Imperial Champion",
+    "oracle_id": "1111e042-0bce-4819-ab42-9912aed4d930",
+    "source": "https://scryfall.com/card/sld/2789/tetsuo-imperial-champion?utm_source=api"
+  },
+  {
+    "alias": "Treat Trolley",
+    "canonical_name": "Hot Dog Cart",
+    "oracle_id": "cf27f1f8-2d95-4a00-97f8-72a244837f08",
+    "source": "https://scryfall.com/card/om1/177/hot-dog-cart?utm_source=api"
+  },
+  {
+    "alias": "Treebeard, Eldest of Ents",
+    "canonical_name": "Doran, the Siege Tower",
+    "oracle_id": "a46d96d9-8e59-4777-8208-7730b9e33240",
+    "source": "https://scryfall.com/card/ltc/517/doran-the-siege-tower?utm_source=api"
+  },
+  {
+    "alias": "Triceratops",
+    "canonical_name": "Wayward Swordtooth",
+    "oracle_id": "3875aef0-3102-4fbf-be90-e4139f7a2348",
+    "source": "https://scryfall.com/card/sld/1392%E2%98%85/wayward-swordtooth?utm_source=api"
+  },
+  {
+    "alias": "Tripitaka, Seeker from Tang",
+    "canonical_name": "Dosan the Falling Leaf",
+    "oracle_id": "70e4025f-41de-4b47-a590-3c922dc1e209",
+    "source": "https://scryfall.com/card/sld/2404/dosan-the-falling-leaf?utm_source=api"
+  },
+  {
+    "alias": "Tyrannosaurus Rex",
+    "canonical_name": "Etali, Primal Storm",
+    "oracle_id": "078def07-ae5d-4591-8db6-d156834aab97",
+    "source": "https://scryfall.com/card/sld/1389%E2%98%85/etali-primal-storm?utm_source=api"
+  },
+  {
+    "alias": "Uharis, the Stormspinner",
+    "canonical_name": "Spider-Man 2099",
+    "oracle_id": "19845456-3d96-48a4-89fa-9b8e583774c9",
+    "source": "https://scryfall.com/card/om1/157/spider-man-2099?utm_source=api"
+  },
+  {
+    "alias": "Unseat the Usurper",
+    "canonical_name": "Praetor's Grasp",
+    "oracle_id": "6d56aeb1-0a50-46b6-abdb-cd6575a98dc3",
+    "source": "https://scryfall.com/card/sld/1861/praetors-grasp?utm_source=api"
+  },
+  {
+    "alias": "Unstable Harmonics",
+    "canonical_name": "Rhystic Study",
+    "oracle_id": "53236dd7-845a-444c-96d5-f41ed7325d8f",
+    "source": "https://scryfall.com/card/sld/478/rhystic-study?utm_source=api"
+  },
+  {
+    "alias": "Vaan, Aspiring Sky Pirate",
+    "canonical_name": "Captain Lannery Storm",
+    "oracle_id": "235bf0ba-658c-463f-b112-7478ba27bd7b",
+    "source": "https://scryfall.com/card/fca/38/captain-lannery-storm?utm_source=api"
+  },
+  {
+    "alias": "Valley Farmstead",
+    "canonical_name": "Yavimaya, Cradle of Growth",
+    "oracle_id": "8dd5f5af-d2d8-4356-8617-8381081b930c",
+    "source": "https://scryfall.com/card/sld/2813/yavimaya-cradle-of-growth?utm_source=api"
+  },
+  {
+    "alias": "Valley of Gorgoroth",
+    "canonical_name": "Wasteland",
+    "oracle_id": "09a70ae8-3859-4a09-901d-dce063fa3b5f",
+    "source": "https://scryfall.com/card/ltc/406z/wasteland?utm_source=api"
+  },
+  {
+    "alias": "Van Helsing's Holy Ward",
+    "canonical_name": "Circle of Confinement",
+    "oracle_id": "d1cd7a93-4b83-4755-90bc-17cb64bfb131",
+    "source": "https://scryfall.com/card/vow/329/circle-of-confinement?utm_source=api"
+  },
+  {
+    "alias": "Vana'diel Adventurers",
+    "canonical_name": "Laboratory Maniac",
+    "oracle_id": "aa286dd5-aa19-446d-9003-684d81eb57ca",
+    "source": "https://scryfall.com/card/fca/30/laboratory-maniac?utm_source=api"
+  },
+  {
+    "alias": "Vault Boy, Cap Collector",
+    "canonical_name": "Grand Arbiter Augustin IV",
+    "oracle_id": "1f8d4d5f-e82f-45f3-823e-1bb6b536eb18",
+    "source": "https://scryfall.com/card/sld/1483%E2%98%85/grand-arbiter-augustin-iv?utm_source=api"
+  },
+  {
+    "alias": "Vayne Carudas Solidor",
+    "canonical_name": "Fynn, the Fangbearer",
+    "oracle_id": "c0b1fba1-4338-4671-934b-098689ad2085",
+    "source": "https://scryfall.com/card/fca/46/fynn-the-fangbearer?utm_source=api"
+  },
+  {
+    "alias": "Vazin, Two-Faced Trickster",
+    "canonical_name": "Chameleon, Master of Disguise",
+    "oracle_id": "1ce239f2-79ad-4a30-8e8f-f985045f78dc",
+    "source": "https://scryfall.com/card/om1/46/chameleon-master-of-disguise?utm_source=api"
+  },
+  {
+    "alias": "Velkhana, Silver Sovereign",
+    "canonical_name": "Amareth, the Lustrous",
+    "oracle_id": "8cccc8d0-bdd8-4853-8330-6f6a57695d11",
+    "source": "https://scryfall.com/card/sld/2254/amareth-the-lustrous?utm_source=api"
+  },
+  {
+    "alias": "Velociraptor",
+    "canonical_name": "Rampaging Ferocidon",
+    "oracle_id": "3e5ca524-8dd1-4f7f-a467-5210d768b8a1",
+    "source": "https://scryfall.com/card/sld/1390%E2%98%85/rampaging-ferocidon?utm_source=api"
+  },
+  {
+    "alias": "Venom, King in Black",
+    "canonical_name": "Skithiryx, the Blight Dragon",
+    "oracle_id": "daf6c421-e7f7-4fc6-967c-65f4ab96fcfd",
+    "source": "https://scryfall.com/card/mar/22/skithiryx-the-blight-dragon?utm_source=api"
+  },
+  {
+    "alias": "Verilax the Havenskin",
+    "canonical_name": "Anti-Venom, Horrifying Healer",
+    "oracle_id": "3c7bafe9-80cd-48d0-bcae-e7910c9fb83b",
+    "source": "https://scryfall.com/card/om1/22/anti-venom-horrifying-healer?utm_source=api"
+  },
+  {
+    "alias": "Vexed Bots",
+    "canonical_name": "Flying Octobot",
+    "oracle_id": "5ef8925c-5f43-49ca-83f0-e2ca8e655600",
+    "source": "https://scryfall.com/card/om1/47/flying-octobot?utm_source=api"
+  },
+  {
+    "alias": "Vibranium Dynamo",
+    "canonical_name": "Thran Dynamo",
+    "oracle_id": "a699c663-8131-4045-9265-a83e86609374",
+    "source": "https://scryfall.com/card/msc/290/thran-dynamo?utm_source=api"
+  },
+  {
+    "alias": "Viggo, Enforcer of Ig's Crossing",
+    "canonical_name": "Eddie Brock",
+    "oracle_id": "fe01c96b-eb78-4477-bec2-944b2a28c778",
+    "source": "https://scryfall.com/card/om1/71/eddie-brock-venom-lethal-protector?utm_source=api"
+  },
+  {
+    "alias": "Vinewoven Chariot",
+    "canonical_name": "Subway Train",
+    "oracle_id": "6d4472ad-3fbf-4a5d-94de-dfee04fda9c3",
+    "source": "https://scryfall.com/card/om1/178/subway-train?utm_source=api"
+  },
+  {
+    "alias": "Vivi's Thunder Magic",
+    "canonical_name": "Lightning Bolt",
+    "oracle_id": "4457ed35-7c10-48c8-9776-456485fdf070",
+    "source": "https://scryfall.com/card/sld/1871/lightning-bolt?utm_source=api"
+  },
+  {
+    "alias": "Vizzini, Criminal Mastermind",
+    "canonical_name": "Baral, Chief of Compliance",
+    "oracle_id": "baf80db7-2ca8-4bfc-b5b6-25ed51878dd7",
+    "source": "https://scryfall.com/card/sld/1447/baral-chief-of-compliance?utm_source=api"
+  },
+  {
+    "alias": "Volcano of Roku's Island",
+    "canonical_name": "Valakut, the Molten Pinnacle",
+    "oracle_id": "1bc44216-4e06-4f66-89b7-5c327004604e",
+    "source": "https://scryfall.com/card/tle/61/valakut-the-molten-pinnacle?utm_source=api"
+  },
+  {
+    "alias": "Wakandan Skyscraper",
+    "canonical_name": "Karn's Bastion",
+    "oracle_id": "9fb8cd81-403a-4988-8f1c-b8eccf8abd9c",
+    "source": "https://scryfall.com/card/sld/1751/karns-bastion?utm_source=api"
+  },
+  {
+    "alias": "Wakandan War Panther",
+    "canonical_name": "Fleecemane Lion",
+    "oracle_id": "e3c8cdf7-a26a-45eb-9498-99b618cfba99",
+    "source": "https://scryfall.com/card/msc/423/fleecemane-lion?utm_source=api"
+  },
+  {
+    "alias": "Wardens of Silverweb Summit",
+    "canonical_name": "Spider-Gwen, Free Spirit",
+    "oracle_id": "2648559d-1d96-47d2-a769-cfa2cbca2be5",
+    "source": "https://scryfall.com/card/om1/97/spider-gwen-free-spirit?utm_source=api"
+  },
+  {
+    "alias": "Warrior of Light",
+    "canonical_name": "Jodah, the Unifier",
+    "oracle_id": "490a8045-e160-4ccf-a05e-658ad2b7ac2d",
+    "source": "https://scryfall.com/card/fca/17/jodah-the-unifier?utm_source=api"
+  },
+  {
+    "alias": "We Want . . . A SHRUBBERY!",
+    "canonical_name": "Three Visits",
+    "oracle_id": "1b882a0e-0ede-4d1a-bd1a-9b7cffbcde8e",
+    "source": "https://scryfall.com/card/sld/1676/three-visits?utm_source=api"
+  },
+  {
+    "alias": "Weathertop",
+    "canonical_name": "Deserted Temple",
+    "oracle_id": "9f12bf9a-6e1a-4377-b4af-e8cabd3ee58a",
+    "source": "https://scryfall.com/card/ltc/393z/deserted-temple?utm_source=api"
+  },
+  {
+    "alias": "Wekhdu, Midnight Hunter",
+    "canonical_name": "Swarm, Being of Bees",
+    "oracle_id": "10c8cf3b-2530-49e7-b38e-95cdaae8a6e7",
+    "source": "https://scryfall.com/card/om1/73/swarm-being-of-bees?utm_source=api"
+  },
+  {
+    "alias": "West Tek Tyrant",
+    "canonical_name": "Grave Titan",
+    "oracle_id": "f3abd4d1-a975-4e85-8684-aa0fce029670",
+    "source": "https://scryfall.com/card/pip/874/grave-titan?utm_source=api"
+  },
+  {
+    "alias": "Westley, Dread Pirate Roberts",
+    "canonical_name": "Fynn, the Fangbearer",
+    "oracle_id": "c0b1fba1-4338-4671-934b-098689ad2085",
+    "source": "https://scryfall.com/card/sld/1449/fynn-the-fangbearer?utm_source=api"
+  },
+  {
+    "alias": "White Tower of Ecthelion",
+    "canonical_name": "Karakas",
+    "oracle_id": "59119143-c0fa-49dd-adf0-e2fd3029c48b",
+    "source": "https://scryfall.com/card/ltc/397z/karakas?utm_source=api"
+  },
+  {
+    "alias": "Widow-Making Infiltrator",
+    "canonical_name": "Dauthi Voidwalker",
+    "oracle_id": "f1c2dbe2-fbe0-4058-bdf1-91d1b1832786",
+    "source": "https://scryfall.com/card/mar/63/dauthi-voidwalker?utm_source=api"
+  },
+  {
+    "alias": "Wild Rose Rebellion",
+    "canonical_name": "Counterspell",
+    "oracle_id": "cc187110-1148-4090-bbb8-e205694a39f5",
+    "source": "https://scryfall.com/card/fca/4/counterspell?utm_source=api"
+  },
+  {
+    "alias": "Will the Wise",
+    "canonical_name": "Wernog, Rider's Chaplain",
+    "oracle_id": "6cd03270-54cc-43e1-9b86-70c76960c841",
+    "source": "https://scryfall.com/card/sld/347/wernog-riders-chaplain?utm_source=api"
+  },
+  {
+    "alias": "Withar, Cocoon Keeper",
+    "canonical_name": "Mister Negative",
+    "oracle_id": "c8da3262-826d-4ea8-bb22-06374bebefe5",
+    "source": "https://scryfall.com/card/om1/158/mister-negative?utm_source=api"
+  },
+  {
+    "alias": "Wonderweave Aerialist",
+    "canonical_name": "Skyward Spider",
+    "oracle_id": "d6ba76fa-441c-4a74-bfea-8ae2a2c9e391",
+    "source": "https://scryfall.com/card/om1/159/skyward-spider?utm_source=api"
+  },
+  {
+    "alias": "Wrench, Speedway Saboteur",
+    "canonical_name": "Black Cat, Cunning Thief",
+    "oracle_id": "f5cdb413-2b72-4dc6-b93d-2532ac2ae568",
+    "source": "https://scryfall.com/card/om1/74/black-cat-cunning-thief?utm_source=api"
+  },
+  {
+    "alias": "Xecau, Predation's Shadow",
+    "canonical_name": "Rhino, Barreling Brute",
+    "oracle_id": "9a6bf8a3-7640-4890-ac62-d5028f41978b",
+    "source": "https://scryfall.com/card/om1/160/rhino-barreling-brute?utm_source=api"
+  },
+  {
+    "alias": "Xenk, Paladin Unbroken",
+    "canonical_name": "Rashel, Fist of Torm",
+    "oracle_id": "c0c39f80-cf12-482e-a7c4-757db85125b0",
+    "source": "https://scryfall.com/card/sld/1237/rashel-fist-of-torm?utm_source=api"
+  },
+  {
+    "alias": "Ya viene el coco",
+    "canonical_name": "Tibalt's Trickery",
+    "oracle_id": "6623cb85-fb1e-4561-8b21-0977c25096c2",
+    "source": "https://scryfall.com/card/sld/7027/tibalts-trickery?utm_source=api"
+  },
+  {
+    "alias": "Yera and Oski, Weaver and Guide",
+    "canonical_name": "Arachne, Psionic Weaver",
+    "oracle_id": "28d500ea-720f-4332-891e-404fb03acb5c",
+    "source": "https://scryfall.com/card/om1/23/arachne-psionic-weaver?utm_source=api"
+  },
+  {
+    "alias": "Yojimbo",
+    "canonical_name": "Solitude",
+    "oracle_id": "dcb9c2a7-ae54-4ddc-a567-640bf4bf4366",
+    "source": "https://scryfall.com/card/sld/7004/solitude?utm_source=api"
+  },
+  {
+    "alias": "You're Gonna Need a Bigger Boat",
+    "canonical_name": "Abrade",
+    "oracle_id": "f9db72dc-9a5b-48a4-a86e-7464d9a2166a",
+    "source": "https://scryfall.com/card/sld/2179/abrade?utm_source=api"
+  },
+  {
+    "alias": "Yuffie Kisaragi",
+    "canonical_name": "Yuriko, the Tiger's Shadow",
+    "oracle_id": "a7043fbd-1dfd-42cf-be4b-cc343d0949e5",
+    "source": "https://scryfall.com/card/fca/60/yuriko-the-tigers-shadow?utm_source=api"
+  },
+  {
+    "alias": "Yuna's Holy Magic",
+    "canonical_name": "Prismatic Ending",
+    "oracle_id": "2cb98ca9-d7bb-416b-a17e-ee5f8e4d78f2",
+    "source": "https://scryfall.com/card/sld/1868/prismatic-ending?utm_source=api"
+  },
+  {
+    "alias": "Yuna's Sending Staff",
+    "canonical_name": "Staff of the Storyteller",
+    "oracle_id": "0c4e2c90-c17b-42cc-b4d7-cf75970fbe90",
+    "source": "https://scryfall.com/card/sld/1863/staff-of-the-storyteller?utm_source=api"
+  },
+  {
+    "alias": "Zan, Tunnelweb Explorer",
+    "canonical_name": "Spider-Man, Brooklyn Visionary",
+    "oracle_id": "2ca85872-9436-4515-af50-c13e59605627",
+    "source": "https://scryfall.com/card/om1/122/spider-man-brooklyn-visionary?utm_source=api"
+  },
+  {
+    "alias": "Zangief, the Red Cyclone",
+    "canonical_name": "Maarika, Brutal Gladiator",
+    "oracle_id": "a46f9f5c-775c-470d-8935-9556e1bbb23d",
+    "source": "https://scryfall.com/card/sld/435/maarika-brutal-gladiator?utm_source=api"
+  },
+  {
+    "alias": "Zidane Tribal",
+    "canonical_name": "Ragavan, Nimble Pilferer",
+    "oracle_id": "37108cd4-bbab-4ce3-9ed6-f60e8422e703",
+    "source": "https://scryfall.com/card/fca/43/ragavan-nimble-pilferer?utm_source=api"
+  },
+  {
+    "alias": "Zinogre, Lord of Lightning",
+    "canonical_name": "Sarulf, Realm Eater",
+    "oracle_id": "789964f5-79c5-4329-b68f-b15b0d54b0b2",
+    "source": "https://scryfall.com/card/sld/2240/sarulf-realm-eater?utm_source=api"
+  },
+  {
+    "alias": "Zora, Spider Fancier",
+    "canonical_name": "Aunt May",
+    "oracle_id": "bdb769b5-c861-4ec1-ad6b-e2a56ca05fd1",
+    "source": "https://scryfall.com/card/om1/24/aunt-may?utm_source=api"
+  },
+  {
+    "alias": "Zuko, Redeemed",
+    "canonical_name": "Rhys the Redeemed",
+    "oracle_id": "f7252190-ad24-4ba3-a644-2790dd1d680d",
+    "source": "https://scryfall.com/card/tle/52/rhys-the-redeemed?utm_source=api"
+  }
+]
