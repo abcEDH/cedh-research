@@ -2,6 +2,7 @@ import { supabase } from "@/lib/supabase";
 import { splitCardName } from "@/lib/scryfall/client";
 import type { CommanderMatchup } from "@/components/commanders/commander-matchups-table";
 import type { TrendMetricPoint, TrendMetricSeries } from "@/components/commanders/trend-metric-charts";
+import type { PodMetric, CommanderMetaEv } from "@/lib/schemas/api-contracts";
 
 export interface CommanderStat {
   commander_id: string;
@@ -663,4 +664,41 @@ export async function getCommanderTrendSeries(commanderId: string): Promise<Comm
     });
 
   return { weekly, monthly, weeklyTable, monthlyTable };
+}
+
+/**
+ * Pod-aware metrics for the commander detail page's badge strip (#151). get_pod_metrics (#148)
+ * and get_commander_meta_ev (#149) both return one row per *top-N* commander (by metashare),
+ * not a single-commander lookup -- so these fetch the shared top-N RPC and pick out this
+ * commander's row. A commander outside the top-N window has no row in either RPC and both
+ * fetchers return null; the page hides the corresponding badge rather than showing a fake zero.
+ */
+export async function getPodMetricsForCommander(
+  commanderId: string,
+  topN = 30,
+  daysBack = 180
+): Promise<PodMetric | null> {
+  const { data, error } = await supabase.rpc("get_pod_metrics", { top_n: topN, days_back: daysBack });
+
+  if (error) {
+    console.error("Error fetching pod metrics:", error);
+    return null;
+  }
+  const rows = (data ?? []) as PodMetric[];
+  return rows.find((row) => row.commander_id === commanderId) ?? null;
+}
+
+export async function getCommanderMetaEvForCommander(
+  commanderId: string,
+  topN = 30,
+  daysBack = 180
+): Promise<CommanderMetaEv | null> {
+  const { data, error } = await supabase.rpc("get_commander_meta_ev", { top_n: topN, days_back: daysBack });
+
+  if (error) {
+    console.error("Error fetching commander meta EV:", error);
+    return null;
+  }
+  const rows = (data ?? []) as CommanderMetaEv[];
+  return rows.find((row) => row.commander_id === commanderId) ?? null;
 }
