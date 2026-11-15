@@ -97,12 +97,15 @@ BEGIN
     FROM game_participants gp
     JOIN tournament_entries tea ON tea.id = gp.entry_id
     JOIN tournaments t ON t.id = tea.tournament_id
+    JOIN games g ON g.id = gp.game_id
     WHERE gp.result <> 'bye'
-      -- Future-dated-tournament and top-N-by-metashare conventions mirror
+      -- Future-dated-tournament, unfinished-game, and top-N-by-metashare conventions mirror
       -- top_commanders_by_metashare (20261115000000_winrate_matrix_and_pod_metrics_rpc.sql) --
-      -- see 20260815000000_exclude_future_dated_tournaments.sql for the upper bound's history.
+      -- see 20260815000000_exclude_future_dated_tournaments.sql for the upper bound's history
+      -- and that migration's module header for the unfinished-game (games.status) convention.
       AND t.start_date::date <= CURRENT_DATE
       AND t.start_date >= NOW() - make_interval(days => GREATEST(days_back, 0))
+      AND LOWER(COALESCE(g.status, 'completed')) IN ('completed', 'complete', 'done')
   ),
   x_pod_sizes AS (
     SELECT x_game_id, COUNT(*) AS x_pod_size
@@ -195,7 +198,12 @@ BEGIN
   x_commander_ev AS (
     SELECT
       tev.x_focal_commander_id AS x_commander_id,
-      SUM(tev.x_triple_pods) AS x_total_pods,
+      -- Explicit ::bigint cast: SUM(bigint) returns numeric in Postgres (not bigint), and a
+      -- bare numeric value is not implicitly coercible to the bigint parameter position in
+      -- public.is_rate_statistically_significant(bigint, numeric, numeric) below, nor does it
+      -- exactly match the declared `pods_present bigint` RETURNS TABLE column. Without this
+      -- cast every call to this function fails at the Postgres level.
+      SUM(tev.x_triple_pods)::bigint AS x_total_pods,
       SUM(tev.x_triple_pods * tev.x_triple_winrate) / NULLIF(SUM(tev.x_triple_pods), 0) AS x_meta_ev,
       SUM(tev.x_triple_pods * tev.x_triple_ci_low) / NULLIF(SUM(tev.x_triple_pods), 0) AS x_meta_ev_ci_low,
       SUM(tev.x_triple_pods * tev.x_triple_ci_high) / NULLIF(SUM(tev.x_triple_pods), 0) AS x_meta_ev_ci_high,

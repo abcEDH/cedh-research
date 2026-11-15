@@ -287,6 +287,48 @@ class SupabaseMigrationIntegrityTests(unittest.TestCase):
         self.assertIn("JOIN commanders c ON c.id = te.commander_id", fn_body)
         self.assertIn("AND c.name <> 'Unknown Commander'", fn_body)
 
+    def test_meta_ev_casts_total_pods_sum_to_bigint(self) -> None:
+        """Codex review finding on PR #384 (third pass, P1): Postgres's SUM(bigint) returns
+        numeric, not bigint. Without an explicit ::bigint cast, the resulting x_total_pods is
+        numeric, which is neither implicitly coercible to
+        is_rate_statistically_significant's declared `p_trials bigint` parameter (function-call
+        argument resolution requires an implicit cast, and numeric->bigint is only an
+        assignment-context cast) nor an exact match for the `pods_present bigint` RETURNS TABLE
+        column -- so every call to get_commander_meta_ev would fail at the Postgres level.
+        """
+        sql = META_EV_MIGRATION.read_text()
+
+        self.assertIn("SUM(tev.x_triple_pods)::bigint AS x_total_pods", sql)
+
+    def test_winrate_family_rpcs_exclude_unfinished_games(self) -> None:
+        """Codex review finding on PR #384 (third pass, P2): ingest.py persists an in-progress
+        or not-yet-reported TopDeck pod with games.status taken directly from the API
+        ("Active"/"Pending"), and is_draw_winner_id(None) treats a still-missing winner_id the
+        same as a genuine TopDeck "Draw" -- so an unfinished pod currently looks identical to a
+        real draw unless something excludes it. Applies the same completion-status convention
+        the internal Elo eligibility views use (20260726000000_elo_ranking_eligibility_tiers.sql)
+        to every independent windowed query across both migrations: the shared
+        top_commanders_by_metashare cutoff, get_winrate_matrix's x_window_games + x_overall,
+        get_pod_metrics' x_pod_metrics, and get_commander_meta_ev's x_window_games -- 4 in this
+        migration, 1 in the other, same count as the future-date bound (same reasoning: scoping
+        to a top-N commander_id alone does not exclude a specific unfinished game).
+        """
+        winrate_sql = WINRATE_MATRIX_MIGRATION.read_text()
+        meta_ev_sql = META_EV_MIGRATION.read_text()
+        status_filter = "LOWER(COALESCE(g.status, 'completed')) IN ('completed', 'complete', 'done')"
+
+        self.assertEqual(
+            winrate_sql.count(status_filter),
+            5,
+            "expected the unfinished-game filter in all 4 windowed queries, plus 1 mention in "
+            "the module header's documentation comment",
+        )
+        self.assertIn(status_filter, meta_ev_sql)
+        # get_pod_metrics' x_placements CTE must carry the game id forward so x_pod_metrics can
+        # join games and apply the filter -- otherwise there'd be nothing to join on.
+        self.assertIn("gp.game_id AS x_game_id", winrate_sql)
+        self.assertIn("JOIN games g ON g.id = pl.x_game_id", winrate_sql)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -270,6 +270,62 @@ class WinrateMatrixPodMetricsMetaEvIntegrationTests(unittest.TestCase):
         # composition_coverage is a real, deck-specific fraction (not hardcoded to 1.0).
         self.assertGreaterEqual(float(a["composition_coverage"]), 0.0)
         self.assertLessEqual(float(a["composition_coverage"]), 1.0)
+        # Regression (Codex review, 3rd pass): pods_present must be this RPC's own
+        # EV-eligible (4-player-pod) count, an actual int (the earlier numeric/bigint mismatch
+        # would have made this call fail outright, not just return a wrong value), and distinct
+        # from get_pod_metrics' own pods_present field (which counts every non-bye
+        # participation). All 6 of commander A's fixture pods are 4-player, so both counts
+        # happen to agree here, but the field must still be present and well-typed.
+        self.assertEqual(a["pods_present"], 6)
+        self.assertIsInstance(a["is_statistically_significant"], bool)
+
+    def test_unfinished_games_are_excluded_from_all_three_rpcs(self) -> None:
+        """Regression test (Codex review, 3rd pass): an in-progress pod (games.status !=
+        'Completed') must not be counted by get_winrate_matrix, get_pod_metrics, or
+        get_commander_meta_ev, even though game_participants.result is populated for it (see
+        each migration's module header for why an unfinished pod can otherwise look identical
+        to a genuine draw). Adds one more fully-fledged 4-player pod for commander A with
+        status='Active' and asserts every RPC's counts for A are unchanged from the baseline
+        fixture (which has no unfinished games) -- i.e. the new pod contributes nothing.
+        """
+        with self.conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO games (id, tournament_id, round_number, status, is_draw) VALUES
+                  ('00000000-0000-0000-0000-000000000307',
+                   '00000000-0000-0000-0000-0000000000f1', 7, 'Active', false);
+                INSERT INTO game_participants (game_id, entry_id, seat_position, result, points_earned) VALUES
+                  ('00000000-0000-0000-0000-000000000307', '00000000-0000-0000-0000-000000000201', 0, 'win', 5),
+                  ('00000000-0000-0000-0000-000000000307', '00000000-0000-0000-0000-000000000202', 1, 'loss', 0),
+                  ('00000000-0000-0000-0000-000000000307', '00000000-0000-0000-0000-000000000203', 2, 'loss', 0),
+                  ('00000000-0000-0000-0000-000000000307', '00000000-0000-0000-0000-000000000204', 3, 'loss', 0);
+                """
+            )
+        try:
+            a_wm = self._rows(
+                "SELECT * FROM public.get_winrate_matrix(%s, %s) "
+                "WHERE deck_a_commander_id = %s AND deck_b_commander_id IS NULL",
+                (4, 365, "00000000-0000-0000-0000-00000000000a"),
+            )[0]
+            self.assertEqual(a_wm["games_played"], 6)  # unchanged from the baseline fixture
+
+            a_pm = self._rows(
+                "SELECT * FROM public.get_pod_metrics(%s, %s) WHERE commander_id = %s",
+                (4, 365, "00000000-0000-0000-0000-00000000000a"),
+            )[0]
+            self.assertEqual(a_pm["pods_present"], 6)
+
+            a_ev = self._rows(
+                "SELECT * FROM public.get_commander_meta_ev(%s, %s, %s) WHERE commander_id = %s",
+                (4, 365, 2, "00000000-0000-0000-0000-00000000000a"),
+            )[0]
+            self.assertEqual(a_ev["pods_present"], 6)
+        finally:
+            with self.conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM game_participants WHERE game_id = '00000000-0000-0000-0000-000000000307'; "
+                    "DELETE FROM games WHERE id = '00000000-0000-0000-0000-000000000307';"
+                )
 
 
 if __name__ == "__main__":

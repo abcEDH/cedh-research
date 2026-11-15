@@ -24,15 +24,31 @@
 -- * get_commander_matchups has no time-window parameter (it is effectively all-time) and no
 --   "aggregate across every opponent" row of its own -- every row it returns is already a
 --   per-opponent breakdown. get_winrate_matrix's *pairwise* (non-OVERALL, non-mirror) cells
---   reconcile exactly against it: for a top-N pair (A, B), get_winrate_matrix's (A, B) row
---   matches get_commander_matchups(A)'s row for opponent B game-for-game, provided days_back
---   covers get_commander_matchups' implicit all-time scope and its p_min_games threshold
---   (default 5) is lowered enough not to hide the pair. The OVERALL row (deck_b_commander_id
---   IS NULL) has no equivalent in get_commander_matchups to reconcile against: that RPC counts
---   a commander's games once per *opponent* (so a 4-player pod can contribute to up to three of
---   its rows), never once per *participation*, so summing its rows does not equal that
---   commander's total game count. OVERALL is a new metric this migration adds, computed as one
---   row per participation aggregated across the window.
+--   reconcile against it (for a top-N pair (A, B), get_winrate_matrix's (A, B) row matches
+--   get_commander_matchups(A)'s row for opponent B game-for-game, provided days_back covers
+--   get_commander_matchups' implicit all-time scope and its p_min_games threshold is lowered
+--   enough not to hide the pair) *whenever no unfinished (non-"Completed") game exists in that
+--   window -- get_commander_matchups itself does not filter on games.status (see below), so an
+--   in-progress pod would count toward its total but not toward get_winrate_matrix's. The
+--   OVERALL row (deck_b_commander_id IS NULL) has no equivalent in get_commander_matchups to
+--   reconcile against: that RPC counts a commander's games once per *opponent* (so a 4-player
+--   pod can contribute to up to three of its rows), never once per *participation*, so summing
+--   its rows does not equal that commander's total game count. OVERALL is a new metric this
+--   migration adds, computed as one row per participation aggregated across the window.
+-- * Unfinished games: TopDeck tables ingest with games.status taken directly from the API
+--   ("Active"/"Pending" for an in-progress or not-yet-reported pod, "Completed" otherwise --
+--   see ingest.py), and a pod with no winner reported yet is persisted as `is_draw = true`
+--   (is_draw_winner_id(None) treats a missing winner_id the same as TopDeck's literal "Draw"),
+--   so an in-progress pod currently looks identical to a genuine draw if nothing excludes it.
+--   All three RPCs below (and the shared top_commanders_by_metashare cutoff) therefore join
+--   `games` and apply the same completion-status filter the internal Elo eligibility views use
+--   (20260726000000_elo_ranking_eligibility_tiers.sql):
+--   `LOWER(COALESCE(g.status, 'completed')) IN ('completed', 'complete', 'done')`. This is a
+--   narrower bar than that migration's own `ranking_eligible`/`local_eligible` flags (no
+--   decklist-presence or league/casual/exhibition-name filtering here -- those are specific to
+--   Elo eligibility, not a general "is this game real" check) but excludes the same unfinished-
+--   pod contamination. get_commander_matchups predates this convention and does not apply it --
+--   see the reconciliation note above for what that means for exact parity.
 -- * game_participants.result only distinguishes 'win' / 'draw' / 'loss' / 'bye' -- there is no
 --   per-game numeric finish position anywhere in the schema (tournament_entries.final_standing
 --   is the *tournament*-level standing, not per-pod). get_pod_metrics' "top 2" is therefore
@@ -115,6 +131,7 @@ AS $$
   JOIN tournament_entries te ON te.id = gp.entry_id
   JOIN tournaments t ON t.id = te.tournament_id
   JOIN commanders c ON c.id = te.commander_id
+  JOIN games g ON g.id = gp.game_id
   WHERE gp.result <> 'bye'
     -- Excludes any tournament dated after "now" (see
     -- 20260815000000_exclude_future_dated_tournaments.sql for the known case: a 2030-dated
@@ -127,15 +144,20 @@ AS $$
     -- persisted as this literal placeholder name (see sanitize_commander_payload in
     -- packages/backend/src/ingest.py) and must never occupy a top-N slot.
     AND c.name <> 'Unknown Commander'
+    -- Excludes in-progress/not-yet-reported pods (see the module header): same completion-
+    -- status convention as the internal Elo eligibility views
+    -- (20260726000000_elo_ranking_eligibility_tiers.sql).
+    AND LOWER(COALESCE(g.status, 'completed')) IN ('completed', 'complete', 'done')
   GROUP BY te.commander_id
   ORDER BY games_played DESC, te.commander_id
   LIMIT GREATEST(p_top_n, 0);
 $$;
 
 COMMENT ON FUNCTION public.top_commanders_by_metashare(integer, integer) IS
-  'Metashare = game participations (excluding byes, future-dated tournaments, and the '
-  '"Unknown Commander" placeholder) within days_back. Shared by get_winrate_matrix (#147), '
-  'get_pod_metrics (#148) and get_commander_meta_ev (#149) so all three agree on inclusion.';
+  'Metashare = game participations (excluding byes, future-dated tournaments, unfinished '
+  'games, and the "Unknown Commander" placeholder) within days_back. Shared by '
+  'get_winrate_matrix (#147), get_pod_metrics (#148) and get_commander_meta_ev (#149) so all '
+  'three agree on inclusion.';
 
 GRANT EXECUTE ON FUNCTION public.top_commanders_by_metashare(integer, integer) TO anon;
 GRANT EXECUTE ON FUNCTION public.top_commanders_by_metashare(integer, integer) TO authenticated;
@@ -221,12 +243,14 @@ BEGIN
     FROM game_participants a
     JOIN tournament_entries tea ON tea.id = a.entry_id
     JOIN tournaments t ON t.id = tea.tournament_id
+    JOIN games g ON g.id = a.game_id
     JOIN game_participants b ON b.game_id = a.game_id AND b.id <> a.id
     JOIN tournament_entries teb ON teb.id = b.entry_id
     WHERE a.result <> 'bye'
       AND b.result <> 'bye'
       AND t.start_date::date <= CURRENT_DATE
       AND t.start_date >= NOW() - make_interval(days => GREATEST(days_back, 0))
+      AND LOWER(COALESCE(g.status, 'completed')) IN ('completed', 'complete', 'done')
       AND tea.commander_id <> teb.commander_id
       AND tea.commander_id IN (SELECT x_commander_id FROM x_top)
       AND teb.commander_id IN (SELECT x_commander_id FROM x_top)
@@ -270,9 +294,11 @@ BEGIN
     FROM game_participants a
     JOIN tournament_entries tea ON tea.id = a.entry_id
     JOIN tournaments t ON t.id = tea.tournament_id
+    JOIN games g ON g.id = a.game_id
     WHERE a.result <> 'bye'
       AND t.start_date::date <= CURRENT_DATE
       AND t.start_date >= NOW() - make_interval(days => GREATEST(days_back, 0))
+      AND LOWER(COALESCE(g.status, 'completed')) IN ('completed', 'complete', 'done')
       AND tea.commander_id IN (SELECT x_commander_id FROM x_top)
     GROUP BY tea.commander_id
   ),
@@ -356,6 +382,7 @@ BEGIN
     -- tests/test_pod_top_two_derivation.py for the fixture covering all four "which seat won"
     -- orderings plus the all-draw and bye-reduced-pod edge cases.
     SELECT
+      gp.game_id AS x_game_id,
       gp.entry_id AS x_entry_id,
       gp.result AS x_result,
       RANK() OVER (
@@ -376,7 +403,9 @@ BEGIN
     FROM x_placements pl
     JOIN tournament_entries tea ON tea.id = pl.x_entry_id
     JOIN tournaments t ON t.id = tea.tournament_id
-    WHERE t.start_date::date <= CURRENT_DATE
+    JOIN games g ON g.id = pl.x_game_id
+    WHERE LOWER(COALESCE(g.status, 'completed')) IN ('completed', 'complete', 'done')
+      AND t.start_date::date <= CURRENT_DATE
       AND t.start_date >= NOW() - make_interval(days => GREATEST(days_back, 0))
       AND tea.commander_id IN (SELECT x_commander_id FROM x_top)
     GROUP BY tea.commander_id
