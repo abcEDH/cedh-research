@@ -114,17 +114,28 @@ AS $$
   FROM game_participants gp
   JOIN tournament_entries te ON te.id = gp.entry_id
   JOIN tournaments t ON t.id = te.tournament_id
+  JOIN commanders c ON c.id = te.commander_id
   WHERE gp.result <> 'bye'
+    -- Excludes any tournament dated after "now" (see
+    -- 20260815000000_exclude_future_dated_tournaments.sql for the known case: a 2030-dated
+    -- TopDeck practice event that cleared the player-count threshold on other views). Applied
+    -- here too since this cutoff feeds every winrate-family RPC's top-N selection.
+    AND t.start_date::date <= CURRENT_DATE
     AND t.start_date >= NOW() - make_interval(days => GREATEST(p_days_back, 0))
+    -- Matches commander_weekly_trends/commander_monthly_trends' exclusion
+    -- (20260815000000_exclude_future_dated_tournaments.sql): an unresolved decklist is
+    -- persisted as this literal placeholder name (see sanitize_commander_payload in
+    -- packages/backend/src/ingest.py) and must never occupy a top-N slot.
+    AND c.name <> 'Unknown Commander'
   GROUP BY te.commander_id
   ORDER BY games_played DESC, te.commander_id
   LIMIT GREATEST(p_top_n, 0);
 $$;
 
 COMMENT ON FUNCTION public.top_commanders_by_metashare(integer, integer) IS
-  'Metashare = game participations (excluding byes) within days_back. Shared by '
-  'get_winrate_matrix (#147), get_pod_metrics (#148) and get_commander_meta_ev (#149) so all '
-  'three agree on inclusion.';
+  'Metashare = game participations (excluding byes, future-dated tournaments, and the '
+  '"Unknown Commander" placeholder) within days_back. Shared by get_winrate_matrix (#147), '
+  'get_pod_metrics (#148) and get_commander_meta_ev (#149) so all three agree on inclusion.';
 
 GRANT EXECUTE ON FUNCTION public.top_commanders_by_metashare(integer, integer) TO anon;
 GRANT EXECUTE ON FUNCTION public.top_commanders_by_metashare(integer, integer) TO authenticated;
@@ -214,6 +225,7 @@ BEGIN
     JOIN tournament_entries teb ON teb.id = b.entry_id
     WHERE a.result <> 'bye'
       AND b.result <> 'bye'
+      AND t.start_date::date <= CURRENT_DATE
       AND t.start_date >= NOW() - make_interval(days => GREATEST(days_back, 0))
       AND tea.commander_id <> teb.commander_id
       AND tea.commander_id IN (SELECT x_commander_id FROM x_top)
@@ -259,6 +271,7 @@ BEGIN
     JOIN tournament_entries tea ON tea.id = a.entry_id
     JOIN tournaments t ON t.id = tea.tournament_id
     WHERE a.result <> 'bye'
+      AND t.start_date::date <= CURRENT_DATE
       AND t.start_date >= NOW() - make_interval(days => GREATEST(days_back, 0))
       AND tea.commander_id IN (SELECT x_commander_id FROM x_top)
     GROUP BY tea.commander_id
@@ -363,7 +376,8 @@ BEGIN
     FROM x_placements pl
     JOIN tournament_entries tea ON tea.id = pl.x_entry_id
     JOIN tournaments t ON t.id = tea.tournament_id
-    WHERE t.start_date >= NOW() - make_interval(days => GREATEST(days_back, 0))
+    WHERE t.start_date::date <= CURRENT_DATE
+      AND t.start_date >= NOW() - make_interval(days => GREATEST(days_back, 0))
       AND tea.commander_id IN (SELECT x_commander_id FROM x_top)
     GROUP BY tea.commander_id
   )

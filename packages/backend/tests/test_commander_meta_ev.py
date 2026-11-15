@@ -134,6 +134,28 @@ class MetaEvSparsityFallbackReorderTests(unittest.TestCase):
         self.assertEqual(result["composition_coverage"], 1.0)
         self.assertAlmostEqual(result["meta_ev"], 0.30, places=4)
 
+    def test_zero_coverage_not_none_when_every_triple_is_a_fallback(self) -> None:
+        """Regression test (Codex review on PR #384): when *every* triple a commander faced is
+        individually sparse (below min_triple_obs), the SQL's
+        ``SUM(...) FILTER (WHERE x_is_direct)`` matches zero rows and -- unlike this Python
+        mirror's plain running total, which starts at 0 -- a SQL FILTER-aggregate over zero
+        matching rows is NULL, not 0. Without an explicit COALESCE around that SUM in the
+        migration, composition_coverage would come back NULL for such a commander, violating
+        CommanderMetaEvSchema's non-nullable contract. This test pins the *intended* value (an
+        honest 0.0) so a regression in the SQL shows up via the migration-text assertion in
+        MigrationSqlMatchesReferenceMathTests below, even though this particular Python
+        reimplementation can't reproduce the NULL-vs-zero bug itself.
+        """
+        # Every individual triple below min_triple_obs=10 -> composition_coverage must be 0.0.
+        triples = [(("D", "D", "R"), "win" if i < 3 else "loss") for i in range(8)]
+        triples += [(("E", "E", "F"), "win" if i < 1 else "loss") for i in range(5)]
+        pairwise_matrix = {(None, "D"): (0.3, 0.2, 0.4), (None, "R"): (0.3, 0.2, 0.4)}
+
+        result = compute_meta_ev(triples, pairwise_matrix, min_triple_obs=10)
+
+        self.assertEqual(result["composition_coverage"], 0.0)
+        self.assertIsNotNone(result["composition_coverage"])
+
 
 class GeometricMeanFallbackClampingTests(unittest.TestCase):
     def test_geometric_mean_of_three_average_matchups_does_not_collapse_toward_zero(self) -> None:
@@ -203,6 +225,27 @@ class MigrationSqlMatchesReferenceMathTests(unittest.TestCase):
         self.assertIn("empirical", sql.lower())
         self.assertIn("composition_coverage", sql)
         self.assertIn("not hardcoded to 1.0", sql)
+
+    def test_composition_coverage_coalesces_the_all_fallback_case_to_zero(self) -> None:
+        """Codex review finding on PR #384: without this COALESCE, a commander whose every
+        triple is a fallback (none individually clears min_triple_obs) gets a NULL
+        composition_coverage instead of 0, because SUM(...) FILTER(...) over zero matching rows
+        is NULL in SQL -- see test_zero_coverage_not_none_when_every_triple_is_a_fallback above
+        for the pure-Python pin of the intended (non-NULL) value."""
+        sql = META_EV_MIGRATION.read_text()
+
+        self.assertIn(
+            "COALESCE(SUM(tev.x_triple_pods) FILTER (WHERE tev.x_is_direct), 0)::numeric",
+            sql,
+        )
+
+    def test_window_excludes_future_dated_tournaments(self) -> None:
+        """Codex review finding on PR #384: matches the upper-bound convention from
+        20260815000000_exclude_future_dated_tournaments.sql (a 2030-dated TopDeck practice
+        event that previously contaminated other unbounded windows)."""
+        sql = META_EV_MIGRATION.read_text()
+
+        self.assertIn("AND t.start_date::date <= CURRENT_DATE", sql)
 
 
 if __name__ == "__main__":

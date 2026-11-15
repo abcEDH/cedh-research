@@ -87,6 +87,10 @@ BEGIN
     JOIN tournament_entries tea ON tea.id = gp.entry_id
     JOIN tournaments t ON t.id = tea.tournament_id
     WHERE gp.result <> 'bye'
+      -- Future-dated-tournament and top-N-by-metashare conventions mirror
+      -- top_commanders_by_metashare (20261115000000_winrate_matrix_and_pod_metrics_rpc.sql) --
+      -- see 20260815000000_exclude_future_dated_tournaments.sql for the upper bound's history.
+      AND t.start_date::date <= CURRENT_DATE
       AND t.start_date >= NOW() - make_interval(days => GREATEST(days_back, 0))
   ),
   x_pod_sizes AS (
@@ -184,7 +188,13 @@ BEGIN
       SUM(tev.x_triple_pods * tev.x_triple_winrate) / NULLIF(SUM(tev.x_triple_pods), 0) AS x_meta_ev,
       SUM(tev.x_triple_pods * tev.x_triple_ci_low) / NULLIF(SUM(tev.x_triple_pods), 0) AS x_meta_ev_ci_low,
       SUM(tev.x_triple_pods * tev.x_triple_ci_high) / NULLIF(SUM(tev.x_triple_pods), 0) AS x_meta_ev_ci_high,
-      SUM(tev.x_triple_pods) FILTER (WHERE tev.x_is_direct)::numeric
+      -- COALESCE guards the case where *every* triple for this commander is a fallback (none
+      -- independently cleared min_triple_obs): the FILTER then matches zero rows, and
+      -- SUM(...) FILTER(...) over zero rows is NULL, not 0 -- without the COALESCE that NULL
+      -- would propagate into composition_coverage and violate the "always a real number"
+      -- contract (CommanderMetaEvSchema in apps/web/src/lib/schemas/api-contracts.ts), rendering
+      -- as "--" on the matrix/badges instead of the correct 0%.
+      COALESCE(SUM(tev.x_triple_pods) FILTER (WHERE tev.x_is_direct), 0)::numeric
         / NULLIF(SUM(tev.x_triple_pods), 0) AS x_composition_coverage
     FROM x_triple_ev tev
     GROUP BY tev.x_focal_commander_id

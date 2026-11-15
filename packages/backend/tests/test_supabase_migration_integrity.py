@@ -229,6 +229,46 @@ class SupabaseMigrationIntegrityTests(unittest.TestCase):
         self.assertIn("FROM public.get_winrate_matrix(top_n, days_back)", sql)
         self.assertIn("min_triple_obs", sql)
 
+    def test_winrate_family_rpcs_exclude_future_dated_tournaments(self) -> None:
+        """Codex review finding on PR #384: these RPCs' own windowed queries bypass the
+        future-date upper bound that 20260815000000_exclude_future_dated_tournaments.sql
+        established for commander_stats/commander_weekly_trends/commander_monthly_trends (a
+        2030-dated TopDeck practice event previously contaminated those unbounded windows).
+        Every independent windowed query across both migrations needs its own copy of the
+        bound -- it is not inherited by restricting to a top-N commander_id alone, since a
+        future-dated game can still be counted for an already-legitimate top-N commander.
+        """
+        winrate_sql = WINRATE_MATRIX_MIGRATION.read_text()
+        meta_ev_sql = META_EV_MIGRATION.read_text()
+
+        # top_commanders_by_metashare, get_winrate_matrix's x_window_games + x_overall, and
+        # get_pod_metrics' x_pod_metrics: 4 independent windowed queries in this migration.
+        self.assertEqual(
+            winrate_sql.count("t.start_date::date <= CURRENT_DATE"),
+            4,
+            "expected the future-date upper bound in all 4 windowed queries",
+        )
+        # get_commander_meta_ev's own x_window_games CTE.
+        self.assertIn("t.start_date::date <= CURRENT_DATE", meta_ev_sql)
+
+    def test_top_commanders_by_metashare_excludes_unknown_commander_placeholder(self) -> None:
+        """Codex review finding on PR #384: 'Unknown Commander' is the literal placeholder name
+        persisted for unresolved decklists (sanitize_commander_payload in
+        packages/backend/src/ingest.py) and is excluded from ranking views elsewhere in this
+        repo (commander_weekly_trends/commander_monthly_trends, and the frontend's own
+        getCommanderRankings in apps/web/src/lib/commanders/fetchers.ts). Without this
+        exclusion it could occupy a top-N metashare slot and produce a meaningless matchup
+        row/column, displacing a real commander. Excluded once, centrally, in the shared
+        top_commanders_by_metashare helper so get_winrate_matrix, get_pod_metrics and
+        get_commander_meta_ev all inherit it via their shared x_top CTE.
+        """
+        sql = WINRATE_MATRIX_MIGRATION.read_text()
+
+        fn_start = sql.index("FUNCTION public.top_commanders_by_metashare(")
+        fn_body = sql[fn_start : fn_start + 1800]
+        self.assertIn("JOIN commanders c ON c.id = te.commander_id", fn_body)
+        self.assertIn("AND c.name <> 'Unknown Commander'", fn_body)
+
 
 if __name__ == "__main__":
     unittest.main()
