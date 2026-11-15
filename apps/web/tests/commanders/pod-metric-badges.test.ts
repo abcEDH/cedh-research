@@ -28,6 +28,8 @@ function metaEv(overrides: Partial<CommanderMetaEv> = {}): CommanderMetaEv {
     meta_ev_ci_low: 0.26,
     meta_ev_ci_high: 0.34,
     composition_coverage: 0.82,
+    pods_present: 1243,
+    is_statistically_significant: true,
     ...overrides,
   };
 }
@@ -36,7 +38,7 @@ describe("buildPodMetricBadges", () => {
   it("builds all three badges with the mocked RPC values (#151 badge contents example)", () => {
     const badges = buildPodMetricBadges(
       podMetric({ threat_score: 0.38, threat_ci_low: 0.35, threat_ci_high: 0.41, pods_present: 1243 }),
-      metaEv()
+      metaEv({ pods_present: 1243 })
     );
 
     expect(badges.threat).toEqual({
@@ -62,12 +64,29 @@ describe("buildPodMetricBadges", () => {
   });
 
   it("propagates is_statistically_significant=false to reduce confidence on all three badges", () => {
-    const badges = buildPodMetricBadges(podMetric({ is_statistically_significant: false }), metaEv());
+    const badges = buildPodMetricBadges(
+      podMetric({ is_statistically_significant: false }),
+      metaEv({ is_statistically_significant: false })
+    );
 
     expect(badges.threat?.isStatisticallySignificant).toBe(false);
     expect(badges.survivability?.isStatisticallySignificant).toBe(false);
-    // The EV badge borrows pod_metrics' significance flag (get_commander_meta_ev has none of
-    // its own) since both rest on the same underlying pods_present sample size.
+    expect(badges.metaEv?.isStatisticallySignificant).toBe(false);
+  });
+
+  it("uses get_commander_meta_ev's own pods_present/significance, not get_pod_metrics', since the two can legitimately disagree (regression test, Codex review on PR #384)", () => {
+    // get_pod_metrics counts every non-bye participation regardless of pod size (100 pods: 90
+    // three-player + 10 four-player), while get_commander_meta_ev only ever aggregates over
+    // exactly-4-player pods (10). Before this fix, the Meta EV badge borrowed podMetric's N and
+    // would have claimed N=100 and significant=true for an estimate only 10 pods actually fed.
+    const badges = buildPodMetricBadges(
+      podMetric({ pods_present: 100, is_statistically_significant: true }),
+      metaEv({ pods_present: 10, is_statistically_significant: false })
+    );
+
+    expect(badges.threat?.n).toBe(100);
+    expect(badges.threat?.isStatisticallySignificant).toBe(true);
+    expect(badges.metaEv?.n).toBe(10);
     expect(badges.metaEv?.isStatisticallySignificant).toBe(false);
   });
 

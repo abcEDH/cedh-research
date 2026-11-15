@@ -214,9 +214,11 @@ class SupabaseMigrationIntegrityTests(unittest.TestCase):
         )
         self.assertIn(
             "RETURNS TABLE (\n  commander_id uuid,\n  meta_ev numeric,\n  meta_ev_ci_low numeric,\n"
-            "  meta_ev_ci_high numeric,\n  composition_coverage numeric\n)",
+            "  meta_ev_ci_high numeric,\n  composition_coverage numeric,\n",
             sql,
         )
+        self.assertIn("  pods_present bigint,\n", sql)
+        self.assertIn("  is_statistically_significant boolean\n)", sql)
         for role in ("anon", "authenticated", "service_role"):
             self.assertIn(
                 f"GRANT EXECUTE ON FUNCTION public.get_commander_meta_ev(integer, integer, integer) TO {role};",
@@ -228,6 +230,22 @@ class SupabaseMigrationIntegrityTests(unittest.TestCase):
 
         self.assertIn("FROM public.get_winrate_matrix(top_n, days_back)", sql)
         self.assertIn("min_triple_obs", sql)
+
+    def test_meta_ev_computes_its_own_pods_present_and_significance(self) -> None:
+        """Codex review finding on PR #384 (second pass): get_pod_metrics' pods_present counts
+        every non-bye participation regardless of pod size, while get_commander_meta_ev only
+        ever aggregates over exactly-4-player pods (its x_focal CTE) -- the two can legitimately
+        disagree, so the Meta EV badge must use this RPC's own pods_present/significance, never
+        borrowed from get_pod_metrics. See test_commander_meta_ev.py for the frontend-facing
+        regression test of this exact scenario.
+        """
+        sql = META_EV_MIGRATION.read_text()
+
+        self.assertIn("x_total_pods AS pods_present", sql)
+        self.assertIn(
+            "public.is_rate_statistically_significant(x_total_pods, x_meta_ev, 0.25) AS is_statistically_significant",
+            sql,
+        )
 
     def test_winrate_family_rpcs_exclude_future_dated_tournaments(self) -> None:
         """Codex review finding on PR #384: these RPCs' own windowed queries bypass the

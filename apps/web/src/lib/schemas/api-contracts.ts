@@ -185,6 +185,12 @@ export const CommanderMetaEvSchema = z.object({
   // Fraction of this commander's pods whose opponent-triple composition cleared the direct-
   // observation floor (min_triple_obs); a real, deck-specific number, not hardcoded to 1.0.
   composition_coverage: z.number().min(0).max(1),
+  // This RPC's own EV-eligible (exactly-4-player-pod) sample size -- narrower than
+  // get_pod_metrics' pods_present (that RPC counts every non-bye participation regardless of
+  // pod size). The Meta EV badge must use this field, not get_pod_metrics' pods_present, or it
+  // overstates how sparse the EV estimate actually is.
+  pods_present: z.number().int().nonnegative(),
+  is_statistically_significant: z.boolean(),
 });
 
 export const CommanderMetaEvResponseSchema = z.array(CommanderMetaEvSchema);

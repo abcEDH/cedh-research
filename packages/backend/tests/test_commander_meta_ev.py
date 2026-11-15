@@ -194,10 +194,11 @@ class MigrationSqlMatchesReferenceMathTests(unittest.TestCase):
             "  meta_ev numeric,\n"
             "  meta_ev_ci_low numeric,\n"
             "  meta_ev_ci_high numeric,\n"
-            "  composition_coverage numeric\n"
-            ")",
+            "  composition_coverage numeric,\n",
             sql,
         )
+        self.assertIn("  pods_present bigint,\n", sql)
+        self.assertIn("  is_statistically_significant boolean\n)", sql)
 
     def test_uses_geometric_mean_fallback_not_a_raw_product(self) -> None:
         sql = META_EV_MIGRATION.read_text()

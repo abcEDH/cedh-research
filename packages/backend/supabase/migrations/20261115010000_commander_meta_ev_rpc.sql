@@ -59,7 +59,18 @@ RETURNS TABLE (
   meta_ev numeric,
   meta_ev_ci_low numeric,
   meta_ev_ci_high numeric,
-  composition_coverage numeric
+  composition_coverage numeric,
+  -- EV-eligible pod count for *this* commander: only pods with exactly 4 real (non-bye)
+  -- participants ever reach x_focal below, which is strictly narrower than get_pod_metrics'
+  -- pods_present (that RPC counts every non-bye participation, 4-player or not). The frontend
+  -- badge for meta_ev must use this count, not get_pod_metrics' pods_present, or it understates
+  -- how sparse the EV estimate actually is (e.g. 90 three-player + 10 four-player pods would
+  -- otherwise borrow N=100 from get_pod_metrics when only 10 pods fed this EV).
+  pods_present bigint,
+  -- Self-contained significance flag using the same shared heuristic and 0.25 baseline as
+  -- get_pod_metrics' threat_score, but keyed off *this* RPC's own N and point estimate rather
+  -- than borrowed from get_pod_metrics (which can disagree on N -- see pods_present above).
+  is_statistically_significant boolean
 )
 LANGUAGE plpgsql
 STABLE
@@ -204,7 +215,9 @@ BEGIN
     ROUND(x_meta_ev, 4) AS meta_ev,
     ROUND(x_meta_ev_ci_low, 4) AS meta_ev_ci_low,
     ROUND(x_meta_ev_ci_high, 4) AS meta_ev_ci_high,
-    ROUND(x_composition_coverage, 4) AS composition_coverage
+    ROUND(x_composition_coverage, 4) AS composition_coverage,
+    x_total_pods AS pods_present,
+    public.is_rate_statistically_significant(x_total_pods, x_meta_ev, 0.25) AS is_statistically_significant
   FROM x_commander_ev
   WHERE x_total_pods > 0
   ORDER BY x_commander_id;
@@ -216,7 +229,11 @@ COMMENT ON FUNCTION public.get_commander_meta_ev(integer, integer, integer) IS
   'deck''s observed opponent-triple compositions of P(triple) * winrate(deck | triple). '
   'Triples with fewer than min_triple_obs observations fall back to the geometric mean of '
   'pairwise marginals from get_winrate_matrix. composition_coverage is the fraction of a '
-  'deck''s pods whose triple cleared min_triple_obs directly (not hardcoded to 1.0).';
+  'deck''s pods whose triple cleared min_triple_obs directly (not hardcoded to 1.0). '
+  'pods_present is this RPC''s own EV-eligible (exactly-4-player-pod) count -- callers must '
+  'use it, not get_pod_metrics'' pods_present, for this RPC''s own N/confidence, since '
+  'get_pod_metrics counts every non-bye participation regardless of pod size and can '
+  'overstate how sparse a given commander''s EV estimate actually is.';
 
 GRANT EXECUTE ON FUNCTION public.get_commander_meta_ev(integer, integer, integer) TO anon;
 GRANT EXECUTE ON FUNCTION public.get_commander_meta_ev(integer, integer, integer) TO authenticated;

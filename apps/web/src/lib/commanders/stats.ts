@@ -37,11 +37,13 @@ const META_EV_TOOLTIP = "Expected pod winrate weighted by realistic pod composit
  * window has no row in either RPC (podMetric/metaEv are null) and the badge is simply omitted
  * rather than rendered as a fake zero.
  *
- * get_commander_meta_ev has no significance flag of its own -- the EV badge reuses the pod
- * metrics row's is_statistically_significant (same underlying sample size, pods_present,
- * drives confidence in all three numbers for this commander) and its pods_present as the EV
- * badge's "N" (there is no literal per-triple sample size to show for a weighted-average
- * metric).
+ * get_commander_meta_ev carries its own pods_present and is_statistically_significant (added
+ * after a Codex review on PR #384 caught the EV badge borrowing get_pod_metrics' pods_present:
+ * that RPC counts every non-bye participation regardless of pod size, while meta_ev only ever
+ * aggregates over exactly-4-player pods, so the two counts can disagree -- e.g. 90 three-player
+ * pods + 10 four-player pods would otherwise claim N=100 for an estimate that only 10 pods fed,
+ * silently suppressing the low-confidence warning). The EV badge must use metaEv's own fields,
+ * never podMetric's.
  */
 export function buildPodMetricBadges(
   podMetric: PodMetric | null,
@@ -81,8 +83,8 @@ export function buildPodMetricBadges(
         value: metaEv.meta_ev,
         ciLow: metaEv.meta_ev_ci_low,
         ciHigh: metaEv.meta_ev_ci_high,
-        n: podMetric?.pods_present ?? 0,
-        isStatisticallySignificant: podMetric?.is_statistically_significant ?? false,
+        n: metaEv.pods_present,
+        isStatisticallySignificant: metaEv.is_statistically_significant,
         tooltip: META_EV_TOOLTIP,
       }
     : null;

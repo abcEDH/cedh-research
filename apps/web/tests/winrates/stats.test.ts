@@ -52,8 +52,24 @@ const MOCK_RPC_RESPONSE: WinrateMatrixRow[] = [
 ];
 
 const MOCK_EV_RESPONSE: CommanderMetaEv[] = [
-  { commander_id: COMMANDERS[0].id, meta_ev: 0.28, meta_ev_ci_low: 0.22, meta_ev_ci_high: 0.34, composition_coverage: 0.7 },
-  { commander_id: COMMANDERS[1].id, meta_ev: 0.41, meta_ev_ci_low: 0.35, meta_ev_ci_high: 0.47, composition_coverage: 0.9 },
+  {
+    commander_id: COMMANDERS[0].id,
+    meta_ev: 0.28,
+    meta_ev_ci_low: 0.22,
+    meta_ev_ci_high: 0.34,
+    composition_coverage: 0.7,
+    pods_present: 300,
+    is_statistically_significant: true,
+  },
+  {
+    commander_id: COMMANDERS[1].id,
+    meta_ev: 0.41,
+    meta_ev_ci_low: 0.35,
+    meta_ev_ci_high: 0.47,
+    composition_coverage: 0.9,
+    pods_present: 200,
+    is_statistically_significant: true,
+  },
   // commander 2 deliberately has no EV row -- exercises the "missing EV" render path.
 ];
 
