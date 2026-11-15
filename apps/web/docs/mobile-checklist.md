@@ -35,7 +35,10 @@ that changes installability or a data-heavy page.
 - Real device or DevTools device mode at 390×844: no horizontal scroll on
   `/`, `/tournaments`, a tournament detail (bracket tab), `/commanders`, a
   commander detail, `/regional-elo`, a player profile, `/tournament-likelihood`,
-  `/trap-spice`.
+  `/trap-spice`, `/winrates`.
+- `/winrates`: the matchup matrix itself scrolls horizontally inside its own
+  container (first column sticky) — only that inner scroll should move, the
+  page itself must not.
 - The pod bracket (`/tournaments/[slug]` → Bracket) stacks vertically on a
   phone; all stage headings are reachable without horizontal scroll.
 - Notched device in landscape: content clears the notch (safe-area insets).

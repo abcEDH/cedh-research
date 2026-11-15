@@ -117,6 +117,14 @@
   --knd-magenta: 305 85% 65%;
   --knd-amber: 38 80% 60%;
   --knd-lime: 145 55% 60%;
+  /* Winrate matrix 4-step heat scale (#150), mirroring mtgdecks.net's convention: dark red
+     (<30%), orange (30-49%), mustard (50-59%), olive-green (>=60%). Used as background tints
+     (low alpha) behind cell text, which stays in normal text-ink colors -- the heat color is
+     never the only signal, every cell also prints its exact winrate/CI/N. */
+  --knd-heat-cold: 0 63% 31%;
+  --knd-heat-cool: 21 90% 48%;
+  --knd-heat-warm: 45 93% 47%;
+  --knd-heat-hot: 142 72% 29%;
   --knd-surface: 228 28% 11%;
   --knd-surface-2: 228 22% 15%;
   --knd-line: 210 18% 32%;

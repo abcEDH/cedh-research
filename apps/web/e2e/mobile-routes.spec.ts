@@ -24,6 +24,7 @@ const ROUTES = [
   "/limitations",
   "/methodology/elo",
   "/methodology/data-model",
+  "/winrates",
 ];
 
 test.describe("Mobile route overflow", () => {
