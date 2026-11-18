@@ -23,7 +23,6 @@ env:
 #     TOPDECK_API_KEY       — TopDeck.gg API v2 key
 #     SUPABASE_URL          — Supabase project URL
 #     SUPABASE_SERVICE_KEY  — Supabase service_role key
-#     GH_PAT_ACTIONS        — GitHub PAT with actions:write for dispatching Elo workflow
 #   Edge Function (trigger-ingestion-refresh):
 #     GITHUB_PAT            — GitHub fine-grained PAT with actions:write
 #     SUPABASE_URL          — same as above
@@ -146,11 +145,13 @@ jobs:
     name: Chain Elo maintenance after successful ingestion
     runs-on: ubuntu-latest
     needs: ingest
+    permissions:
+      actions: write
     if: ${{ inputs.job_id != '' && needs.ingest.outputs.claimed == 'true' }}
     steps:
       - name: Enqueue Elo refresh and dispatch maintenance workflow
         env:
-          GH_PAT_ACTIONS: ${{ secrets.GH_PAT_ACTIONS }}
+          GH_ACTIONS_TOKEN: ${{ github.token }}
           INGESTION_JOB_ID: ${{ inputs.job_id }}
         run: |
           # Enqueue Elo refresh via Supabase RPC
@@ -186,7 +187,7 @@ jobs:
             -X POST \
             "https://api.github.com/repos/${{ github.repository }}/actions/workflows/ci-backend-maintenance.yml/dispatches" \
             -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer $GH_PAT_ACTIONS" \
+            -H "Authorization: Bearer $GH_ACTIONS_TOKEN" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             --data "{\"ref\": \"main\", \"inputs\": {\"refresh_mode\": \"full\", \"job_id\": \"$elo_job_id\"}}"
 
