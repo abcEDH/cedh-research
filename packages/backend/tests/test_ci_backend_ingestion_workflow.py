@@ -18,6 +18,10 @@ class BackendIngestionWorkflowTests(unittest.TestCase):
         self.assertIn("chain-elo", workflow)
         self.assertIn("enqueue_elo_refresh", workflow)
         self.assertIn("ci-backend-maintenance.yml", workflow)
+        chain = workflow.split("  chain-elo:\n", 1)[1].split("  mark-ingestion-failed:\n", 1)[0]
+        self.assertIn("    permissions:\n      actions: write", chain)
+        self.assertIn("GH_ACTIONS_TOKEN: ${{ github.token }}", chain)
+        self.assertIn("Authorization: Bearer $GH_ACTIONS_TOKEN", chain)
 
     def test_ingestion_workflow_has_failure_handler(self) -> None:
         workflow = WORKFLOW_PATH.read_text()

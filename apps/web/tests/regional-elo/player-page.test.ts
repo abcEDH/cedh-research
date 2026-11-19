@@ -1,5 +1,5 @@
 import React from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 
 type TableData = Record<string, Array<Record<string, unknown>>>;
@@ -563,6 +563,9 @@ async function renderPlayerPage(
 }
 
 describe("RegionalPlayerPage", () => {
+  beforeEach(() => vi.setSystemTime(new Date("2026-04-05T00:00:00Z")));
+  afterEach(() => vi.useRealTimers());
+
   it("renders summary cards and regional rankings from the same canonical counts", async () => {
     const html = await renderPlayerPage("CCIQroaCHHQi7EELyNXlHiHQiQy1", {
       region: "CALIFORNIA",

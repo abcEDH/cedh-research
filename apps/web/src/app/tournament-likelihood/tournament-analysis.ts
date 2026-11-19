@@ -42,11 +42,9 @@ type RegionalLeaderboardQueryRow = {
   topdeck_id: string | null;
   player_name: string;
   rating: number;
-  topdeck_elo: number | null;
   games_played: number;
   primary_region_key: string | null;
   region_key: string;
-  rank: number;
 };
 
 type PrecomputedCommanderPrediction = {
@@ -80,29 +78,34 @@ function chunkArray<T>(values: T[], chunkSize = 250) {
 
 
 export async function fetchBestEloRows(topdeckIds: string[]): Promise<EloRow[]> {
-  if (topdeckIds.length === 0) return [];
+  const ids = Array.from(new Set(topdeckIds));
+  const rowsByTopdeckId = new Map<string, RegionalLeaderboardQueryRow>();
+  const publishedElo = new Map<string, number>();
+  for (const chunk of chunkArray(ids)) {
+    const [leaderboard, snapshot] = await Promise.all([
+      supabase
+        .from("global_elo_active_leaderboard")
+        .select("topdeck_id, player_name, rating, games_played, primary_region_key, region_key")
+        .in("topdeck_id", chunk)
+        .eq("region_type", "global")
+        .eq("region_key", "ALL"),
+      supabase.from("topdeck_player_elos").select("topdeck_id, elo").in("topdeck_id", chunk),
+    ]);
 
-  // Query global_elo_active_leaderboard for player ratings
-  // The rating column contains our calculated Elo for each player
-  // The topdeck_elo column contains the official TopDeck Elo
-  const { data, error } = await supabase
-    .from("global_elo_active_leaderboard")
-    .select("topdeck_id, player_name, rating, topdeck_elo, games_played, primary_region_key, region_key, rank")
-    .in("topdeck_id", topdeckIds)
-    .eq("region_type", "global")
-    .eq("region_key", "ALL");
+    if (leaderboard.error) throw new Error(`Error fetching Elo rows: ${leaderboard.error.message}`);
+    if (snapshot.error) throw new Error(`Error fetching TopDeck Elo rows: ${snapshot.error.message}`);
 
-  if (error) {
-    throw new Error(`Error fetching Elo rows: ${error.message}`);
+    for (const row of (leaderboard.data ?? []) as RegionalLeaderboardQueryRow[]) {
+      if (row.topdeck_id) rowsByTopdeckId.set(row.topdeck_id, row);
+    }
+    for (const row of snapshot.data ?? []) {
+      if (row.topdeck_id && row.elo != null && Number.isFinite(Number(row.elo))) {
+        publishedElo.set(row.topdeck_id, Number(row.elo));
+      }
+    }
   }
 
-  const rowsByTopdeckId = new Map(
-    ((data ?? []) as RegionalLeaderboardQueryRow[])
-      .filter((row) => row.topdeck_id)
-      .map((row) => [row.topdeck_id as string, row])
-  );
-
-  return Array.from(new Set(topdeckIds))
+  return ids
     .map((topdeckId) => {
       const row = rowsByTopdeckId.get(topdeckId);
       return {
@@ -110,7 +113,7 @@ export async function fetchBestEloRows(topdeckIds: string[]): Promise<EloRow[]> 
         player_name: row?.player_name ?? "",
         rating: row?.rating ?? null,
         hidden_rating: undefined,
-        topdeck_elo: row?.topdeck_elo ?? null,
+        topdeck_elo: publishedElo.get(topdeckId) ?? null,
         games_played: row?.games_played ?? 0,
         region_key: row?.primary_region_key ?? row?.region_key ?? "",
       };
