@@ -335,12 +335,14 @@ export async function fetchTournamentBySlug(slug: string): Promise<TopDeckTourna
     fetch(`https://topdeck.gg/PublicPData/${slug}`.trim(), { cache: "no-store" }),
   ]);
 
-  if (!bracketResponse.ok || !playersResponse.ok) {
-    const status = `${bracketResponse.status}/${playersResponse.status}`;
-    throw new Error(`TopDeck tournament fetch failed (${status})`);
+  if (!playersResponse.ok) {
+    throw new Error(`TopDeck tournament player data fetch failed (${playersResponse.status})`);
   }
 
-  const [html, playersJson] = await Promise.all([bracketResponse.text(), playersResponse.json()]);
+  const [html, playersJson] = await Promise.all([
+    bracketResponse.ok ? bracketResponse.text() : "",
+    playersResponse.json(),
+  ]);
   const titleMatch = html.match(/<title>(.*?)<\/title>/i);
   const title = (titleMatch?.[1] ?? slug).replace(/\s*-\s*Tournament Standings\s*$/i, "").trim();
   const players = Object.values(playersJson as Record<string, {

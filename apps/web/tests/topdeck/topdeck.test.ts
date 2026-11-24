@@ -15,7 +15,21 @@ function createJsonResponse(payload: unknown, status = 200) {
 describe("fetchTournamentBySlug", () => {
   afterEach(() => {
     vi.restoreAllMocks();
-    delete process.env.TOPDECK_API_KEY;
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it("uses public player data when the bracket page returns 403", async () => {
+    vi.stubEnv("TOPDECK_API_KEY", undefined);
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(createJsonResponse({ fields: { startDate: { integerValue: "1795449600" } } }))
+      .mockResolvedValueOnce(new Response("Forbidden", { status: 403 }))
+      .mockResolvedValueOnce(createJsonResponse({ player: { name: "Player One", uid: "player-1" } })));
+
+    const result = await fetchTournamentBySlug("yapsgiving-10k");
+
+    expect(result.data).toMatchObject({ name: "yapsgiving-10k", startDate: 1795449600 });
+    expect(result.standings).toEqual([expect.objectContaining({ id: "player-1", name: "Player One" })]);
   });
 
   it("waits for Retry-After HTTP-date values before retrying", async () => {
@@ -28,7 +42,7 @@ describe("fetchTournamentBySlug", () => {
       return 0 as unknown as NodeJS.Timeout;
     }) as typeof setTimeout);
 
-    process.env.TOPDECK_API_KEY = "test-key";
+    vi.stubEnv("TOPDECK_API_KEY", "test-key");
     const fetchMock = vi.mocked(globalThis.fetch);
     fetchMock
       .mockResolvedValueOnce(
