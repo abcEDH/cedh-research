@@ -131,6 +131,73 @@ export const SpiceCardSchema = z.object({
 export type SpiceCard = z.infer<typeof SpiceCardSchema>;
 
 // ============================================
+// Winrate Matrix RPC: get_winrate_matrix (#147, #150)
+// ============================================
+export const WinrateMatrixRowSchema = z.object({
+  deck_a_commander_id: z.string().uuid(),
+  // NULL marks the mtgdecks-style OVERALL row for deck_a (aggregate across every opponent in
+  // the window, not just the top-N opponents used by the pairwise cells).
+  deck_b_commander_id: z.string().uuid().nullable(),
+  games_played: z.number().int().nonnegative(),
+  wins: z.number().int().nonnegative(),
+  losses: z.number().int().nonnegative(),
+  draws: z.number().int().nonnegative(),
+  point_winrate: z.number().min(0).max(1),
+  // NULL only when games_played is 0, which get_winrate_matrix never returns (empty cells are
+  // omitted) -- kept nullable here defensively so a contract change can't silently pass.
+  ci_low: z.number().min(0).max(1).nullable(),
+  ci_high: z.number().min(0).max(1).nullable(),
+});
+
+export const WinrateMatrixSchema = z.array(WinrateMatrixRowSchema);
+
+export type WinrateMatrixRow = z.infer<typeof WinrateMatrixRowSchema>;
+
+// ============================================
+// Pod Metrics RPC: get_pod_metrics (#148, #151)
+// ============================================
+export const PodMetricSchema = z.object({
+  commander_id: z.string().uuid(),
+  pods_present: z.number().int().nonnegative(),
+  wins: z.number().int().nonnegative(),
+  top_two: z.number().int().nonnegative(),
+  threat_score: z.number().min(0).max(1),
+  threat_ci_low: z.number().min(0).max(1).nullable(),
+  threat_ci_high: z.number().min(0).max(1).nullable(),
+  survivability: z.number().min(0).max(1),
+  survivability_ci_low: z.number().min(0).max(1).nullable(),
+  survivability_ci_high: z.number().min(0).max(1).nullable(),
+  is_statistically_significant: z.boolean(),
+});
+
+export const PodMetricsResponseSchema = z.array(PodMetricSchema);
+
+export type PodMetric = z.infer<typeof PodMetricSchema>;
+
+// ============================================
+// Commander Meta-EV RPC: get_commander_meta_ev (#149, #150, #151)
+// ============================================
+export const CommanderMetaEvSchema = z.object({
+  commander_id: z.string().uuid(),
+  meta_ev: z.number().min(0).max(1),
+  meta_ev_ci_low: z.number().min(0).max(1).nullable(),
+  meta_ev_ci_high: z.number().min(0).max(1).nullable(),
+  // Fraction of this commander's pods whose opponent-triple composition cleared the direct-
+  // observation floor (min_triple_obs); a real, deck-specific number, not hardcoded to 1.0.
+  composition_coverage: z.number().min(0).max(1),
+  // This RPC's own EV-eligible (exactly-4-player-pod) sample size -- narrower than
+  // get_pod_metrics' pods_present (that RPC counts every non-bye participation regardless of
+  // pod size). The Meta EV badge must use this field, not get_pod_metrics' pods_present, or it
+  // overstates how sparse the EV estimate actually is.
+  pods_present: z.number().int().nonnegative(),
+  is_statistically_significant: z.boolean(),
+});
+
+export const CommanderMetaEvResponseSchema = z.array(CommanderMetaEvSchema);
+
+export type CommanderMetaEv = z.infer<typeof CommanderMetaEvSchema>;
+
+// ============================================
 // Validation Helper
 // ============================================
 
